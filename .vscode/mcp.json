@@ -5,6 +5,12 @@
       "command": "npx",
       "args": ["-y", "@anthropic/mcp-server-filesystem", "/home/ubuntu/avaros-ovos-skill"],
       "env": {}
+    },
+    "docker": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@anthropic/mcp-server-docker"],
+      "env": {}
     }
   },
   "inputs": []
