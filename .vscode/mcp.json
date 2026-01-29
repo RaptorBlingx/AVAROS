@@ -10,7 +10,9 @@
       "type": "stdio",
       "command": "npx",
       "args": ["-y", "@anthropic/mcp-server-docker"],
-      "env": {}
+      "env": {
+        "DOCKER_HOST": "unix:///var/run/docker.sock"
+      }
     }
   },
   "inputs": []
