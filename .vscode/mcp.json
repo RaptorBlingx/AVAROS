@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@anthropic/mcp-server-filesystem", "/home/ubuntu/avaros-ovos-skill"],
+      "env": {}
+    }
+  },
+  "inputs": []
+}
