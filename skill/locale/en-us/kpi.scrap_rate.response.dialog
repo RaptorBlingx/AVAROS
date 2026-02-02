@@ -1,0 +1,3 @@
+The scrap rate for {asset_name} is {value} percent {period}.
+{asset_name} has a scrap rate of {value} percent.
+We're seeing {value} percent scrap for {asset_name}.

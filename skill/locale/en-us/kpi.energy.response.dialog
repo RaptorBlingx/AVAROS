@@ -1,0 +1,3 @@
+The energy per unit for {asset_name} is {value} {unit} {period}.
+{asset_name} is using {value} {unit} per unit {period}.
+Energy consumption for {asset_name} is {value} {unit}.

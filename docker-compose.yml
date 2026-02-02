@@ -1,0 +1,97 @@
+# AVAROS Docker Compose - Zero-Config Deployment
+# 
+# Usage:
+#   docker compose up -d          # Start all services
+#   docker compose logs -f avaros # View logs
+#   docker compose down           # Stop all services
+#
+# First run automatically uses MockAdapter (no configuration needed)
+
+services:
+  # =========================================================================
+  # AVAROS Skill Service
+  # =========================================================================
+  avaros:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: avaros-skill
+    restart: unless-stopped
+    environment:
+      - AVAROS_LOG_LEVEL=${AVAROS_LOG_LEVEL:-INFO}
+      - AVAROS_DATA_PATH=/data
+      # Platform config comes from Web UI, NOT here
+    volumes:
+      - avaros-data:/data
+    ports:
+      - "${AVAROS_PORT:-8080}:8080"
+    networks:
+      - avaros-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import skill; print('healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    labels:
+      - "com.avaros.service=skill"
+      - "com.avaros.description=Manufacturing KPI Voice Assistant"
+
+  # =========================================================================
+  # OVOS Core (Voice Processing)
+  # =========================================================================
+  ovos-core:
+    image: smartgic/ovos-core:latest
+    container_name: avaros-ovos-core
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-UTC}
+    volumes:
+      - ovos-config:/home/ovos/.config/mycroft
+      - ./skill:/home/ovos/.local/share/mycroft/skills/avaros-skill
+    networks:
+      - avaros-network
+    depends_on:
+      - avaros
+    labels:
+      - "com.avaros.service=ovos-core"
+
+  # =========================================================================
+  # Optional: Web UI for Configuration (Future)
+  # =========================================================================
+  # web-ui:
+  #   build:
+  #     context: ./web
+  #     dockerfile: Dockerfile
+  #   container_name: avaros-web-ui
+  #   restart: unless-stopped
+  #   ports:
+  #     - "${WEB_PORT:-3000}:3000"
+  #   environment:
+  #     - AVAROS_API_URL=http://avaros:8080
+  #   networks:
+  #     - avaros-network
+  #   depends_on:
+  #     - avaros
+
+# =========================================================================
+# Networks
+# =========================================================================
+networks:
+  avaros-network:
+    driver: bridge
+    name: avaros-network
+
+# =========================================================================
+# Volumes (Persistent Storage)
+# =========================================================================
+volumes:
+  # SQLite database for settings, audit logs
+  avaros-data:
+    driver: local
+    name: avaros-data
+  
+  # OVOS configuration
+  ovos-config:
+    driver: local
+    name: ovos-config

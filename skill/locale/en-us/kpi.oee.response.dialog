@@ -1,0 +1,3 @@
+The OEE for {asset_name} is {value} percent {period}.
+{asset_name} has an OEE of {value} percent.
+Overall equipment effectiveness for {asset_name} is {value} percent.

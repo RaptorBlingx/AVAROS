@@ -1,0 +1,3 @@
+Scrap rate is trending {direction}, changing {change_percent} percent over {period}.
+The scrap trend is {direction} with a {change_percent} percent change.
+Over {period}, scrap rate went {direction} by {change_percent} percent.

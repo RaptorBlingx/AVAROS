@@ -1,0 +1,3 @@
+I found {count} anomalies with {severity} severity. {description}
+There are {count} unusual patterns detected. Severity is {severity}.
+Alert: {count} anomalies found. {description}

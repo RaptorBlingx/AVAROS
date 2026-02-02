@@ -1,0 +1,3 @@
+If you reduce temperature, energy per unit would go from {baseline} to {projected}, a {delta_percent} percent change. Confidence is {confidence} percent.
+The simulation shows a change from {baseline} to {projected}, about {delta_percent} percent with {confidence} percent confidence.
+Temperature reduction could change energy from {baseline} to {projected}, that's {delta_percent} percent.

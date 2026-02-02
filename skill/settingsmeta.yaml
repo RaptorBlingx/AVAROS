@@ -1,0 +1,76 @@
+skillMetadata:
+  name: AVAROS
+  author: AVAROS Project
+  description: AI Voice Assistant for Manufacturing KPIs - Provides voice-based access to energy, material, production, and carbon metrics.
+  license: Apache-2.0
+  tags:
+    - manufacturing
+    - kpi
+    - energy
+    - sustainability
+    - iot
+  version: 0.1.0
+  
+sections:
+  - name: Platform Configuration
+    fields:
+      - name: platform_type
+        type: select
+        label: Manufacturing Platform
+        value: mock
+        options:
+          - value: mock
+            label: Demo Mode (No external connection)
+          - value: reneryo
+            label: RENERYO
+          # Future platforms added here
+        helpText: Select your manufacturing data platform. Demo mode works without configuration.
+      
+      - name: api_url
+        type: text
+        label: API URL
+        value: ""
+        placeholder: "https://api.example.com"
+        helpText: The base URL for your platform's API
+        
+      - name: api_key
+        type: password
+        label: API Key
+        value: ""
+        placeholder: "Enter your API key"
+        helpText: Authentication key for the platform API (stored encrypted)
+
+  - name: Voice Response Settings
+    fields:
+      - name: response_verbosity
+        type: select
+        label: Response Detail Level
+        value: normal
+        options:
+          - value: brief
+            label: Brief (just the numbers)
+          - value: normal
+            label: Normal (value with context)
+          - value: detailed
+            label: Detailed (includes recommendations)
+        helpText: How much detail to include in voice responses
+        
+      - name: units_system
+        type: select
+        label: Units System
+        value: metric
+        options:
+          - value: metric
+            label: Metric (kWh, kg, °C)
+          - value: imperial
+            label: Imperial (BTU, lb, °F)
+        helpText: Measurement units for voice responses
+
+  - name: Default Assets
+    fields:
+      - name: default_asset
+        type: text
+        label: Default Asset/Line
+        value: "Line-1"
+        placeholder: "Line-1"
+        helpText: Default asset used when none specified in query

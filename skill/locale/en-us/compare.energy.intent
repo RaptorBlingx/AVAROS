@@ -1,0 +1,6 @@
+compare (energy|power) (between|for) {asset_a} and {asset_b}
+which uses more energy {asset_a} or {asset_b}
+energy comparison between {asset_a} and {asset_b}
+compare {asset_a} and {asset_b} energy
+which is more efficient {asset_a} or {asset_b}
+compare energy use {asset_a} versus {asset_b}
