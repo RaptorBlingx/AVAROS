@@ -266,113 +266,57 @@ class MockAdapter(ManufacturingAdapter):
         )
     
     # =========================================================================
-    # Query Type 4: Anomaly Detection
+    # Query Type 4: Raw Data Retrieval (for Intelligence Services)
     # =========================================================================
     
-    async def check_anomaly(
+    async def get_raw_data(
         self,
         metric: CanonicalMetric,
         asset_id: str,
-        threshold: float | None = None,
-    ) -> AnomalyResult:
-        """Simulate anomaly detection with occasional findings."""
-        baseline, variation, _ = self._METRIC_BASELINES.get(
+        period: TimePeriod,
+    ) -> list[DataPoint]:
+        """
+        Return raw time-series data for PREVENTION and DocuBoT to analyze.
+        
+        This is the CORRECT way per DEC-007: Adapters provide DATA,
+        QueryDispatcher orchestrates INTELLIGENCE (anomaly detection, what-if).
+        """
+        baseline, variation, unit = self._METRIC_BASELINES.get(
             metric, (50.0, 10.0, "units")
         )
         
-        # 30% chance of finding an anomaly for demo purposes
-        has_anomaly = random.random() < 0.3
+        # Generate realistic time-series data
+        total_hours = int(period.duration_days * 24)
+        num_points = min(max(24, total_hours), 168)  # 1 day to 1 week of hourly data
         
-        anomalies: list[Anomaly] = []
-        if has_anomaly:
-            # Generate 1-2 anomalies
-            num_anomalies = random.randint(1, 2)
-            for _ in range(num_anomalies):
-                deviation = random.uniform(2.5, 4.0) * random.choice([-1, 1])
-                actual = baseline + deviation * (variation / 2)
-                
-                anomalies.append(Anomaly(
-                    timestamp=datetime.now() - timedelta(hours=random.randint(1, 24)),
-                    metric=metric,
-                    expected_value=baseline,
-                    actual_value=round(actual, 2),
-                    deviation=round(deviation, 1),
-                    description=f"Unusual {metric.display_name} detected on {asset_id}",
-                ))
+        data_points: list[DataPoint] = []
+        current_value = baseline + random.uniform(-variation * 0.3, variation * 0.3)
         
-        # Determine overall severity
-        if not anomalies:
-            severity = "none"
-        else:
-            max_dev = max(abs(a.deviation) for a in anomalies)
-            if max_dev < 2.5:
-                severity = "low"
-            elif max_dev < 3.0:
-                severity = "medium"
-            elif max_dev < 4.0:
-                severity = "high"
+        # Add slight trend and random walk
+        trend_bias = random.uniform(-0.01, 0.01)
+        
+        for i in range(num_points):
+            timestamp = period.start + timedelta(hours=i)
+            
+            # Random walk with occasional spikes (for anomaly detection testing)
+            if random.random() < 0.05:  # 5% chance of spike
+                spike = random.uniform(2.5, 4.0) * random.choice([-1, 1]) * variation
+                current_value += spike
             else:
-                severity = "critical"
-        
-        return AnomalyResult(
-            is_anomalous=bool(anomalies),
-            anomalies=anomalies,
-            severity=severity,
-            asset_id=asset_id,
-            metric=metric,
-            recommendation_id=self._generate_recommendation_id(),
-        )
-    
-    # =========================================================================
-    # Query Type 5: What-If Simulation
-    # =========================================================================
-    
-    async def simulate_whatif(
-        self,
-        scenario: WhatIfScenario,
-    ) -> WhatIfResult:
-        """Simulate what-if with plausible impact predictions."""
-        baseline, variation, unit = self._METRIC_BASELINES.get(
-            scenario.target_metric, (50.0, 10.0, "units")
-        )
-        
-        # Calculate cumulative impact from all parameter changes
-        total_impact_percent = 0.0
-        factors: dict[str, float] = {}
-        
-        for param in scenario.parameters:
-            # Estimate impact: larger parameter changes = larger metric impact
-            # This is a simplified heuristic model
-            param_change_percent = param.delta_percent
+                change = random.uniform(-variation * 0.1, variation * 0.1)
+                change += trend_bias * baseline * 0.01
+                current_value += change
             
-            # Impact coefficients (how much 1% param change affects metric)
-            impact_coefficient = random.uniform(0.3, 0.8)
+            # Keep within reasonable bounds
+            current_value = max(baseline - variation * 1.5, min(baseline + variation * 1.5, current_value))
             
-            param_impact = param_change_percent * impact_coefficient * 0.1
-            total_impact_percent += param_impact
-            factors[param.name] = round(param.delta, 2)
+            data_points.append(DataPoint(
+                timestamp=timestamp,
+                value=round(current_value, 2),
+                unit=unit,
+            ))
         
-        # Apply impact to baseline
-        delta_percent = round(total_impact_percent, 1)
-        delta = baseline * (delta_percent / 100)
-        projected = baseline + delta
-        
-        # Confidence decreases with larger changes
-        base_confidence = 0.85
-        confidence = max(0.5, base_confidence - abs(delta_percent) * 0.01)
-        
-        return WhatIfResult(
-            scenario_name=scenario.name,
-            target_metric=scenario.target_metric,
-            baseline=round(baseline, 2),
-            projected=round(projected, 2),
-            delta=round(delta, 2),
-            delta_percent=delta_percent,
-            confidence=round(confidence, 2),
-            factors=factors,
-            unit=unit,
-            recommendation_id=self._generate_recommendation_id(),
-        )
+        return data_points
     
     # =========================================================================
     # Capability Discovery

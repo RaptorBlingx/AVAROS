@@ -172,71 +172,44 @@ class ManufacturingAdapter(ABC):
         ...
     
     @abstractmethod
-    async def check_anomaly(
+    async def get_raw_data(
         self,
         metric: CanonicalMetric,
         asset_id: str,
-        threshold: float | None = None,
-    ) -> AnomalyResult:
+        period: TimePeriod,
+    ) -> list[DataPoint]:
         """
-        Query Type 4: Anomaly Detection
+        Query Type 4: Raw Data Retrieval
         
-        Check for unusual patterns in recent data using PREVENTION service
-        or built-in statistical methods.
+        Fetch raw time-series data for intelligence services to analyze.
+        This is NOT an intent-level query - it's used internally by QueryDispatcher
+        to feed data to PREVENTION (anomaly detection) and DocuBoT (what-if simulation).
+        
+        DEC-007: Intelligence Services Are Platform-Independent
+        Adapters provide DATA, not INTELLIGENCE. This method returns raw data
+        that the QueryDispatcher orchestrates through DocuBoT and PREVENTION.
         
         Args:
-            metric: The canonical metric to check
+            metric: The canonical metric to retrieve data for
             asset_id: Target asset identifier
-            threshold: Optional sensitivity threshold (std deviations)
+            period: Time period for data retrieval
             
         Returns:
-            AnomalyResult with detection status and anomaly details
+            List of DataPoint objects (timestamp, value, unit)
             
         Raises:
-            AdapterError: Platform/PREVENTION communication failure
+            AdapterError: Platform communication failure
+            MetricNotSupportedError: Metric not available
             
         Example:
-            result = await adapter.check_anomaly(
-                metric=CanonicalMetric.OEE,
-                asset_id="Line-1"
-            )
-            if result.is_anomalous:
-                print(f"Found {len(result.anomalies)} anomalies!")
-        """
-        ...
-    
-    @abstractmethod
-    async def simulate_whatif(
-        self,
-        scenario: WhatIfScenario,
-    ) -> WhatIfResult:
-        """
-        Query Type 5: What-If Simulation
-        
-        Predict the impact of parameter changes on a target metric.
-        Uses ML models or heuristics depending on platform capabilities.
-        
-        Args:
-            scenario: Definition of parameter changes to simulate
-            
-        Returns:
-            WhatIfResult with baseline, projected values, and confidence
-            
-        Raises:
-            AdapterError: Simulation service failure
-            ValidationError: Invalid scenario parameters
-            
-        Example:
-            scenario = WhatIfScenario(
-                name="temp_reduction",
+            # QueryDispatcher uses this internally:
+            raw_data = await adapter.get_raw_data(
+                metric=CanonicalMetric.ENERGY_PER_UNIT,
                 asset_id="Line-1",
-                parameters=[
-                    ScenarioParameter("temperature", 25.0, 20.0, "°C")
-                ],
-                target_metric=CanonicalMetric.ENERGY_PER_UNIT
+                period=TimePeriod.last_7_days()
             )
-            result = await adapter.simulate_whatif(scenario)
-            print(f"Projected savings: {result.delta_percent}%")
+            # Then feeds to PREVENTION for anomaly detection
+            anomalies = prevention_client.detect_anomalies(raw_data)
         """
         ...
     

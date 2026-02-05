@@ -215,7 +215,7 @@ class QueryDispatcher:
         return result
     
     # =========================================================================
-    # Query Type 4: Anomaly Detection
+    # Query Type 4: Anomaly Detection (INTELLIGENCE - Phase 3)
     # =========================================================================
     
     def check_anomaly(
@@ -225,7 +225,15 @@ class QueryDispatcher:
         threshold: float | None = None,
     ) -> AnomalyResult:
         """
-        Check for anomalies (synchronous wrapper).
+        Check for anomalies (orchestrates PREVENTION service).
+        
+        TODO PHASE 3: Implement DEC-007 compliant orchestration:
+        1. Get raw data: adapter.get_raw_data(metric, asset_id, period)
+        2. Call PREVENTION: prevention_client.detect_anomalies(raw_data, threshold)
+        3. Call DocuBoT: docubot_client.explain_anomaly(metric, anomalies)
+        4. Combine into AnomalyResult
+        
+        Current Phase 1 behavior: Returns mock result for testing intent handlers.
         
         Args:
             metric: Canonical metric to check
@@ -242,15 +250,23 @@ class QueryDispatcher:
             query_id, metric.value, asset_id, threshold,
         )
         
-        result = self._run_async(
-            self._adapter.check_anomaly(metric, asset_id, threshold)
+        # TODO PHASE 3: Replace with orchestration logic
+        # For now, return mock result for testing
+        from skill.domain.results import AnomalyResult
+        from datetime import datetime
+        result = AnomalyResult(\n            is_anomalous=False,
+            anomalies=[],
+            severity=\"none\",
+            asset_id=asset_id,
+            metric=metric,
+            recommendation_id=self._generate_query_id(),
         )
         
         self._log_audit("check_anomaly", query_id, metric.value, asset_id, result)
         return result
     
     # =========================================================================
-    # Query Type 5: What-If Simulation
+    # Query Type 5: What-If Simulation (INTELLIGENCE - Phase 3)
     # =========================================================================
     
     def simulate_whatif(
@@ -258,7 +274,15 @@ class QueryDispatcher:
         scenario: WhatIfScenario,
     ) -> WhatIfResult:
         """
-        Run what-if simulation (synchronous wrapper).
+        Run what-if simulation (orchestrates DocuBoT + ML models).
+        
+        TODO PHASE 3: Implement DEC-007 compliant orchestration:
+        1. Get historical data: adapter.get_raw_data(scenario.target_metric, ...)
+        2. Call DocuBoT: docubot_client.get_parameter_correlations(scenario.parameters)
+        3. Run simulation model with historical data + correlations
+        4. Build WhatIfResult with confidence scores
+        
+        Current Phase 1 behavior: Returns mock result for testing intent handlers.
         
         Args:
             scenario: Scenario definition with parameter changes
@@ -273,8 +297,20 @@ class QueryDispatcher:
             query_id, scenario.name, scenario.asset_id, scenario.target_metric.value,
         )
         
-        result = self._run_async(
-            self._adapter.simulate_whatif(scenario)
+        # TODO PHASE 3: Replace with orchestration logic
+        # For now, return mock result for testing
+        from skill.domain.results import WhatIfResult
+        result = WhatIfResult(
+            scenario_name=scenario.name,
+            target_metric=scenario.target_metric,
+            baseline=100.0,
+            projected=95.0,
+            delta=-5.0,
+            delta_percent=-5.0,
+            confidence=0.75,
+            factors={param.name: param.delta for param in scenario.parameters},
+            unit=\"units\",
+            recommendation_id=self._generate_query_id(),
         )
         
         self._log_audit(
