@@ -281,6 +281,265 @@ SUPPORTED_METRICS = ["energy_per_unit", "scrap_rate", "oee"]
 
 ---
 
+### SOLID Principles
+
+#### S - Single Responsibility Principle
+
+**Principle:** A class should have only one reason to change.
+
+✅ **GOOD: Single responsibility**
+```python
+# Each class has ONE job
+class KPIFetcher:
+    """Fetches KPI data. That's it."""
+    def fetch(self, metric: str) -> KPIResult:
+        return self.adapter.get_kpi(metric)
+
+class KPIFormatter:
+    """Formats KPI for display. That's it."""
+    def format(self, result: KPIResult) -> str:
+        return f"{result.value} {result.unit}"
+
+class KPIResponseBuilder:
+    """Builds voice responses. That's it."""
+    def build(self, formatted_kpi: str, context: str) -> str:
+        return f"Your {context} is {formatted_kpi}"
+```
+
+❌ **BAD: Multiple responsibilities**
+```python
+class KPIManager:
+    """Does EVERYTHING - violates SRP"""
+    def handle_kpi_request(self, utterance: str):
+        metric = self._parse(utterance)  # Responsibility 1: Parse
+        result = self.adapter.get_kpi(metric)  # Responsibility 2: Fetch
+        formatted = f"{result.value} {result.unit}"  # Responsibility 3: Format
+        self.logger.info(f"Returned {metric}")  # Responsibility 4: Log
+        self.speak(formatted)  # Responsibility 5: Speak
+        # 5 reasons to change = BAD
+```
+
+---
+
+#### O - Open/Closed Principle
+
+**Principle:** Open for extension, closed for modification.
+
+✅ **GOOD: Extend via new classes**
+```python
+# Base interface
+class ManufacturingAdapter(ABC):
+    @abstractmethod
+    def get_kpi(self, metric: str) -> KPIResult:
+        pass
+
+# Extend with new implementations (no modification needed)
+class RENERYOAdapter(ManufacturingAdapter):
+    def get_kpi(self, metric: str) -> KPIResult:
+        pass  # RENERYO-specific
+
+class SAPAdapter(ManufacturingAdapter):
+    def get_kpi(self, metric: str) -> KPIResult:
+        pass  # SAP-specific
+
+# Adding new adapter doesn't modify existing code ✅
+class SiemensAdapter(ManufacturingAdapter):
+    def get_kpi(self, metric: str) -> KPIResult:
+        pass  # Siemens-specific
+```
+
+❌ **BAD: Modify for each new case**
+```python
+class AdapterManager:
+    def get_kpi(self, platform: str, metric: str) -> KPIResult:
+        if platform == "reneryo":
+            # RENERYO logic
+            pass
+        elif platform == "sap":
+            # SAP logic
+            pass
+        elif platform == "siemens":  # ❌ Modified class to add platform
+            # Siemens logic
+            pass
+        # Every new platform = modify this class = BAD
+```
+
+---
+
+#### L - Liskov Substitution Principle
+
+**Principle:** Subtypes must be substitutable for their base types.
+
+✅ **GOOD: Subtypes work the same way**
+```python
+def process_kpi(adapter: ManufacturingAdapter, metric: str):
+    """Works with ANY adapter implementation."""
+    result = adapter.get_kpi(metric)  # Same interface
+    return result.value
+
+# All these work identically
+process_kpi(RENERYOAdapter(), "energy_per_unit")
+process_kpi(SAPAdapter(), "energy_per_unit")
+process_kpi(MockAdapter(), "energy_per_unit")
+```
+
+❌ **BAD: Subtypes behave differently**
+```python
+class BrokenAdapter(ManufacturingAdapter):
+    def get_kpi(self, metric: str) -> KPIResult:
+        return None  # ❌ Returns None instead of raising exception
+
+# Now this breaks:
+def process_kpi(adapter: ManufacturingAdapter, metric: str):
+    result = adapter.get_kpi(metric)
+    return result.value  # ❌ Crashes if result is None
+```
+
+---
+
+#### I - Interface Segregation Principle
+
+**Principle:** Clients shouldn't depend on methods they don't use.
+
+✅ **GOOD: Focused interfaces**
+```python
+# Split into focused interfaces
+class KPIProvider(ABC):
+    @abstractmethod
+    def get_kpi(self, metric: str) -> KPIResult:
+        pass
+
+class TrendProvider(ABC):
+    @abstractmethod
+    def get_trend(self, metric: str) -> TrendResult:
+        pass
+
+# Adapters implement only what they support
+class RENERYOAdapter(KPIProvider, TrendProvider):
+    """RENERYO supports both features."""
+    pass
+
+class BasicAdapter(KPIProvider):
+    """Basic adapter only provides KPIs."""
+    pass
+```
+
+❌ **BAD: Fat interface**
+```python
+class ManufacturingAdapter(ABC):
+    """Forces ALL adapters to implement EVERYTHING."""
+    @abstractmethod
+    def get_kpi(self, metric: str) -> KPIResult:
+        pass
+    
+    @abstractmethod
+    def simulate_whatif(self, scenario: dict) -> Simulation:
+        pass  # ❌ Not all platforms support this!
+
+# Now forced to implement unusable methods
+class BasicAdapter(ManufacturingAdapter):
+    def simulate_whatif(self, scenario: dict):
+        raise NotImplementedError  # ❌ Bad design
+```
+
+---
+
+#### D - Dependency Inversion Principle
+
+**Principle:** Depend on abstractions, not concretions.
+
+✅ **GOOD: Depend on interface**
+```python
+class QueryDispatcher:
+    """Depends on adapter INTERFACE, not implementation."""
+    def __init__(self, adapter: ManufacturingAdapter):  # ✅ Abstract type
+        self.adapter = adapter
+    
+    def get_kpi(self, metric: str) -> KPIResult:
+        return self.adapter.get_kpi(metric)
+
+# Works with ANY adapter
+dispatcher1 = QueryDispatcher(RENERYOAdapter())
+dispatcher2 = QueryDispatcher(SAPAdapter())
+```
+
+❌ **BAD: Depend on concrete class**
+```python
+class QueryDispatcher:
+    """Tightly coupled to RENERYO."""
+    def __init__(self):
+        self.adapter = RENERYOAdapter()  # ❌ Hard-coded
+    
+    def get_kpi(self, metric: str) -> KPIResult:
+        return self.adapter.get_kpi(metric)
+```
+
+---
+
+### DRY Principle (Don't Repeat Yourself)
+
+**Principle:** Every piece of knowledge should have a single representation.
+
+✅ **GOOD: Extract repeated logic**
+```python
+# ❌ BEFORE: Repeated validation
+def handle_energy_kpi(self, message):
+    if not message.data.get("metric"):
+        self.speak_dialog("error.missing_metric")
+        return
+    # ... handle energy
+
+def handle_scrap_kpi(self, message):
+    if not message.data.get("metric"):  # ❌ Duplicated
+        self.speak_dialog("error.missing_metric")
+        return
+    # ... handle scrap
+
+# ✅ AFTER: Extracted helper
+def _validate_metric(self, message) -> Optional[str]:
+    """Validate and return metric, speak error if missing."""
+    metric = message.data.get("metric")
+    if not metric:
+        self.speak_dialog("error.missing_metric")
+    return metric
+
+def handle_energy_kpi(self, message):
+    if not (metric := self._validate_metric(message)):
+        return
+    # ... handle energy
+
+def handle_scrap_kpi(self, message):
+    if not (metric := self._validate_metric(message)):
+        return
+    # ... handle scrap
+```
+
+✅ **GOOD: Use configuration over duplication**
+```python
+# ❌ BEFORE: Hardcoded mappings everywhere
+class RENERYOAdapter:
+    def get_kpi(self, metric: str):
+        if metric == "energy_per_unit":
+            reneryo_metric = "seu"
+        elif metric == "scrap_rate":
+            reneryo_metric = "scrap_pct"
+        # ... repeated in every method
+
+# ✅ AFTER: Central configuration
+class RENERYOAdapter:
+    METRIC_MAP = {
+        "energy_per_unit": "seu",
+        "scrap_rate": "scrap_pct",
+        "oee": "oee_score",
+    }
+    
+    def get_kpi(self, metric: str):
+        reneryo_metric = self.METRIC_MAP[metric]
+        # Use everywhere
+```
+
+---
+
 ### Function Standards
 
 #### Max 20 Lines Per Function
@@ -392,6 +651,42 @@ skill/adapters/reneryo/
     client.py          # HTTP client (100 lines)
     mapper.py          # Response mapping (120 lines)
     auth.py            # Authentication (80 lines)
+```
+
+#### When to Split Files
+
+**Indicators file is too large:**
+- More than 300 lines
+- Multiple unrelated classes
+- Scrolling to find code takes too long
+- Hard to name the file (doing too much)
+
+**How to split:**
+
+```python
+# BEFORE: skill/services/data_processing.py (500 lines)
+class DataValidator:
+    # 100 lines
+
+class DataTransformer:
+    # 150 lines
+
+class DataAggregator:
+    # 120 lines
+
+class DataExporter:
+    # 130 lines
+
+# AFTER: Split by responsibility
+skill/services/data/
+    __init__.py           # Re-export public classes
+    validator.py          # DataValidator (100 lines)
+    transformer.py        # DataTransformer (150 lines)
+    aggregator.py         # DataAggregator (120 lines)
+    exporter.py           # DataExporter (130 lines)
+
+# __init__.py makes import paths unchanged:
+from skill.services.data import DataValidator  # Still works!
 ```
 
 ---
@@ -580,6 +875,111 @@ def test_adapter_calls_api_with_correct_params():
     )
 ```
 
+#### Mocking External HTTP APIs
+
+```python
+import responses
+from skill.adapters.reneryo import RENERYOAdapter
+
+@responses.activate
+def test_reneryo_adapter_maps_response_correctly():
+    # Arrange: Mock HTTP response
+    responses.add(
+        responses.GET,
+        "https://api.reneryo.com/v1/metrics/seu",
+        json={
+            "seu": 45.2,
+            "unit": "kWh/piece",
+            "timestamp": "2026-02-04T10:00:00Z",
+            "confidence": 0.95
+        },
+        status=200
+    )
+    
+    adapter = RENERYOAdapter(base_url="https://api.reneryo.com")
+    
+    # Act
+    result = adapter.get_kpi("energy_per_unit", TimeFrame.THIS_WEEK)
+    
+    # Assert
+    assert result.metric == "energy_per_unit"  # Canonical name
+    assert result.value == 45.2
+    assert result.unit == "kWh/unit"  # Canonical unit
+```
+
+#### Mocking Async Functions
+
+```python
+import pytest
+from unittest.mock import AsyncMock
+
+@pytest.mark.asyncio
+async def test_query_dispatcher_calls_prevention_service():
+    # Arrange
+    mock_adapter = Mock()
+    mock_adapter.get_kpi.return_value = KPIResult(
+        metric="energy_per_unit",
+        value=45.2,
+        unit="kWh/unit",
+        timestamp=datetime.now()
+    )
+    
+    mock_prevention = AsyncMock()
+    mock_prevention.check_anomaly.return_value = None  # No anomaly
+    
+    dispatcher = QueryDispatcher(
+        adapter=mock_adapter,
+        prevention=mock_prevention
+    )
+    
+    # Act
+    await dispatcher.get_kpi_with_context("energy_per_unit")
+    
+    # Assert
+    mock_prevention.check_anomaly.assert_called_once()
+```
+
+#### Pytest Fixtures
+
+```python
+# tests/conftest.py
+import pytest
+from skill.adapters.mock import MockAdapter
+from skill.use_cases.query_dispatcher import QueryDispatcher
+
+@pytest.fixture
+def mock_adapter():
+    """Provide MockAdapter for tests."""
+    return MockAdapter()
+
+@pytest.fixture
+def query_dispatcher(mock_adapter):
+    """Provide QueryDispatcher with MockAdapter."""
+    return QueryDispatcher(adapter=mock_adapter)
+
+@pytest.fixture
+def sample_kpi_result():
+    """Provide sample KPIResult for tests."""
+    return KPIResult(
+        metric="energy_per_unit",
+        value=45.2,
+        unit="kWh/unit",
+        timestamp=datetime.now()
+    )
+
+# tests/test_query_dispatcher.py
+def test_get_kpi_with_valid_metric_returns_result(query_dispatcher):
+    # Arrange (query_dispatcher fixture already set up)
+    metric = "energy_per_unit"
+    
+    # Act
+    result = query_dispatcher.get_kpi(metric, TimeFrame.THIS_WEEK)
+    
+    # Assert
+    assert isinstance(result, KPIResult)
+    assert result.metric == metric
+```
+
 ---
 
 ## Git Workflow
@@ -680,6 +1080,152 @@ more changes
 - **Squash merge** - Emre's PRs (cleaner history)
 - **Rebase merge** - Lead's PRs (preserves atomic commits)
 - **Merge commit** - Large features with multiple developers
+
+---
+
+## AVAROS Conventions
+
+### Universal Metric Names
+
+Always use canonical names from Universal Metric Framework. **Never use platform-specific terms.**
+
+| Category | Canonical Metrics |
+|----------|-------------------|
+| **Energy** | `energy_per_unit`, `energy_total`, `peak_demand`, `peak_tariff_exposure` |
+| **Material** | `scrap_rate`, `rework_rate`, `material_efficiency`, `recycled_content` |
+| **Supplier** | `supplier_lead_time`, `supplier_defect_rate`, `supplier_on_time`, `supplier_co2_per_kg` |
+| **Production** | `oee`, `throughput`, `cycle_time`, `changeover_time` |
+| **Carbon** | `co2_per_unit`, `co2_total`, `co2_per_batch` |
+| **Batch/Lot** | `batch_yield`, `batch_energy`, `lot_quality_score` |
+| **Schedule** | `shift_load`, `machine_mix`, `schedule_cost` |
+
+**Platform-Specific Mapping Examples:**
+
+| Canonical | RENERYO | SAP | Siemens |
+|-----------|---------|-----|----------|
+| `energy_per_unit` | `seu` | `energyPerPiece` | `specificEnergy` |
+| `scrap_rate` | `scrap_pct` | `scrapPercentage` | `wasteRatio` |
+| `oee` | `oee_score` | `oeeValue` | `overallEquipmentEfficiency` |
+
+**Usage:**
+```python
+# ✅ GOOD: Use canonical name
+result = query_dispatcher.get_kpi("energy_per_unit", timeframe)
+
+# ❌ BAD: Platform-specific term
+result = query_dispatcher.get_kpi("seu", timeframe)  # RENERYO-specific
+```
+
+---
+
+### Intent Naming Convention
+
+**Format:** `{query_type}.{domain}.{detail}.intent`
+
+**Query Types:**
+- `kpi` - KPI retrieval
+- `compare` - Comparison queries
+- `trend` - Trend analysis
+- `anomaly` - Anomaly detection
+- `whatif` - What-if simulation
+
+**Examples:**
+```
+kpi.energy.per_unit.intent           # "What's our energy per unit?"
+kpi.oee.intent                        # "What's our OEE?"
+kpi.scrap_rate.intent                 # "What's the scrap rate?"
+
+compare.supplier.performance.intent   # "Compare Supplier A and B"
+compare.energy.shifts.intent          # "Compare energy between shifts"
+
+trend.scrap.monthly.intent            # "Show scrap trend last 3 months"
+trend.energy.weekly.intent            # "Energy trend this week"
+
+anomaly.production.check.intent       # "Any unusual patterns?"
+anomaly.energy.detect.intent          # "Detect energy anomalies"
+
+whatif.material.substitute.intent     # "What if we use recycled plastic?"
+whatif.temperature.change.intent      # "What if we increase temperature?"
+```
+
+**Intent File Structure:**
+```
+skill/locale/en-us/
+    kpi.energy.per_unit.intent
+    kpi.energy.response.dialog
+    compare.supplier.performance.intent
+    compare.supplier.response.dialog
+```
+
+---
+
+### Adapter Response Mapping
+
+Platform responses MUST be mapped to canonical format.
+
+✅ **GOOD: Map to canonical KPIResult**
+```python
+class RENERYOAdapter:
+    METRIC_MAP = {
+        "energy_per_unit": "seu",
+        "scrap_rate": "scrap_pct",
+        "oee": "oee_score",
+    }
+    
+    def get_kpi(self, metric: str, timeframe: TimeFrame) -> KPIResult:
+        # Translate canonical → platform-specific
+        platform_metric = self.METRIC_MAP[metric]
+        
+        # Fetch from platform
+        response = self._api_client.get(f"/reneryo/{platform_metric}")
+        
+        # Map back to canonical format
+        return KPIResult(
+            metric=metric,  # ✅ Canonical name
+            value=response["value"],
+            unit=self._canonical_unit(response["unit"]),  # Convert unit
+            timestamp=parse_datetime(response["ts"]),
+            metadata={
+                "source": "RENERYO",
+                "confidence": response.get("confidence"),
+                "raw_metric": platform_metric  # For debugging
+            }
+        )
+```
+
+❌ **BAD: Exposing platform-specific format**
+```python
+def get_kpi(self, metric: str) -> dict:
+    # ❌ Returns raw platform response
+    return self._api_client.get(f"/reneryo/{metric}")
+```
+
+---
+
+### Five Query Types
+
+All user queries map to one of these types:
+
+| Type | Purpose | Example | Adapter Method |
+|------|---------|---------|----------------|
+| **KPI Retrieval** | Get current/historical value | "Energy per unit this week?" | `get_kpi()` |
+| **Comparison** | Compare entities | "Compare Supplier A vs B" | `compare()` |
+| **Trend** | Analyze over time | "Energy trend last 3 months" | `get_trend()` |
+| **Anomaly** | Detect unusual patterns | "Any unusual spikes?" | `check_anomaly()` |
+| **What-If** | Simulate scenarios | "If we switch material..." | `simulate_whatif()` |
+
+**Implementation Pattern:**
+```python
+class QueryDispatcher:
+    def handle_query(self, query_type: QueryType, params: dict):
+        if query_type == QueryType.KPI:
+            return self.get_kpi(params["metric"], params["timeframe"])
+        elif query_type == QueryType.COMPARISON:
+            return self.compare(params["entities"], params["metric"])
+        elif query_type == QueryType.TREND:
+            return self.get_trend(params["metric"], params["period"])
+        # ... etc
+```
 
 ---
 
