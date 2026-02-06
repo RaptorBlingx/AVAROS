@@ -4,7 +4,7 @@
 
 > **Status:** Phase 1 Complete (Deployment & Integration)  
 > **Last Updated:** February 6, 2026  
-> **Team:** Lead Developer + Emre (Junior Developer)
+> **Team:** Mohamad (Lead) + Emre (Developer)
 
 ---
 
@@ -18,7 +18,7 @@ AVAROS lets manufacturing teams ask questions like:
 
 ### Key Features
 - 🎤 **Voice-first interface** via OVOS (Open Voice OS)
-- 📊 **Platform-agnostic design** - works with RENERYO, SAP, Siemens MindSphere, etc.
+- 📊 **Platform-agnostic design** - works with RENERYO, EnergySuite, GreenMetrics, or any energy/manufacturing platform
 - 📈 **Universal metrics** - canonical manufacturing concepts (energy_per_unit, scrap_rate, oee)
 - 🔒 **GDPR-compliant** - audit trails, RBAC, data minimization
 - 🐳 **Docker-based deployment** - easy setup and scaling
@@ -36,15 +36,14 @@ AVAROS lets manufacturing teams ask questions like:
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOURUSERNAME/avaros-ovos-skill.git
-cd avaros-ovos-skill
+git clone https://code.arti.ac/europe/AVAROS.git
+cd AVAROS
 
 # Start AVAROS with Docker
 docker compose up
 
-# The system will be available at:
-# - OVOS GUI: http://localhost:8181
-# - AVAROS Web UI: http://localhost:5000 (coming in Phase 2)
+# AVAROS Web UI will be available at:
+# - http://localhost:5000 (coming in Phase 2)
 ```
 
 ### First Run (Zero-Config)
@@ -53,8 +52,8 @@ AVAROS works out-of-the-box with mock data:
 - Demo KPIs available immediately
 - Perfect for testing and learning
 
-### Connect to Real Platform (RENERYO, SAP, etc.)
-Configuration is done via the Web UI (Phase 2) or Settings API. See [docs/DEPLOYMENT-SETUP.md](docs/DEPLOYMENT-SETUP.md) for details.
+### Connect to Real Platform
+Configuration is done via the Web UI (Phase 2) or Settings API. Supports RENERYO and other energy management platforms with REST/MQTT/OPC-UA interfaces.
 
 ---
 
@@ -78,24 +77,12 @@ avaros-ovos-skill/
 │   │   ├── settings.py        # SettingsService (config management)
 │   │   ├── audit.py           # AuditService (GDPR compliance)
 │   │   └── response_builder.py  # Dialog response formatting
-│   └── locale/                # Intents and dialogs (en-us, tr-tr coming)
+│   └── locale/                # Intents and dialogs
 ├── tests/                      # Test suite (pytest)
 ├── docker/                     # Docker artifacts
 │   ├── Dockerfile             # AVAROS container
 │   └── docker-compose.avaros.yml  # AVAROS service definition
-├── docs/                       # Documentation
-│   ├── AVAROS-ARCHITECTURE-IMPLEMENTATION-PLAN.md
-│   ├── TODO.md                # Active task list
-│   ├── DECISIONS.md           # Architecture decision log
-│   └── tasks/                 # Detailed task specifications
-└── .github/
-    ├── agents/                # Custom Copilot agents
-    │   ├── planner.md         # @planner agent
-    │   ├── lead-dev.md        # @lead-dev agent
-    │   ├── quality.md         # @quality agent
-    │   ├── pr-review.md       # @pr-review agent
-    │   └── git.md             # @git agent
-    └── instructions/          # Protocol documentation
+└── README.md                   # This file
 ```
 
 ---
@@ -108,15 +95,13 @@ AVAROS follows [Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/0
 
 | DEC | Principle | Why It Matters |
 |-----|-----------|----------------|
-| **DEC-001** | Platform-Agnostic Design | Works with ANY backend (RENERYO, SAP, etc.) |
-| **DEC-002** | Universal Metric Framework | Canonical names (`energy_per_unit` not `seu`) |
+| **DEC-001** | Platform-Agnostic Design | Works with ANY energy/manufacturing platform |
+| **DEC-002** | Universal Metric Framework | Canonical names (`energy_per_unit` not platform-specific terms) |
 | **DEC-003** | Clean Architecture | Domain never imports infrastructure |
 | **DEC-004** | Immutable Domain Models | Thread-safe, predictable (`frozen=True`) |
 | **DEC-005** | Zero-Config First Run | `docker compose up` → working system |
 | **DEC-006** | Settings Service Pattern | No hardcoded credentials |
 | **DEC-007** | Intelligence in Orchestration | Adapters are dumb data fetchers |
-
-**Full details:** [docs/AVAROS-ARCHITECTURE-IMPLEMENTATION-PLAN.md](docs/AVAROS-ARCHITECTURE-IMPLEMENTATION-PLAN.md)
 
 ---
 
@@ -145,21 +130,8 @@ python test_e2e.py
 ## 👥 Development Workflow
 
 ### Team Structure
-- **Lead Developer:** Architecture, domain layer, adapters, orchestration
-- **Emre (Junior Developer):** Web UI, intents, dialogs, tests, Docker
-
-### Custom Agents
-AVAROS uses 5 specialized GitHub Copilot agents:
-
-| Agent | Purpose | Example |
-|-------|---------|---------|
-| `@planner` | Task planning, TODO generation | `@planner Create Phase 2 TODO` |
-| `@lead-dev` | Lead developer tasks | `@lead-dev Do task P1-L05` |
-| `@quality` | Expert code review | `@quality Review P1-L04` |
-| `@pr-review` | Emre's PR review + teaching | `@pr-review Review PR #5` |
-| `@git` | Git operations with approval | `@git Create PR for P1-L04` |
-
-**See:** [docs/AGENT-SYSTEM-PLAN.md](docs/AGENT-SYSTEM-PLAN.md)
+- **Mohamad (Lead):** Architecture, domain layer, adapters, orchestration
+- **Emre (Developer):** Web UI, intents, dialogs, tests, Docker
 
 ### Git Workflow
 - Protected `main` branch - NO direct pushes
@@ -186,35 +158,19 @@ Closes P1-L05
 
 ## 📚 Documentation
 
-| Document | Purpose |
-|----------|---------|
-| [GETTING-STARTED.md](GETTING-STARTED.md) | Development workflow guide |
-| [docs/TODO.md](docs/TODO.md) | Current tasks and progress |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | Architecture decision log (DEC-XXX) |
-| [docs/AVAROS-ARCHITECTURE-IMPLEMENTATION-PLAN.md](docs/AVAROS-ARCHITECTURE-IMPLEMENTATION-PLAN.md) | Complete architecture specification |
-| [docs/DEPLOYMENT-SETUP.md](docs/DEPLOYMENT-SETUP.md) | Docker deployment guide |
-| [docs/tasks/](docs/tasks/) | Detailed task specifications |
-| [.github/instructions/](..github/instructions/) | Protocol documentation (agents reference these) |
+Detailed documentation is maintained locally for development purposes. For architecture and deployment information, refer to code comments and Docker configuration files.
 
 ---
 
-## 🎓 Onboarding for Emre
-
-If you're Emre joining the project, start here:
+## 🎓 Getting Started
 
 1. **Read this README** (you are here! ✅)
-2. **Clone and run:** `git clone` → `docker compose up`
-3. **Complete P1-E00:** [docs/tasks/P1-E00-codebase-onboarding.md](docs/tasks/P1-E00-codebase-onboarding.md)
-4. **Read architecture:** [docs/AVAROS-ARCHITECTURE-IMPLEMENTATION-PLAN.md](docs/AVAROS-ARCHITECTURE-IMPLEMENTATION-PLAN.md)
-5. **Learn protocols:** [.github/instructions/avaros-protocols.instructions.md](.github/instructions/avaros-protocols.instructions.md)
+2. **Clone and run:** `git clone https://code.arti.ac/europe/AVAROS.git` → `cd AVAROS` → `docker compose up`
+3. **Explore the architecture:** Understand domain models, adapters, and use cases
+4. **Run tests:** `pytest tests/ -v`
+5. **Check assigned issues:** Tasks are managed via Forgejo issues/kanban board
 
-### Your First Tasks
-- **P1-E00:** Codebase onboarding (explores structure, runs tests)
-- **P1-E01:** Add unit tests (80%+ coverage)
-- **P1-E02:** Turkish locale (tr-tr dialogs and intents)
-- **P1-E03:** Docker dev environment improvements
-
-**Note:** Work on feature branches, submit PRs for review. First-time approval = full story points! 🎯
+**Note:** Work on feature branches, submit PRs for review.
 
 ---
 
@@ -225,8 +181,6 @@ If you're Emre joining the project, start here:
 - **No hardcoded credentials** - use SettingsService
 - **Immutable audit trails** for recommendations
 
-**See:** [docs/AVAROS-ARCHITECTURE-IMPLEMENTATION-PLAN.md#security-compliance](docs/AVAROS-ARCHITECTURE-IMPLEMENTATION-PLAN.md)
-
 ---
 
 ## 🗺️ Roadmap
@@ -236,8 +190,7 @@ If you're Emre joining the project, start here:
 - [x] AVAROS Docker integration
 - [x] Skill loads in OVOS
 - [x] End-to-end voice test
-- [x] GitHub repository setup
-- [ ] Emre onboarding tasks (P1-E00 to P1-E03)
+- [x] Forgejo repository setup
 
 ### Phase 2: Intelligence Layer (Planned)
 - [ ] DocuBoT integration (RAG for procedures/specs)
@@ -246,7 +199,7 @@ If you're Emre joining the project, start here:
 - [ ] Web UI (React dashboard)
 
 ### Phase 3: Production Hardening (Planned)
-- [ ] Multi-platform adapters (SAP, Siemens)
+- [ ] Multi-platform adapters (additional energy management systems)
 - [ ] Advanced queries (What-If scenarios)
 - [ ] WASABI Consortium integration
 - [ ] Turkish localization (tr-tr)
@@ -264,18 +217,8 @@ If you're Emre joining the project, start here:
 This is a private repository for the AVAROS development team. For external contributions, please contact the project lead.
 
 ### Team Members
-- **Lead Developer:** [Your name/contact]
-- **Junior Developer:** Emre - [GitHub: @EmresGitHubUsername]
-
----
-
-## 📞 Support
-
-For questions or issues:
-- **Architecture:** Review [docs/AVAROS-ARCHITECTURE-IMPLEMENTATION-PLAN.md](docs/AVAROS-ARCHITECTURE-IMPLEMENTATION-PLAN.md)
-- **Tasks:** Check [docs/TODO.md](docs/TODO.md)
-- **Decisions:** See [docs/DECISIONS.md](docs/DECISIONS.md)
-- **Agents:** Use `@agent-name` in GitHub Copilot Chat
+- **Mohamad (Lead):** Architecture & Core Development
+- **Emre (Developer):** UI, Intents & Testing
 
 ---
 
