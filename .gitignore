@@ -57,3 +57,16 @@ docker/logs/
 *.tmp
 *.bak
 *.backup
+
+# Project-specific ignores
+.github/
+docs/
+run_tests.sh
+TESTING-SUMMARY.md
+GETTING-STARTED.md
+
+# Markdown files (add specific ones explicitly if needed, e.g., !README.md)
+*.md
+
+# Allow specific markdown files when needed
+!README.md
