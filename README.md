@@ -89,7 +89,9 @@ avaros-ovos-skill/
 
 ## 🏗️ Architecture Principles
 
-AVAROS follows [Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html) with strict layer separation:
+AVAROS follows [Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html) with strict layer separation.
+
+**📖 Complete development standards:** See [DEVELOPMENT.md](DEVELOPMENT.md) for detailed guidelines, code examples, and best practices.
 
 ### Design Decisions (DEC-001 to DEC-007)
 
@@ -102,6 +104,8 @@ AVAROS follows [Clean Architecture](https://blog.cleancoder.com/uncle-bob/2012/0
 | **DEC-005** | Zero-Config First Run | `docker compose up` → working system |
 | **DEC-006** | Settings Service Pattern | No hardcoded credentials |
 | **DEC-007** | Intelligence in Orchestration | Adapters are dumb data fetchers |
+
+**Full details with code examples:** [DEVELOPMENT.md](DEVELOPMENT.md)
 
 ---
 

@@ -65,8 +65,9 @@ run_tests.sh
 TESTING-SUMMARY.md
 GETTING-STARTED.md
 
-# Markdown files (add specific ones explicitly if needed, e.g., !README.md)
+# Markdown files (add specific ones explicitly if needed)
 *.md
 
-# Allow specific markdown files when needed
+# Allow specific markdown files
 !README.md
+!DEVELOPMENT.md
