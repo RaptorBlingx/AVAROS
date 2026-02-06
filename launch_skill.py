@@ -8,9 +8,11 @@ connecting it to the OVOS messagebus for intent handling.
 
 import sys
 import logging
+import time
 from pathlib import Path
 
-# Add skill directory to Python path
+# Ensure skill package is importable when running as standalone script
+# The Dockerfile sets WORKDIR=/opt/avaros, making 'skill' a package
 skill_dir = Path(__file__).parent / "skill"
 sys.path.insert(0, str(skill_dir.parent))
 
@@ -25,7 +27,7 @@ logging.basicConfig(
 logger = logging.getLogger("AVAROS")
 
 
-def main():
+def main() -> None:
     """Main entry point for AVAROS skill."""
     logger.info("Starting AVAROS skill...")
     
@@ -47,8 +49,8 @@ def main():
             logger.info("Manually triggering skill initialization...")
             skill.initialize()
         
-        # Wait for skill to be fully ready
-        import time
+        # Allow messagebus connection to stabilize before processing intents
+        # TODO PHASE 2: Replace with bus.connected_event.wait() for deterministic startup
         time.sleep(2)
         
         logger.info("AVAROS skill initialized successfully!")
@@ -56,7 +58,6 @@ def main():
         
         # Keep the skill running
         # The skill's bus client will handle events in the background
-        import time
         while True:
             time.sleep(1)
             

@@ -1,5 +1,3 @@
-version: '3.8'
-
 # AVAROS Skill Docker Compose Configuration
 # 
 # This compose file deploys AVAROS as a separate container that joins the

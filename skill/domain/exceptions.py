@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+# TODO PHASE 2: Consider frozen=True with computed defaults in __init__
+# Current: Uses __post_init__ mutation, acceptable for Exception types
 @dataclass
 class AVAROSError(Exception):
     """

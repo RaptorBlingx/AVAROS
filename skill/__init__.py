@@ -15,6 +15,7 @@ Golden Rule:
     Adapters understand platform-specific APIs.
 """
 
+from typing import Callable, Any
 from ovos_workshop.skills import OVOSSkill
 from ovos_workshop.decorators import intent_handler
 
@@ -67,6 +68,26 @@ class AVAROSSkill(OVOSSkill):
         self.dispatcher = QueryDispatcher(adapter=adapter)
         self.log.info("AVAROS skill initialized with adapter: %s", type(adapter).__name__)
 
+    def _safe_dispatch(self, handler_name: str, action: Callable) -> Any:
+        """Safely execute a dispatch action with error handling.
+        
+        Args:
+            handler_name: Name of the handler for logging
+            action: Callable that performs the query and speaks response
+            
+        Returns:
+            Result from action() or None if error occurred
+        """
+        if self.dispatcher is None:
+            self.speak("AVAROS is still initializing. Please try again.")
+            return None
+        try:
+            return action()
+        except Exception as e:
+            self.log.error("Error in %s: %s", handler_name, e, exc_info=True)
+            self.speak("Sorry, I encountered an error. Please try again.")
+            return None
+
     # =========================================================================
     # KPI Query Handlers
     # =========================================================================
@@ -74,24 +95,27 @@ class AVAROSSkill(OVOSSkill):
     @intent_handler("kpi.energy.per_unit.intent")
     def handle_kpi_energy_per_unit(self, message):
         """Handle: 'What's the energy per unit for {asset}?'"""
-        asset_id = message.data.get("asset", "default")
-        period = self._parse_period(message.data.get("period", "today"))
+        def _execute():
+            asset_id = message.data.get("asset", "default")
+            period = self._parse_period(message.data.get("period", "today"))
+            
+            result: KPIResult = self.dispatcher.get_kpi(
+                metric=CanonicalMetric.ENERGY_PER_UNIT,
+                asset_id=asset_id,
+                period=period
+            )
+            
+            self.speak_dialog(
+                "kpi.energy.response",
+                data={
+                    "asset_name": result.asset_id,
+                    "value": f"{result.value:.2f}",
+                    "unit": result.unit,
+                    "period": result.period.display_name
+                }
+            )
         
-        result: KPIResult = self.dispatcher.get_kpi(
-            metric=CanonicalMetric.ENERGY_PER_UNIT,
-            asset_id=asset_id,
-            period=period
-        )
-        
-        self.speak_dialog(
-            "kpi.energy.response",
-            data={
-                "asset_name": result.asset_id,
-                "value": f"{result.value:.2f}",
-                "unit": result.unit,
-                "period": result.period.display_name
-            }
-        )
+        self._safe_dispatch("handle_kpi_energy_per_unit", _execute)
 
     @intent_handler("kpi.oee.intent")
     def handle_kpi_oee(self, message):

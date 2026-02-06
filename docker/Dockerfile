@@ -42,7 +42,6 @@ RUN mkdir -p /home/ovos/.config/mycroft /tmp/mycroft /opt/avaros/logs && \
 
 # Copy application code
 COPY --chown=ovos:ovos skill/ ./skill/
-COPY --chown=ovos:ovos skill/locale/ ./skill/locale/
 COPY --chown=ovos:ovos launch_skill.py ./launch_skill.py
 
 # Make launcher executable

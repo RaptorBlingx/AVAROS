@@ -31,7 +31,7 @@ class E2ETestRunner:
         self.start_time = None
         self.end_time = None
         
-    def connect(self):
+    def connect(self) -> None:
         """Connect to OVOS message bus."""
         print(f"Connecting to message bus at {MESSAGEBUS_HOST}:{MESSAGEBUS_PORT}")
         self.client = MessageBusClient(host=MESSAGEBUS_HOST, port=MESSAGEBUS_PORT)
@@ -39,7 +39,7 @@ class E2ETestRunner:
         time.sleep(2)  # Allow connection to establish
         print("✓ Connected to message bus")
         
-    def on_speak(self, message):
+    def on_speak(self, message: Message) -> None:
         """Handle speak messages from skill."""
         self.response_received = True
         self.end_time = time.time()
@@ -111,14 +111,14 @@ class E2ETestRunner:
         
         return result
         
-    def disconnect(self):
+    def disconnect(self) -> None:
         """Disconnect from message bus."""
         if self.client:
             self.client.close()
             print("\n✓ Disconnected from message bus")
 
 
-def main():
+def main() -> int:
     """Run end-to-end tests."""
     print("="*60)
     print("AVAROS End-to-End Test Suite")
