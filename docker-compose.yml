@@ -1,5 +1,11 @@
-# AVAROS Docker Compose - Zero-Config Deployment
-# 
+# AVAROS Docker Compose - STANDALONE Mode
+#
+# This file runs AVAROS with its OWN bundled ovos-core.
+# Use for: CI/CD, demos, or environments without WASABI.
+#
+# For WASABI integration (development), use instead:
+#   docker compose -f docker/docker-compose.avaros.yml up -d
+#
 # Usage:
 #   docker compose up -d          # Start all services
 #   docker compose logs -f avaros # View logs

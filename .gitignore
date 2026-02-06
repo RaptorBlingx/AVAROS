@@ -61,13 +61,8 @@ docker/logs/
 # Project-specific ignores
 .github/
 docs/
-run_tests.sh
-TESTING-SUMMARY.md
-GETTING-STARTED.md
 
-# Markdown files (add specific ones explicitly if needed)
+# Markdown files (tracked exceptions below)
 *.md
-
-# Allow specific markdown files
 !README.md
 !DEVELOPMENT.md
