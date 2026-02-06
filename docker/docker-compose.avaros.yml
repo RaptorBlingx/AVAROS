@@ -1,0 +1,81 @@
+version: '3.8'
+
+# AVAROS Skill Docker Compose Configuration
+# 
+# This compose file deploys AVAROS as a separate container that joins the
+# WASABI OVOS network (per DEC-010). The skill connects to the OVOS message
+# bus and uses MockAdapter by default (DEC-005: zero-config).
+#
+# Usage:
+#   docker compose -f docker-compose.avaros.yml up -d
+#   docker compose -f docker-compose.avaros.yml logs -f
+
+services:
+  avaros_skill:
+    container_name: avaros_skill
+    hostname: avaros_skill
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    
+    # Join WASABI OVOS network
+    networks:
+      - ovos
+    
+    # Mount WASABI OVOS shared volumes and skill code
+    volumes:
+      # WASABI OVOS config (read-write for skill settings)
+      - ../../wasabi-ovos/ovos/config:/home/ovos/.config/mycroft:rw
+      
+      # WASABI OVOS tmp directory (read-write)
+      - ../../wasabi-ovos/ovos/tmp:/tmp/mycroft:rw
+      
+      # Mount skill code for hot-reload during development
+      - ../skill:/opt/avaros/skill:ro
+      
+      # Mount locale files (intents & dialogs)
+      - ../skill/locale:/opt/avaros/skill/locale:ro
+      
+      # Logs directory (persistent)
+      - ./logs:/opt/avaros/logs:rw
+    
+    # Environment configuration
+    environment:
+      # Adapter configuration (DEC-005: MockAdapter default)
+      - ADAPTER_TYPE=mock
+      
+      # Logging configuration
+      - LOG_LEVEL=INFO
+      - AVAROS_LOG_LEVEL=INFO
+      
+      # OVOS configuration
+      - OVOS_CONFIG_BASE_FOLDER=mycroft
+      - OVOS_CONFIG_FILENAME=mycroft.conf
+      
+      # Python environment
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+    
+    # Health check: verify skill is running
+    healthcheck:
+      test: ["CMD", "python", "-c", "from skill import AVAROSSkill; print('OK')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    
+    # Resource limits (optional, adjust as needed)
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+# External network created by WASABI OVOS stack
+networks:
+  ovos:
+    external: true

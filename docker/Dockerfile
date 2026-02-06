@@ -1,10 +1,16 @@
 # AVAROS OVOS Skill - Docker Image
-# Multi-stage build for optimized image size
+# Simplified single-stage build for OVOS integration
 
 # ============================================================================
-# Stage 1: Base Python image with dependencies
+# Base: Python 3.10 (matching OVOS requirements)
 # ============================================================================
-FROM python:3.11-slim as base
+FROM python:3.10-slim
+
+# Labels for container metadata
+LABEL org.opencontainers.image.title="AVAROS OVOS Skill" \
+      org.opencontainers.image.description="AI Voice Assistant for Manufacturing KPIs" \
+      org.opencontainers.image.version="0.1.0" \
+      org.opencontainers.image.vendor="AVAROS Project"
 
 # Prevent Python from writing bytecode and buffering stdout/stderr
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -16,58 +22,46 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     git \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# ============================================================================
-# Stage 2: Builder - Install Python dependencies
-# ============================================================================
-FROM base as builder
+# Create ovos user (uid 1000) to match WASABI conventions
+RUN groupadd --gid 1000 ovos && \
+    useradd --uid 1000 --gid ovos --shell /bin/bash --create-home ovos
 
-WORKDIR /app
+# Set working directory
+WORKDIR /opt/avaros
 
-# Copy requirements first for better layer caching
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
-RUN pip install --user -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# ============================================================================
-# Stage 3: Runtime - Final slim image
-# ============================================================================
-FROM python:3.11-slim as runtime
-
-# Labels for container metadata
-LABEL org.opencontainers.image.title="AVAROS OVOS Skill" \
-      org.opencontainers.image.description="AI Voice Assistant for Manufacturing KPIs" \
-      org.opencontainers.image.version="0.1.0" \
-      org.opencontainers.image.vendor="AVAROS Project"
-
-# Runtime environment
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    AVAROS_LOG_LEVEL=INFO \
-    AVAROS_DATA_PATH=/data
-
-# Create non-root user for security
-RUN groupadd --gid 1000 avaros && \
-    useradd --uid 1000 --gid avaros --shell /bin/bash --create-home avaros
-
-# Copy installed packages from builder
-COPY --from=builder /root/.local /home/avaros/.local
-ENV PATH=/home/avaros/.local/bin:$PATH
-
-# Create data directory for SQLite persistence
-RUN mkdir -p /data && chown avaros:avaros /data
-VOLUME /data
+# Create directories for OVOS configuration
+RUN mkdir -p /home/ovos/.config/mycroft /tmp/mycroft /opt/avaros/logs && \
+    chown -R ovos:ovos /home/ovos /tmp/mycroft /opt/avaros
 
 # Copy application code
-WORKDIR /app
-COPY --chown=avaros:avaros . .
+COPY --chown=ovos:ovos skill/ ./skill/
+COPY --chown=ovos:ovos skill/locale/ ./skill/locale/
+COPY --chown=ovos:ovos launch_skill.py ./launch_skill.py
 
-# Switch to non-root user
-USER avaros
+# Make launcher executable
+RUN chmod +x ./launch_skill.py
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "from skill import AVAROSSkill; print('OK')" || exit 1
+# Switch to ovos user
+USER ovos
 
-# Default command (can be overridden in docker-compose)
-CMD ["python", "-m", "skill"]
+# Environment variables for AVAROS
+ENV ADAPTER_TYPE=mock \
+    LOG_LEVEL=INFO \
+    AVAROS_LOG_LEVEL=INFO \
+    PATH=/home/ovos/.local/bin:$PATH
+
+# Health check: verify skill can be imported
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD python -c "from skill import AVAROSSkill; print('Skill OK')" || exit 1
+
+# Default command: Run the skill launcher
+# This will connect to OVOS messagebus and register intents
+CMD ["python", "/opt/avaros/launch_skill.py"]
+

@@ -45,7 +45,13 @@ class AVAROSSkill(OVOSSkill):
     
     def __init__(self, *args, **kwargs):
         """Initialize skill with default MockAdapter for zero-config deployment."""
+        # Set root directory before super().__init__() so OVOS can find locale files
+        # Use the directory containing this __init__.py file
+        from pathlib import Path
+        self._dir = str(Path(__file__).parent)
+        
         super().__init__(*args, **kwargs)
+        
         self.adapter_factory: AdapterFactory | None = None
         self.dispatcher: QueryDispatcher | None = None
 

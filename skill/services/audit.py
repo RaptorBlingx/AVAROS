@@ -59,7 +59,7 @@ class AuditLogModel(Base):
     asset_id = Column(String(100), nullable=False, index=True)
     recommendation_id = Column(String(50), nullable=True)
     response_summary = Column(String(500), nullable=True)
-    metadata = Column(JSON, nullable=True)
+    query_metadata = Column(JSON, nullable=True)  # Renamed from 'metadata' (SQLAlchemy reserved)
     
     def __repr__(self) -> str:
         return f"<AuditLog(query_id={self.query_id}, type={self.query_type})>"
@@ -205,7 +205,7 @@ class AuditLogger:
                 asset_id=asset_id,
                 recommendation_id=recommendation_id,
                 response_summary=response_summary,
-                metadata=metadata,
+                query_metadata=metadata,
             )
             
             session.add(log_entry)
@@ -258,7 +258,7 @@ class AuditLogger:
                     asset_id=log.asset_id,
                     recommendation_id=log.recommendation_id,
                     response_summary=log.response_summary,
-                    metadata=log.metadata,
+                    metadata=log.query_metadata,
                 )
                 for log in logs
             ]
@@ -290,7 +290,7 @@ class AuditLogger:
                 asset_id=log.asset_id,
                 recommendation_id=log.recommendation_id,
                 response_summary=log.response_summary,
-                metadata=log.metadata,
+                metadata=log.query_metadata,
             )
     
     def get_recent_logs(self, limit: int = 100) -> list[AuditLogEntry]:
@@ -323,7 +323,7 @@ class AuditLogger:
                     asset_id=log.asset_id,
                     recommendation_id=log.recommendation_id,
                     response_summary=log.response_summary,
-                    metadata=log.metadata,
+                    metadata=log.query_metadata,
                 )
                 for log in logs
             ]

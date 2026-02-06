@@ -254,9 +254,10 @@ class QueryDispatcher:
         # For now, return mock result for testing
         from skill.domain.results import AnomalyResult
         from datetime import datetime
-        result = AnomalyResult(\n            is_anomalous=False,
+        result = AnomalyResult(
+            is_anomalous=False,
             anomalies=[],
-            severity=\"none\",
+            severity="none",
             asset_id=asset_id,
             metric=metric,
             recommendation_id=self._generate_query_id(),
@@ -309,7 +310,7 @@ class QueryDispatcher:
             delta_percent=-5.0,
             confidence=0.75,
             factors={param.name: param.delta for param in scenario.parameters},
-            unit=\"units\",
+            unit="units",
             recommendation_id=self._generate_query_id(),
         )
         
