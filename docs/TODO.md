@@ -1,54 +1,55 @@
 # AVAROS Active TODO
 
-> Last Updated: 2026-02-06 by @lead-dev
-> Current Phase: Phase 1 — Deployment & Integration
+> Last Updated: 2026-02-07 by Lead (manual — agent system v3 reset)
+> Current Phase: Phase 1 — Foundation
+> Previous tasks archived to: `docs/archives/tasks-v1/`
 
 ## Quick Status
-- Lead: 4/5 tasks done | Next: **P1-L05**
-- Emre: On learning tasks (task2→task3→task5) | Next after L05: **P1-E00**
-- Blocked: DocuBoT/PREVENTION = Phase 2 (waiting on WASABI consortium)
+- Lead: All Phase 1 deployment tasks done (L01–L04). L05 (repo setup) in progress.
+- Emre: Completing learning tasks (task3 → task5). No AVAROS tasks assigned yet.
+- Blocked: DocuBoT/PREVENTION = Phase 2+ (waiting on WASABI consortium)
+- **Task queue: EMPTY — invoke `@task-planner` to create next batch**
 
 ---
 
-## Lead Tasks (Deployment Pipeline)
+## Lead Tasks
 
-| ID | Task | Pts | Status | Deps | Spec |
-|----|------|-----|--------|------|------|
-| P1-L01 | Deploy WASABI OVOS locally | 3 | ✅ DONE | — | [Spec](tasks/P1-L01-deploy-wasabi-ovos.md) |
-| P1-L02 | Create AVAROS Docker integration | 5 | ✅ DONE | P1-L01 | [Spec](tasks/P1-L02-avaros-docker-integration.md) |
-| P1-L03 | Test skill loads in OVOS | 3 | ✅ DONE | P1-L02 | [Spec](tasks/P1-L03-test-skill-loads.md) |
-| P1-L04 | End-to-end voice test | 5 | ✅ DONE | P1-L03 | [Spec](tasks/P1-L04-e2e-voice-test.md) |
-| P1-L05 | Create GitHub repo for team | 3 | 🔄 IN PROGRESS | P1-L04 | [Spec](tasks/P1-L05-github-repo-setup.md) |
+| ID | Task | Pts | Status | Deps |
+|----|------|-----|--------|------|
+| P1-L01 | Deploy WASABI OVOS locally | 3 | ✅ DONE | — |
+| P1-L02 | Create AVAROS Docker integration | 5 | ✅ DONE | P1-L01 |
+| P1-L03 | Test skill loads in OVOS | 3 | ✅ DONE | P1-L02 |
+| P1-L04 | End-to-end voice test | 5 | ✅ DONE | P1-L03 |
+| P1-L05 | GitHub/Forgejo repo setup for team | 3 | 🔄 IN PROGRESS | P1-L04 |
 
-**Lead total:** 19 points
-
----
-
-## Emre Tasks (After GitHub Repo Ready)
-
-| ID | Task | Pts | Status | Deps | Spec |
-|----|------|-----|--------|------|------|
-| P1-E00 | Codebase onboarding (REQUIRED) | 2 | ⬜ TODO | P1-L05 | [Spec](tasks/P1-E00-codebase-onboarding.md) |
-| P1-E01 | Add unit tests (80%+ coverage) | 5 | ⬜ TODO | P1-E00 | [Spec](tasks/P1-E01-unit-tests.md) |
-| P1-E02 | Turkish locale (tr-tr) | 3 | ⬜ TODO | P1-E00 | [Spec](tasks/P1-E02-turkish-locale.md) |
-| P1-E03 | Docker dev environment setup | 2 | ⬜ TODO | P1-E00, P1-L02 | [Spec](tasks/P1-E03-docker-dev-setup.md) |
-
-**Emre total:** 12 points
-**Note:** Emre is currently on learning tasks (task2→task3→task5). AVAROS tasks start after P1-L05.
+*New Lead tasks will be added by `@task-planner` after `@architect` creates the roadmap.*
 
 ---
 
-## Emre Learning Tasks (Pre-AVAROS)
+## Emre Tasks
+
+**No AVAROS tasks assigned.** Previous tasks (P1-E00–E03) archived — they were created by v2 agents with stale context. `@task-planner` will create fresh tasks.
+
+### Emre's Current Reality (for @task-planner and @architect)
+- Emre is working on **pre-AVAROS learning tasks** (OVOS basics → device management skill → web UI bridge)
+- Emre does **NOT** have the `wasabi-ovos` stack — Lead must provide repo link/token and setup instructions
+- Emre does **NOT** have the `AVAROS` repo cloned — it's on Forgejo, Emre is a member, Lead must share the clone link
+- Emre has never run the AVAROS skill or OVOS stack on his machine
+- **First tasks for Emre may require Lead prep work** (e.g., finalize repo access, write onboarding instructions)
+- Emre uses AI agents for coding. Tasks should be feature-level, not micro-tasks.
+- Emre's learning background: completed OVOS weather skill (task2), working on device management skill (task3)
+
+### Emre Learning Tasks (Pre-AVAROS)
 
 | Task | Status | Notes |
 |------|--------|-------|
-| task2.txt — OVOS basics | ✅ DONE | |
-| task3.txt — Device management skill | 🔄 IN PROGRESS | |
-| task5.txt — Web UI for OVOS | ⬜ TODO | After task3 |
+| task2 — OVOS weather skill | ✅ DONE | |
+| task3 — Device management skill | 🔄 IN PROGRESS | |
+| task5 — Web UI for OVOS | ⬜ TODO | After task3 |
 
 ---
 
-## Phase 2 (Blocked — Waiting on WASABI Consortium)
+## Phase 2+ (Blocked)
 
 | Item | Status | Blocker |
 |------|--------|---------|
@@ -58,16 +59,17 @@
 
 ---
 
+## Known Issues (for @task-planner to consider)
+
+- `tests/test_exceptions.py` (395 lines) and `tests/test_result_types.py` (464 lines) test fake/duplicate code — needs rewrite
+- `skill/services/response_builder.py` (303 lines) is fully implemented but unused by any handler — needs wiring
+- Architecture Plan has DEC numbering conflict with DEVELOPMENT.md (DEC-002, DEC-005)
+- Git: local branch is `master`, remote default is `main`
+
+---
+
 ## Sprint Progress (Emre's Quality Score)
 - Tasks completed: 0
 - Points earned: 0 / 0 attempted
 - First-time approval rate: N/A
 - **Goal:** 80%+ first-time approval rate
-
-## Recently Completed
-- ✅ Sprint 1: Domain models, adapters, orchestration, tests (all done)
-- ✅ DEC-008–010 documented
-- ✅ P1-L01: WASABI OVOS stack deployed (all containers healthy, Hivemind client created)
-- ✅ P1-L02: AVAROS Docker integration (container running, joined ovos network)
-- ✅ P1-L03: Skill loads and registers intents (8 intents, 94 templates, MockAdapter initialized)
-- ✅ P1-L04: E2E voice test (3 intents tested, avg roundtrip 579ms, all tests passed)
