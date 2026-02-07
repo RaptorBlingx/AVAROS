@@ -1,0 +1,76 @@
+## 🎯 Objective
+
+Build a **Web UI** that lets users interact with OVOS through their browser "text and voice".
+
+**What you're proving:** OVOS can be accessed from any device (Mac, Windows, mobile) through a web interface.
+
+---
+
+## 📋 Prerequisites
+
+✅ Voice-Controlled Device Management System completed (task3.txt)  
+✅ Understanding how OVOS works (task2.txt + task3.txt)
+
+---
+
+## 🏗️ What You're Building
+
+A web interface that connects your browser to OVOS running in Docker. Users can interact with AVAROS through:
+
+- **Text input** - Type questions and see responses
+- **Voice input** - Record audio from browser microphone
+- **Audio output** - Hear OVOS responses through browser speakers
+
+**Challenge:** Your browser needs to communicate with OVOS. Figure out how OVOS receives queries and sends responses, then build a bridge between the browser and OVOS.
+
+---
+
+## 🎤 Required User Interactions
+
+### Mode 1: Text Chat
+```
+User opens browser → types "What's the energy per unit?" → clicks Send
+→ Response appears: "Energy per unit is 2.5 kWh"
+```
+
+### Mode 2: Voice (Push-to-Talk)
+```
+User clicks "Hold/Click to Talk" → speaks: "What's the status of device X?" → releases button
+→ Transcription shown → Response spoken and displayed
+```
+
+### Mode 3: Wake Word (Optional Bonus)
+```
+User says: "Hey Mycroft" (or any wake word from your choice) → auto-starts listening
+→ User speaks query → auto-stops after silence
+→ Response spoken and displayed
+```
+
+---
+
+## 📦 Deliverables
+
+### Backend
+### Frontend
+### Documentation
+
+
+---
+
+## 🧪 Test Scenarios
+
+| Test | Action | Expected Result |
+|------|--------|----------------|
+| 1 | Open browser, check status | Shows "Connected to OVOS" |
+| 2 | Type text query, send | Response appears in <5s |
+| 3 | Click voice button, speak | Transcription shown, then response |
+| 4 | Send 5 queries in a row | All responses appear correctly |
+| 5 | Close browser, reopen | New session starts |
+| 6 | Disconnect OVOS | Shows "Disconnected" status |
+| 7 | Test on mobile device | UI is responsive and functional |
+| 8 | Say wake word (bonus) | Auto-starts listening |
+
+
+---
+
+**Remember:** The goal is to solve the Docker audio problem by moving audio to the browser. Your Mac's/Windows' microphone → browser → server → OVOS. 
