@@ -168,6 +168,27 @@ Other SMEs can create their own Skill Packs (e.g., Building Management, Logistic
 
 The Generic Framework remains unchanged; only the Skill Pack changes.
 
+**Selective Intent Activation via Adapter Mapping:**
+
+AVAROS ships with a full set of generic intents (~20+), but each platform only activates the subset it supports. The Web UI drives this:
+
+1. **Platform installs AVAROS** → Sees the full list of available intents in the Web UI
+2. **Platform maps their APIs** → Only for intents their system supports (maps API endpoints/metrics to each intent)
+   - E.g., a Building Management System might map: status, on/off, trends, documentation
+   - But skip: supplier comparison, material efficiency (not relevant to buildings)
+3. **AVAROS activates mapped intents** → Unmapped intents stay inactive (user never sees them)
+4. **Zero code changes** → Everything configured via Web UI
+
+**Cross-Domain Activation Example:**
+
+| Platform | Domain | Mapped Intents | Skipped Intents |
+|----------|--------|---------------|----------------|
+| IoT Platform A | Smart Building | 8 of 20 (status, control, trends, docs, anomaly...) | supplier, material, OEE, scrap... |
+| Manufacturing Platform B | Production | 15 of 20 (energy, material, OEE, supplier, trends...) | building-specific intents |
+| Healthcare Platform C | Hospital Ops | 6 of 20 (status, maintenance, docs, anomaly...) | production, supplier, energy... |
+
+Each platform gets a custom-activated voice assistant without writing platform-specific code. This is the core mechanism that makes AVAROS truly portable across domains.
+
 ---
 
 ### 3. Clean Architecture Layers (DEC-003)
@@ -585,11 +606,12 @@ Example mapping concept:
 - Deployment: Separate Docker container (`avaros-web-ui:8080`)
 
 **Key Features:**
-- **First-Run Wizard:** 7-step flow from welcome to deployed configuration
+- **First-Run Wizard:** 8-step flow from welcome to deployed configuration
 - **Transport Support:** REST/JSON, MQTT, OPC-UA, CSV/Parquet with transport-specific forms
 - **Pre-Built Templates:** RENERYO Manufacturing, Generic REST, IoT MQTT, Building Management
 - **Live Validation:** Test connection button validates credentials and endpoint accessibility
 - **Metric Mapper:** Drag-and-drop interface for canonical metric ↔ platform field mappings
+- **Intent Activation Manager:** Shows all available intents; platform enables only the ones it supports. Unmapped intents stay inactive — users never see unsupported voice commands. Activation is derived from metric/API mappings or toggled explicitly.
 - **DocuBoT Indexer:** Upload documents or point to folders; track indexing progress
 - **PREVENTION Config:** Select monitored metrics, adjust sensitivity, configure alerts
 
@@ -607,6 +629,12 @@ GET    /api/v1/config/metrics           # List all mappings
 GET    /api/v1/config/metrics/templates # Get pre-built templates
 PUT    /api/v1/config/metrics/{id}      # Update mapping
 DELETE /api/v1/config/metrics/{id}      # Remove mapping
+
+# Intent Activation
+GET    /api/v1/config/intents           # List all intents with activation status
+PUT    /api/v1/config/intents/{id}      # Toggle intent active/inactive
+GET    /api/v1/config/intents/available # List intents activatable by current mappings
+POST   /api/v1/config/intents/auto      # Auto-activate all intents with sufficient mappings
 
 # DocuBoT Configuration
 POST   /api/v1/config/docubot           # Configure document sources
@@ -811,7 +839,22 @@ The Web UI is the **primary mechanism** for achieving the proposal's "limited ad
 └────────────────────────────┬────────────────────────────────────┘
                              │
 ┌────────────────────────────▼────────────────────────────────────┐
-│  Step 5: DocuBoT Setup                                          │
+│  Step 5: Intent Activation                                      │
+│  Based on your metric mappings, these intents are available:   │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │ Intent                   | Status    | Required Metrics   │ │
+│  │ ☑ KPI Energy Query       | ✓ Ready   | energy_per_unit    │ │
+│  │ ☑ Scrap Rate Trend       | ✓ Ready   | scrap_rate         │ │
+│  │ ☑ Supplier Comparison    | ✓ Ready   | supplier_lead_time │ │
+│  │ ☐ OEE Dashboard          | ✗ Needs   | oee (not mapped)   │ │
+│  │ ☐ CO₂ Per Unit           | ✗ Needs   | co2_per_unit       │ │
+│  │ [Enable All Mapped] [Disable All]                          │ │
+│  └───────────────────────────────────────────────────────────┘ │
+│  Active: 3 of 20 intents   [Auto-activate when metrics mapped] │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────┐
+│  Step 6: DocuBoT Setup                                          │
 │  Document Sources: [/docs/procedures_______________] [Browse]  │
 │  Index Schedule: [Daily ▼] Hourly | On-Demand                  │
 │  [Skip] [Configure]                                             │
@@ -939,6 +982,12 @@ POST   /api/v1/config/metrics           # Add metric mapping
 GET    /api/v1/config/metrics           # List all mappings
 PUT    /api/v1/config/metrics/{id}      # Update mapping
 DELETE /api/v1/config/metrics/{id}      # Remove mapping
+
+# Intent Activation
+GET    /api/v1/config/intents           # List all intents with activation status
+PUT    /api/v1/config/intents/{id}      # Toggle intent active/inactive
+GET    /api/v1/config/intents/available # List intents activatable by current mappings
+POST   /api/v1/config/intents/auto      # Auto-activate all intents with sufficient mappings
 
 # DocuBoT Configuration
 POST   /api/v1/config/docubot           # Configure document sources
