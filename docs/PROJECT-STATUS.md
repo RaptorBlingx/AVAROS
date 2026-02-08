@@ -12,10 +12,10 @@
 
 ## Last Session
 
-- **Task:** P1-L06 — Write Emre onboarding doc
-- **Action:** Created `docs/ONBOARDING.md` with 10 sections: SSH verification, clone, project structure, dependency install, running tests, Docker standalone, WASABI integration, coding standards quick ref, first task pointer, getting help.
-- **Files Changed:** docs/ONBOARDING.md (new), docs/TODO.md, docs/PROJECT-STATUS.md
-- **Result:** ✅ P1-L06 complete. Emre can start P1-E01 once P1-L05 (repo access) is done.
+- **Task:** Fix ONBOARDING.md for zero-config + mark P1-L05 done
+- **Action:** Rewrote ONBOARDING.md to be Docker-first (clone → docker run). Marked P1-L05 DONE. Simplified from 10 sections to 5 core sections with zero-touch quick start. Removed .github references (not in repo).
+- **Files Changed:** docs/ONBOARDING.md (rewritten), docs/TODO.md
+- **Result:** ✅ All Lead Phase 1 tasks complete (L01–L11). Emre unblocked for P1-E01.
 
 ## Blockers
 
@@ -27,9 +27,9 @@
 
 ## Next Action (Recommended)
 
-1. **Lead manually:** Finish P1-L05 (Forgejo repo setup — SSH keys, permissions) — last Lead blocker
-2. After L05: Create Forgejo issues for P1-E01 and P1-E02 so Emre can start
-3. Emre: Follow `docs/ONBOARDING.md` → P1-E01 (onboarding) → P1-E02 (domain tests)
+1. **Emre:** Start P1-E01 (codebase onboarding) — follow `docs/ONBOARDING.md`
+2. **Lead:** Decide what to do with P1-E02 (redundant — domain tests done in P1-L11)
+3. **@task-planner:** Create next batch of Emre tasks (adapter tests, use-case tests, integration tests)
 
 ## Active Context
 

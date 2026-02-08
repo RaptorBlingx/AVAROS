@@ -5,10 +5,10 @@
 > Previous tasks archived to: `docs/archives/tasks-v1/`
 
 ## Quick Status
-- Lead: Deployment done (L01–L04). L05 (repo setup) in progress. L06–L11 done. L06 unblocks Emre.
+- Lead: All Phase 1 tasks complete (L01–L11). Emre can start P1-E01.
 - Emre: Completing learning tasks (task3 → task5). First AVAROS tasks created (E01–E02), gated on L05+L06.
 - Blocked: DocuBoT/PREVENTION = Phase 2+ (waiting on WASABI consortium)
-- **Phase 1 total remaining: ~3 pts (L05 in progress, then Emre E01+E02)**
+- **Phase 1 remaining: 5 pts (Emre E01+E02)**
 
 ---
 
@@ -20,7 +20,7 @@
 | P1-L02 | Create AVAROS Docker integration | 5 | ✅ DONE | P1-L01 |
 | P1-L03 | Test skill loads in OVOS | 3 | ✅ DONE | P1-L02 |
 | P1-L04 | End-to-end voice test | 5 | ✅ DONE | P1-L03 |
-| P1-L05 | GitHub/Forgejo repo setup for team | 3 | 🔄 IN PROGRESS | P1-L04 |
+| P1-L05 | GitHub/Forgejo repo setup for team | 3 | ✅ DONE | P1-L04 |
 | P1-L06 | Write Emre onboarding doc (clone, stack, run skill) | 2 | ✅ DONE | P1-L05 |
 | P1-L07 | Fix git branch mismatch (master → main) | 1 | ✅ DONE | — |
 | P1-L08 | Rewrite fake tests to test real production code | 5 | ✅ DONE | — |
