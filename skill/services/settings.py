@@ -37,6 +37,9 @@ from cryptography.fernet import Fernet
 import base64
 import hashlib
 
+from skill.domain.exceptions import ValidationError
+from skill.domain.models import CanonicalMetric
+
 
 logger = logging.getLogger(__name__)
 
@@ -373,7 +376,92 @@ class SettingsService:
         with self._get_session() as session:
             settings = session.query(SettingModel.key).all()
             return [s.key for s in settings]
-    
+
+    # ── Metric Mapping CRUD ─────────────────────────────
+
+    METRIC_MAPPING_PREFIX = "metric_mapping:"
+
+    def set_metric_mapping(self, metric_name: str, mapping: dict[str, Any]) -> None:
+        """
+        Store a metric mapping.
+
+        Validates the metric name against CanonicalMetric, then persists
+        the mapping data using the ``metric_mapping:{name}`` key prefix.
+
+        Args:
+            metric_name: Canonical metric name (e.g. ``energy_per_unit``)
+            mapping: Mapping data (endpoint, json_path, unit, etc.)
+
+        Raises:
+            ValidationError: If metric_name is not a valid CanonicalMetric
+        """
+        self._validate_metric_name(metric_name)
+        key = f"{self.METRIC_MAPPING_PREFIX}{metric_name}"
+        self.set_setting(key, mapping)
+
+    def get_metric_mapping(self, metric_name: str) -> dict[str, Any] | None:
+        """
+        Get a single metric mapping by canonical name.
+
+        Args:
+            metric_name: Canonical metric name
+
+        Returns:
+            Mapping data dictionary, or None if not found
+        """
+        key = f"{self.METRIC_MAPPING_PREFIX}{metric_name}"
+        return self.get_setting(key, default=None)
+
+    def list_metric_mappings(self) -> dict[str, dict[str, Any]]:
+        """
+        List all stored metric mappings.
+
+        Returns:
+            Dictionary mapping canonical metric names to their mapping data
+        """
+        self._ensure_initialized()
+        all_keys = self.list_settings()
+        result: dict[str, dict[str, Any]] = {}
+        for key in all_keys:
+            if key.startswith(self.METRIC_MAPPING_PREFIX):
+                name = key[len(self.METRIC_MAPPING_PREFIX):]
+                result[name] = self.get_setting(key)
+        return result
+
+    def delete_metric_mapping(self, metric_name: str) -> bool:
+        """
+        Delete a metric mapping.
+
+        Args:
+            metric_name: Canonical metric name
+
+        Returns:
+            True if mapping was deleted, False if not found
+        """
+        key = f"{self.METRIC_MAPPING_PREFIX}{metric_name}"
+        return self.delete_setting(key)
+
+    # ── Private Helpers ─────────────────────────────────
+
+    @staticmethod
+    def _validate_metric_name(metric_name: str) -> None:
+        """
+        Validate that a metric name matches a CanonicalMetric.
+
+        Args:
+            metric_name: Name to validate
+
+        Raises:
+            ValidationError: If not a valid canonical metric name
+        """
+        valid_names = {m.value for m in CanonicalMetric}
+        if metric_name not in valid_names:
+            raise ValidationError(
+                message=f"Invalid metric name: '{metric_name}'",
+                field="metric_name",
+                value=metric_name,
+            )
+
     def _get_session(self) -> Session:
         """Get a new database session."""
         return self._session_factory()
