@@ -15,7 +15,7 @@ Golden Rule:
     Adapters understand platform-specific APIs.
 """
 
-from typing import Callable, Any
+from typing import Callable, Any, List
 from ovos_workshop.skills import OVOSSkill
 from ovos_workshop.decorators import intent_handler
 
@@ -57,6 +57,20 @@ class AVAROSSkill(OVOSSkill):
         self.adapter_factory: AdapterFactory | None = None
         self.dispatcher: QueryDispatcher | None = None
         self.response_builder: ResponseBuilder | None = None
+
+    @property
+    def native_langs(self) -> List[str]:
+        """Return only languages that have locale resource files.
+
+        Prevents OVOS from logging 'Unable to find' errors for
+        languages we haven't translated yet (e.g. it-IT, es-ES).
+        """
+        from pathlib import Path
+        locale_dir = Path(self.res_dir) / "locale"
+        if not locale_dir.is_dir():
+            return [self.lang]
+        available = [d.name for d in locale_dir.iterdir() if d.is_dir()]
+        return available or [self.lang]
 
     def initialize(self):
         """

@@ -12,10 +12,10 @@
 
 ## Last Session
 
-- **Task:** Rewrite ONBOARDING.md as pure setup (not a task) + identify task backlog issues
-- **Action:** Rewrote ONBOARDING.md as 8-step setup guide (clone AVAROS + WASABI OVOS with token, run both, verify, explore structure). Removed dependencies/testing sections (Docker handles it). Identified P1-E01 (redundant with onboarding) and P1-E02 (redundant with P1-L11) need redefinition.
-- **Files Changed:** docs/ONBOARDING.md (complete rewrite), docs/TODO.md
-- **Result:** ✅ ONBOARDING ready. ⚠️ Emre tasks blocked — awaiting @task-planner to redefine P1-E01 and P1-E02.
+- **Task:** Fix intent file loading errors in Docker startup
+- **Action:** Root-caused 24 'Unable to find .intent' errors: OVOS tried loading intent files for it-IT, es-ES, de-DE (3 langs × 8 intents) but only en-us locale exists. Fixed by overriding `native_langs` property to auto-detect available locale dirs. Also fixed duplicate `initialize()` call in launch_skill.py.
+- **Files Changed:** skill/__init__.py (native_langs override), launch_skill.py (remove manual initialize)
+- **Result:** ✅ Clean Docker startup: zero errors, single init, all 8 intents registered. 120/120 tests pass.
 
 ## Blockers
 

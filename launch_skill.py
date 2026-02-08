@@ -43,14 +43,8 @@ def main() -> None:
         logger.info("Creating and initializing AVAROS skill...")
         skill = AVAROSSkill(skill_id="avaros-manufacturing.avaros", bus=bus)
         
-        # Manually trigger initialize() if not already called
-        # This ensures adapter_factory and dispatcher are set up
-        if skill.dispatcher is None:
-            logger.info("Manually triggering skill initialization...")
-            skill.initialize()
-        
-        # Allow messagebus connection to stabilize before processing intents
-        # TODO PHASE 2: Replace with bus.connected_event.wait() for deterministic startup
+        # Wait for skill initialization to complete
+        # OVOSSkill.initialize() is called automatically during construction
         time.sleep(2)
         
         logger.info("AVAROS skill initialized successfully!")
