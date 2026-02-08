@@ -461,10 +461,10 @@ class TestAnomalyResult:
         anomalies = [
             Anomaly(
                 timestamp=datetime(2026, 2, 8, 10, 0),
-                value=150.0,
-                expected=100.0,
-                deviation_sigma=3.5,
-                severity="high"
+                metric=CanonicalMetric.ENERGY_TOTAL,
+                expected_value=100.0,
+                actual_value=150.0,
+                deviation=3.5,
             )
         ]
         
@@ -516,8 +516,20 @@ class TestAnomalyResult:
         """Test anomaly_count property returns number of anomalies."""
         # Arrange
         anomalies = [
-            Anomaly(datetime.now(), 100.0, 80.0, 2.5, "medium"),
-            Anomaly(datetime.now(), 110.0, 80.0, 3.0, "high")
+            Anomaly(
+                timestamp=datetime.now(),
+                metric=CanonicalMetric.PEAK_DEMAND,
+                expected_value=80.0,
+                actual_value=100.0,
+                deviation=2.5,
+            ),
+            Anomaly(
+                timestamp=datetime.now(),
+                metric=CanonicalMetric.PEAK_DEMAND,
+                expected_value=80.0,
+                actual_value=110.0,
+                deviation=3.0,
+            )
         ]
         result = AnomalyResult(
             is_anomalous=True,

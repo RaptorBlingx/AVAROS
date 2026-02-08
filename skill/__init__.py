@@ -116,32 +116,38 @@ class AVAROSSkill(OVOSSkill):
     @intent_handler("kpi.oee.intent")
     def handle_kpi_oee(self, message):
         """Handle: 'What's the OEE for {asset}?'"""
-        asset_id = message.data.get("asset", "default")
-        period = self._parse_period(message.data.get("period", "today"))
+        def _execute():
+            asset_id = message.data.get("asset", "default")
+            period = self._parse_period(message.data.get("period", "today"))
+            
+            result: KPIResult = self.dispatcher.get_kpi(
+                metric=CanonicalMetric.OEE,
+                asset_id=asset_id,
+                period=period
+            )
+            
+            response = self.response_builder.format_kpi_result(result)
+            self.speak(response)
         
-        result: KPIResult = self.dispatcher.get_kpi(
-            metric=CanonicalMetric.OEE,
-            asset_id=asset_id,
-            period=period
-        )
-        
-        response = self.response_builder.format_kpi_result(result)
-        self.speak(response)
+        self._safe_dispatch("handle_kpi_oee", _execute)
 
     @intent_handler("kpi.scrap_rate.intent")
     def handle_kpi_scrap_rate(self, message):
         """Handle: 'What's the scrap rate?'"""
-        asset_id = message.data.get("asset", "default")
-        period = self._parse_period(message.data.get("period", "today"))
+        def _execute():
+            asset_id = message.data.get("asset", "default")
+            period = self._parse_period(message.data.get("period", "today"))
+            
+            result: KPIResult = self.dispatcher.get_kpi(
+                metric=CanonicalMetric.SCRAP_RATE,
+                asset_id=asset_id,
+                period=period
+            )
+            
+            response = self.response_builder.format_kpi_result(result)
+            self.speak(response)
         
-        result: KPIResult = self.dispatcher.get_kpi(
-            metric=CanonicalMetric.SCRAP_RATE,
-            asset_id=asset_id,
-            period=period
-        )
-        
-        response = self.response_builder.format_kpi_result(result)
-        self.speak(response)
+        self._safe_dispatch("handle_kpi_scrap_rate", _execute)
 
     # =========================================================================
     # Compare Query Handlers
@@ -150,18 +156,21 @@ class AVAROSSkill(OVOSSkill):
     @intent_handler("compare.energy.intent")
     def handle_compare_energy(self, message):
         """Handle: 'Compare energy between {asset_a} and {asset_b}'"""
-        asset_a = message.data.get("asset_a", "Asset-1")
-        asset_b = message.data.get("asset_b", "Asset-2")
-        period = self._parse_period(message.data.get("period", "today"))
+        def _execute():
+            asset_a = message.data.get("asset_a", "Asset-1")
+            asset_b = message.data.get("asset_b", "Asset-2")
+            period = self._parse_period(message.data.get("period", "today"))
+            
+            result: ComparisonResult = self.dispatcher.compare(
+                metric=CanonicalMetric.ENERGY_PER_UNIT,
+                asset_ids=[asset_a, asset_b],
+                period=period
+            )
+            
+            response = self.response_builder.format_comparison_result(result)
+            self.speak(response)
         
-        result: ComparisonResult = self.dispatcher.compare(
-            metric=CanonicalMetric.ENERGY_PER_UNIT,
-            asset_ids=[asset_a, asset_b],
-            period=period
-        )
-        
-        response = self.response_builder.format_comparison_result(result)
-        self.speak(response)
+        self._safe_dispatch("handle_compare_energy", _execute)
 
     # =========================================================================
     # Trend Query Handlers
@@ -170,36 +179,42 @@ class AVAROSSkill(OVOSSkill):
     @intent_handler("trend.scrap.intent")
     def handle_trend_scrap(self, message):
         """Handle: 'Show scrap rate trend for {period}'"""
-        asset_id = message.data.get("asset", "default")
-        period = self._parse_period(message.data.get("period", "last week"))
-        granularity = message.data.get("granularity", "daily")
+        def _execute():
+            asset_id = message.data.get("asset", "default")
+            period = self._parse_period(message.data.get("period", "last week"))
+            granularity = message.data.get("granularity", "daily")
+            
+            result: TrendResult = self.dispatcher.get_trend(
+                metric=CanonicalMetric.SCRAP_RATE,
+                asset_id=asset_id,
+                period=period,
+                granularity=granularity
+            )
+            
+            response = self.response_builder.format_trend_result(result)
+            self.speak(response)
         
-        result: TrendResult = self.dispatcher.get_trend(
-            metric=CanonicalMetric.SCRAP_RATE,
-            asset_id=asset_id,
-            period=period,
-            granularity=granularity
-        )
-        
-        response = self.response_builder.format_trend_result(result)
-        self.speak(response)
+        self._safe_dispatch("handle_trend_scrap", _execute)
 
     @intent_handler("trend.energy.intent")
     def handle_trend_energy(self, message):
         """Handle: 'Show energy trend for {period}'"""
-        asset_id = message.data.get("asset", "default")
-        period = self._parse_period(message.data.get("period", "last week"))
-        granularity = message.data.get("granularity", "daily")
+        def _execute():
+            asset_id = message.data.get("asset", "default")
+            period = self._parse_period(message.data.get("period", "last week"))
+            granularity = message.data.get("granularity", "daily")
+            
+            result: TrendResult = self.dispatcher.get_trend(
+                metric=CanonicalMetric.ENERGY_PER_UNIT,
+                asset_id=asset_id,
+                period=period,
+                granularity=granularity
+            )
+            
+            response = self.response_builder.format_trend_result(result)
+            self.speak(response)
         
-        result: TrendResult = self.dispatcher.get_trend(
-            metric=CanonicalMetric.ENERGY_PER_UNIT,
-            asset_id=asset_id,
-            period=period,
-            granularity=granularity
-        )
-        
-        response = self.response_builder.format_trend_result(result)
-        self.speak(response)
+        self._safe_dispatch("handle_trend_energy", _execute)
 
     # =========================================================================
     # Anomaly Query Handlers
@@ -208,15 +223,18 @@ class AVAROSSkill(OVOSSkill):
     @intent_handler("anomaly.production.check.intent")
     def handle_anomaly_check(self, message):
         """Handle: 'Any unusual patterns in production?'"""
-        asset_id = message.data.get("asset", "default")
+        def _execute():
+            asset_id = message.data.get("asset", "default")
+            
+            result: AnomalyResult = self.dispatcher.check_anomaly(
+                metric=CanonicalMetric.OEE,
+                asset_id=asset_id
+            )
+            
+            response = self.response_builder.format_anomaly_result(result)
+            self.speak(response)
         
-        result: AnomalyResult = self.dispatcher.check_anomaly(
-            metric=CanonicalMetric.OEE,
-            asset_id=asset_id
-        )
-        
-        response = self.response_builder.format_anomaly_result(result)
-        self.speak(response)
+        self._safe_dispatch("handle_anomaly_check", _execute)
 
     # =========================================================================
     # What-If Query Handlers
@@ -225,29 +243,32 @@ class AVAROSSkill(OVOSSkill):
     @intent_handler("whatif.temperature.intent")
     def handle_whatif_temperature(self, message):
         """Handle: 'What if we reduce temperature by {amount} degrees?'"""
-        from skill.domain.models import WhatIfScenario, ScenarioParameter
+        def _execute():
+            from skill.domain.models import WhatIfScenario, ScenarioParameter
+            
+            amount = float(message.data.get("amount", "5"))
+            asset_id = message.data.get("asset", "default")
+            
+            scenario = WhatIfScenario(
+                name="temperature_change",
+                asset_id=asset_id,
+                parameters=[
+                    ScenarioParameter(
+                        name="temperature",
+                        baseline_value=25.0,
+                        proposed_value=25.0 - amount,
+                        unit="°C"
+                    )
+                ],
+                target_metric=CanonicalMetric.ENERGY_PER_UNIT
+            )
+            
+            result: WhatIfResult = self.dispatcher.simulate_whatif(scenario)
+            
+            response = self.response_builder.format_whatif_result(result)
+            self.speak(response)
         
-        amount = float(message.data.get("amount", "5"))
-        asset_id = message.data.get("asset", "default")
-        
-        scenario = WhatIfScenario(
-            name="temperature_change",
-            asset_id=asset_id,
-            parameters=[
-                ScenarioParameter(
-                    name="temperature",
-                    baseline_value=25.0,
-                    proposed_value=25.0 - amount,
-                    unit="°C"
-                )
-            ],
-            target_metric=CanonicalMetric.ENERGY_PER_UNIT
-        )
-        
-        result: WhatIfResult = self.dispatcher.simulate_whatif(scenario)
-        
-        response = self.response_builder.format_whatif_result(result)
-        self.speak(response)
+        self._safe_dispatch("handle_whatif_temperature", _execute)
 
     # =========================================================================
     # Helper Methods

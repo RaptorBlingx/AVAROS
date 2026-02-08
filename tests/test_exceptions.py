@@ -262,6 +262,7 @@ class TestMetricNotSupportedError:
         
         # Act
         error = MetricNotSupportedError(
+            message="",
             metric=metric,
             platform=platform
         )
@@ -278,6 +279,7 @@ class TestMetricNotSupportedError:
         
         # Act
         error = MetricNotSupportedError(
+            message="",
             metric="unknown",
             platform="mock",
             available_metrics=available
@@ -291,6 +293,7 @@ class TestMetricNotSupportedError:
         """Test that message is auto-generated if not provided."""
         # Arrange & Act
         error = MetricNotSupportedError(
+            message="",
             metric="test_metric",
             platform="test_platform"
         )
@@ -303,6 +306,7 @@ class TestMetricNotSupportedError:
         """Test that details include metric and platform."""
         # Arrange & Act
         error = MetricNotSupportedError(
+            message="",
             metric="co2_total",
             platform="mock"
         )
@@ -314,7 +318,7 @@ class TestMetricNotSupportedError:
     def test_inheritance_from_avaros_error_is_valid(self):
         """Test that MetricNotSupportedError inherits from AVAROSError."""
         # Arrange
-        error = MetricNotSupportedError(metric="test", platform="test")
+        error = MetricNotSupportedError(message="", metric="test", platform="test")
         
         # Act & Assert
         assert isinstance(error, AVAROSError)
@@ -330,7 +334,7 @@ class TestAssetNotFoundError:
         asset_id = "Line-99"
         
         # Act
-        error = AssetNotFoundError(asset_id=asset_id)
+        error = AssetNotFoundError(message="", asset_id=asset_id)
         
         # Assert
         assert error.asset_id == asset_id
@@ -343,6 +347,7 @@ class TestAssetNotFoundError:
         
         # Act
         error = AssetNotFoundError(
+            message="",
             asset_id="Line-99",
             available_assets=available
         )
@@ -353,7 +358,7 @@ class TestAssetNotFoundError:
     def test_creation_without_message_generates_message(self):
         """Test that message is auto-generated if not provided."""
         # Arrange & Act
-        error = AssetNotFoundError(asset_id="Test-Asset")
+        error = AssetNotFoundError(message="", asset_id="Test-Asset")
         
         # Assert
         assert "Test-Asset" in error.message
@@ -365,6 +370,7 @@ class TestAssetNotFoundError:
         
         # Act
         error = AssetNotFoundError(
+            message="",
             asset_id="Missing",
             available_assets=many_assets
         )
@@ -375,7 +381,7 @@ class TestAssetNotFoundError:
     def test_user_message_includes_asset_id(self):
         """Test default user message includes asset ID."""
         # Arrange & Act
-        error = AssetNotFoundError(asset_id="Test-123")
+        error = AssetNotFoundError(message="", asset_id="Test-123")
         
         # Assert
         assert "Test-123" in error.user_message
@@ -383,7 +389,7 @@ class TestAssetNotFoundError:
     def test_inheritance_from_avaros_error_is_valid(self):
         """Test that AssetNotFoundError inherits from AVAROSError."""
         # Arrange
-        error = AssetNotFoundError(asset_id="test")
+        error = AssetNotFoundError(message="", asset_id="test")
         
         # Act & Assert
         assert isinstance(error, AVAROSError)
@@ -456,8 +462,8 @@ class TestExceptionHierarchy:
         exceptions = [
             ValidationError(message="test", field="test"),
             AdapterError(message="test", platform="test"),
-            MetricNotSupportedError(metric="test", platform="test"),
-            AssetNotFoundError(asset_id="test"),
+            MetricNotSupportedError(message="", metric="test", platform="test"),
+            AssetNotFoundError(message="", asset_id="test"),
             ConfigurationError(message="test", setting="test"),
         ]
         
@@ -491,8 +497,8 @@ class TestExceptionHierarchy:
             AVAROSError(message="test", code="TEST"),
             ValidationError(message="test", field="test"),
             AdapterError(message="test", platform="test"),
-            MetricNotSupportedError(metric="test", platform="test"),
-            AssetNotFoundError(asset_id="test"),
+            MetricNotSupportedError(message="", metric="test", platform="test"),
+            AssetNotFoundError(message="", asset_id="test"),
             ConfigurationError(message="test", setting="test"),
         ]
         
@@ -515,8 +521,8 @@ class TestErrorCodes:
             AVAROSError(message="test", code="AVAROS_ERROR"),
             ValidationError(message="test", field="test"),
             AdapterError(message="test", platform="test"),
-            MetricNotSupportedError(metric="test", platform="test"),
-            AssetNotFoundError(asset_id="test"),
+            MetricNotSupportedError(message="", metric="test", platform="test"),
+            AssetNotFoundError(message="", asset_id="test"),
             ConfigurationError(message="test", setting="test"),
         ]
         
@@ -558,7 +564,7 @@ class TestErrorContext:
         
         # Assert
         assert error.details["metric"] == "energy_per_unit"
-        assert error.details["http_status"] == 500
+        assert error.details["status_code"] == 500
         assert len(error.details) >= 6
     
     def test_error_details_preserved_in_to_dict(self):

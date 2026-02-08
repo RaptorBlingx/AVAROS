@@ -12,10 +12,10 @@
 
 ## Last Session
 
-- **Task:** P1-L11 — Add comprehensive domain unit tests (models, exceptions, results)
-- **Action:** Expanded tests/test_domain/test_models.py from 182 to 568 lines with comprehensive test coverage for all 6 domain model classes. Added 61 total tests (was 19) covering CanonicalMetric (21 tests), TimePeriod (15 tests), DataPoint (4 tests), ScenarioParameter (6 tests), WhatIfScenario (5 tests), and Anomaly (10 tests). All tests follow AAA pattern, detailed naming convention, import from real production code, and test all properties, factory methods, edge cases, and immutability (DEC-004 compliance).
-- **Files Changed:** tests/test_domain/test_models.py (+421 lines), docs/TODO.md (P1-L11 → ✅ DONE), docs/PROJECT-STATUS.md (updated)
-- **Result:** Domain layer test coverage significantly increased (3.2x). Comprehensive validation of immutable models, factory methods, calculation properties, severity thresholds, and edge cases. All syntax verified.
+- **Task:** Fix review issues for P1-L07–L11 (17 test failures + _safe_dispatch)
+- **Action:** Fixed all 17 test failures: added `message=""` to MetricNotSupportedError/AssetNotFoundError constructors (11), corrected Anomaly constructor in test_result_types.py (2), fixed metric count 21→19 (1), fixed http_status→status_code key (1), removed duplicate test method (1). Wrapped 7 remaining intent handlers in `_safe_dispatch`. All 120 tests pass.
+- **Files Changed:** tests/test_domain/test_models.py, tests/test_exceptions.py, tests/test_result_types.py, skill/__init__.py
+- **Result:** All review issues resolved. 120/120 tests pass. 8/8 handlers use _safe_dispatch.
 
 ## Blockers
 
@@ -25,9 +25,9 @@
 
 ## Next Action (Recommended)
 
-1. `@reviewer` — "Review P1-L11 (domain model test expansion, 3 pts)" — Quality check before merge
-2. Lead manually: finish P1-L05 (repo setup), then P1-L06 (onboarding doc) to unblock Emre  
-3. `@ops` — After review approval, merge P1-L11 and optionally batch-merge P1-L07 through P1-L11 (5 tasks)
+1. `@reviewer` — "Re-review P1-L07–L11 review fixes" — verify all issues resolved
+2. `@ops` — After approval, batch-merge P1-L07 through P1-L11
+3. Lead manually: finish P1-L05 (repo setup), then P1-L06 (onboarding doc) to unblock Emre
 
 ## Active Context
 

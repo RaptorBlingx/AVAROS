@@ -22,13 +22,13 @@ from skill.domain.models import (
 class TestCanonicalMetric:
     """Tests for CanonicalMetric enum."""
     
-    def test_all_21_metrics_are_defined(self):
-        """Should have exactly 21 canonical metrics."""
+    def test_all_19_metrics_are_defined(self):
+        """Should have exactly 19 canonical metrics."""
         # Arrange & Act
         metrics = list(CanonicalMetric)
         
         # Assert
-        assert len(metrics) == 21
+        assert len(metrics) == 19
     
     def test_all_metrics_have_default_unit(self):
         """Every metric should have a default unit."""
@@ -178,8 +178,6 @@ class TestTimePeriod:
         # Assert
         assert period.display_name == "today"
     
-    def test_creation_with_end_before_start_raises_valueerror(self):
-        """Should raise ValueError for invalid period."""
     def test_creation_with_end_before_start_raises_valueerror(self):
         """Should raise ValueError for invalid period."""
         # Arrange & Act & Assert
