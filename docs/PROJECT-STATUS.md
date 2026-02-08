@@ -6,16 +6,16 @@
 ## State
 
 - **Phase:** 1 (Foundation — Completion & Stabilization)
-- **Sprint:** Phase 1 completion — 5 Lead tasks (14 pts) + 2 Emre tasks (5 pts) remaining
+- **Sprint:** Phase 1 completion — 4 Lead tasks (9 pts) + 2 Emre tasks (5 pts) remaining
 - **Last Agent:** @dev
 - **Last Updated:** 2026-02-08
 
 ## Last Session
 
-- **Task:** P1-L07 — Fix git branch mismatch (master → main)
-- **Action:** Renamed local branch master→main, pushed to origin, deleted old origin/master. Repository now uses main as sole default branch.
-- **Files Changed:** docs/TODO.md (P1-L07 → ✅ DONE), docs/PROJECT-STATUS.md (updated)
-- **Result:** Git branch alignment complete. All future commits and clones will use main branch. No more master/main confusion.
+- **Task:** P1-L08 — Rewrite fake tests to test real production code
+- **Action:** Completely rewrote tests/test_exceptions.py (578 lines) and tests/test_result_types.py (711 lines). Old tests defined fake local classes; new tests import from skill.domain.* and follow AAA pattern with test_{function}_{scenario}_{expected} naming. Coverage: exceptions (all 6 classes), results (all 5 types), immutability, serialization, properties, edge cases.
+- **Files Changed:** tests/test_exceptions.py (rewritten), tests/test_result_types.py (rewritten), docs/TODO.md (P1-L08 → ✅ DONE), docs/PROJECT-STATUS.md (updated)
+- **Result:** Tests now validate actual production code with 100% domain class coverage. Technical debt eliminated.
 
 ## Blockers
 
@@ -25,8 +25,8 @@
 
 ## Next Action (Recommended)
 
-1. `@dev` — "Do P1-L08 (rewrite fake tests) — biggest debt, 5 pts"
-2. `@dev` — "Do P1-L09 (wire ResponseBuilder) or P1-L10 (fix DEC numbering) — 3 pts or 1 pt"
+1. `@dev` — "Do P1-L09 (wire ResponseBuilder) — improve voice output quality, 3 pts"
+2. `@dev` — "Do P1-L10 (fix DEC numbering) — quick documentation fix, 1 pt"
 3. Lead manually: finish P1-L05, then P1-L06 (onboarding doc) to unblock Emre
 
 ## Active Context

@@ -5,10 +5,10 @@
 > Previous tasks archived to: `docs/archives/tasks-v1/`
 
 ## Quick Status
-- Lead: Deployment done (L01–L04). L05 (repo setup) in progress. L07 done (git branch). 5 completion tasks remain (L06,L08–L11, 14 pts).
+- Lead: Deployment done (L01–L04). L05 (repo setup) in progress. L07+L08 done. 4 completion tasks remain (L06,L09–L11, 9 pts).
 - Emre: Completing learning tasks (task3 → task5). First AVAROS tasks created (E01–E02), gated on L05+L06.
 - Blocked: DocuBoT/PREVENTION = Phase 2+ (waiting on WASABI consortium)
-- **Phase 1 total remaining: ~17 pts (3 in progress + 14 new)**
+- **Phase 1 total remaining: ~12 pts (3 in progress + 9 new)**
 
 ---
 
@@ -23,7 +23,7 @@
 | P1-L05 | GitHub/Forgejo repo setup for team | 3 | 🔄 IN PROGRESS | P1-L04 |
 | P1-L06 | Write Emre onboarding doc (clone, stack, run skill) | 2 | ⬜ TODO | P1-L05 |
 | P1-L07 | Fix git branch mismatch (master → main) | 1 | ✅ DONE | — |
-| P1-L08 | Rewrite fake tests to test real production code | 5 | ⬜ TODO | — |
+| P1-L08 | Rewrite fake tests to test real production code | 5 | ✅ DONE | — |
 | P1-L09 | Wire ResponseBuilder into all intent handlers | 3 | ⬜ TODO | — |
 | P1-L10 | Fix DEC numbering conflict (Arch Plan vs DEVELOPMENT.md) | 1 | ⬜ TODO | — |
 | P1-L11 | Add real domain unit tests (models, exceptions, results) | 3 | ⬜ TODO | P1-L08 |
@@ -92,7 +92,7 @@
 
 ## Known Issues
 
-- ~~`tests/test_exceptions.py` and `tests/test_result_types.py` test fake code~~ → Tracked as P1-L08
+- ~~`tests/test_exceptions.py` and `tests/test_result_types.py` test fake code~~ → ✅ Fixed in P1-L08
 - ~~`skill/services/response_builder.py` unused~~ → Tracked as P1-L09
 - ~~DEC numbering conflict~~ → Tracked as P1-L10
 - ~~Git branch mismatch~~ → ✅ Fixed in P1-L07
