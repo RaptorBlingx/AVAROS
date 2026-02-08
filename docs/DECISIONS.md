@@ -1,7 +1,13 @@
 # AVAROS Active Decisions
 
-> Last Updated: 2026-02-07 | Archive: [archives/DECISIONS-2026-Q1.md](archives/DECISIONS-2026-Q1.md)
+> Last Updated: 2026-02-08 | Archive: [archives/DECISIONS-2026-Q1.md](archives/DECISIONS-2026-Q1.md)
 > Next DEC number: **DEC-016** | Keep this file under ~50 lines.
+
+## DEC Numbering Scheme
+
+- **DEC-001 to DEC-007:** Core architectural principles (defined in `DEVELOPMENT.md`)
+- **DEC-008 to DEC-019:** Runtime/deployment decisions (tracked here)
+- **DEC-020+:** Architecture Plan principles (in `AVAROS-ARCHITECTURE-IMPLEMENTATION-PLAN.md`)
 
 ## Architecture Principles (DEC-001 — DEC-007)
 

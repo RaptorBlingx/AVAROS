@@ -97,7 +97,7 @@ AVAROS must work with ANY backend platform, not just RENERYO. The Adapter Patter
 - **Platform Adapter Interface** defines the contract all platforms must implement
 - **Universal Data Model** standardizes all responses regardless of source platform
 
-### 2. Two-Layer Architecture: Generic Framework + Manufacturing Skill Pack (DEC-002)
+### 2. Two-Layer Architecture: Generic Framework + Manufacturing Skill Pack (DEC-020)
 
 **Reconciling Generic Infrastructure with Proposal Commitments:**
 
@@ -235,7 +235,7 @@ All domain objects will be implemented as frozen dataclasses:
 - Hashable for caching
 - Clear state management
 
-### 5. Async-First with Sync Wrappers (DEC-005)
+### 5. Async-First with Sync Wrappers (DEC-021)
 
 - Adapter methods are async for I/O efficiency
 - QueryDispatcher provides sync wrappers for OVOS compatibility

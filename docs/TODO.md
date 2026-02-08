@@ -5,10 +5,10 @@
 > Previous tasks archived to: `docs/archives/tasks-v1/`
 
 ## Quick Status
-- Lead: Deployment done (L01–L04). L05 (repo setup) in progress. L07+L08+L09 done. 3 completion tasks remain (L06,L10–L11, 6 pts).
+- Lead: Deployment done (L01–L04). L05 (repo setup) in progress. L07+L08+L09+L10 done. 2 completion tasks remain (L06+L11, 5 pts).
 - Emre: Completing learning tasks (task3 → task5). First AVAROS tasks created (E01–E02), gated on L05+L06.
 - Blocked: DocuBoT/PREVENTION = Phase 2+ (waiting on WASABI consortium)
-- **Phase 1 total remaining: ~9 pts (3 in progress + 6 new)**
+- **Phase 1 total remaining: ~8 pts (3 in progress + 5 new)**
 
 ---
 
@@ -25,7 +25,7 @@
 | P1-L07 | Fix git branch mismatch (master → main) | 1 | ✅ DONE | — |
 | P1-L08 | Rewrite fake tests to test real production code | 5 | ✅ DONE | — |
 | P1-L09 | Wire ResponseBuilder into all intent handlers | 3 | ✅ DONE | — |
-| P1-L10 | Fix DEC numbering conflict (Arch Plan vs DEVELOPMENT.md) | 1 | ⬜ TODO | — |
+| P1-L10 | Fix DEC numbering conflict (Arch Plan vs DEVELOPMENT.md) | 1 | ✅ DONE | — |
 | P1-L11 | Add real domain unit tests (models, exceptions, results) | 3 | ⬜ TODO | P1-L08 |
 
 ### Lead Task Details
@@ -94,7 +94,7 @@
 
 - ~~`tests/test_exceptions.py` and `tests/test_result_types.py` test fake code~~ → ✅ Fixed in P1-L08
 - ~~`skill/services/response_builder.py` unused~~ → ✅ Fixed in P1-L09
-- ~~DEC numbering conflict~~ → Tracked as P1-L10
+- ~~DEC numbering conflict~~ → ✅ Fixed in P1-L10
 - ~~Git branch mismatch~~ → ✅ Fixed in P1-L07
 
 ---

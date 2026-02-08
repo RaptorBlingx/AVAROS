@@ -6,16 +6,16 @@
 ## State
 
 - **Phase:** 1 (Foundation — Completion & Stabilization)
-- **Sprint:** Phase 1 completion — 3 Lead tasks (6 pts) + 2 Emre tasks (5 pts) remaining
+- **Sprint:** Phase 1 completion — 2 Lead tasks (5 pts) + 2 Emre tasks (5 pts) remaining
 - **Last Agent:** @dev
 - **Last Updated:** 2026-02-08
 
 ## Last Session
 
-- **Task:** P1-L09 — Wire ResponseBuilder into all intent handlers
-- **Action:** Integrated ResponseBuilder service into skill/__init__.py. Added import, initialized in initialize() with verbosity="normal", replaced all 8 manual speak_dialog() calls with response_builder.format_*() methods. Handlers now use voice-optimized natural language formatting instead of template-based data substitution.
-- **Files Changed:** skill/__init__.py (8 handlers updated), docs/TODO.md (P1-L09 → ✅ DONE), docs/PROJECT-STATUS.md (updated)
-- **Result:** Voice responses now use ResponseBuilder's natural language formatting (under 30 words, proper number rounding, contextual phrasing). Technical debt eliminated.
+- **Task:** P1-L10 — Fix DEC numbering conflict (Architecture Plan vs DEVELOPMENT.md)
+- **Action:** Resolved DEC number conflicts between DEVELOPMENT.md (canonical source) and Architecture Plan. Renumbered Architecture Plan's DEC-002 (Two-Layer Architecture) → DEC-020 and DEC-005 (Async-First) → DEC-021. Added DEC numbering scheme to DECISIONS.md: DEC-001–007 (core principles in DEVELOPMENT.md), DEC-008–019 (project decisions), DEC-020+ (Architecture Plan principles).
+- **Files Changed:** docs/AVAROS-ARCHITECTURE-IMPLEMENTATION-PLAN.md (2 DEC renumberings), docs/DECISIONS.md (numbering scheme added), docs/TODO.md (P1-L10 → ✅ DONE), docs/PROJECT-STATUS.md (updated)
+- **Result:** No more DEC numbering confusion. Clear namespace separation between architectural principles, project decisions, and architecture plan specifics.
 
 ## Blockers
 
@@ -25,9 +25,9 @@
 
 ## Next Action (Recommended)
 
-1. `@dev` — "Do P1-L10 (fix DEC numbering) — quick documentation fix, 1 pt"
-2. `@dev` — "Do P1-L11 (add domain unit tests) — push to 100% coverage, 3 pts"
-3. Lead manually: finish P1-L05, then P1-L06 (onboarding doc) to unblock Emre
+1. `@dev` — "Do P1-L11 (add domain unit tests) — push to 100% coverage, 3 pts"
+2. Lead manually: finish P1-L05 (repo setup), then P1-L06 (onboarding doc) to unblock Emre
+3. `@reviewer` — "Review P1-L07 through P1-L10 (4 tasks, 10 pts)" — batch review recommended
 
 ## Active Context
 
