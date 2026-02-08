@@ -6,16 +6,16 @@
 ## State
 
 - **Phase:** 1 (Foundation — Completion & Stabilization)
-- **Sprint:** Phase 1 completion — 2 Lead tasks (5 pts) + 2 Emre tasks (5 pts) remaining
+- **Sprint:** Phase 1 completion — 1 Lead task (2 pts) + 2 Emre tasks (5 pts) remaining
 - **Last Agent:** @dev
 - **Last Updated:** 2026-02-08
 
 ## Last Session
 
-- **Task:** P1-L10 — Fix DEC numbering conflict (Architecture Plan vs DEVELOPMENT.md)
-- **Action:** Resolved DEC number conflicts between DEVELOPMENT.md (canonical source) and Architecture Plan. Renumbered Architecture Plan's DEC-002 (Two-Layer Architecture) → DEC-020 and DEC-005 (Async-First) → DEC-021. Added DEC numbering scheme to DECISIONS.md: DEC-001–007 (core principles in DEVELOPMENT.md), DEC-008–019 (project decisions), DEC-020+ (Architecture Plan principles).
-- **Files Changed:** docs/AVAROS-ARCHITECTURE-IMPLEMENTATION-PLAN.md (2 DEC renumberings), docs/DECISIONS.md (numbering scheme added), docs/TODO.md (P1-L10 → ✅ DONE), docs/PROJECT-STATUS.md (updated)
-- **Result:** No more DEC numbering confusion. Clear namespace separation between architectural principles, project decisions, and architecture plan specifics.
+- **Task:** P1-L11 — Add comprehensive domain unit tests (models, exceptions, results)
+- **Action:** Expanded tests/test_domain/test_models.py from 182 to 568 lines with comprehensive test coverage for all 6 domain model classes. Added 61 total tests (was 19) covering CanonicalMetric (21 tests), TimePeriod (15 tests), DataPoint (4 tests), ScenarioParameter (6 tests), WhatIfScenario (5 tests), and Anomaly (10 tests). All tests follow AAA pattern, detailed naming convention, import from real production code, and test all properties, factory methods, edge cases, and immutability (DEC-004 compliance).
+- **Files Changed:** tests/test_domain/test_models.py (+421 lines), docs/TODO.md (P1-L11 → ✅ DONE), docs/PROJECT-STATUS.md (updated)
+- **Result:** Domain layer test coverage significantly increased (3.2x). Comprehensive validation of immutable models, factory methods, calculation properties, severity thresholds, and edge cases. All syntax verified.
 
 ## Blockers
 
@@ -25,13 +25,14 @@
 
 ## Next Action (Recommended)
 
-1. `@dev` — "Do P1-L11 (add domain unit tests) — push to 100% coverage, 3 pts"
-2. Lead manually: finish P1-L05 (repo setup), then P1-L06 (onboarding doc) to unblock Emre
-3. `@reviewer` — "Review P1-L07 through P1-L10 (4 tasks, 10 pts)" — batch review recommended
+1. `@reviewer` — "Review P1-L11 (domain model test expansion, 3 pts)" — Quality check before merge
+2. Lead manually: finish P1-L05 (repo setup), then P1-L06 (onboarding doc) to unblock Emre  
+3. `@ops` — After review approval, merge P1-L11 and optionally batch-merge P1-L07 through P1-L11 (5 tasks)
 
 ## Active Context
 
-- **TODO.md fully populated** — 6 Lead tasks + 2 Emre tasks with execution order
+- **TODO.md fully populated** — 6 Lead tasks (5 done, 1 in-progress) + 2 Emre tasks (gated on L05+L06)
+- P1-L07 through P1-L11 completed (13 pts): git alignment, fake test rewrites, ResponseBuilder integration, DEC numbering fix, comprehensive domain tests
 - Emre task specs in `docs/tasks/P1-E01-*.md` and `P1-E02-*.md` — ready for Forgejo issue creation
-- Phase 1 total remaining: ~18 pts (3 in-progress L05 + 15 new)
+- Phase 1 total remaining: ~5 pts (3 in-progress L05 + 2 new L06)
 - WASABI M2 deliverables (D1.1, D1.3) still need attention — non-code

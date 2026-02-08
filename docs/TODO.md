@@ -5,10 +5,10 @@
 > Previous tasks archived to: `docs/archives/tasks-v1/`
 
 ## Quick Status
-- Lead: Deployment done (L01–L04). L05 (repo setup) in progress. L07+L08+L09+L10 done. 2 completion tasks remain (L06+L11, 5 pts).
+- Lead: Deployment done (L01–L04). L05 (repo setup) in progress. L07+L08+L09+L10+L11 done. 1 completion task remains (L06, 2 pts).
 - Emre: Completing learning tasks (task3 → task5). First AVAROS tasks created (E01–E02), gated on L05+L06.
 - Blocked: DocuBoT/PREVENTION = Phase 2+ (waiting on WASABI consortium)
-- **Phase 1 total remaining: ~8 pts (3 in progress + 5 new)**
+- **Phase 1 total remaining: ~5 pts (3 in progress + 2 new)**
 
 ---
 
@@ -26,7 +26,7 @@
 | P1-L08 | Rewrite fake tests to test real production code | 5 | ✅ DONE | — |
 | P1-L09 | Wire ResponseBuilder into all intent handlers | 3 | ✅ DONE | — |
 | P1-L10 | Fix DEC numbering conflict (Arch Plan vs DEVELOPMENT.md) | 1 | ✅ DONE | — |
-| P1-L11 | Add real domain unit tests (models, exceptions, results) | 3 | ⬜ TODO | P1-L08 |
+| P1-L11 | Add real domain unit tests (models, exceptions, results) | 3 | ✅ DONE | P1-L08 |
 
 ### Lead Task Details
 
