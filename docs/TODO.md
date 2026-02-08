@@ -5,10 +5,10 @@
 > Previous tasks archived to: `docs/archives/tasks-v1/`
 
 ## Quick Status
-- Lead: All Phase 1 tasks complete (L01–L11). Emre can start P1-E01.
+- Lead: All Phase 1 tasks complete (L01–L11). ONBOARDING.md written. Emre tasks need redefinition.
 - Emre: Completing learning tasks (task3 → task5). First AVAROS tasks created (E01–E02), gated on L05+L06.
 - Blocked: DocuBoT/PREVENTION = Phase 2+ (waiting on WASABI consortium)
-- **Phase 1 remaining: 5 pts (Emre E01+E02)**
+- **Phase 1 remaining: Awaiting task redefinition from @task-planner**
 
 ---
 
@@ -57,12 +57,15 @@
 
 ## Emre Tasks
 
-**Gated on P1-L05 (repo access) + P1-L06 (onboarding doc).** Emre cannot start until Lead completes both.
+**Status:** P1-E01 and P1-E02 need redefinition by @task-planner
+- **ONBOARDING complete** (docs/ONBOARDING.md) — setup only, not a task
+- **P1-E01** — Needs redefinition (current spec is redundant with onboarding)
+- **P1-E02** — Redundant with P1-L11 (domain tests already complete, 120/120 passing)
 
 | ID | Task | Pts | Status | Deps | Spec |
 |----|------|-----|--------|------|------|
-| P1-E01 | Codebase onboarding — clone, run, verify | 2 | ⬜ TODO | P1-L05, P1-L06 | `docs/tasks/P1-E01-codebase-onboarding.md` |
-| P1-E02 | Write unit tests for domain result types | 3 | ⬜ TODO | P1-E01, P1-L08 | `docs/tasks/P1-E02-domain-results-tests.md` |
+| P1-E01 | ⚠️ NEEDS REDEFINITION (current: onboarding) | 2 | ⏸️ BLOCKED | Awaiting @task-planner | `docs/tasks/P1-E01-codebase-onboarding.md` |
+| P1-E02 | ⚠️ REDUNDANT (domain tests done in P1-L11) | 3 | ⏸️ BLOCKED | Awaiting @task-planner | `docs/tasks/P1-E02-domain-results-tests.md` |
 
 ### Emre's Current Reality
 - Emre is working on **pre-AVAROS learning tasks** (OVOS basics → device management skill → web UI bridge)

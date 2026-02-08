@@ -12,10 +12,10 @@
 
 ## Last Session
 
-- **Task:** Fix ONBOARDING.md for zero-config + mark P1-L05 done
-- **Action:** Rewrote ONBOARDING.md to be Docker-first (clone → docker run). Marked P1-L05 DONE. Simplified from 10 sections to 5 core sections with zero-touch quick start. Removed .github references (not in repo).
-- **Files Changed:** docs/ONBOARDING.md (rewritten), docs/TODO.md
-- **Result:** ✅ All Lead Phase 1 tasks complete (L01–L11). Emre unblocked for P1-E01.
+- **Task:** Rewrite ONBOARDING.md as pure setup (not a task) + identify task backlog issues
+- **Action:** Rewrote ONBOARDING.md as 8-step setup guide (clone AVAROS + WASABI OVOS with token, run both, verify, explore structure). Removed dependencies/testing sections (Docker handles it). Identified P1-E01 (redundant with onboarding) and P1-E02 (redundant with P1-L11) need redefinition.
+- **Files Changed:** docs/ONBOARDING.md (complete rewrite), docs/TODO.md
+- **Result:** ✅ ONBOARDING ready. ⚠️ Emre tasks blocked — awaiting @task-planner to redefine P1-E01 and P1-E02.
 
 ## Blockers
 
@@ -27,9 +27,13 @@
 
 ## Next Action (Recommended)
 
-1. **Emre:** Start P1-E01 (codebase onboarding) — follow `docs/ONBOARDING.md`
-2. **Lead:** Decide what to do with P1-E02 (redundant — domain tests done in P1-L11)
-3. **@task-planner:** Create next batch of Emre tasks (adapter tests, use-case tests, integration tests)
+1. **@task-planner:** Redefine Emre's task backlog (P1-E01, P1-E02, and next tasks)
+   - ONBOARDING.md is complete (setup only, not a development task)
+   - P1-E01 current spec is redundant with onboarding
+   - P1-E02 is redundant (domain tests done in P1-L11: 120/120 tests passing)
+   - Suggest: Adapter tests, use-case tests, or integration tests
+2. **Emre:** Follow `docs/ONBOARDING.md` to set up stacks (not a task, just setup)
+3. **Emre:** Wait for @task-planner to create P1-E01 and P1-E02 (or new task IDs)
 
 ## Active Context
 
