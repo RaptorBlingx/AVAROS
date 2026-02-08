@@ -58,6 +58,8 @@ docker/logs/
 *.bak
 *.backup
 
-# Project-specific ignores (agent system and docs are tracked)
-# .github/ — tracked: agents, instructions, copilot-instructions.md
-# docs/ — tracked: PROJECT-STATUS.md, TODO.md, DECISIONS.md, PHASE-ROADMAP.md, etc.
+# Lead-only local files (not pushed to repo)
+# Agents, instructions, and docs are local workflow tools for the Lead developer.
+# Emre receives tasks via Forgejo issues, not via files in these folders.
+.github/
+docs/
