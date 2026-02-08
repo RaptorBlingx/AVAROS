@@ -23,6 +23,7 @@ from skill.domain.models import CanonicalMetric, TimePeriod
 from skill.domain.results import KPIResult, ComparisonResult, TrendResult, AnomalyResult, WhatIfResult
 from skill.use_cases.query_dispatcher import QueryDispatcher
 from skill.adapters.factory import AdapterFactory
+from skill.services.response_builder import ResponseBuilder
 
 
 class AVAROSSkill(OVOSSkill):
@@ -55,6 +56,7 @@ class AVAROSSkill(OVOSSkill):
         
         self.adapter_factory: AdapterFactory | None = None
         self.dispatcher: QueryDispatcher | None = None
+        self.response_builder: ResponseBuilder | None = None
 
     def initialize(self):
         """
@@ -66,6 +68,7 @@ class AVAROSSkill(OVOSSkill):
         self.adapter_factory = AdapterFactory(settings_service=None)  # Will use SettingsService
         adapter = self.adapter_factory.create()
         self.dispatcher = QueryDispatcher(adapter=adapter)
+        self.response_builder = ResponseBuilder(verbosity="normal")
         self.log.info("AVAROS skill initialized with adapter: %s", type(adapter).__name__)
 
     def _safe_dispatch(self, handler_name: str, action: Callable) -> Any:
@@ -105,15 +108,8 @@ class AVAROSSkill(OVOSSkill):
                 period=period
             )
             
-            self.speak_dialog(
-                "kpi.energy.response",
-                data={
-                    "asset_name": result.asset_id,
-                    "value": f"{result.value:.2f}",
-                    "unit": result.unit,
-                    "period": result.period.display_name
-                }
-            )
+            response = self.response_builder.format_kpi_result(result)
+            self.speak(response)
         
         self._safe_dispatch("handle_kpi_energy_per_unit", _execute)
 
@@ -129,15 +125,8 @@ class AVAROSSkill(OVOSSkill):
             period=period
         )
         
-        self.speak_dialog(
-            "kpi.oee.response",
-            data={
-                "asset_name": result.asset_id,
-                "value": f"{result.value:.1f}",
-                "unit": result.unit,
-                "period": result.period.display_name
-            }
-        )
+        response = self.response_builder.format_kpi_result(result)
+        self.speak(response)
 
     @intent_handler("kpi.scrap_rate.intent")
     def handle_kpi_scrap_rate(self, message):
@@ -151,15 +140,8 @@ class AVAROSSkill(OVOSSkill):
             period=period
         )
         
-        self.speak_dialog(
-            "kpi.scrap_rate.response",
-            data={
-                "asset_name": result.asset_id,
-                "value": f"{result.value:.2f}",
-                "unit": result.unit,
-                "period": result.period.display_name
-            }
-        )
+        response = self.response_builder.format_kpi_result(result)
+        self.speak(response)
 
     # =========================================================================
     # Compare Query Handlers
@@ -178,15 +160,8 @@ class AVAROSSkill(OVOSSkill):
             period=period
         )
         
-        self.speak_dialog(
-            "compare.energy.response",
-            data={
-                "winner": result.winner_id,
-                "metric": "energy per unit",
-                "difference": f"{abs(result.difference):.1f}",
-                "unit": result.unit
-            }
-        )
+        response = self.response_builder.format_comparison_result(result)
+        self.speak(response)
 
     # =========================================================================
     # Trend Query Handlers
@@ -206,14 +181,8 @@ class AVAROSSkill(OVOSSkill):
             granularity=granularity
         )
         
-        self.speak_dialog(
-            "trend.scrap.response",
-            data={
-                "direction": result.direction,
-                "change_percent": f"{result.change_percent:.1f}",
-                "period": period.display_name
-            }
-        )
+        response = self.response_builder.format_trend_result(result)
+        self.speak(response)
 
     @intent_handler("trend.energy.intent")
     def handle_trend_energy(self, message):
@@ -229,14 +198,8 @@ class AVAROSSkill(OVOSSkill):
             granularity=granularity
         )
         
-        self.speak_dialog(
-            "trend.energy.response",
-            data={
-                "direction": result.direction,
-                "change_percent": f"{result.change_percent:.1f}",
-                "period": period.display_name
-            }
-        )
+        response = self.response_builder.format_trend_result(result)
+        self.speak(response)
 
     # =========================================================================
     # Anomaly Query Handlers
@@ -252,17 +215,8 @@ class AVAROSSkill(OVOSSkill):
             asset_id=asset_id
         )
         
-        if result.is_anomalous:
-            self.speak_dialog(
-                "anomaly.found.response",
-                data={
-                    "count": len(result.anomalies),
-                    "severity": result.severity,
-                    "description": result.anomalies[0].description if result.anomalies else ""
-                }
-            )
-        else:
-            self.speak_dialog("anomaly.none.response")
+        response = self.response_builder.format_anomaly_result(result)
+        self.speak(response)
 
     # =========================================================================
     # What-If Query Handlers
@@ -292,15 +246,8 @@ class AVAROSSkill(OVOSSkill):
         
         result: WhatIfResult = self.dispatcher.simulate_whatif(scenario)
         
-        self.speak_dialog(
-            "whatif.temperature.response",
-            data={
-                "baseline": f"{result.baseline:.1f}",
-                "projected": f"{result.projected:.1f}",
-                "delta_percent": f"{result.delta_percent:.1f}",
-                "confidence": f"{result.confidence * 100:.0f}"
-            }
-        )
+        response = self.response_builder.format_whatif_result(result)
+        self.speak(response)
 
     # =========================================================================
     # Helper Methods
