@@ -5,10 +5,10 @@
 > Previous tasks archived to: `docs/archives/tasks-v1/`
 
 ## Quick Status
-- Lead: Deployment done (L01–L04). L05 (repo setup) in progress. L07+L08+L09+L10+L11 done. 1 completion task remains (L06, 2 pts).
+- Lead: Deployment done (L01–L04). L05 (repo setup) in progress. L06–L11 done. L06 unblocks Emre.
 - Emre: Completing learning tasks (task3 → task5). First AVAROS tasks created (E01–E02), gated on L05+L06.
 - Blocked: DocuBoT/PREVENTION = Phase 2+ (waiting on WASABI consortium)
-- **Phase 1 total remaining: ~5 pts (3 in progress + 2 new)**
+- **Phase 1 total remaining: ~3 pts (L05 in progress, then Emre E01+E02)**
 
 ---
 
@@ -21,7 +21,7 @@
 | P1-L03 | Test skill loads in OVOS | 3 | ✅ DONE | P1-L02 |
 | P1-L04 | End-to-end voice test | 5 | ✅ DONE | P1-L03 |
 | P1-L05 | GitHub/Forgejo repo setup for team | 3 | 🔄 IN PROGRESS | P1-L04 |
-| P1-L06 | Write Emre onboarding doc (clone, stack, run skill) | 2 | ⬜ TODO | P1-L05 |
+| P1-L06 | Write Emre onboarding doc (clone, stack, run skill) | 2 | ✅ DONE | P1-L05 |
 | P1-L07 | Fix git branch mismatch (master → main) | 1 | ✅ DONE | — |
 | P1-L08 | Rewrite fake tests to test real production code | 5 | ✅ DONE | — |
 | P1-L09 | Wire ResponseBuilder into all intent handlers | 3 | ✅ DONE | — |

@@ -12,10 +12,10 @@
 
 ## Last Session
 
-- **Task:** Fix review issues for P1-L07–L11 (17 test failures + _safe_dispatch)
-- **Action:** Fixed all 17 test failures: added `message=""` to MetricNotSupportedError/AssetNotFoundError constructors (11), corrected Anomaly constructor in test_result_types.py (2), fixed metric count 21→19 (1), fixed http_status→status_code key (1), removed duplicate test method (1). Wrapped 7 remaining intent handlers in `_safe_dispatch`. All 120 tests pass.
-- **Files Changed:** tests/test_domain/test_models.py, tests/test_exceptions.py, tests/test_result_types.py, skill/__init__.py
-- **Result:** All review issues resolved. 120/120 tests pass. 8/8 handlers use _safe_dispatch.
+- **Task:** P1-L06 — Write Emre onboarding doc
+- **Action:** Created `docs/ONBOARDING.md` with 10 sections: SSH verification, clone, project structure, dependency install, running tests, Docker standalone, WASABI integration, coding standards quick ref, first task pointer, getting help.
+- **Files Changed:** docs/ONBOARDING.md (new), docs/TODO.md, docs/PROJECT-STATUS.md
+- **Result:** ✅ P1-L06 complete. Emre can start P1-E01 once P1-L05 (repo access) is done.
 
 ## Blockers
 
@@ -25,9 +25,11 @@
 
 ## Next Action (Recommended)
 
-1. `@reviewer` — "Re-review P1-L07–L11 review fixes" — verify all issues resolved
-2. `@ops` — After approval, batch-merge P1-L07 through P1-L11
-3. Lead manually: finish P1-L05 (repo setup), then P1-L06 (onboarding doc) to unblock Emre
+## Next Action (Recommended)
+
+1. **Lead manually:** Finish P1-L05 (Forgejo repo setup — SSH keys, permissions) — last Lead blocker
+2. After L05: Create Forgejo issues for P1-E01 and P1-E02 so Emre can start
+3. Emre: Follow `docs/ONBOARDING.md` → P1-E01 (onboarding) → P1-E02 (domain tests)
 
 ## Active Context
 
