@@ -44,7 +44,7 @@ export default function StatusCard({
         </p>
         <div className="flex relative items-center justify-center">
           <span
-            className={`inline-flex opacity-50 z-20 shadow-md  h-9 w-9 items-center justify-center rounded-lg border ${iconToneClass}`}
+            className={`inline-flex opacity-50 z-20 shodow-md blur-[1px] h-9 w-9 items-center justify-center rounded-lg border ${iconToneClass}`}
           >
             {icon}
           </span>

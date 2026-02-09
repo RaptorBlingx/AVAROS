@@ -1,0 +1,144 @@
+import type { ConnectionTestResponse, PlatformType } from "../../api/types";
+
+type ConnectionSetupStepProps = {
+  platformType: PlatformType;
+  authType: "api_key";
+  apiUrl: string;
+  apiKey: string;
+  formError: string;
+  testResult: ConnectionTestResponse | null;
+  testError: string;
+  isTesting: boolean;
+  isSaving: boolean;
+  onAuthTypeChange: (value: "api_key") => void;
+  onApiUrlChange: (value: string) => void;
+  onApiKeyChange: (value: string) => void;
+  onTestConnection: () => void;
+  onSave: () => void;
+};
+
+export default function ConnectionSetupStep({
+  platformType,
+  authType,
+  apiUrl,
+  apiKey,
+  formError,
+  testResult,
+  testError,
+  isTesting,
+  isSaving,
+  onAuthTypeChange,
+  onApiUrlChange,
+  onApiKeyChange,
+  onTestConnection,
+  onSave
+}: ConnectionSetupStepProps) {
+  const isMock = platformType === "mock";
+
+  return (
+    <section className="space-y-4">
+      <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">
+          Step 3 of 3
+        </p>
+        <h2 className="m-0 mt-2 text-2xl font-semibold text-slate-900">
+          Connection Setup
+        </h2>
+      </header>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        {isMock ? (
+          <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            Mock mode selected. No connection details are required.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700">
+                API URL
+              </span>
+              <input
+                type="url"
+                value={apiUrl}
+                onChange={(event) => onApiUrlChange(event.target.value)}
+                placeholder="https://api.example.com"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2"
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700">
+                Auth Type
+              </span>
+              <select
+                value={authType}
+                onChange={(event) => onAuthTypeChange(event.target.value as "api_key")}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2"
+              >
+                <option value="api_key">API Key</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700">
+                API Key
+              </span>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(event) => onApiKeyChange(event.target.value)}
+                placeholder="Enter API key"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2"
+              />
+            </label>
+          </div>
+        )}
+
+        {formError && (
+          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+            {formError}
+          </div>
+        )}
+
+        {testError && (
+          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+            {testError}
+          </div>
+        )}
+
+        {testResult && (
+          <div
+            className={`mt-4 rounded-lg border px-4 py-3 text-sm ${
+              testResult.success
+                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                : "border-red-200 bg-red-50 text-red-900"
+            }`}
+          >
+            {testResult.message}
+          </div>
+        )}
+
+        <div className="mt-6 flex flex-wrap gap-3">
+          {!isMock && (
+            <button
+              type="button"
+              className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={onTestConnection}
+              disabled={isTesting || isSaving}
+            >
+              {isTesting ? "Testing..." : "Test Connection"}
+            </button>
+          )}
+          <button
+            type="button"
+            className="inline-flex items-center rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={onSave}
+            disabled={isSaving || isTesting}
+          >
+            {isSaving ? "Saving..." : "Save & Finish"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
