@@ -8,6 +8,7 @@ via OVOS message bus. This simulates what would happen with real voice input.
 
 import sys
 import time
+import os
 from datetime import datetime
 
 try:
@@ -16,8 +17,8 @@ except ImportError:
     from mycroft_bus_client import MessageBusClient, Message
 
 # Test configuration
-MESSAGEBUS_HOST = "ovos_messagebus"
-MESSAGEBUS_PORT = 8181
+MESSAGEBUS_HOST = os.environ.get("MESSAGEBUS_HOST", "ovos_messagebus")
+MESSAGEBUS_PORT = int(os.environ.get("MESSAGEBUS_PORT", "8181"))
 TEST_TIMEOUT = 10  # seconds
 
 
@@ -34,7 +35,7 @@ class E2ETestRunner:
     def connect(self) -> None:
         """Connect to OVOS message bus."""
         print(f"Connecting to message bus at {MESSAGEBUS_HOST}:{MESSAGEBUS_PORT}")
-        self.client = MessageBusClient(host=MESSAGEBUS_HOST, port=MESSAGEBUS_PORT)
+        self.client = MessageBusClient(host=MESSAGEBUS_HOST, port=MESSAGEBUS_PORT, route="/core")
         self.client.run_in_thread()
         time.sleep(2)  # Allow connection to establish
         print("✓ Connected to message bus")
