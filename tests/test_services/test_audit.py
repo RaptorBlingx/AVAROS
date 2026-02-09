@@ -77,14 +77,14 @@ class TestAuditLoggerInit:
     def test_init_default_sets_in_memory(self) -> None:
         """Default construction uses in-memory database."""
         audit = AuditLogger()
-        assert audit._db_path is None
+        assert audit._database_url == "sqlite:///:memory:"
         assert audit._initialized is False
 
-    def test_init_with_db_path_stores_path(self, tmp_path) -> None:
-        """Construction with db_path stores a Path object."""
-        db = tmp_path / "audit.db"
-        audit = AuditLogger(db_path=str(db))
-        assert audit._db_path == db
+    def test_init_with_database_url_stores_url(self) -> None:
+        """Construction with database_url stores the URL."""
+        url = "postgresql://avaros:avaros@localhost:5432/avaros"
+        audit = AuditLogger(database_url=url)
+        assert audit._database_url == url
 
     def test_initialize_creates_tables(self, logger: AuditLogger) -> None:
         """initialize() puts logger into ready state."""
@@ -98,13 +98,31 @@ class TestAuditLoggerInit:
         logger.initialize()
         assert logger._engine is engine_before
 
-    def test_initialize_with_file_path_creates_db(self, tmp_path) -> None:
-        """initialize() with a file path creates the SQLite file."""
-        db = tmp_path / "subdir" / "audit.db"
-        audit = AuditLogger(db_path=str(db))
+    def test_initialize_with_database_url(self) -> None:
+        """initialize() with an explicit SQLite URL creates the engine."""
+        audit = AuditLogger(database_url="sqlite:///:memory:")
         audit.initialize()
-        assert db.exists()
+        assert audit._initialized is True
+        assert audit._engine is not None
         audit.close()
+
+    def test_init_reads_env_var_fallback(self, monkeypatch) -> None:
+        """When no explicit URL, reads AVAROS_DATABASE_URL env var."""
+        monkeypatch.setenv(
+            "AVAROS_DATABASE_URL",
+            "postgresql://u:p@host:5432/db",
+        )
+        audit = AuditLogger()
+        assert audit._database_url == "postgresql://u:p@host:5432/db"
+
+    def test_init_explicit_url_overrides_env_var(self, monkeypatch) -> None:
+        """Explicit database_url takes precedence over env var."""
+        monkeypatch.setenv(
+            "AVAROS_DATABASE_URL",
+            "postgresql://u:p@host:5432/db",
+        )
+        audit = AuditLogger(database_url="sqlite:///:memory:")
+        assert audit._database_url == "sqlite:///:memory:"
 
     def test_close_resets_initialized_flag(self, logger: AuditLogger) -> None:
         """close() disposes engine and resets state."""

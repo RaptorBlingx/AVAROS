@@ -15,6 +15,7 @@ pydantic>=2.5.0
 
 # Database (settings persistence)
 sqlalchemy>=2.0.23
+psycopg2-binary>=2.9.9
 aiosqlite>=0.19.0
 
 # Encryption for sensitive data

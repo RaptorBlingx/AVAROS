@@ -10,9 +10,20 @@ Features:
     - Automatic retention policy (90 days operational, 1 year audit)
     - Query traceability via unique IDs
 
+URL resolution order:
+    1. Explicit ``database_url`` parameter
+    2. ``AVAROS_DATABASE_URL`` environment variable
+    3. ``sqlite:///:memory:`` (in-memory fallback for tests)
+
 Usage:
-    audit = AuditLogger(db_path="/data/avaros.db")
-    
+    # Production (reads AVAROS_DATABASE_URL env var)
+    audit = AuditLogger()
+
+    # Explicit URL
+    audit = AuditLogger(
+        database_url="postgresql://avaros:avaros@localhost:5432/avaros"
+    )
+
     audit.log_query(
         query_id="q-abc123",
         user_role="operator",
@@ -26,9 +37,9 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timedelta
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy import create_engine, Column, String, DateTime, JSON, Integer
@@ -113,7 +124,7 @@ class AuditLogger:
         - Audit logs: 1 year minimum
     
     Example:
-        audit = AuditLogger("/data/avaros.db")
+        audit = AuditLogger()  # reads AVAROS_DATABASE_URL
         
         audit.log_query(
             query_id="q-abc123",
@@ -128,18 +139,36 @@ class AuditLogger:
         logs = audit.get_logs_for_asset("Line-1", days=7)
     """
     
-    def __init__(self, db_path: str | Path | None = None):
+    def __init__(self, database_url: str | None = None) -> None:
         """
         Initialize audit logger.
         
         Args:
-            db_path: Path to SQLite database. Defaults to in-memory.
+            database_url: SQLAlchemy database URL.  Falls back to
+                ``AVAROS_DATABASE_URL`` env var, then
+                ``sqlite:///:memory:`` for tests.
         """
-        self._db_path = Path(db_path) if db_path else None
+        self._database_url = self._resolve_database_url(database_url)
         self._engine = None
         self._session_factory = None
         self._initialized = False
     
+    @staticmethod
+    def _resolve_database_url(explicit_url: str | None) -> str:
+        """Determine the database URL from explicit value, env, or default.
+
+        Args:
+            explicit_url: URL passed directly to the constructor.
+
+        Returns:
+            Resolved SQLAlchemy database URL.
+        """
+        if explicit_url:
+            return explicit_url
+        return os.environ.get(
+            "AVAROS_DATABASE_URL", "sqlite:///:memory:"
+        )
+
     def initialize(self) -> None:
         """
         Initialize the audit log database.
@@ -150,21 +179,18 @@ class AuditLogger:
         if self._initialized:
             return
         
-        # Create database connection
-        if self._db_path:
-            self._db_path.parent.mkdir(parents=True, exist_ok=True)
-            db_url = f"sqlite:///{self._db_path}"
-        else:
-            db_url = "sqlite:///:memory:"
-        
-        self._engine = create_engine(db_url, echo=False, future=True)
-        self._session_factory = sessionmaker(bind=self._engine, expire_on_commit=False)
+        self._engine = create_engine(
+            self._database_url, echo=False, future=True,
+        )
+        self._session_factory = sessionmaker(
+            bind=self._engine, expire_on_commit=False,
+        )
         
         # Create tables
         Base.metadata.create_all(self._engine)
         
         self._initialized = True
-        logger.info("AuditLogger initialized (db=%s)", db_url)
+        logger.info("AuditLogger initialized (db=%s)", self._database_url)
     
     def log_query(
         self,

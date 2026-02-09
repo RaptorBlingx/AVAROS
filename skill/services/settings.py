@@ -1,16 +1,28 @@
 """
 SettingsService - Database-Backed Configuration
 
-Manages AVAROS configuration stored in SQLite database.
-Supports hot-reload without container restart.
+Manages AVAROS configuration stored in PostgreSQL (production) or
+SQLite (testing/development).  Supports hot-reload without container
+restart.
 
 Zero-Config Philosophy:
     - On first run, no configuration required (MockAdapter used)
     - Users configure via Web UI, not YAML files
     - Settings persisted to database for reliability
 
+URL resolution order:
+    1. Explicit ``database_url`` parameter
+    2. ``AVAROS_DATABASE_URL`` environment variable
+    3. ``sqlite:///:memory:`` (in-memory fallback for tests)
+
 Usage:
-    settings = SettingsService(db_path="/data/avaros.db")
+    # Production (reads AVAROS_DATABASE_URL env var)
+    settings = SettingsService()
+
+    # Explicit URL
+    settings = SettingsService(
+        database_url="postgresql://avaros:avaros@localhost:5432/avaros"
+    )
     
     # Check if configured
     if not settings.is_configured():
@@ -25,9 +37,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy import create_engine, Column, String, Text, DateTime, Boolean
@@ -106,18 +118,19 @@ class SettingsService:
     """
     Database-backed settings management.
     
-    Stores all configuration in SQLite for persistence across restarts.
-    Provides hot-reload capability for configuration changes.
-    Encrypts sensitive data (API keys) at rest.
+    Stores all configuration in PostgreSQL (production) or SQLite
+    (testing) for persistence across restarts.  Provides hot-reload
+    capability for configuration changes.  Encrypts sensitive data
+    (API keys) at rest.
     
     Attributes:
-        db_path: Path to SQLite database file
+        _database_url: SQLAlchemy connection URL
         _engine: SQLAlchemy engine
         _session_factory: Session factory
         _encryption_key: Fernet encryption key for sensitive data
     
     Example:
-        service = SettingsService("/data/avaros.db")
+        service = SettingsService()  # reads AVAROS_DATABASE_URL
         
         # First run - not configured
         assert not service.is_configured()
@@ -133,15 +146,22 @@ class SettingsService:
         assert service.is_configured()
     """
     
-    def __init__(self, db_path: str | Path | None = None, encryption_key: str | None = None):
+    def __init__(
+        self,
+        database_url: str | None = None,
+        encryption_key: str | None = None,
+    ) -> None:
         """
         Initialize settings service.
         
         Args:
-            db_path: Path to SQLite database. Defaults to in-memory.
-            encryption_key: Base64-encoded Fernet key. If None, generates new key.
+            database_url: SQLAlchemy database URL.  Falls back to
+                ``AVAROS_DATABASE_URL`` env var, then
+                ``sqlite:///:memory:`` for tests.
+            encryption_key: Base64-encoded Fernet key. If None,
+                generates a new key.
         """
-        self._db_path = Path(db_path) if db_path else None
+        self._database_url = self._resolve_database_url(database_url)
         self._engine = None
         self._session_factory = None
         self._initialized = False
@@ -150,17 +170,29 @@ class SettingsService:
         if encryption_key:
             self._encryption_key = encryption_key.encode()
         else:
-            # Generate encryption key from db_path (deterministic but unique)
-            if self._db_path:
-                seed = str(self._db_path).encode()
-                key_material = hashlib.sha256(seed).digest()
-                self._encryption_key = base64.urlsafe_b64encode(key_material)
-            else:
-                # In-memory: generate random key
-                self._encryption_key = Fernet.generate_key()
+            # Derive deterministic key from database URL
+            seed = self._database_url.encode()
+            key_material = hashlib.sha256(seed).digest()
+            self._encryption_key = base64.urlsafe_b64encode(key_material)
         
         self._cipher = Fernet(self._encryption_key)
     
+    @staticmethod
+    def _resolve_database_url(explicit_url: str | None) -> str:
+        """Determine the database URL from explicit value, env, or default.
+
+        Args:
+            explicit_url: URL passed directly to the constructor.
+
+        Returns:
+            Resolved SQLAlchemy database URL.
+        """
+        if explicit_url:
+            return explicit_url
+        return os.environ.get(
+            "AVAROS_DATABASE_URL", "sqlite:///:memory:"
+        )
+
     def initialize(self) -> None:
         """
         Initialize the settings database.
@@ -171,21 +203,18 @@ class SettingsService:
         if self._initialized:
             return
         
-        # Create database connection
-        if self._db_path:
-            self._db_path.parent.mkdir(parents=True, exist_ok=True)
-            db_url = f"sqlite:///{self._db_path}"
-        else:
-            db_url = "sqlite:///:memory:"
-        
-        self._engine = create_engine(db_url, echo=False, future=True)
-        self._session_factory = sessionmaker(bind=self._engine, expire_on_commit=False)
+        self._engine = create_engine(
+            self._database_url, echo=False, future=True,
+        )
+        self._session_factory = sessionmaker(
+            bind=self._engine, expire_on_commit=False,
+        )
         
         # Create tables
         Base.metadata.create_all(self._engine)
         
         self._initialized = True
-        logger.info("SettingsService initialized (db=%s)", db_url)
+        logger.info("SettingsService initialized (db=%s)", self._database_url)
     
     def is_configured(self) -> bool:
         """

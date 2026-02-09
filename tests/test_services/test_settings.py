@@ -81,14 +81,14 @@ class TestSettingsServiceInit:
     def test_init_in_memory_default_creates_service(self) -> None:
         """In-memory construction succeeds without arguments."""
         svc = SettingsService()
-        assert svc._db_path is None
+        assert svc._database_url == "sqlite:///:memory:"
         assert svc._initialized is False
 
-    def test_init_with_db_path_stores_path(self, tmp_path) -> None:
-        """Construction with db_path stores the path."""
-        db = tmp_path / "test.db"
-        svc = SettingsService(db_path=str(db))
-        assert svc._db_path == db
+    def test_init_with_database_url_stores_url(self) -> None:
+        """Construction with database_url stores the URL."""
+        url = "postgresql://avaros:avaros@localhost:5432/avaros"
+        svc = SettingsService(database_url=url)
+        assert svc._database_url == url
 
     def test_init_with_custom_encryption_key(self) -> None:
         """Custom encryption key is accepted."""
@@ -100,6 +100,24 @@ class TestSettingsServiceInit:
         # Should be usable — store & retrieve encrypted value
         svc.set_setting("secret", "my_value", encrypt=True)
         assert svc.get_setting("secret") == "my_value"
+
+    def test_init_reads_env_var_fallback(self, monkeypatch) -> None:
+        """When no explicit URL, reads AVAROS_DATABASE_URL env var."""
+        monkeypatch.setenv(
+            "AVAROS_DATABASE_URL",
+            "postgresql://u:p@host:5432/db",
+        )
+        svc = SettingsService()
+        assert svc._database_url == "postgresql://u:p@host:5432/db"
+
+    def test_init_explicit_url_overrides_env_var(self, monkeypatch) -> None:
+        """Explicit database_url takes precedence over env var."""
+        monkeypatch.setenv(
+            "AVAROS_DATABASE_URL",
+            "postgresql://u:p@host:5432/db",
+        )
+        svc = SettingsService(database_url="sqlite:///:memory:")
+        assert svc._database_url == "sqlite:///:memory:"
 
     def test_initialize_creates_tables(self, service: SettingsService) -> None:
         """initialize() creates the settings table."""

@@ -9,6 +9,36 @@
 #   docker compose -f docker-compose.avaros.yml logs -f
 
 services:
+  avaros_db:
+    container_name: avaros_db
+    hostname: avaros_db
+    image: postgres:15-alpine
+    restart: unless-stopped
+
+    networks:
+      - ovos
+
+    environment:
+      POSTGRES_USER: avaros
+      POSTGRES_PASSWORD: avaros
+      POSTGRES_DB: avaros
+
+    volumes:
+      - avaros_pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U avaros"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
   avaros_skill:
     container_name: avaros_skill
     hostname: avaros_skill
@@ -16,6 +46,10 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     restart: unless-stopped
+
+    depends_on:
+      avaros_db:
+        condition: service_healthy
     
     # Join WASABI OVOS network
     networks:
@@ -42,6 +76,9 @@ services:
     environment:
       # Adapter configuration (DEC-005: MockAdapter default)
       - ADAPTER_TYPE=mock
+      
+      # Database configuration (PostgreSQL — production-grade)
+      - AVAROS_DATABASE_URL=postgresql://avaros:avaros@avaros_db:5432/avaros
       
       # Logging configuration
       - LOG_LEVEL=INFO
@@ -77,3 +114,7 @@ services:
 networks:
   ovos:
     external: true
+
+volumes:
+  avaros_pgdata:
+    driver: local
