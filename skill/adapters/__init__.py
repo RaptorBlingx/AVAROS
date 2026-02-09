@@ -16,10 +16,12 @@ Golden Rule:
 
 from skill.adapters.base import ManufacturingAdapter
 from skill.adapters.mock import MockAdapter
+from skill.adapters.reneryo import ReneryoAdapter
 from skill.adapters.factory import AdapterFactory
 
 __all__ = [
     "ManufacturingAdapter",
     "MockAdapter",
+    "ReneryoAdapter",
     "AdapterFactory",
 ]
