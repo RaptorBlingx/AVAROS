@@ -8,7 +8,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import APP_VERSION, CORS_ORIGINS, DATABASE_URL
-from skill.services.settings import SettingsService
+from dependencies import get_settings_service
+from routers.status import router as status_router
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -28,7 +29,7 @@ app.add_middleware(
 @app.on_event("startup")
 def startup_check() -> None:
     """Validate shared skill imports and DB-backed settings init path."""
-    settings_service = SettingsService()
+    settings_service = get_settings_service()
     settings_service.initialize()
     logger.info(
         "SettingsService import successful: %s (db_url_set=%s)",
@@ -41,3 +42,6 @@ def startup_check() -> None:
 def health() -> dict[str, str]:
     """Liveness endpoint for local and container health checks."""
     return {"status": "ok", "version": APP_VERSION}
+
+
+app.include_router(status_router)
