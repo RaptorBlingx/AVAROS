@@ -1,6 +1,5 @@
-"""
-Test requirements for AVAROS
-"""
+# Test requirements for AVAROS
+
 # Core testing framework
 pytest>=7.4.0
 pytest-asyncio>=0.21.0
@@ -9,6 +8,9 @@ pytest-mock>=3.11.1
 
 # Mocking and testing utilities
 mock>=5.1.0
+
+# Web UI test client (FastAPI TestClient requires httpx)
+httpx>=0.25.0
 
 # Code quality
 flake8>=6.1.0
