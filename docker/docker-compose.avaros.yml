@@ -110,6 +110,46 @@ services:
           cpus: '0.5'
           memory: 256M
 
+  avaros-web-ui:
+    container_name: avaros-web-ui
+    hostname: avaros-web-ui
+    build:
+      context: ..
+      dockerfile: web-ui/Dockerfile
+    restart: unless-stopped
+
+    depends_on:
+      avaros_db:
+        condition: service_healthy
+
+    networks:
+      - ovos
+
+    ports:
+      - "8080:8080"
+
+    volumes:
+      - ../skill:/opt/avaros/skill:ro
+
+    environment:
+      - AVAROS_DATABASE_URL=postgresql://avaros:avaros@avaros_db:5432/avaros
+      - AVAROS_WEB_UI_PORT=8080
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')",
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+
 # External network created by WASABI OVOS stack
 networks:
   ovos:
