@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
 import Settings from "./pages/Settings";
+import Wizard from "./pages/Wizard";
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
         <main className="relative p-4 md:p-8">
           <Routes>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/wizard" element={<Wizard />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { getHealth, getStatus } from "../api/client";
 import type { HealthResponse, SystemStatusResponse } from "../api/types";
 import StatusCard from "../components/StatusCard";
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [status, setStatus] = useState<SystemStatusResponse | null>(null);
   const [error, setError] = useState<string>("");
@@ -19,6 +21,22 @@ export default function Dashboard() {
         getHealth(),
         getStatus(),
       ]);
+      if (!statusData.configured) {
+        const skipRedirectUntilRaw = sessionStorage.getItem(
+          "avaros_skip_wizard_until"
+        );
+        const skipRedirectUntil = skipRedirectUntilRaw
+          ? Number(skipRedirectUntilRaw)
+          : 0;
+        if (skipRedirectUntil > Date.now()) {
+          setHealth(healthData);
+          setStatus(statusData);
+          return;
+        }
+        sessionStorage.removeItem("avaros_skip_wizard_until");
+        navigate("/wizard", { replace: true });
+        return;
+      }
       setHealth(healthData);
       setStatus(statusData);
     } catch (err) {
@@ -26,7 +44,7 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [navigate]);
 
   useEffect(() => {
     void loadData();
@@ -59,7 +77,7 @@ export default function Dashboard() {
             />
           </svg>
         ) as ReactNode,
-        tone: status.configured ? "good" : "warning",
+        tone: "info",
       },
       {
         label: "Active Adapter",
@@ -113,7 +131,7 @@ export default function Dashboard() {
             />
           </svg>
         ) as ReactNode,
-        tone: status.loaded_intents > 0 ? "good" : "warning",
+        tone: "info",
       },
       {
         label: "Database Connected",
@@ -130,7 +148,7 @@ export default function Dashboard() {
             <path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" strokeWidth="2" />
           </svg>
         ) as ReactNode,
-        tone: status.database_connected ? "good" : "warning",
+        tone: "info",
       },
       {
         label: "Version",
@@ -194,33 +212,6 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        <div className="rounded-xl border border-emerald-300 bg-emerald-50/80 p-4 shadow-sm">
-          <p className="m-0 text-xs font-semibold uppercase tracking-wide text-emerald-700">
-            System Health
-          </p>
-          <p className="m-0 mt-2 text-lg font-semibold text-emerald-900">
-            {healthy ? "Healthy" : "Unknown"}
-          </p>
-        </div>
-        <div
-          className={`rounded-xl border p-4 shadow-sm ${
-            status?.configured
-              ? "border-emerald-300 bg-emerald-50/80"
-              : "border-amber-300 bg-amber-50/80"
-          }`}
-        >
-          <p className="m-0 text-xs font-semibold uppercase tracking-wide text-slate-700">
-            Configuration State
-          </p>
-          <p className="m-0 mt-2 text-lg font-semibold text-slate-900">
-            {status?.configured
-              ? "Ready"
-              : "   Setup Required: platform configuration is not complete."}
-          </p>
-        </div>
-      </div>
-
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         {loading && (
           <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-900">
@@ -230,6 +221,16 @@ export default function Dashboard() {
         {error && (
           <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-900">
             Failed to load status: {error}
+          </div>
+        )}
+        {status && !status.configured && (
+          <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+            Setup Required: platform configuration is not complete.
+          </div>
+        )}
+        {healthy && (
+          <div className="mb-3 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
+            System Healthy
           </div>
         )}
 
