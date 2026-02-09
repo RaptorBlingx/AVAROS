@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 
 from skill.adapters.base import ManufacturingAdapter
 from skill.adapters.mock import MockAdapter
+from skill.adapters.reneryo import ReneryoAdapter
 
 if TYPE_CHECKING:
     from skill.services.settings import SettingsService
@@ -62,7 +63,7 @@ class AdapterFactory:
     _ADAPTER_REGISTRY: dict[str, type[ManufacturingAdapter]] = {
         "mock": MockAdapter,
         "demo": MockAdapter,
-        # "reneryo": ReneryoAdapter,  # Added when implemented
+        "reneryo": ReneryoAdapter,
         # "sap": SAPAdapter,           # Future
     }
     
@@ -184,17 +185,43 @@ class AdapterFactory:
         if adapter_class == MockAdapter:
             return MockAdapter()
         
-        # Future adapters will need config from settings_service
-        # config = self._settings_service.get_platform_config()
-        # return adapter_class(
-        #     api_url=config.api_url,
-        #     api_key=config.api_key,
-        #     ...
-        # )
+        # ReneryoAdapter requires api_url and api_key from platform config
+        if adapter_class == ReneryoAdapter:
+            return self._create_reneryo_adapter()
         
         # Fallback for unknown adapters
         return adapter_class()
     
+    def _create_reneryo_adapter(self) -> ReneryoAdapter:
+        """
+        Create ReneryoAdapter with config from SettingsService.
+
+        Reads api_url and api_key from platform configuration.
+        Falls back to empty strings if settings are unavailable.
+
+        Returns:
+            Configured ReneryoAdapter instance
+        """
+        api_url = ""
+        api_key = ""
+        timeout = 30
+
+        if self._settings_service is not None:
+            try:
+                config = self._settings_service.get_platform_config()
+                if config is not None:
+                    api_url = getattr(config, "api_url", "") or ""
+                    api_key = getattr(config, "api_key", "") or ""
+                    timeout = getattr(config, "timeout", 30) or 30
+            except Exception as exc:
+                logger.warning("Error reading RENERYO config: %s", exc)
+
+        return ReneryoAdapter(
+            api_url=api_url,
+            api_key=api_key,
+            timeout=timeout,
+        )
+
     @classmethod
     def register_adapter(
         cls,
