@@ -2,8 +2,8 @@
 
 **AVAROS** (AI-Voice-Assistant-Driven Resource-Optimized Sustainable Manufacturing) is an OVOS-based conversational AI assistant that provides manufacturing teams with voice-accessible KPIs for energy, materials, supply chain, and carbon metrics.
 
-> **Status:** Phase 1 Complete (Deployment & Integration)  
-> **Last Updated:** February 6, 2026  
+> **Status:** Phase 2 In Progress (Web UI Foundation Delivered)  
+> **Last Updated:** February 9, 2026  
 > **Team:** Mohamad (Lead) + Emre (Developer)
 
 ---
@@ -43,7 +43,8 @@ cd AVAROS
 docker compose up
 
 # AVAROS Web UI will be available at:
-# - http://localhost:5000 (coming in Phase 2)
+# - http://localhost:8080 (FastAPI + built frontend)
+# - http://localhost:5173 (Vite development server)
 ```
 
 ### First Run (Zero-Config)
@@ -53,7 +54,7 @@ AVAROS works out-of-the-box with mock data:
 - Perfect for testing and learning
 
 ### Connect to Real Platform
-Configuration is done via the Web UI (Phase 2) or Settings API. Supports RENERYO and other energy management platforms with REST/MQTT/OPC-UA interfaces.
+Configuration is done via the Web UI wizard or Settings API. Supports `mock`, `reneryo`, and `custom_rest` platform profiles in the current setup flow.
 
 ---
 
@@ -79,6 +80,12 @@ avaros-ovos-skill/
 │   │   └── response_builder.py  # Dialog response formatting
 │   └── locale/                # Intents and dialogs
 ├── tests/                      # Test suite (pytest)
+├── web-ui/                     # FastAPI + React web interface
+│   ├── main.py                # FastAPI app entry point
+│   ├── routers/               # API routers (status/config/metrics)
+│   ├── schemas/               # Pydantic response/request models
+│   ├── dependencies.py        # Shared dependency injection
+│   └── frontend/              # Vite + React + TypeScript frontend
 ├── docker/                     # Docker artifacts
 │   ├── Dockerfile             # AVAROS container
 │   └── docker-compose.avaros.yml  # AVAROS service definition
@@ -196,11 +203,16 @@ Detailed documentation is maintained locally for development purposes. For archi
 - [x] End-to-end voice test
 - [x] Forgejo repository setup
 
-### Phase 2: Intelligence Layer (Planned)
+### Phase 2: Intelligence Layer (In Progress)
+- [x] Web UI service scaffold (FastAPI container)
+- [x] Health & system status API
+- [x] Platform configuration CRUD API
+- [x] Metric mapping CRUD API
+- [x] React frontend shell (Vite + TypeScript)
+- [x] First-run wizard (3-step MVP)
 - [ ] DocuBoT integration (RAG for procedures/specs)
 - [ ] PREVENTION service (anomaly detection)
 - [ ] RENERYO adapter implementation
-- [ ] Web UI (React dashboard)
 
 ### Phase 3: Production Hardening (Planned)
 - [ ] Multi-platform adapters (additional energy management systems)
