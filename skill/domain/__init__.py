@@ -39,6 +39,10 @@ from skill.domain.exceptions import (
     MetricNotSupportedError,
     AssetNotFoundError,
 )
+from skill.domain.document_models import (
+    DocumentPassage,
+    DocumentResult,
+)
 
 __all__ = [
     # Enums and Value Objects
@@ -55,6 +59,9 @@ __all__ = [
     "TrendResult",
     "AnomalyResult",
     "WhatIfResult",
+    # Document Models
+    "DocumentPassage",
+    "DocumentResult",
     # Exceptions
     "AVAROSError",
     "AdapterError",
