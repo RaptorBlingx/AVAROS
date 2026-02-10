@@ -1,24 +1,28 @@
 """
-ReneryoAdapter - RENERYO Manufacturing Platform Adapter
+ReneryoAdapter — RENERYO Manufacturing Platform Adapter.
 
 Connects to the RENERYO REST API to fetch real manufacturing KPIs.
-Currently a skeleton — all methods raise AdapterError until API
-credentials arrive from ArtiBilim.
+Supports bearer token and session-cookie authentication (DEC-022).
 
-Status:
-    SKELETON — blocked on RENERYO API credentials.
-    All methods raise AdapterError("RENERYO_NOT_CONNECTED").
-    Endpoint mapping is placeholder-ready for rapid integration.
-
-Future Dependencies (not installed yet):
-    - aiohttp: Async HTTP client for RENERYO REST API calls
+Dependencies:
+    - aiohttp: Async HTTP client for RENERYO REST API calls.
+    - skill.adapters._reneryo_parsers: Response JSON → domain model parsers.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+import aiohttp
+
+from skill.adapters._reneryo_parsers import (
+    parse_comparison_response,
+    parse_kpi_response,
+    parse_raw_data_response,
+    parse_trend_response,
+)
 from skill.adapters.base import ManufacturingAdapter
 from skill.domain.exceptions import AdapterError
 from skill.domain.models import CanonicalMetric
@@ -33,22 +37,19 @@ if TYPE_CHECKING:
         WhatIfResult,
     )
 
-
 logger = logging.getLogger(__name__)
+
+# Retry configuration
+_MAX_RETRIES = 3
+_BACKOFF_FACTORS = (0.5, 1.0, 2.0)
 
 
 class ReneryoAdapter(ManufacturingAdapter):
     """
     RENERYO manufacturing platform adapter.
 
-    Connects to RENERYO REST API to fetch real manufacturing KPIs.
-    Currently a skeleton — real implementation when API credentials arrive.
-
-    Design Notes:
-        - _ENDPOINT_MAP documents the expected RENERYO API shape
-        - All query methods raise AdapterError until connected
-        - initialize() will create an aiohttp session when implemented
-        - shutdown() will close the session gracefully
+    Connects to RENERYO REST API to fetch real manufacturing KPIs
+    via aiohttp. Supports bearer and cookie auth (DEC-022).
 
     DEC-001 Compliance:
         This adapter file and AdapterFactory registration are the ONLY
@@ -57,7 +58,7 @@ class ReneryoAdapter(ManufacturingAdapter):
     """
 
     # =========================================================================
-    # RENERYO API Endpoint Mapping (Placeholders)
+    # RENERYO API Endpoint Mapping
     # =========================================================================
 
     _ENDPOINT_MAP: dict[CanonicalMetric, str] = {
@@ -87,34 +88,32 @@ class ReneryoAdapter(ManufacturingAdapter):
         CanonicalMetric.CO2_PER_BATCH: "/api/v1/kpis/carbon/per-batch",
     }
 
-    # Capabilities this adapter will support when connected
-    _SUPPORTED_CAPABILITIES: set[str] = {
-        "carbon",
-        "realtime",
-    }
+    _SUPPORTED_CAPABILITIES: set[str] = {"carbon", "realtime"}
 
     def __init__(
         self,
         api_url: str,
         api_key: str,
         timeout: int = 30,
+        auth_type: str = "bearer",
     ) -> None:
         """
         Initialize RENERYO adapter with connection parameters.
 
         Args:
-            api_url: Base URL for the RENERYO REST API
-            api_key: Authentication key for RENERYO API
-            timeout: Request timeout in seconds (default 30)
+            api_url: Base URL for the RENERYO REST API.
+            api_key: Authentication key for RENERYO API.
+            timeout: Request timeout in seconds (default 30).
+            auth_type: Auth mode — "bearer" or "cookie" (DEC-022).
         """
-        self._api_url = api_url
+        self._api_url = api_url.rstrip("/") if api_url else ""
         self._api_key = api_key
         self._timeout = timeout
-        # Will be an aiohttp.ClientSession when aiohttp is added
-        self._session: object | None = None
+        self._auth_type = auth_type
+        self._session: aiohttp.ClientSession | None = None
 
     # =========================================================================
-    # Query Type 1: KPI Retrieval
+    # Query Methods
     # =========================================================================
 
     async def get_kpi(
@@ -127,21 +126,21 @@ class ReneryoAdapter(ManufacturingAdapter):
         Retrieve a single KPI value from the RENERYO API.
 
         Args:
-            metric: The canonical metric to retrieve
-            asset_id: Target asset/machine identifier
-            period: Time period for the measurement
+            metric: The canonical metric to retrieve.
+            asset_id: Target asset/machine identifier.
+            period: Time period for the measurement.
 
         Returns:
-            KPIResult with value, unit, and metadata
+            KPIResult with value, unit, and metadata.
 
         Raises:
-            AdapterError: Always — RENERYO API not yet connected
+            AdapterError: On connection, auth, or parse errors.
         """
-        self._raise_not_connected("get_kpi", metric)
-
-    # =========================================================================
-    # Query Type 2: Comparison
-    # =========================================================================
+        self._ensure_initialized()
+        endpoint = self._resolve_endpoint(metric)
+        params = {"asset_id": asset_id, "period": period.display_name or "today"}
+        data = await self._retry_fetch(endpoint, params)
+        return parse_kpi_response(data, metric, asset_id, period)
 
     async def compare(
         self,
@@ -153,21 +152,26 @@ class ReneryoAdapter(ManufacturingAdapter):
         Compare a metric across multiple assets via the RENERYO API.
 
         Args:
-            metric: The canonical metric to compare
-            asset_ids: List of assets to compare (2 or more)
-            period: Time period for comparison
+            metric: The canonical metric to compare.
+            asset_ids: List of assets to compare (2 or more).
+            period: Time period for comparison.
 
         Returns:
-            ComparisonResult with ranked items and winner
+            ComparisonResult with ranked items and winner.
 
         Raises:
-            AdapterError: Always — RENERYO API not yet connected
+            AdapterError: On connection, auth, or parse errors.
         """
-        self._raise_not_connected("compare", metric)
-
-    # =========================================================================
-    # Query Type 3: Trend Analysis
-    # =========================================================================
+        self._ensure_initialized()
+        endpoint = self._resolve_endpoint(metric)
+        params = {
+            "asset_ids": ",".join(asset_ids),
+            "period": period.display_name or "today",
+        }
+        data = await self._retry_fetch(endpoint, params)
+        if not isinstance(data, list):
+            data = [data]
+        return parse_comparison_response(data, metric, period)
 
     async def get_trend(
         self,
@@ -180,22 +184,28 @@ class ReneryoAdapter(ManufacturingAdapter):
         Get time-series data with trend direction from the RENERYO API.
 
         Args:
-            metric: The canonical metric to trend
-            asset_id: Target asset identifier
-            period: Time period to analyze
-            granularity: Data point frequency ("hourly", "daily", "weekly")
+            metric: The canonical metric to trend.
+            asset_id: Target asset identifier.
+            period: Time period to analyze.
+            granularity: Data point frequency.
 
         Returns:
-            TrendResult with data points, direction, and change %
+            TrendResult with data points, direction, and change %.
 
         Raises:
-            AdapterError: Always — RENERYO API not yet connected
+            AdapterError: On connection, auth, or parse errors.
         """
-        self._raise_not_connected("get_trend", metric)
-
-    # =========================================================================
-    # Query Type 4: Raw Data Retrieval
-    # =========================================================================
+        self._ensure_initialized()
+        endpoint = self._resolve_endpoint(metric)
+        params = {
+            "asset_id": asset_id,
+            "granularity": granularity,
+            "period": period.display_name or "today",
+        }
+        data = await self._retry_fetch(endpoint, params)
+        if not isinstance(data, list):
+            data = [data]
+        return parse_trend_response(data, metric, asset_id, period, granularity)
 
     async def get_raw_data(
         self,
@@ -204,23 +214,30 @@ class ReneryoAdapter(ManufacturingAdapter):
         period: TimePeriod,
     ) -> list[DataPoint]:
         """
-        Fetch raw time-series data from the RENERYO API.
-
-        DEC-007: Adapters provide DATA, not INTELLIGENCE.
-        Raw data is fed to PREVENTION / DocuBoT by QueryDispatcher.
+        Fetch raw time-series data from the RENERYO native endpoint.
 
         Args:
-            metric: The canonical metric to retrieve data for
-            asset_id: Target asset identifier
-            period: Time period for data retrieval
+            metric: The canonical metric to retrieve data for.
+            asset_id: Target asset identifier.
+            period: Time period for data retrieval.
 
         Returns:
-            List of DataPoint objects
+            List of DataPoint objects.
 
         Raises:
-            AdapterError: Always — RENERYO API not yet connected
+            AdapterError: On connection, auth, or parse errors.
         """
-        self._raise_not_connected("get_raw_data", metric)
+        self._ensure_initialized()
+        params = {
+            "metric": metric.value,
+            "meter": asset_id,
+        }
+        data = await self._retry_fetch(
+            "/api/u/measurement/meter/item", params,
+        )
+        if not isinstance(data, list):
+            data = [data]
+        return parse_raw_data_response(data, metric)
 
     # =========================================================================
     # Capability Discovery
@@ -230,14 +247,11 @@ class ReneryoAdapter(ManufacturingAdapter):
         """
         Check if the RENERYO adapter supports a capability.
 
-        Currently limited until the API shape is confirmed.
-        What-if and anomaly_ml depend on PREVENTION/DocuBoT integration.
-
         Args:
-            capability: Capability name ("whatif", "anomaly_ml", "realtime", "carbon")
+            capability: Capability name.
 
         Returns:
-            True if capability is supported, False otherwise
+            True if capability is supported, False otherwise.
         """
         return capability in self._SUPPORTED_CAPABILITIES
 
@@ -246,7 +260,7 @@ class ReneryoAdapter(ManufacturingAdapter):
         Return metrics mapped to RENERYO API endpoints.
 
         Returns:
-            List of CanonicalMetric values with known endpoint mappings
+            List of CanonicalMetric values with known endpoint mappings.
         """
         return list(self._ENDPOINT_MAP.keys())
 
@@ -255,32 +269,23 @@ class ReneryoAdapter(ManufacturingAdapter):
     # =========================================================================
 
     async def initialize(self) -> None:
-        """
-        Initialize the RENERYO adapter.
-
-        Will create an aiohttp.ClientSession with:
-            - Base URL: self._api_url
-            - Auth header: Bearer self._api_key
-            - Timeout: self._timeout seconds
-
-        Not implemented yet — aiohttp dependency deferred until
-        API credentials arrive.
-        """
+        """Create aiohttp session with auth headers and timeout."""
+        timeout = aiohttp.ClientTimeout(total=self._timeout)
+        headers = self._build_auth_headers()
+        self._session = aiohttp.ClientSession(
+            timeout=timeout,
+            headers=headers,
+        )
         logger.info(
-            "ReneryoAdapter initialized (skeleton mode) — "
-            "API URL: %s, timeout: %ds",
+            "ReneryoAdapter initialized — API URL: %s, auth: %s",
             self._api_url,
-            self._timeout,
+            self._auth_type,
         )
 
     async def shutdown(self) -> None:
-        """
-        Shut down the RENERYO adapter.
-
-        Will close the aiohttp.ClientSession when implemented.
-        """
+        """Close aiohttp session gracefully."""
         if self._session is not None:
-            # Future: await self._session.close()
+            await self._session.close()
             self._session = None
         logger.info("ReneryoAdapter shut down")
 
@@ -290,8 +295,215 @@ class ReneryoAdapter(ManufacturingAdapter):
         return "RENERYO"
 
     # =========================================================================
+    # HTTP Layer
+    # =========================================================================
+
+    async def _fetch(
+        self,
+        endpoint: str,
+        params: dict[str, str] | None = None,
+    ) -> dict | list:
+        """
+        Execute GET request against RENERYO API.
+
+        Args:
+            endpoint: REST path (from _ENDPOINT_MAP).
+            params: Optional query parameters.
+
+        Returns:
+            Parsed JSON response.
+
+        Raises:
+            AdapterError: On connection, auth, timeout, or parse errors.
+        """
+        self._ensure_initialized()
+        assert self._session is not None  # guarded by _ensure_initialized
+        url = f"{self._api_url}{endpoint}"
+
+        try:
+            async with self._session.get(url, params=params) as resp:
+                return await self._handle_response(resp, endpoint)
+        except AdapterError:
+            raise
+        except aiohttp.ClientConnectorError as exc:
+            raise AdapterError(
+                message=f"Connection failed: {exc}",
+                code="RENERYO_CONNECTION_FAILED",
+                platform="reneryo",
+            ) from exc
+        except asyncio.TimeoutError as exc:
+            raise AdapterError(
+                message=f"Request timed out after {self._timeout}s: {endpoint}",
+                code="RENERYO_TIMEOUT",
+                platform="reneryo",
+            ) from exc
+
+    async def _handle_response(
+        self,
+        resp: aiohttp.ClientResponse,
+        endpoint: str,
+    ) -> dict | list:
+        """
+        Handle HTTP response status and parse JSON body.
+
+        Args:
+            resp: aiohttp response object.
+            endpoint: Endpoint path for error messages.
+
+        Returns:
+            Parsed JSON body.
+
+        Raises:
+            AdapterError: On non-200 status or JSON parse failure.
+        """
+        if resp.status == 200:
+            return await self._parse_json(resp, endpoint)
+        if resp.status == 401:
+            raise AdapterError(
+                message=f"Authentication failed for {endpoint}",
+                code="RENERYO_AUTH_FAILED",
+                platform="reneryo",
+                status_code=401,
+            )
+        if resp.status == 404:
+            raise AdapterError(
+                message=f"Endpoint not found: {endpoint}",
+                code="RENERYO_ENDPOINT_NOT_FOUND",
+                platform="reneryo",
+                status_code=404,
+            )
+        if resp.status >= 500:
+            raise AdapterError(
+                message=f"Server error {resp.status} on {endpoint}",
+                code="RENERYO_SERVER_ERROR",
+                platform="reneryo",
+                status_code=resp.status,
+            )
+        raise AdapterError(
+            message=f"Unexpected status {resp.status} on {endpoint}",
+            code="RENERYO_UNEXPECTED_STATUS",
+            platform="reneryo",
+            status_code=resp.status,
+        )
+
+    async def _retry_fetch(
+        self,
+        endpoint: str,
+        params: dict[str, str] | None = None,
+        max_retries: int = _MAX_RETRIES,
+    ) -> dict | list:
+        """
+        Fetch with retry on 5xx errors using exponential backoff.
+
+        Args:
+            endpoint: REST path.
+            params: Optional query parameters.
+            max_retries: Maximum retry attempts (default 3).
+
+        Returns:
+            Parsed JSON response.
+
+        Raises:
+            AdapterError: After all retries exhausted or on non-retryable error.
+        """
+        last_error: AdapterError | None = None
+        for attempt in range(max_retries + 1):
+            try:
+                return await self._fetch(endpoint, params)
+            except AdapterError as exc:
+                if exc.code != "RENERYO_SERVER_ERROR":
+                    raise
+                last_error = exc
+                if attempt < max_retries:
+                    delay = _BACKOFF_FACTORS[attempt]
+                    logger.warning(
+                        "Retry %d/%d for %s after %.1fs (status=%s)",
+                        attempt + 1,
+                        max_retries,
+                        endpoint,
+                        delay,
+                        exc.status_code,
+                    )
+                    await asyncio.sleep(delay)
+        raise last_error  # type: ignore[misc]
+
+    # =========================================================================
     # Internal Helpers
     # =========================================================================
+
+    def _build_auth_headers(self) -> dict[str, str]:
+        """
+        Build authentication headers based on auth_type (DEC-022).
+
+        Returns:
+            Dict with the appropriate auth header.
+        """
+        if self._auth_type == "cookie":
+            return {"Cookie": f"S={self._api_key}"}
+        return {"Authorization": f"Bearer {self._api_key}"}
+
+    def _ensure_initialized(self) -> None:
+        """
+        Guard: raise AdapterError if session is not created.
+
+        Raises:
+            AdapterError: If initialize() was not called.
+        """
+        if self._session is None:
+            raise AdapterError(
+                message="ReneryoAdapter not initialized — call initialize() first",
+                code="RENERYO_NOT_CONNECTED",
+                platform="reneryo",
+            )
+
+    def _resolve_endpoint(self, metric: CanonicalMetric) -> str:
+        """
+        Look up the REST endpoint for a canonical metric.
+
+        Args:
+            metric: The canonical metric.
+
+        Returns:
+            REST path string.
+
+        Raises:
+            AdapterError: If metric has no mapped endpoint.
+        """
+        endpoint = self._ENDPOINT_MAP.get(metric)
+        if endpoint is None:
+            raise AdapterError(
+                message=f"No endpoint mapped for metric {metric.value}",
+                code="RENERYO_ENDPOINT_NOT_FOUND",
+                platform="reneryo",
+            )
+        return endpoint
+
+    @staticmethod
+    async def _parse_json(
+        resp: aiohttp.ClientResponse,
+        endpoint: str,
+    ) -> dict | list:
+        """
+        Parse JSON from response body.
+
+        Args:
+            resp: aiohttp response object.
+            endpoint: Endpoint path for error context.
+
+        Returns:
+            Parsed JSON as dict or list.
+
+        Raises:
+            AdapterError: On JSON decode failure.
+        """
+        try:
+            return await resp.json()
+        except Exception as exc:
+            raise AdapterError(
+                message=f"Invalid JSON from {endpoint}: {exc}",
+                code="RENERYO_INVALID_RESPONSE",
+                platform="reneryo",
+            ) from exc
 
     def _raise_not_connected(
         self,
@@ -302,11 +514,11 @@ class ReneryoAdapter(ManufacturingAdapter):
         Raise AdapterError indicating RENERYO API is not yet connected.
 
         Args:
-            method: The query method that was called
-            metric: The metric that was requested
+            method: The query method that was called.
+            metric: The metric that was requested.
 
         Raises:
-            AdapterError: Always — with code RENERYO_NOT_CONNECTED
+            AdapterError: Always — with code RENERYO_NOT_CONNECTED.
         """
         endpoint = self._ENDPOINT_MAP.get(metric, "unknown")
         raise AdapterError(

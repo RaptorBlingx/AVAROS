@@ -8,6 +8,7 @@ pytest-mock>=3.11.1
 
 # Mocking and testing utilities
 mock>=5.1.0
+aioresponses>=0.7.6  # For mocking aiohttp HTTP calls
 
 # Web UI test client (FastAPI TestClient requires httpx)
 httpx>=0.25.0
