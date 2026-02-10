@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
-import { getStoredApiKey, clearStoredApiKey } from "./api/client";
-import { ApiError, getHealth } from "./api/client";
+import { clearStoredApiKey, getStatus, getStoredApiKey } from "./api/client";
+import { ApiError } from "./api/client";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
@@ -19,17 +19,8 @@ export default function App() {
       return;
     }
     try {
-      await getHealth();
-      // /health doesn't need auth, so try an authenticated endpoint
-      const resp = await fetch("/api/v1/status", {
-        headers: { "X-API-Key": getStoredApiKey() },
-      });
-      if (resp.status === 401) {
-        clearStoredApiKey();
-        setAuthenticated(false);
-      } else {
-        setAuthenticated(true);
-      }
+      await getStatus();
+      setAuthenticated(true);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         clearStoredApiKey();
