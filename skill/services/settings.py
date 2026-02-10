@@ -55,6 +55,34 @@ from skill.domain.models import CanonicalMetric
 
 logger = logging.getLogger(__name__)
 
+
+# ── Intent-Metric Dependency Map (DEC-021) ──────────────
+
+#: The 8 intents and the canonical metrics each requires.
+#: Used by ``SettingsService.get_intent_metric_requirements()`` and
+#: the Web UI to show which metrics must be mapped for each intent.
+KNOWN_INTENTS: tuple[str, ...] = (
+    "kpi.energy.per_unit",
+    "kpi.oee",
+    "kpi.scrap_rate",
+    "compare.energy",
+    "trend.scrap",
+    "trend.energy",
+    "anomaly.production.check",
+    "whatif.temperature",
+)
+
+INTENT_METRIC_REQUIREMENTS: dict[str, list[CanonicalMetric]] = {
+    "kpi.energy.per_unit": [CanonicalMetric.ENERGY_PER_UNIT],
+    "kpi.oee": [CanonicalMetric.OEE],
+    "kpi.scrap_rate": [CanonicalMetric.SCRAP_RATE],
+    "compare.energy": [CanonicalMetric.ENERGY_PER_UNIT],
+    "trend.scrap": [CanonicalMetric.SCRAP_RATE],
+    "trend.energy": [CanonicalMetric.ENERGY_PER_UNIT],
+    "anomaly.production.check": [CanonicalMetric.OEE],
+    "whatif.temperature": [CanonicalMetric.ENERGY_PER_UNIT],
+}
+
 Base = declarative_base()
 
 
@@ -406,6 +434,72 @@ class SettingsService:
             settings = session.query(SettingModel.key).all()
             return [s.key for s in settings]
 
+    # ── Intent Activation CRUD (DEC-021) ──────────────────
+
+    INTENT_ACTIVE_PREFIX = "intent_active:"
+
+    def set_intent_active(self, intent_name: str, active: bool) -> None:
+        """
+        Store intent activation state.
+
+        Args:
+            intent_name: Intent identifier (e.g. ``kpi.energy.per_unit``)
+            active: Whether the intent is active
+
+        Raises:
+            ValidationError: If intent_name is not in KNOWN_INTENTS
+        """
+        self._validate_intent_name(intent_name)
+        key = f"{self.INTENT_ACTIVE_PREFIX}{intent_name}"
+        self.set_setting(key, str(active).lower())
+
+    def is_intent_active(self, intent_name: str) -> bool:
+        """
+        Read intent activation state.
+
+        Returns ``True`` by default (DEC-005: zero-config).
+
+        Args:
+            intent_name: Intent identifier
+
+        Returns:
+            True if the intent is active (or not yet configured)
+        """
+        key = f"{self.INTENT_ACTIVE_PREFIX}{intent_name}"
+        value = self.get_setting(key, default=None)
+        if value is None:
+            return True
+        return str(value).lower() == "true"
+
+    def list_intent_states(self) -> dict[str, bool]:
+        """
+        Return all known intents with their current activation state.
+
+        Intents with no stored state default to ``True``.
+
+        Returns:
+            Dict mapping intent name → active boolean
+        """
+        return {
+            intent: self.is_intent_active(intent)
+            for intent in KNOWN_INTENTS
+        }
+
+    @staticmethod
+    def get_intent_metric_requirements() -> dict[str, list[str]]:
+        """
+        Return the static intent-to-metric dependency map.
+
+        Each value is a list of canonical metric name strings.
+
+        Returns:
+            Dict mapping intent name → list of metric name strings
+        """
+        return {
+            intent: [m.value for m in metrics]
+            for intent, metrics in INTENT_METRIC_REQUIREMENTS.items()
+        }
+
     # ── Metric Mapping CRUD ─────────────────────────────
 
     METRIC_MAPPING_PREFIX = "metric_mapping:"
@@ -489,6 +583,24 @@ class SettingsService:
                 message=f"Invalid metric name: '{metric_name}'",
                 field="metric_name",
                 value=metric_name,
+            )
+
+    @staticmethod
+    def _validate_intent_name(intent_name: str) -> None:
+        """
+        Validate that an intent name is in KNOWN_INTENTS.
+
+        Args:
+            intent_name: Name to validate
+
+        Raises:
+            ValidationError: If not a recognised intent name
+        """
+        if intent_name not in KNOWN_INTENTS:
+            raise ValidationError(
+                message=f"Unknown intent: '{intent_name}'",
+                field="intent_name",
+                value=intent_name,
             )
 
     def _get_session(self) -> Session:

@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from config import APP_VERSION, CORS_ORIGINS, DATABASE_URL
 from dependencies import get_settings_service
 from routers.config import router as config_router
+from routers.intents import router as intents_router
 from routers.metrics import router as metrics_router
 from routers.status import router as status_router
 
@@ -52,6 +53,7 @@ def health() -> dict[str, str]:
 
 app.include_router(status_router)
 app.include_router(config_router)
+app.include_router(intents_router)
 app.include_router(metrics_router)
 
 

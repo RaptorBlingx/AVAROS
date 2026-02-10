@@ -676,3 +676,219 @@ class TestEncryption:
         svc2 = SettingsService(encryption_key=key)
         encrypted = svc1._encrypt("secret")
         assert svc2._decrypt(encrypted) == "secret"
+
+
+# ══════════════════════════════════════════════════════════
+# 12. Intent Activation — set_intent_active
+# ══════════════════════════════════════════════════════════
+
+
+class TestSetIntentActive:
+    """Tests for set_intent_active()."""
+
+    def test_set_intent_active_true_stores_state(
+        self, service: SettingsService
+    ) -> None:
+        """Activating a known intent persists 'true'."""
+        service.set_intent_active("kpi.oee", True)
+        assert service.is_intent_active("kpi.oee") is True
+
+    def test_set_intent_active_false_stores_state(
+        self, service: SettingsService
+    ) -> None:
+        """Deactivating a known intent persists 'false'."""
+        service.set_intent_active("kpi.oee", False)
+        assert service.is_intent_active("kpi.oee") is False
+
+    def test_set_intent_active_invalid_name_raises(
+        self, service: SettingsService
+    ) -> None:
+        """Unknown intent name raises ValidationError."""
+        with pytest.raises(ValidationError) as exc_info:
+            service.set_intent_active("bogus.intent", True)
+        assert exc_info.value.field == "intent_name"
+        assert "bogus.intent" in exc_info.value.message
+
+    def test_set_intent_active_overwrite(
+        self, service: SettingsService
+    ) -> None:
+        """Setting active twice overwrites the first value."""
+        service.set_intent_active("kpi.oee", False)
+        service.set_intent_active("kpi.oee", True)
+        assert service.is_intent_active("kpi.oee") is True
+
+    @pytest.mark.parametrize(
+        "intent_name",
+        [
+            "kpi.energy.per_unit",
+            "kpi.oee",
+            "kpi.scrap_rate",
+            "compare.energy",
+            "trend.scrap",
+            "trend.energy",
+            "anomaly.production.check",
+            "whatif.temperature",
+        ],
+    )
+    def test_set_intent_active_accepts_all_known_intents(
+        self, service: SettingsService, intent_name: str
+    ) -> None:
+        """Every known intent is accepted without error."""
+        service.set_intent_active(intent_name, True)
+        assert service.is_intent_active(intent_name) is True
+
+
+# ══════════════════════════════════════════════════════════
+# 13. Intent Activation — is_intent_active
+# ══════════════════════════════════════════════════════════
+
+
+class TestIsIntentActive:
+    """Tests for is_intent_active()."""
+
+    def test_is_intent_active_default_true(
+        self, service: SettingsService
+    ) -> None:
+        """Unconfigured intent defaults to True (DEC-005)."""
+        assert service.is_intent_active("kpi.oee") is True
+
+    def test_is_intent_active_after_deactivation(
+        self, service: SettingsService
+    ) -> None:
+        """Returns False after explicit deactivation."""
+        service.set_intent_active("kpi.oee", False)
+        assert service.is_intent_active("kpi.oee") is False
+
+    def test_is_intent_active_after_reactivation(
+        self, service: SettingsService
+    ) -> None:
+        """Returns True after deactivation then reactivation."""
+        service.set_intent_active("kpi.oee", False)
+        service.set_intent_active("kpi.oee", True)
+        assert service.is_intent_active("kpi.oee") is True
+
+
+# ══════════════════════════════════════════════════════════
+# 14. Intent Activation — list_intent_states
+# ══════════════════════════════════════════════════════════
+
+
+class TestListIntentStates:
+    """Tests for list_intent_states()."""
+
+    def test_list_intent_states_returns_all_eight(
+        self, service: SettingsService
+    ) -> None:
+        """Returns all 8 known intents."""
+        states = service.list_intent_states()
+        assert len(states) == 8
+
+    def test_list_intent_states_default_all_true(
+        self, service: SettingsService
+    ) -> None:
+        """All intents default to True on fresh database."""
+        states = service.list_intent_states()
+        assert all(active for active in states.values())
+
+    def test_list_intent_states_reflects_changes(
+        self, service: SettingsService
+    ) -> None:
+        """Toggling one intent is reflected in list."""
+        service.set_intent_active("kpi.oee", False)
+        states = service.list_intent_states()
+        assert states["kpi.oee"] is False
+        assert states["kpi.energy.per_unit"] is True
+
+    def test_list_intent_states_keys_match_known_intents(
+        self, service: SettingsService
+    ) -> None:
+        """Keys in the returned dict match KNOWN_INTENTS."""
+        from skill.services.settings import KNOWN_INTENTS
+
+        states = service.list_intent_states()
+        assert set(states.keys()) == set(KNOWN_INTENTS)
+
+
+# ══════════════════════════════════════════════════════════
+# 15. Intent Activation — get_intent_metric_requirements
+# ══════════════════════════════════════════════════════════
+
+
+class TestGetIntentMetricRequirements:
+    """Tests for get_intent_metric_requirements()."""
+
+    def test_returns_dict_of_string_lists(self) -> None:
+        """Return type is dict[str, list[str]]."""
+        result = SettingsService.get_intent_metric_requirements()
+        assert isinstance(result, dict)
+        for key, val in result.items():
+            assert isinstance(key, str)
+            assert isinstance(val, list)
+            for item in val:
+                assert isinstance(item, str)
+
+    def test_all_known_intents_present(self) -> None:
+        """Every known intent appears in the requirements map."""
+        from skill.services.settings import KNOWN_INTENTS
+
+        result = SettingsService.get_intent_metric_requirements()
+        for intent in KNOWN_INTENTS:
+            assert intent in result
+
+    def test_metric_values_are_canonical(self) -> None:
+        """All metric names are valid CanonicalMetric values."""
+        valid = {m.value for m in CanonicalMetric}
+        result = SettingsService.get_intent_metric_requirements()
+        for metrics in result.values():
+            for m in metrics:
+                assert m in valid, f"{m} is not a CanonicalMetric"
+
+    def test_kpi_energy_requires_energy_per_unit(self) -> None:
+        """Spot-check: kpi.energy.per_unit → [energy_per_unit]."""
+        result = SettingsService.get_intent_metric_requirements()
+        assert result["kpi.energy.per_unit"] == ["energy_per_unit"]
+
+    def test_anomaly_requires_oee(self) -> None:
+        """Spot-check: anomaly.production.check → [oee]."""
+        result = SettingsService.get_intent_metric_requirements()
+        assert result["anomaly.production.check"] == ["oee"]
+
+
+# ══════════════════════════════════════════════════════════
+# 16. Intent Activation — Isolation from Other Settings
+# ══════════════════════════════════════════════════════════
+
+
+class TestIntentActivationIsolation:
+    """Intent state must not interfere with other settings."""
+
+    def test_intent_state_not_in_metric_mappings(
+        self, service: SettingsService
+    ) -> None:
+        """Intent keys do not appear in list_metric_mappings."""
+        service.set_intent_active("kpi.oee", False)
+        assert service.list_metric_mappings() == {}
+
+    def test_intent_state_does_not_corrupt_platform_config(
+        self, service: SettingsService
+    ) -> None:
+        """Toggling intents does not affect platform config."""
+        service.update_platform_config(
+            PlatformConfig(
+                platform_type="reneryo",
+                api_url="https://api.reneryo.com",
+            )
+        )
+        service.set_intent_active("kpi.oee", False)
+        config = service.get_platform_config()
+        assert config.platform_type == "reneryo"
+
+    def test_metric_mapping_does_not_affect_intent_state(
+        self,
+        service: SettingsService,
+        sample_mapping: dict[str, Any],
+    ) -> None:
+        """Storing a metric mapping does not change intent states."""
+        service.set_intent_active("kpi.oee", False)
+        service.set_metric_mapping("energy_per_unit", sample_mapping)
+        assert service.is_intent_active("kpi.oee") is False
