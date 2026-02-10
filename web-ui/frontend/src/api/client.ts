@@ -24,6 +24,22 @@ export class ApiError extends Error {
   }
 }
 
+export function toFriendlyErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 0) {
+      return "Connection lost — check if AVAROS is running.";
+    }
+    if (!error.message || error.message === "Request failed") {
+      return "Something went wrong while talking to AVAROS.";
+    }
+    return error.message;
+  }
+  if (error instanceof Error) {
+    return error.message || "Something went wrong while talking to AVAROS.";
+  }
+  return "Something went wrong while talking to AVAROS.";
+}
+
 type RequestOptions = {
   method?: "GET" | "POST" | "PUT" | "DELETE";
   body?: unknown;

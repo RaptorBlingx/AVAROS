@@ -70,7 +70,7 @@ export default function IntentActivationList({
           type="button"
           onClick={onDisableAll}
           disabled={bulkAction !== null}
-          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-lg border border-sky-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {bulkAction === "disable" ? "Disabling..." : "Disable All"}
         </button>
@@ -80,7 +80,7 @@ export default function IntentActivationList({
         {intents.map((intent) => (
           <article
             key={intent.intent_name}
-            className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+            className="rounded-xl border border-sky-200 bg-sky-50/70 p-4"
           >
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-2">

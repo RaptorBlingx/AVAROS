@@ -3,8 +3,11 @@ import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import initialLogo from "../assets/initial.svg";
 
-import { getHealth, getStatus } from "../api/client";
+import { getHealth, getStatus, toFriendlyErrorMessage } from "../api/client";
 import type { HealthResponse, SystemStatusResponse } from "../api/types";
+import EmptyState from "../components/common/EmptyState";
+import ErrorMessage from "../components/common/ErrorMessage";
+import LoadingSpinner from "../components/common/LoadingSpinner";
 import StatusCard from "../components/StatusCard";
 
 export default function Dashboard() {
@@ -45,7 +48,7 @@ export default function Dashboard() {
       setHealth(healthData);
       setStatus(statusData);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      setError(toFriendlyErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -225,13 +228,17 @@ export default function Dashboard() {
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         {loading && (
-          <div className="mb-4 opacity-20 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-900">
-            Loading system status...
+          <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 opacity-50">
+            <LoadingSpinner label="Loading system status..." size="sm" />
           </div>
         )}
         {error && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-900">
-            Failed to load status: {error}
+          <div className="mb-4">
+            <ErrorMessage
+              title="Unable to load dashboard"
+              message={error}
+              onRetry={() => void loadData()}
+            />
           </div>
         )}
         {cards.length > 0 && (
@@ -250,6 +257,14 @@ export default function Dashboard() {
               />
             ))}
           </div>
+        )}
+        {!loading && !error && cards.length === 0 && (
+          <EmptyState
+            title="No status data yet"
+            message="Dashboard data is empty. Try refreshing after AVAROS services are ready."
+            actionLabel="Refresh"
+            onAction={() => void loadData()}
+          />
         )}
       </div>
     </section>

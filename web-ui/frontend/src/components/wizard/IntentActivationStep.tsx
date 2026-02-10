@@ -1,24 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { ApiError, getIntents, listMetricMappings, setIntentActive } from "../../api/client";
+import {
+  getIntents,
+  listMetricMappings,
+  setIntentActive,
+  toFriendlyErrorMessage,
+} from "../../api/client";
 import type { IntentState, MetricMapping } from "../../api/types";
+import EmptyState from "../common/EmptyState";
+import ErrorMessage from "../common/ErrorMessage";
 import IntentActivationList from "../common/IntentActivationList";
+import LoadingSpinner from "../common/LoadingSpinner";
 import type { IntentViewModel } from "../common/IntentActivationList";
 
 type IntentActivationStepProps = {
   onComplete: () => void;
   onSkip: () => void;
 };
-
-function toUserMessage(error: unknown): string {
-  if (error instanceof ApiError) {
-    return error.message;
-  }
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return "Something went wrong. Please try again.";
-}
 
 export default function IntentActivationStep({ onComplete, onSkip }: IntentActivationStepProps) {
   const [intents, setIntents] = useState<IntentState[]>([]);
@@ -36,7 +34,7 @@ export default function IntentActivationStep({ onComplete, onSkip }: IntentActiv
       setIntents(intentList);
       setMappedMetrics(new Set(mappings.map((mapping: MetricMapping) => mapping.canonical_metric)));
     } catch (err: unknown) {
-      setError(toUserMessage(err));
+      setError(toFriendlyErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -68,7 +66,7 @@ export default function IntentActivationStep({ onComplete, onSkip }: IntentActiv
         ),
       );
     } catch (err: unknown) {
-      setError(toUserMessage(err));
+      setError(toFriendlyErrorMessage(err));
     } finally {
       setSavingIntent(null);
     }
@@ -89,7 +87,7 @@ export default function IntentActivationStep({ onComplete, onSkip }: IntentActiv
         }
         setIntents((prev) => prev.map((intent) => ({ ...intent, active })));
       } catch (err: unknown) {
-        setError(toUserMessage(err));
+        setError(toFriendlyErrorMessage(err));
       } finally {
         setBulkAction(null);
       }
@@ -111,30 +109,39 @@ export default function IntentActivationStep({ onComplete, onSkip }: IntentActiv
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         {loading ? (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-            Loading intents...
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 opacity-50">
+            <LoadingSpinner label="Loading intents..." size="sm" />
           </div>
         ) : (
           <>
             {error && (
-              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
-                {error}
+              <div className="mb-4">
+                <ErrorMessage title="Intent activation error" message={error} onRetry={() => void loadData()} />
               </div>
             )}
 
-            <IntentActivationList
-              intents={intentStatus}
-              savingIntent={savingIntent}
-              bulkAction={bulkAction}
-              onEnableAll={() => void setAll(true)}
-              onDisableAll={() => void setAll(false)}
-              onToggle={(intentName, active) => void toggleIntent(intentName, active)}
-            />
+            {intentStatus.length === 0 ? (
+              <EmptyState
+                title="No intents available"
+                message="Intent list is empty. Retry after backend intent configuration is ready."
+                actionLabel="Retry"
+                onAction={() => void loadData()}
+              />
+            ) : (
+              <IntentActivationList
+                intents={intentStatus}
+                savingIntent={savingIntent}
+                bulkAction={bulkAction}
+                onEnableAll={() => void setAll(true)}
+                onDisableAll={() => void setAll(false)}
+                onToggle={(intentName, active) => void toggleIntent(intentName, active)}
+              />
+            )}
 
             <div className="mt-6 flex flex-wrap gap-3">
               <button
                 type="button"
-                className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
+                className="inline-flex items-center rounded-lg border border-sky-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-sky-50"
                 onClick={onSkip}
               >
                 Skip

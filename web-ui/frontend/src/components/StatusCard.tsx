@@ -39,7 +39,7 @@ export default function StatusCard({
       className={`rounded-2xl border p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${cardToneClass}`}
     >
       <div className="flex items-start justify-between gap-3">
-        <p className="m-0 text-xs font-semibold tracking-wide text-slate-600">
+        <p className="m-0 text-xs font-semibold tracking-wide text-black/80">
           {label}
         </p>
         <span

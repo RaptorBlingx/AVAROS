@@ -5,12 +5,15 @@ import {
   getPlatformConfig,
   resetPlatformConfig,
   testConnection,
+  toFriendlyErrorMessage,
 } from "../../api/client";
 import type {
   PlatformConfigRequest,
   PlatformConfigResponse,
   PlatformType,
 } from "../../api/types";
+import ErrorMessage from "../common/ErrorMessage";
+import LoadingSpinner from "../common/LoadingSpinner";
 
 type PlatformConfigSectionProps = {
   onNotify: (type: "success" | "error", message: string) => void;
@@ -49,7 +52,9 @@ function validate(config: {
   return "";
 }
 
-export default function PlatformConfigSection({ onNotify }: PlatformConfigSectionProps) {
+export default function PlatformConfigSection({
+  onNotify,
+}: PlatformConfigSectionProps) {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -73,7 +78,7 @@ export default function PlatformConfigSection({ onNotify }: PlatformConfigSectio
       setApiUrl(data.api_url);
       setApiKey("");
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Failed to load platform config.";
+      const message = toFriendlyErrorMessage(error);
       setInlineError(message);
     } finally {
       setLoading(false);
@@ -100,7 +105,7 @@ export default function PlatformConfigSection({ onNotify }: PlatformConfigSectio
       setApiKey("");
       onNotify("success", "Platform config updated.");
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Failed to update platform config.";
+      const message = toFriendlyErrorMessage(error);
       setInlineError(message);
       onNotify("error", message);
     } finally {
@@ -118,7 +123,7 @@ export default function PlatformConfigSection({ onNotify }: PlatformConfigSectio
       setEditing(false);
       onNotify("success", "Platform config reset to mock.");
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Failed to reset platform config.";
+      const message = toFriendlyErrorMessage(error);
       setInlineError(message);
       onNotify("error", message);
     } finally {
@@ -127,7 +132,11 @@ export default function PlatformConfigSection({ onNotify }: PlatformConfigSectio
   }, [loadConfig, onNotify]);
 
   const handleTest = useCallback(async () => {
-    const validationError = validate({ platformType, apiUrl, apiKey: isMock ? "" : apiKey });
+    const validationError = validate({
+      platformType,
+      apiUrl,
+      apiKey: isMock ? "" : apiKey,
+    });
     setInlineError(validationError);
     setInlineMessage("");
     if (validationError) {
@@ -140,7 +149,7 @@ export default function PlatformConfigSection({ onNotify }: PlatformConfigSectio
       setInlineMessage(result.message);
       onNotify(result.success ? "success" : "error", result.message);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Connection test failed.";
+      const message = toFriendlyErrorMessage(error);
       setInlineError(message);
       onNotify("error", message);
     } finally {
@@ -171,17 +180,21 @@ export default function PlatformConfigSection({ onNotify }: PlatformConfigSectio
       </header>
 
       {loading ? (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-          Loading platform config...
+        <div className="rounded-lg border opacity-50 border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          <LoadingSpinner label="Loading platform config..." size="sm" />
         </div>
       ) : (
-        <div className="reveal-in rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div className="reveal-in rounded-xl border border-sky-200 bg-sky-50/70 p-4">
           <div className="grid gap-3 md:grid-cols-2">
             <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Platform</span>
+              <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
+                Platform
+              </span>
               <select
                 value={platformType}
-                onChange={(event) => setPlatformType(event.target.value as PlatformType)}
+                onChange={(event) =>
+                  setPlatformType(event.target.value as PlatformType)
+                }
                 disabled={!editing || saving}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               >
@@ -192,7 +205,9 @@ export default function PlatformConfigSection({ onNotify }: PlatformConfigSectio
             </label>
 
             <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">API URL</span>
+              <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
+                API URL
+              </span>
               <input
                 type="url"
                 value={apiUrl}
@@ -203,12 +218,18 @@ export default function PlatformConfigSection({ onNotify }: PlatformConfigSectio
             </label>
 
             <label className="block md:col-span-2">
-              <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">API Key</span>
+              <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
+                API Key
+              </span>
               <input
                 type="password"
                 value={apiKey}
                 onChange={(event) => setApiKey(event.target.value)}
-                placeholder={editing ? "Enter API key to update" : config?.api_key ?? "****"}
+                placeholder={
+                  editing
+                    ? "Enter API key to update"
+                    : config?.api_key ?? "****"
+                }
                 disabled={!editing || saving || isMock}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               />
@@ -216,9 +237,7 @@ export default function PlatformConfigSection({ onNotify }: PlatformConfigSectio
           </div>
 
           {inlineError && (
-            <p className="m-0 mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              {inlineError}
-            </p>
+            <ErrorMessage title="Platform config error" message={inlineError} />
           )}
           {inlineMessage && (
             <p className="m-0 mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">

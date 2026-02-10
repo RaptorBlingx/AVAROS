@@ -4,9 +4,12 @@ import {
   getIntents,
   listMetricMappings,
   setIntentActive,
+  toFriendlyErrorMessage,
 } from "../../api/client";
 import type { IntentState, MetricMapping } from "../../api/types";
 import IntentActivationList from "../common/IntentActivationList";
+import EmptyState from "../common/EmptyState";
+import LoadingSpinner from "../common/LoadingSpinner";
 import type { IntentViewModel } from "../common/IntentActivationList";
 
 type IntentActivationSectionProps = {
@@ -27,7 +30,7 @@ export default function IntentActivationSection({ onNotify }: IntentActivationSe
       setIntents(intentList);
       setMappedMetrics(new Set(mappings.map((mapping: MetricMapping) => mapping.canonical_metric)));
     } catch (error: unknown) {
-      onNotify("error", error instanceof Error ? error.message : "Failed to load intents.");
+      onNotify("error", toFriendlyErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -60,7 +63,7 @@ export default function IntentActivationSection({ onNotify }: IntentActivationSe
         );
         onNotify("success", "Intent state updated.");
       } catch (error: unknown) {
-        onNotify("error", error instanceof Error ? error.message : "Failed to update intent.");
+        onNotify("error", toFriendlyErrorMessage(error));
       } finally {
         setSavingIntent(null);
       }
@@ -81,7 +84,7 @@ export default function IntentActivationSection({ onNotify }: IntentActivationSe
         setIntents((prev) => prev.map((intent) => ({ ...intent, active })));
         onNotify("success", active ? "All intents enabled." : "All intents disabled.");
       } catch (error: unknown) {
-        onNotify("error", error instanceof Error ? error.message : "Bulk intent update failed.");
+        onNotify("error", toFriendlyErrorMessage(error));
       } finally {
         setBulkAction(null);
       }
@@ -92,19 +95,28 @@ export default function IntentActivationSection({ onNotify }: IntentActivationSe
   return (
     <section className="space-y-3">
       {loading ? (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-          Loading intents...
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 opacity-50">
+          <LoadingSpinner label="Loading intents..." size="sm" />
         </div>
       ) : (
         <div className="reveal-in">
-          <IntentActivationList
-            intents={intentView}
-            savingIntent={savingIntent}
-            bulkAction={bulkAction}
-            onEnableAll={() => void setAll(true)}
-            onDisableAll={() => void setAll(false)}
-            onToggle={(intentName, active) => void toggleIntent(intentName, active)}
-          />
+          {intentView.length === 0 ? (
+            <EmptyState
+              title="No intents available"
+              message="Intent list is empty. Reload after backend intent configuration is ready."
+              actionLabel="Retry"
+              onAction={() => void loadData()}
+            />
+          ) : (
+            <IntentActivationList
+              intents={intentView}
+              savingIntent={savingIntent}
+              bulkAction={bulkAction}
+              onEnableAll={() => void setAll(true)}
+              onDisableAll={() => void setAll(false)}
+              onToggle={(intentName, active) => void toggleIntent(intentName, active)}
+            />
+          )}
         </div>
       )}
     </section>

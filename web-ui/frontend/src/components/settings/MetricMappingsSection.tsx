@@ -4,10 +4,13 @@ import {
   createMetricMapping,
   deleteMetricMapping,
   listMetricMappings,
+  toFriendlyErrorMessage,
   updateMetricMapping,
 } from "../../api/client";
 import type { CanonicalMetricName, MetricMapping } from "../../api/types";
 import MetricMappingsTable from "../common/MetricMappingsTable";
+import EmptyState from "../common/EmptyState";
+import LoadingSpinner from "../common/LoadingSpinner";
 import { METRIC_OPTIONS } from "../common/metricMapping";
 import type { MetricMappingRow, MetricRowError } from "../common/metricMapping";
 
@@ -57,7 +60,7 @@ export default function MetricMappingsSection({ onNotify }: MetricMappingsSectio
       const mappings = await listMetricMappings();
       setRows(mappings.map(createRow));
     } catch (error: unknown) {
-      onNotify("error", error instanceof Error ? error.message : "Failed to load metric mappings.");
+      onNotify("error", toFriendlyErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -167,7 +170,7 @@ export default function MetricMappingsSection({ onNotify }: MetricMappingsSectio
       });
       onNotify("success", "Metric mapping saved.");
     } catch (error: unknown) {
-      onNotify("error", error instanceof Error ? error.message : "Failed to save mapping.");
+      onNotify("error", toFriendlyErrorMessage(error));
     } finally {
       setSavingRowId(null);
     }
@@ -186,7 +189,7 @@ export default function MetricMappingsSection({ onNotify }: MetricMappingsSectio
       });
       onNotify("success", "Metric mapping removed.");
     } catch (error: unknown) {
-      onNotify("error", error instanceof Error ? error.message : "Failed to remove mapping.");
+      onNotify("error", toFriendlyErrorMessage(error));
     }
   }, [onNotify]);
 
@@ -203,36 +206,45 @@ export default function MetricMappingsSection({ onNotify }: MetricMappingsSectio
       </header>
 
       {loading ? (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-          Loading metric mappings...
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 opacity-50">
+          <LoadingSpinner label="Loading metric mappings..." size="sm" />
         </div>
       ) : (
         <div className="reveal-in">
-          <MetricMappingsTable
-            rows={rows}
-            errorsByRow={errorsByRow}
-            usedMetrics={usedMetrics}
-            onChange={updateBaseRow}
-            renderActions={(row) => (
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => void saveRow(row.id)}
-                  disabled={savingRowId === row.id}
-                  className="rounded border border-sky-300 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700"
-                >
-                  {savingRowId === row.id ? "Saving..." : row.persisted ? "Save" : "Create"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void removeRow(row)}
-                  className="rounded border border-rose-300 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700"
-                >
-                  Remove
-                </button>
-              </div>
-            )}
-          />
+          {rows.length === 0 ? (
+            <EmptyState
+              title="No metric mappings"
+              message="Add a mapping to connect canonical AVAROS metrics to your platform data."
+              actionLabel="Add Mapping"
+              onAction={addRow}
+            />
+          ) : (
+            <MetricMappingsTable
+              rows={rows}
+              errorsByRow={errorsByRow}
+              usedMetrics={usedMetrics}
+              onChange={updateBaseRow}
+              renderActions={(row) => (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void saveRow(row.id)}
+                    disabled={savingRowId === row.id}
+                    className="rounded border border-sky-300 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700"
+                  >
+                    {savingRowId === row.id ? "Saving..." : row.persisted ? "Save" : "Create"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void removeRow(row)}
+                    className="rounded border border-rose-300 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700"
+                  >
+                    Remove
+                  </button>
+                </div>
+              )}
+            />
+          )}
         </div>
       )}
     </section>

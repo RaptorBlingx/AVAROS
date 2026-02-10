@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import {
-  ApiError,
   createPlatformConfig,
   getStatus,
   testConnection,
+  toFriendlyErrorMessage,
 } from "../api/client";
 import type {
   ConnectionTestResponse,
@@ -29,16 +29,6 @@ type WizardState = {
   apiUrl: string;
   apiKey: string;
 };
-
-function toUserMessage(error: unknown): string {
-  if (error instanceof ApiError) {
-    return error.message;
-  }
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return "Something went wrong. Please try again.";
-}
 
 function buildPayload(state: WizardState): PlatformConfigRequest {
   const platformType = state.platformType ?? "mock";
@@ -142,7 +132,7 @@ export default function Wizard() {
       }
       setStatus(data);
     } catch (error: unknown) {
-      setStatusError(toUserMessage(error));
+      setStatusError(toFriendlyErrorMessage(error));
     } finally {
       setLoadingStatus(false);
     }
@@ -255,7 +245,7 @@ export default function Wizard() {
       const result = await testConnection(buildPayload(state));
       setTestResult(result);
     } catch (error: unknown) {
-      setTestError(toUserMessage(error));
+      setTestError(toFriendlyErrorMessage(error));
     } finally {
       setIsTesting(false);
     }
@@ -275,7 +265,7 @@ export default function Wizard() {
       markStepComplete(3);
       goToStep(4);
     } catch (error: unknown) {
-      setFormError(toUserMessage(error));
+      setFormError(toFriendlyErrorMessage(error));
     } finally {
       setIsSaving(false);
     }
@@ -297,7 +287,7 @@ export default function Wizard() {
       markStepComplete(5);
       goToStep(6);
     } catch (error: unknown) {
-      setFormError(toUserMessage(error));
+      setFormError(toFriendlyErrorMessage(error));
     }
   }, [goToStep, markStepComplete, state.platformType]);
 
@@ -401,7 +391,7 @@ export default function Wizard() {
               type="button"
               onClick={goBackStep}
               disabled={state.currentStep === 1}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Back
             </button>
@@ -423,7 +413,7 @@ export default function Wizard() {
 
         {headerError && <p className="m-0 mt-2 text-xs font-medium text-rose-700">{headerError}</p>}
 
-        <div className="mt-3 grid grid-cols-6 gap-2">
+        <div className="mt-3 flex flex-col gap-2 sm:grid sm:grid-cols-3 lg:grid-cols-6">
           {stepItems.map((item, index) => {
             const stepNumber = (index + 1) as StepNumber;
             const isActive = state.currentStep === stepNumber;
