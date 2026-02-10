@@ -150,6 +150,22 @@ services:
       start_period: 10s
       retries: 3
 
+  reneryo-mock:
+    container_name: reneryo-mock
+    hostname: reneryo-mock
+    build:
+      context: ../tools/reneryo-mock
+    restart: unless-stopped
+    ports:
+      - "${MOCK_RENERYO_PORT:-8090}:8090"
+    networks:
+      - ovos
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
 # External network created by WASABI OVOS stack
 networks:
   ovos:
