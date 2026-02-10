@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
-from config import APP_VERSION, CORS_ORIGINS, DATABASE_URL
+from config import APP_VERSION, CORS_ORIGINS, DATABASE_URL, WEB_API_KEY
 from dependencies import get_settings_service
 from routers.config import router as config_router
 from routers.intents import router as intents_router
@@ -31,6 +31,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def api_key_auth_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+    """Enforce API-key authentication on ``/api/v1/`` routes.
+
+    ``/health``, ``/docs``, ``/openapi.json``, and SPA static assets
+    are excluded — they remain publicly accessible.
+    """
+    if request.url.path.startswith("/api/v1/"):
+        key = request.headers.get("X-API-Key", "")
+        if key != WEB_API_KEY:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid or missing API key"},
+            )
+    return await call_next(request)
 
 
 @app.on_event("startup")

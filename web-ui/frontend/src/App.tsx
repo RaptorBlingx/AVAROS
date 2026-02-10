@@ -1,11 +1,59 @@
+import { useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
+import { getStoredApiKey, clearStoredApiKey } from "./api/client";
+import { ApiError, getHealth } from "./api/client";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
+import Login from "./pages/Login";
 import Settings from "./pages/Settings";
 import Wizard from "./pages/Wizard";
 
 export default function App() {
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+
+  const checkAuth = useCallback(async () => {
+    // If no stored key, go straight to login
+    if (!getStoredApiKey()) {
+      setAuthenticated(false);
+      return;
+    }
+    try {
+      await getHealth();
+      // /health doesn't need auth, so try an authenticated endpoint
+      const resp = await fetch("/api/v1/status", {
+        headers: { "X-API-Key": getStoredApiKey() },
+      });
+      if (resp.status === 401) {
+        clearStoredApiKey();
+        setAuthenticated(false);
+      } else {
+        setAuthenticated(true);
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        clearStoredApiKey();
+        setAuthenticated(false);
+      } else {
+        // Server down or network error — show app anyway to display error
+        setAuthenticated(true);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    void checkAuth();
+  }, [checkAuth]);
+
+  // Still checking auth status
+  if (authenticated === null) {
+    return null;
+  }
+
+  if (!authenticated) {
+    return <Login onAuthenticated={() => setAuthenticated(true)} />;
+  }
+
   return (
     <BrowserRouter>
       <div className="relative sm:grid min-h-screen grid-cols-1 overflow-hidden bg-gradient-to-br from-slate-100 via-sky-50 to-slate-200 md:grid-cols-[260px_1fr]">

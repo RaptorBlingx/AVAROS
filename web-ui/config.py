@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import secrets
 
+logger = logging.getLogger("uvicorn.error")
 
 APP_VERSION = "0.1.0"
 APP_HOST = "0.0.0.0"
@@ -16,4 +19,24 @@ CORS_ORIGINS = [
     "http://localhost:8080",
     "http://localhost:5173",
 ]
+
+
+def _resolve_api_key() -> str:
+    """Return API key from env or generate a secure default.
+
+    When no ``AVAROS_WEB_API_KEY`` is set, a 32-byte hex token is
+    generated and logged so the operator can retrieve it.
+    """
+    key = os.environ.get("AVAROS_WEB_API_KEY", "")
+    if key:
+        return key
+    generated = secrets.token_hex(32)
+    logger.warning(
+        "AVAROS_WEB_API_KEY not set — generated default key: %s",
+        generated,
+    )
+    return generated
+
+
+WEB_API_KEY: str = _resolve_api_key()
 

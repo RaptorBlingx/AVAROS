@@ -25,8 +25,12 @@ if _WEB_UI_DIR not in sys.path:
     sys.path.insert(0, _WEB_UI_DIR)
 
 from main import app  # noqa: E402 — path must be inserted first
+from config import WEB_API_KEY  # noqa: E402
 from dependencies import get_settings_service  # noqa: E402
 from skill.services.settings import Base, SettingsService  # noqa: E402
+
+# Re-export so test modules can import from conftest if needed.
+TEST_API_KEY = WEB_API_KEY
 
 
 def _create_test_settings_service() -> SettingsService:
@@ -59,8 +63,34 @@ def settings_service() -> Generator[SettingsService, None, None]:
 
 
 @pytest.fixture()
+def api_key_header() -> dict[str, str]:
+    """Return auth header dict for authenticated test requests."""
+    return {"X-API-Key": TEST_API_KEY}
+
+
+@pytest.fixture()
 def client(settings_service: SettingsService) -> Generator[TestClient, None, None]:
-    """FastAPI TestClient with the SettingsService dependency overridden."""
+    """FastAPI TestClient with SettingsService override and auth header.
+
+    The ``X-API-Key`` header is injected automatically so that all
+    ``/api/v1/`` requests pass the auth middleware.  Tests that
+    explicitly need to omit the key should use ``client_no_auth``.
+    """
+
+    def _override() -> SettingsService:
+        return settings_service
+
+    app.dependency_overrides[get_settings_service] = _override
+    with TestClient(app, headers={"X-API-Key": TEST_API_KEY}) as tc:
+        yield tc
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def client_no_auth(
+    settings_service: SettingsService,
+) -> Generator[TestClient, None, None]:
+    """TestClient **without** the API-key header — for auth rejection tests."""
 
     def _override() -> SettingsService:
         return settings_service

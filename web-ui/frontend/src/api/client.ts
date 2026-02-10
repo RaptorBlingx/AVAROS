@@ -7,6 +7,28 @@ import type {
 } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+const API_KEY_STORAGE_KEY = "avaros_api_key";
+
+/**
+ * Get the stored API key from localStorage.
+ */
+export function getStoredApiKey(): string {
+  return localStorage.getItem(API_KEY_STORAGE_KEY) ?? "";
+}
+
+/**
+ * Save an API key to localStorage.
+ */
+export function setStoredApiKey(key: string): void {
+  localStorage.setItem(API_KEY_STORAGE_KEY, key);
+}
+
+/**
+ * Remove the stored API key (logout).
+ */
+export function clearStoredApiKey(): void {
+  localStorage.removeItem(API_KEY_STORAGE_KEY);
+}
 
 export class ApiError extends Error {
   status: number;
@@ -24,13 +46,20 @@ type RequestOptions = {
 };
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json"
+  };
+
+  const apiKey = getStoredApiKey();
+  if (apiKey) {
+    headers["X-API-Key"] = apiKey;
+  }
+
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       method: options.method ?? "GET",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers,
       body: options.body ? JSON.stringify(options.body) : undefined
     });
   } catch {
