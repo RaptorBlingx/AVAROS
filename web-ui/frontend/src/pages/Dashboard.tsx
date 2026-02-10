@@ -225,7 +225,7 @@ export default function Dashboard() {
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         {loading && (
-          <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-900">
+          <div className="mb-4 opacity-20 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-900">
             Loading system status...
           </div>
         )}
@@ -235,7 +235,11 @@ export default function Dashboard() {
           </div>
         )}
         {cards.length > 0 && (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div
+            className={`grid gap-3 sm:grid-cols-2 xl:grid-cols-3 ${
+              !loading ? "dash-cards" : ""
+            }`}
+          >
             {cards.map((card) => (
               <StatusCard
                 key={card.label}

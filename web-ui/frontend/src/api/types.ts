@@ -28,6 +28,11 @@ export type PlatformConfigResponse = {
   extra_settings: Record<string, string>;
 };
 
+export type PlatformResetResponse = {
+  status: "reset";
+  platform_type: PlatformType;
+};
+
 export type ConnectionTestResponse = {
   success: boolean;
   message: string;

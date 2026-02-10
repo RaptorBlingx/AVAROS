@@ -8,6 +8,7 @@ import type {
   MetricMappingRequest,
   PlatformConfigRequest,
   PlatformConfigResponse,
+  PlatformResetResponse,
   SystemStatusResponse
 } from "./types";
 
@@ -77,6 +78,16 @@ export function createPlatformConfig(
   return request<PlatformConfigResponse>("/api/v1/config/platform", {
     method: "POST",
     body: payload
+  });
+}
+
+export function getPlatformConfig(): Promise<PlatformConfigResponse> {
+  return request<PlatformConfigResponse>("/api/v1/config/platform");
+}
+
+export function resetPlatformConfig(): Promise<PlatformResetResponse> {
+  return request<PlatformResetResponse>("/api/v1/config/platform", {
+    method: "DELETE"
   });
 }
 

@@ -1,13 +1,26 @@
 import { NavLink } from "react-router-dom";
+import { useCallback, useState } from "react";
 
 export default function Sidebar() {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   const navItemClass = (isActive: boolean): string =>
     isActive
       ? "rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white no-underline shadow shadow-sky-900/30"
       : "rounded-lg px-3 py-2 text-sm text-slate-200 no-underline hover:bg-slate-800";
 
+  const handleRefresh = useCallback(() => {
+    if (isRefreshing) {
+      return;
+    }
+    setIsRefreshing(true);
+    window.setTimeout(() => {
+      window.location.reload();
+    }, 1200);
+  }, [isRefreshing]);
+
   return (
-    <aside className="flex lg:min-h-screen flex-col border-r border-slate-800 bg-slate-950 px-4 py-6 text-slate-100">
+    <aside className="relative z-20 flex min-h-[220px] w-full flex-col border-b border-slate-800 bg-slate-950 px-4 py-6 text-slate-100 md:fixed md:inset-y-0 md:left-0 md:min-h-screen md:w-[260px] md:border-b-0 md:border-r">
       <div>
         <div className="mb-6 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
           <h1 className="m-0 text-lg font-semibold tracking-wide">AVAROS</h1>
@@ -61,11 +74,12 @@ export default function Sidebar() {
       </div>
       <button
         type="button"
-        className="lg:mt-auto inline-flex lg:mt-0 mt-4 items-center h-fit justify-center gap-2 rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:bg-sky-100"
-        onClick={() => window.location.reload()}
+        className="mt-4 inline-flex h-fit items-center justify-center gap-2 rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 md:mt-auto disabled:cursor-not-allowed disabled:opacity-70"
+        onClick={handleRefresh}
+        disabled={isRefreshing}
       >
         <svg
-          className="h-4 w-4"
+          className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -76,7 +90,7 @@ export default function Sidebar() {
             strokeLinecap="round"
           />
         </svg>
-        Refresh
+        {isRefreshing ? "Refreshing..." : "Refresh"}
       </button>
     </aside>
   );
