@@ -43,6 +43,10 @@ from skill.domain.document_models import (
     DocumentPassage,
     DocumentResult,
 )
+from skill.domain.anomaly_models import (
+    AnomalyDetectionResult,
+    DriftReport,
+)
 
 __all__ = [
     # Enums and Value Objects
@@ -62,6 +66,9 @@ __all__ = [
     # Document Models
     "DocumentPassage",
     "DocumentResult",
+    # Anomaly Detection Models
+    "AnomalyDetectionResult",
+    "DriftReport",
     # Exceptions
     "AVAROSError",
     "AdapterError",
