@@ -207,7 +207,9 @@ class MockPreventionClient(PreventionClient):
         """
         category = _get_category_for_metric(metric)
         is_anomalous = _is_metric_anomalous(metric)
-        deviation = 2.3 if is_anomalous else 0.8
+        deviation = (
+            threshold + 0.3 if is_anomalous else max(threshold - 1.2, 0.8)
+        )
         description = _build_anomaly_description(
             category, is_anomalous, deviation,
         )

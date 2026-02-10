@@ -19,13 +19,13 @@ from __future__ import annotations
 ANOMALY_DESCRIPTIONS: dict[str, dict] = {
     "energy": {
         "anomalous": (
-            "Energy consumption per unit spiked {deviation}σ above the "
+            "Energy consumption per unit spiked {deviation} sigma above the "
             "7-day rolling average. This level of deviation typically "
             "indicates equipment degradation or unexpected load changes."
         ),
         "normal": (
             "Energy consumption per unit is within normal operating "
-            "range (±1.5σ of the 7-day rolling average). No corrective "
+            "range (+/-1.5 sigma of the 7-day rolling average). No corrective "
             "action required."
         ),
         "action": (
@@ -36,7 +36,7 @@ ANOMALY_DESCRIPTIONS: dict[str, dict] = {
     },
     "material": {
         "anomalous": (
-            "Material waste rate increased {deviation}σ above baseline. "
+            "Material waste rate increased {deviation} sigma above baseline. "
             "Pattern suggests process parameter drift in upstream "
             "operations."
         ),
@@ -51,7 +51,7 @@ ANOMALY_DESCRIPTIONS: dict[str, dict] = {
     },
     "carbon": {
         "anomalous": (
-            "Carbon emissions per unit rose {deviation}σ above the "
+            "Carbon emissions per unit rose {deviation} sigma above the "
             "monthly baseline. Likely correlated with increased energy "
             "consumption or fuel mix changes."
         ),
@@ -66,7 +66,7 @@ ANOMALY_DESCRIPTIONS: dict[str, dict] = {
     },
     "production": {
         "anomalous": (
-            "Production efficiency deviated {deviation}σ from the "
+            "Production efficiency deviated {deviation} sigma from the "
             "expected level. OEE components show abnormal variation "
             "in availability."
         ),
@@ -81,7 +81,7 @@ ANOMALY_DESCRIPTIONS: dict[str, dict] = {
     },
     "supplier": {
         "anomalous": (
-            "Supplier performance metric shifted {deviation}σ from "
+            "Supplier performance metric shifted {deviation} sigma from "
             "the quarterly average. Lead time variability shows "
             "abnormal increase."
         ),
@@ -118,7 +118,7 @@ DRIFT_PROFILES: dict[str, dict] = {
         "rate": 0.0,
         "description": (
             "Material waste metrics show no significant drift. "
-            "Scrap and rework rates remain within ±0.1% of the "
+            "Scrap and rework rates remain within +/-0.1% of the "
             "30-day average."
         ),
     },
@@ -128,7 +128,7 @@ DRIFT_PROFILES: dict[str, dict] = {
         "rate": -0.15,
         "description": (
             "Carbon emissions per unit are trending downward at "
-            "-0.15 kg CO₂-eq/unit per day. This tracks with the "
+            "-0.15 kg CO2-eq/unit per day. This tracks with the "
             "reported energy efficiency improvements."
         ),
     },
