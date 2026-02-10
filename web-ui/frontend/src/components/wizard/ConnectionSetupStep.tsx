@@ -31,7 +31,7 @@ export default function ConnectionSetupStep({
   onApiUrlChange,
   onApiKeyChange,
   onTestConnection,
-  onSave
+  onSave,
 }: ConnectionSetupStepProps) {
   const isMock = platformType === "mock";
 
@@ -72,7 +72,9 @@ export default function ConnectionSetupStep({
               </span>
               <select
                 value={authType}
-                onChange={(event) => onAuthTypeChange(event.target.value as "api_key")}
+                onChange={(event) =>
+                  onAuthTypeChange(event.target.value as "api_key")
+                }
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2"
               >
                 <option value="api_key">API Key</option>
@@ -122,7 +124,7 @@ export default function ConnectionSetupStep({
           {!isMock && (
             <button
               type="button"
-              className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
               onClick={onTestConnection}
               disabled={isTesting || isSaving}
             >

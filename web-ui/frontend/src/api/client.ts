@@ -1,6 +1,9 @@
 import type {
+  CanonicalMetricName,
   ConnectionTestResponse,
   HealthResponse,
+  MetricMapping,
+  MetricMappingRequest,
   PlatformConfigRequest,
   PlatformConfigResponse,
   SystemStatusResponse
@@ -52,6 +55,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     }
     throw new ApiError(message, response.status);
   }
+  if (response.status === 204) {
+    return undefined as T;
+  }
   return (await response.json()) as T;
 }
 
@@ -78,5 +84,36 @@ export function testConnection(
   return request<ConnectionTestResponse>("/api/v1/config/platform/test", {
     method: "POST",
     body: payload
+  });
+}
+
+export function listMetricMappings(): Promise<MetricMapping[]> {
+  return request<MetricMapping[]>("/api/v1/config/metrics");
+}
+
+export function createMetricMapping(
+  payload: MetricMappingRequest
+): Promise<MetricMapping> {
+  return request<MetricMapping>("/api/v1/config/metrics", {
+    method: "POST",
+    body: payload
+  });
+}
+
+export function updateMetricMapping(
+  metricName: CanonicalMetricName,
+  payload: MetricMappingRequest
+): Promise<MetricMapping> {
+  return request<MetricMapping>(`/api/v1/config/metrics/${metricName}`, {
+    method: "PUT",
+    body: payload
+  });
+}
+
+export async function deleteMetricMapping(
+  metricName: CanonicalMetricName
+): Promise<void> {
+  await request<unknown>(`/api/v1/config/metrics/${metricName}`, {
+    method: "DELETE"
   });
 }

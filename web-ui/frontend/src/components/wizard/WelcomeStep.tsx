@@ -11,7 +11,7 @@ export default function WelcomeStep({
   status,
   loading,
   error,
-  onNext
+  onNext,
 }: WelcomeStepProps) {
   return (
     <section className="space-y-4">
@@ -41,7 +41,7 @@ export default function WelcomeStep({
         )}
         {!loading && !error && status && (
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="rounded-xl border border-slate-200 bg-sky-100/10 p-4">
               <p className="m-0 text-xs font-semibold uppercase text-slate-500">
                 Configured
               </p>
@@ -49,7 +49,7 @@ export default function WelcomeStep({
                 {status.configured ? "Yes" : "No"}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="rounded-xl border border-slate-200 bg-sky-100/10 p-4">
               <p className="m-0 text-xs font-semibold uppercase text-slate-500">
                 Database
               </p>

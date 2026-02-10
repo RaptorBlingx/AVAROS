@@ -5,21 +5,22 @@ import {
   ApiError,
   createPlatformConfig,
   getStatus,
-  testConnection
+  testConnection,
 } from "../api/client";
 import type {
   ConnectionTestResponse,
   PlatformConfigRequest,
   PlatformType,
-  SystemStatusResponse
+  SystemStatusResponse,
 } from "../api/types";
 import ConnectionSetupStep from "../components/wizard/ConnectionSetupStep";
+import MetricMappingStep from "../components/wizard/MetricMappingStep";
 import PlatformSelectStep from "../components/wizard/PlatformSelectStep";
 import SuccessScreen from "../components/wizard/SuccessScreen";
 import WelcomeStep from "../components/wizard/WelcomeStep";
 
 type WizardState = {
-  currentStep: 1 | 2 | 3 | 4;
+  currentStep: 1 | 2 | 3 | 4 | 5;
   platformType: PlatformType;
   authType: "api_key";
   apiUrl: string;
@@ -41,14 +42,14 @@ function buildPayload(state: WizardState): PlatformConfigRequest {
     platform_type: state.platformType,
     api_url: state.platformType === "mock" ? "" : state.apiUrl.trim(),
     api_key: state.platformType === "mock" ? "" : state.apiKey.trim(),
-    extra_settings: {}
+    extra_settings: {},
   };
 }
 
 function enableDashboardBypass(): void {
   sessionStorage.setItem(
     "avaros_skip_wizard_until",
-    String(Date.now() + 15000)
+    String(Date.now() + 15000),
   );
 }
 
@@ -79,21 +80,20 @@ export default function Wizard() {
     platformType: "mock",
     authType: "api_key",
     apiUrl: "",
-    apiKey: ""
+    apiKey: "",
   });
   const [status, setStatus] = useState<SystemStatusResponse | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [statusError, setStatusError] = useState("");
   const [formError, setFormError] = useState("");
   const [testResult, setTestResult] = useState<ConnectionTestResponse | null>(
-    null
+    null,
   );
   const [testError, setTestError] = useState("");
   const [isTesting, setIsTesting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [successStatus, setSuccessStatus] = useState<SystemStatusResponse | null>(
-    null
-  );
+  const [successStatus, setSuccessStatus] =
+    useState<SystemStatusResponse | null>(null);
 
   const loadStatus = useCallback(async () => {
     setLoadingStatus(true);
@@ -118,7 +118,7 @@ export default function Wizard() {
 
   const stepLabel = useMemo(() => {
     if (state.currentStep === 1) {
-      return "Welcome";
+      return "Setup";
     }
     if (state.currentStep === 2) {
       return "Platform Selection";
@@ -126,8 +126,22 @@ export default function Wizard() {
     if (state.currentStep === 3) {
       return "Connection Setup";
     }
+    if (state.currentStep === 4) {
+      return "Metric Mapping";
+    }
     return "Complete";
   }, [state.currentStep]);
+
+  const stepItems = useMemo(
+    () => [
+      "Get Started",
+      "Platform",
+      "Connection",
+      "Metric Mapping",
+      "Success",
+    ],
+    [],
+  );
 
   const goNextStep = useCallback(() => {
     setState((prev) => {
@@ -144,7 +158,7 @@ export default function Wizard() {
   const handlePlatformChange = useCallback((platformType: PlatformType) => {
     setState((prev) => ({
       ...prev,
-      platformType
+      platformType,
     }));
     setFormError("");
     setTestError("");
@@ -180,11 +194,6 @@ export default function Wizard() {
     setIsSaving(true);
     try {
       await createPlatformConfig(buildPayload(state));
-      const latestStatus = await getStatus();
-      if (state.platformType === "mock" || !latestStatus.configured) {
-        enableDashboardBypass();
-      }
-      setSuccessStatus(latestStatus);
       setState((prev) => ({ ...prev, currentStep: 4 }));
     } catch (error: unknown) {
       setFormError(toUserMessage(error));
@@ -192,6 +201,23 @@ export default function Wizard() {
       setIsSaving(false);
     }
   }, [state]);
+
+  const handleMetricStepComplete = useCallback(async () => {
+    try {
+      const latestStatus = await getStatus();
+      if (state.platformType === "mock" || !latestStatus.configured) {
+        enableDashboardBypass();
+      }
+      setSuccessStatus(latestStatus);
+      setState((prev) => ({ ...prev, currentStep: 5 }));
+    } catch (error: unknown) {
+      setFormError(toUserMessage(error));
+    }
+  }, [state.platformType]);
+
+  const handleMetricStepSkip = useCallback(async () => {
+    await handleMetricStepComplete();
+  }, [handleMetricStepComplete]);
 
   const content = useMemo(() => {
     if (state.currentStep === 1) {
@@ -239,6 +265,14 @@ export default function Wizard() {
         />
       );
     }
+    if (state.currentStep === 4) {
+      return (
+        <MetricMappingStep
+          onComplete={() => void handleMetricStepComplete()}
+          onSkip={() => void handleMetricStepSkip()}
+        />
+      );
+    }
     return (
       <SuccessScreen
         status={successStatus}
@@ -256,6 +290,8 @@ export default function Wizard() {
   }, [
     formError,
     goNextStep,
+    handleMetricStepComplete,
+    handleMetricStepSkip,
     handlePlatformChange,
     handleSave,
     handleTestConnection,
@@ -264,23 +300,52 @@ export default function Wizard() {
     loadingStatus,
     navigate,
     state.platformType,
-    state.apiKey,
     state.apiUrl,
     state.authType,
     state.currentStep,
-    state.platformType,
+    state.apiKey,
     status,
     statusError,
     successStatus,
     testError,
-    testResult
+    testResult,
   ]);
 
   return (
     <section className="mx-auto w-full max-w-4xl space-y-4">
       <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
-        <span className="font-semibold text-slate-900">Current Step:</span>{" "}
-        {stepLabel}
+        <div className="flex items-center justify-between gap-3">
+          <p className="m-0">
+            <span className="font-semibold text-slate-900">Current Step:</span>{" "}
+            {stepLabel}
+          </p>
+          <p className="m-0 text-xs font-medium text-slate-500">
+            {state.currentStep} / 5
+          </p>
+        </div>
+        <div className="mt-3 grid grid-cols-5 gap-2">
+          {stepItems.map((item, index) => {
+            const stepNumber = index + 1;
+            const isActive = state.currentStep === stepNumber;
+            const isDone = state.currentStep > stepNumber;
+            return (
+              <div key={item} className="space-y-1">
+                <div
+                  className={`h-1.5 rounded-full ${
+                    isDone || isActive ? "bg-sky-500" : "bg-slate-200"
+                  }`}
+                />
+                <p
+                  className={`m-0 text-[10px] ${
+                    isActive ? "font-semibold text-sky-700" : "text-slate-500"
+                  }`}
+                >
+                  {item}
+                </p>
+              </div>
+            );
+          })}
+        </div>
       </div>
       {content}
     </section>

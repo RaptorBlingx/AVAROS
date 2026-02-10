@@ -14,24 +14,24 @@ const OPTIONS: Array<{
   {
     value: "mock",
     title: "Mock",
-    description: "Demo mode with sample data. No external connection needed."
+    description: "Demo mode with sample data. No external connection needed.",
   },
   {
     value: "reneryo",
     title: "RENERYO",
-    description: "Connect to RENERYO manufacturing platform."
+    description: "Connect to RENERYO manufacturing platform.",
   },
   {
     value: "custom_rest",
     title: "Custom REST",
-    description: "Connect to any REST API with standard endpoints."
-  }
+    description: "Connect to any REST API with standard endpoints.",
+  },
 ];
 
 export default function PlatformSelectStep({
   value,
   onChange,
-  onNext
+  onNext,
 }: PlatformSelectStepProps) {
   return (
     <section className="space-y-4">
@@ -55,7 +55,7 @@ export default function PlatformSelectStep({
                 className={`rounded-xl border p-4 text-left transition ${
                   active
                     ? "border-sky-400 bg-sky-50"
-                    : "border-slate-200 bg-white hover:bg-slate-50"
+                    : "border-slate-200 bg-white hover:!bg-sky-100"
                 }`}
                 onClick={() => onChange(option.value)}
               >
