@@ -205,6 +205,7 @@ class AdapterFactory:
         api_url = ""
         api_key = ""
         timeout = 30
+        auth_type = "bearer"
 
         if self._settings_service is not None:
             try:
@@ -213,6 +214,8 @@ class AdapterFactory:
                     api_url = getattr(config, "api_url", "") or ""
                     api_key = getattr(config, "api_key", "") or ""
                     timeout = getattr(config, "timeout", 30) or 30
+                    extra = getattr(config, "extra_settings", {}) or {}
+                    auth_type = extra.get("auth_type", "bearer") if isinstance(extra, dict) else "bearer"
             except Exception as exc:
                 logger.warning("Error reading RENERYO config: %s", exc)
 
@@ -220,6 +223,7 @@ class AdapterFactory:
             api_url=api_url,
             api_key=api_key,
             timeout=timeout,
+            auth_type=auth_type,
         )
 
     @classmethod
