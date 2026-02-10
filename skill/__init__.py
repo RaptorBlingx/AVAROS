@@ -54,6 +54,7 @@ class AVAROSSkill(OVOSSkill):
         
         super().__init__(*args, **kwargs)
         
+        self.settings_service = None
         self.adapter_factory: AdapterFactory | None = None
         self.dispatcher: QueryDispatcher | None = None
         self.response_builder: ResponseBuilder | None = None
@@ -76,10 +77,26 @@ class AVAROSSkill(OVOSSkill):
         """
         Called after the skill is fully constructed and registered.
         
-        Sets up the adapter factory and query dispatcher. By default,
-        uses MockAdapter for zero-config demo deployment.
+        Sets up the adapter factory and query dispatcher. Reads platform
+        configuration from SettingsService (DB-backed) if available, otherwise
+        uses MockAdapter for zero-config demo deployment (DEC-005).
         """
-        self.adapter_factory = AdapterFactory(settings_service=None)  # Will use SettingsService
+        # Import SettingsService lazily to avoid circular imports
+        from skill.services.settings import SettingsService
+        
+        # Try to initialize SettingsService with DB backing
+        settings_service = None
+        try:
+            settings_service = SettingsService()
+            settings_service.initialize()
+            self.log.info("SettingsService initialized successfully")
+        except Exception as e:
+            self.log.warning(
+                "SettingsService initialization failed, using MockAdapter: %s", e
+            )
+        
+        self.settings_service = settings_service
+        self.adapter_factory = AdapterFactory(settings_service=self.settings_service)
         adapter = self.adapter_factory.create()
         self.dispatcher = QueryDispatcher(adapter=adapter)
         self.response_builder = ResponseBuilder(verbosity="normal")
