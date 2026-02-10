@@ -134,23 +134,42 @@ _PATH_TO_METRIC: dict[str, str] = {
     "/api/v1/kpis/carbon/per-batch": "co2_per_batch",
 }
 
-# Trend endpoints (subset that support granularity)
-_TREND_METRICS: set[str] = {
-    "energy_per_unit",
-    "energy_total",
-    "peak_demand",
-    "scrap_rate",
-    "rework_rate",
-    "oee",
-    "throughput",
-    "co2_per_unit",
-    "co2_total",
-}
-
 
 # =========================================================================
 # Canonical KPI endpoints (/api/v1/kpis/...)
 # =========================================================================
+
+def _handle_comparison(
+    metric_name: str, asset_ids_str: str, period: str
+) -> JSONResponse:
+    """Handle comparison mode: return array of per-asset values."""
+    ids = [a.strip() for a in asset_ids_str.split(",") if a.strip()]
+    data = generate_comparison_data(metric_name, ids, period)
+    return JSONResponse(content=data)
+
+
+def _handle_trend(
+    metric_name: str,
+    asset_id: str,
+    granularity: str,
+    period: str,
+    datetime_min: str | None,
+    datetime_max: str | None,
+) -> JSONResponse:
+    """Handle trend mode: return time-series array."""
+    data = generate_trend_data(
+        metric_name, asset_id, granularity, period, datetime_min, datetime_max
+    )
+    return JSONResponse(content=data)
+
+
+def _handle_single_value(
+    metric_name: str, asset_id: str, period: str
+) -> JSONResponse:
+    """Handle single value mode: return one data point."""
+    data = generate_single_value(metric_name, asset_id, period)
+    return JSONResponse(content=data)
+
 
 def _build_kpi_handler(metric_name: str):  # noqa: ANN202
     """
@@ -182,39 +201,13 @@ def _build_kpi_handler(metric_name: str):  # noqa: ANN202
             None, alias="datetimeMax", description="ISO end"
         ),
     ) -> JSONResponse:
-        # Comparison mode
         if asset_ids:
-            ids = [a.strip() for a in asset_ids.split(",") if a.strip()]
-            data = generate_comparison_data(metric_name, ids, period)
-            return JSONResponse(content=data)
-
-        # Trend mode
-        if granularity and metric_name in _TREND_METRICS:
-            data = generate_trend_data(
-                metric_name,
-                asset_id,
-                granularity,
-                period,
-                datetimeMin,
-                datetimeMax,
-            )
-            return JSONResponse(content=data)
-
-        # Also treat granularity on non-trend metrics as trend
+            return _handle_comparison(metric_name, asset_ids, period)
         if granularity:
-            data = generate_trend_data(
-                metric_name,
-                asset_id,
-                granularity,
-                period,
-                datetimeMin,
-                datetimeMax,
+            return _handle_trend(
+                metric_name, asset_id, granularity, period, datetimeMin, datetimeMax
             )
-            return JSONResponse(content=data)
-
-        # Single value mode
-        data = generate_single_value(metric_name, asset_id, period)
-        return JSONResponse(content=data)
+        return _handle_single_value(metric_name, asset_id, period)
 
     handler.__name__ = f"get_{metric_name}"
     handler.__doc__ = f"Get {metric_name} KPI data."
