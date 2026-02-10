@@ -285,7 +285,7 @@ def _compute_confidence(passages: list[DocumentPassage]) -> float:
     """
     Compute overall confidence from passage relevance scores.
 
-    Uses weighted average of top passages, capped at 0.95.
+    Uses the average of passage relevance scores, capped at 0.95.
 
     Args:
         passages: List of document passages with relevance scores
