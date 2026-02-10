@@ -2,6 +2,8 @@ import type {
   CanonicalMetricName,
   ConnectionTestResponse,
   HealthResponse,
+  IntentListResponse,
+  IntentState,
   MetricMapping,
   MetricMappingRequest,
   PlatformConfigRequest,
@@ -115,5 +117,25 @@ export async function deleteMetricMapping(
 ): Promise<void> {
   await request<unknown>(`/api/v1/config/metrics/${metricName}`, {
     method: "DELETE"
+  });
+}
+
+export async function getIntents(): Promise<IntentListResponse> {
+  const response = await request<IntentListResponse | { intents: IntentState[] }>(
+    "/api/v1/config/intents"
+  );
+  if (Array.isArray(response)) {
+    return response;
+  }
+  return response.intents ?? [];
+}
+
+export function setIntentActive(
+  intentName: string,
+  active: boolean
+): Promise<IntentState> {
+  return request<IntentState>(`/api/v1/config/intents/${intentName}`, {
+    method: "PUT",
+    body: { active }
   });
 }

@@ -63,3 +63,11 @@ export type MetricMapping = {
 };
 
 export type MetricMappingRequest = MetricMapping;
+
+export type IntentState = {
+  intent_name: string;
+  active: boolean;
+  required_metrics: CanonicalMetricName[];
+};
+
+export type IntentListResponse = IntentState[];

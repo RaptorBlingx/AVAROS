@@ -1,9 +1,9 @@
 import type { PlatformType } from "../../api/types";
 
 type PlatformSelectStepProps = {
-  value: PlatformType;
+  value: PlatformType | null;
   onChange: (value: PlatformType) => void;
-  onNext: () => void;
+  onConfirm: () => void;
 };
 
 const OPTIONS: Array<{
@@ -31,13 +31,13 @@ const OPTIONS: Array<{
 export default function PlatformSelectStep({
   value,
   onChange,
-  onNext,
+  onConfirm,
 }: PlatformSelectStepProps) {
   return (
     <section className="space-y-4">
       <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">
-          Step 2 of 3
+          Step 2 of 6
         </p>
         <h2 className="m-0 mt-2 text-2xl font-semibold text-slate-900">
           Select Your Platform
@@ -69,14 +69,14 @@ export default function PlatformSelectStep({
             );
           })}
         </div>
-
         <div className="mt-6">
           <button
             type="button"
-            className="inline-flex items-center rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:bg-sky-100"
-            onClick={onNext}
+            onClick={onConfirm}
+            disabled={!value}
+            className="inline-flex items-center rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Next
+            Select & Continue
           </button>
         </div>
       </div>

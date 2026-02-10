@@ -309,7 +309,7 @@ export default function MetricMappingStep({
     <section className="space-y-4">
       <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">
-          Step 4 of 5
+          Step 4 of 6
         </p>
         <h2 className="m-0 mt-2 text-2xl font-semibold text-slate-900">
           Metric Mapping
