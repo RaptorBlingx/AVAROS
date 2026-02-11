@@ -14,6 +14,7 @@ import type {
 } from "../../api/types";
 import ErrorMessage from "../common/ErrorMessage";
 import LoadingSpinner from "../common/LoadingSpinner";
+import { useTheme } from "../common/ThemeProvider";
 
 type PlatformConfigSectionProps = {
   onNotify: (type: "success" | "error", message: string) => void;
@@ -55,6 +56,7 @@ function validate(config: {
 export default function PlatformConfigSection({
   onNotify,
 }: PlatformConfigSectionProps) {
+  const { isDark } = useTheme();
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -163,14 +165,22 @@ export default function PlatformConfigSection({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
+            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+              isDark
+                ? "border-slate-500 bg-slate-700 text-slate-100 hover:bg-slate-600"
+                : "border-slate-300 bg-white text-slate-700"
+            }`}
             onClick={() => setEditing((prev) => !prev)}
           >
             {editing ? "Cancel" : "Edit"}
           </button>
           <button
             type="button"
-            className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700"
+            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+              isDark
+                ? "border-rose-400 bg-rose-950/60 text-rose-200 hover:bg-rose-900/60"
+                : "border-rose-300 bg-rose-50 text-rose-700"
+            }`}
             onClick={() => void handleReset()}
             disabled={saving}
           >
@@ -250,7 +260,11 @@ export default function PlatformConfigSection({
               type="button"
               onClick={() => void handleTest()}
               disabled={testing || saving}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+              className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
+                isDark
+                  ? "border-slate-500 bg-slate-700 text-slate-100 hover:bg-slate-600"
+                  : "border-slate-300 bg-white text-slate-700"
+              }`}
             >
               {testing ? "Testing..." : "Test Connection"}
             </button>
@@ -259,7 +273,11 @@ export default function PlatformConfigSection({
                 type="button"
                 onClick={() => void handleSave()}
                 disabled={saving}
-                className="rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700"
+                className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
+                  isDark
+                    ? "border-slate-400 bg-white text-slate-900"
+                    : "border-sky-300 bg-sky-50 text-sky-700"
+                }`}
               >
                 {saving ? "Saving..." : "Save Changes"}
               </button>

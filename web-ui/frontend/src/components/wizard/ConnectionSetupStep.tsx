@@ -37,24 +37,24 @@ export default function ConnectionSetupStep({
 
   return (
     <section className="space-y-4">
-      <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">
+      <header className="rounded-2xl border border-slate-200 bg-slate-50/95 p-6 shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900">
+        <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">
           Step 3 of 6
         </p>
-        <h2 className="m-0 mt-2 text-2xl font-semibold text-slate-900">
+        <h2 className="m-0 mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">
           Connection Setup
         </h2>
       </header>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/95 p-6 shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900">
         {isMock ? (
-          <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/40 dark:bg-sky-900/30 dark:text-sky-200">
             Mock mode selected. No connection details are required.
           </div>
         ) : (
           <div className="space-y-4">
             <label className="block">
-              <span className="mb-1 block text-sm font-semibold text-slate-700">
+              <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">
                 API URL
               </span>
               <input
@@ -62,12 +62,12 @@ export default function ConnectionSetupStep({
                 value={apiUrl}
                 onChange={(event) => onApiUrlChange(event.target.value)}
                 placeholder="https://api.example.com"
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
               />
             </label>
 
             <label className="block">
-              <span className="mb-1 block text-sm font-semibold text-slate-700">
+              <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">
                 Auth Type
               </span>
               <select
@@ -75,14 +75,14 @@ export default function ConnectionSetupStep({
                 onChange={(event) =>
                   onAuthTypeChange(event.target.value as "api_key")
                 }
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
               >
                 <option value="api_key">API Key</option>
               </select>
             </label>
 
             <label className="block">
-              <span className="mb-1 block text-sm font-semibold text-slate-700">
+              <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">
                 API Key
               </span>
               <input
@@ -90,7 +90,7 @@ export default function ConnectionSetupStep({
                 value={apiKey}
                 onChange={(event) => onApiKeyChange(event.target.value)}
                 placeholder="Enter API key"
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
               />
             </label>
           </div>
@@ -124,7 +124,7 @@ export default function ConnectionSetupStep({
           {!isMock && (
             <button
               type="button"
-              className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
               onClick={onTestConnection}
               disabled={isTesting || isSaving}
             >
@@ -133,7 +133,7 @@ export default function ConnectionSetupStep({
           )}
           <button
             type="button"
-            className="inline-flex items-center rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-sky-500/40 dark:bg-sky-900/40 dark:text-sky-200 dark:hover:bg-sky-900/60"
             onClick={onSave}
             disabled={isSaving || isTesting}
           >

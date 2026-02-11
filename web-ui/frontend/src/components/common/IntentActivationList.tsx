@@ -1,4 +1,5 @@
 import type { IntentState } from "../../api/types";
+import { useTheme } from "./ThemeProvider";
 
 export type IntentViewModel = IntentState & {
   allMapped: boolean;
@@ -21,7 +22,7 @@ const INTENT_LABELS: Record<string, string> = {
   "trend.scrap": "Scrap Trend",
   "trend.energy": "Energy Trend",
   "anomaly.production.check": "Production Anomaly Check",
-  "whatif.temperature": "Temperature What-If"
+  "whatif.temperature": "Temperature What-If",
 };
 
 function toIntentLabel(intentName: string): string {
@@ -55,6 +56,33 @@ export default function IntentActivationList({
   onDisableAll,
   onToggle,
 }: IntentActivationListProps) {
+  const { isDark } = useTheme();
+
+  const secondaryActionButtonClass = isDark
+    ? "rounded-lg border border-slate-500 bg-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
+    : "rounded-lg border border-sky-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60";
+  const primaryActionButtonClass = isDark
+    ? "rounded-lg border border-emerald-500 bg-emerald-900/60 px-4 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-800/70 disabled:cursor-not-allowed disabled:opacity-60"
+    : "rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60";
+
+  const intentCardClass = isDark
+    ? "rounded-xl border border-slate-600 bg-slate-800 p-4"
+    : "rounded-xl border border-sky-200 bg-sky-50/70 p-4";
+
+  const metricBadgeClass = isDark
+    ? "inline-flex items-center rounded-md bg-slate-700 px-2.5 py-1 text-xs font-medium text-slate-100"
+    : "inline-flex items-center rounded-md bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700";
+
+  const mappedStatusClass = isDark
+    ? "bg-emerald-900/70 text-emerald-200"
+    : "bg-emerald-100 text-emerald-800";
+
+  const needsStatusClass = isDark
+    ? "bg-amber-900/70 text-amber-200"
+    : "bg-amber-100 text-amber-800";
+
+  const warningClass = isDark ? "text-amber-300" : "text-amber-700";
+
   return (
     <>
       <div className="mb-4 flex flex-wrap gap-2">
@@ -62,7 +90,7 @@ export default function IntentActivationList({
           type="button"
           onClick={onEnableAll}
           disabled={bulkAction !== null}
-          className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+          className={primaryActionButtonClass}
         >
           {bulkAction === "enable" ? "Enabling..." : "Enable All"}
         </button>
@@ -70,7 +98,7 @@ export default function IntentActivationList({
           type="button"
           onClick={onDisableAll}
           disabled={bulkAction !== null}
-          className="rounded-lg border border-sky-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60"
+          className={secondaryActionButtonClass}
         >
           {bulkAction === "disable" ? "Disabling..." : "Disable All"}
         </button>
@@ -78,29 +106,34 @@ export default function IntentActivationList({
 
       <div className="space-y-3">
         {intents.map((intent) => (
-          <article
-            key={intent.intent_name}
-            className="rounded-xl border border-sky-200 bg-sky-50/70 p-4"
-          >
+          <article key={intent.intent_name} className={intentCardClass}>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-2">
-                <h3 className="m-0 text-base font-semibold text-slate-900">
+                <h3
+                  className={`m-0 text-base font-semibold ${
+                    isDark ? "text-slate-100" : "text-slate-900"
+                  }`}
+                >
                   {toIntentLabel(intent.intent_name)}
                 </h3>
-                <p className="m-0 text-xs text-slate-500">{intent.intent_name}</p>
+                <p
+                  className={`m-0 text-xs ${
+                    isDark ? "text-slate-300" : "text-slate-500"
+                  }`}
+                >
+                  {intent.intent_name}
+                </p>
                 <div className="flex flex-wrap gap-2">
                   {intent.required_metrics.map((metric) => (
-                    <span
-                      key={metric}
-                      className="inline-flex items-center rounded-md bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700"
-                    >
+                    <span key={metric} className={metricBadgeClass}>
                       {toMetricLabel(metric)}
                     </span>
                   ))}
                 </div>
                 {!intent.allMapped && (
-                  <p className="m-0 text-xs font-medium text-amber-700">
-                    This intent requires metrics that haven&apos;t been mapped yet.
+                  <p className={`m-0 text-xs font-medium ${warningClass}`}>
+                    This intent requires metrics that haven&apos;t been mapped
+                    yet.
                   </p>
                 )}
               </div>
@@ -108,9 +141,7 @@ export default function IntentActivationList({
               <div className="flex items-center gap-3">
                 <span
                   className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
-                    intent.allMapped
-                      ? "bg-emerald-100 text-emerald-800"
-                      : "bg-amber-100 text-amber-800"
+                    intent.allMapped ? mappedStatusClass : needsStatusClass
                   }`}
                 >
                   {intent.allMapped ? "Mapped" : "Needs Mapping"}
@@ -121,7 +152,9 @@ export default function IntentActivationList({
                   role="switch"
                   aria-checked={intent.active}
                   onClick={() => onToggle(intent.intent_name, !intent.active)}
-                  disabled={savingIntent === intent.intent_name || bulkAction !== null}
+                  disabled={
+                    savingIntent === intent.intent_name || bulkAction !== null
+                  }
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
                     intent.active ? "bg-sky-600" : "bg-slate-300"
                   } disabled:cursor-not-allowed disabled:opacity-60`}

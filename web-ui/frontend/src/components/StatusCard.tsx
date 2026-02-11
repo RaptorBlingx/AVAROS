@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTheme } from "./common/ThemeProvider";
 
 type StatusCardProps = {
   label: string;
@@ -13,33 +14,51 @@ export default function StatusCard({
   icon,
   tone = "info",
 }: StatusCardProps) {
-  const cardToneClass =
-    tone === "good"
+  const { isDark } = useTheme();
+
+  const cardToneClass = isDark
+    ? tone === "good"
+      ? "border-emerald-800/70 bg-gradient-to-br from-emerald-950/60 to-slate-900"
+      : tone === "warning"
+        ? "border-amber-800/70 bg-gradient-to-br from-amber-950/50 to-slate-900"
+        : "border-sky-800/70 bg-gradient-to-br from-sky-950/50 to-slate-900"
+    : tone === "good"
       ? "border-emerald-200 bg-gradient-to-br from-emerald-50 to-white"
       : tone === "warning"
-      ? "border-amber-200 bg-gradient-to-br from-amber-50 to-white"
-      : "border-sky-200 bg-gradient-to-br from-sky-50 to-white";
+        ? "border-amber-200 bg-gradient-to-br from-amber-50 to-white"
+        : "border-sky-200 bg-gradient-to-br from-sky-50 to-white";
 
-  const valueToneClass =
-    tone === "good"
+  const valueToneClass = isDark
+    ? tone === "good"
+      ? "border-emerald-700 bg-emerald-900/70 text-emerald-200"
+      : tone === "warning"
+        ? "border-amber-700 bg-amber-900/70 text-amber-200"
+        : "border-sky-700 bg-sky-900/70 text-sky-200"
+    : tone === "good"
       ? "border-emerald-200 bg-emerald-100 text-emerald-900"
       : tone === "warning"
-      ? "border-amber-200 bg-amber-100 text-amber-900"
-      : "border-sky-200 bg-sky-100 text-sky-900";
+        ? "border-amber-200 bg-amber-100 text-amber-900"
+        : "border-sky-200 bg-sky-100 text-sky-900";
 
-  const iconToneClass =
-    tone === "good"
+  const iconToneClass = isDark
+    ? tone === "good"
+      ? "border-emerald-700 bg-emerald-900/60 text-emerald-300"
+      : tone === "warning"
+        ? "border-amber-700 bg-amber-900/60 text-amber-300"
+        : "border-sky-700 bg-sky-900/60 text-sky-300"
+    : tone === "good"
       ? "border-emerald-200 bg-emerald-100 text-emerald-700"
       : tone === "warning"
-      ? "border-amber-200 bg-amber-100 text-amber-700"
+        ? "border-amber-200 bg-amber-100 text-amber-700"
       : "border-sky-200 bg-sky-100 text-sky-700";
+  const labelClass = isDark ? "text-slate-200" : "text-slate-700";
 
   return (
     <article
       className={`rounded-2xl border p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${cardToneClass}`}
     >
       <div className="flex items-start justify-between gap-3">
-        <p className="m-0 text-xs font-semibold tracking-wide text-black/80">
+        <p className={`m-0 text-xs font-semibold tracking-wide ${labelClass}`}>
           {label}
         </p>
         <span

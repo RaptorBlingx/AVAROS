@@ -25,23 +25,23 @@ export default function MetricMappingsTable<TRow extends MetricMappingRow>({
   renderActions,
 }: MetricMappingsTableProps<TRow>) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200">
+    <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
       <table className="min-w-full border-collapse">
-        <thead className="bg-slate-100">
+        <thead className="bg-slate-100 dark:bg-slate-800">
           <tr>
-            <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-600">
+            <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-300">
               Metric
             </th>
-            <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-600">
+            <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-300">
               Endpoint
             </th>
-            <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-600">
+            <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-300">
               JSON Path
             </th>
-            <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-600">
+            <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-300">
               Unit
             </th>
-            <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-600">
+            <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-slate-600 dark:text-slate-300">
               Action
             </th>
           </tr>
@@ -49,13 +49,13 @@ export default function MetricMappingsTable<TRow extends MetricMappingRow>({
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td className="px-3 py-4 text-sm text-slate-500" colSpan={5}>
+              <td className="px-3 py-4 text-sm text-slate-500 dark:text-slate-400" colSpan={5}>
                 No metric mappings configured yet.
               </td>
             </tr>
           )}
           {rows.map((row) => (
-            <tr key={row.id} className="border-t border-slate-200">
+            <tr key={row.id} className="border-t border-slate-200 dark:border-slate-700">
               <td className="px-3 py-3 align-top">
                 <select
                   value={row.canonical_metric}
@@ -66,7 +66,7 @@ export default function MetricMappingsTable<TRow extends MetricMappingRow>({
                       event.target.value as CanonicalMetricName,
                     )
                   }
-                  className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                 >
                   {Object.entries(GROUPED_OPTIONS).map(([category, options]) => (
                     <optgroup key={category} label={category}>
@@ -96,7 +96,7 @@ export default function MetricMappingsTable<TRow extends MetricMappingRow>({
                   value={row.endpoint}
                   onChange={(event) => onChange(row.id, "endpoint", event.target.value)}
                   placeholder="/api/v1/kpis/energy"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                 />
                 {errorsByRow[row.id]?.endpoint && (
                   <p className="m-0 mt-1 text-xs text-red-600">
@@ -110,7 +110,7 @@ export default function MetricMappingsTable<TRow extends MetricMappingRow>({
                   value={row.json_path}
                   onChange={(event) => onChange(row.id, "json_path", event.target.value)}
                   placeholder="$.data.value"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                 />
                 {errorsByRow[row.id]?.json_path && (
                   <p className="m-0 mt-1 text-xs text-red-600">
@@ -124,7 +124,7 @@ export default function MetricMappingsTable<TRow extends MetricMappingRow>({
                   value={row.unit}
                   onChange={(event) => onChange(row.id, "unit", event.target.value)}
                   placeholder="kWh/unit"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                 />
                 {errorsByRow[row.id]?.unit && (
                   <p className="m-0 mt-1 text-xs text-red-600">

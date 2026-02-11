@@ -3,9 +3,70 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+  }
+
   body {
     @apply m-0 bg-slate-100 text-slate-800;
     font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    transition: background-color 220ms ease, color 220ms ease;
+  }
+
+  :root[data-theme="dark"] body {
+    @apply bg-slate-950 text-slate-100;
+  }
+
+  :root[data-theme="dark"] .bg-white {
+    @apply bg-slate-900;
+  }
+
+  :root[data-theme="dark"] .bg-slate-100,
+  :root[data-theme="dark"] .bg-slate-50,
+  :root[data-theme="dark"] .bg-blue-50,
+  :root[data-theme="dark"] .bg-sky-50,
+  :root[data-theme="dark"] .bg-sky-50\/70 {
+    @apply bg-slate-800;
+  }
+
+  :root[data-theme="dark"] .border-slate-200 {
+    @apply border-slate-700;
+  }
+
+  :root[data-theme="dark"] .border-blue-200,
+  :root[data-theme="dark"] .border-sky-200,
+  :root[data-theme="dark"] .border-sky-300 {
+    @apply border-slate-600;
+  }
+
+  :root[data-theme="dark"] .text-slate-900 {
+    @apply text-slate-100;
+  }
+
+  :root[data-theme="dark"] .text-slate-800 {
+    @apply text-slate-200;
+  }
+
+  :root[data-theme="dark"] .text-slate-700,
+  :root[data-theme="dark"] .text-slate-600,
+  :root[data-theme="dark"] .text-slate-500 {
+    @apply text-slate-300;
+  }
+
+  :root[data-theme="dark"] input,
+  :root[data-theme="dark"] select,
+  :root[data-theme="dark"] textarea {
+    @apply border-slate-600 bg-slate-900 text-slate-100;
+  }
+
+  :root[data-theme="dark"] .hover\:bg-slate-50:hover,
+  :root[data-theme="dark"] .hover\:bg-sky-50:hover,
+  :root[data-theme="dark"] .hover\:bg-sky-100:hover {
+    @apply bg-slate-700;
   }
 }
 
