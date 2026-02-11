@@ -51,9 +51,9 @@ export const METRIC_OPTIONS: MetricOption[] = [
     label: "Changeover Time",
     category: "Production"
   },
-  { value: "co2_per_unit", label: "CO2 Per Unit", category: "Carbon" },
-  { value: "co2_total", label: "CO2 Total", category: "Carbon" },
-  { value: "co2_per_batch", label: "CO2 Per Batch", category: "Carbon" },
+  { value: "co2_per_unit", label: "CO₂ Per Unit", category: "Carbon" },
+  { value: "co2_total", label: "CO₂ Total", category: "Carbon" },
+  { value: "co2_per_batch", label: "CO₂ Per Batch", category: "Carbon" },
   {
     value: "supplier_lead_time",
     label: "Supplier Lead Time",
@@ -71,7 +71,7 @@ export const METRIC_OPTIONS: MetricOption[] = [
   },
   {
     value: "supplier_co2_per_kg",
-    label: "Supplier CO2 Per kg",
+    label: "Supplier CO₂ Per kg",
     category: "Supplier"
   }
 ];

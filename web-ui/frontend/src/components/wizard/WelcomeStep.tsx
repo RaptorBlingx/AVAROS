@@ -25,7 +25,7 @@ export default function WelcomeStep({
           Welcome to AVAROS Setup
         </h1>
         <p className="mb-0 mt-2 text-sm text-slate-600">
-          This guided setup configures your platform connection in three quick
+          This guided setup configures your platform connection in a few quick
           steps.
         </p>
       </header>

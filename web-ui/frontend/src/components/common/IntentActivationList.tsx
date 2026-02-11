@@ -38,7 +38,7 @@ function toIntentLabel(intentName: string): string {
 function toMetricLabel(metricName: string): string {
   if (metricName.startsWith("co2")) {
     return metricName
-      .replace("co2", "CO2")
+      .replace("co2", "CO₂")
       .replace(/_/g, " ")
       .replace(/\b\w/g, (char) => char.toUpperCase());
   }
