@@ -19,24 +19,27 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING
 import uuid
 
 from skill.domain.exceptions import MetricNotSupportedError
 from skill.domain.models import CanonicalMetric
+from skill.domain.results import KPIResult
 from skill.services.audit import AuditLogger
 
 if TYPE_CHECKING:
     from skill.adapters.base import ManufacturingAdapter
     from skill.domain.models import TimePeriod, WhatIfScenario
+    from skill.domain.production import ProductionSummary
     from skill.domain.results import (
-        KPIResult,
         ComparisonResult,
         TrendResult,
         AnomalyResult,
         WhatIfResult,
     )
     from skill.services.co2_service import CO2DerivationService
+    from skill.services.production_data import ProductionDataService
 
 
 logger = logging.getLogger(__name__)
@@ -74,12 +77,18 @@ class QueryDispatcher:
         CanonicalMetric.CO2_PER_UNIT,
         CanonicalMetric.CO2_PER_BATCH,
     })
+
+    _DERIVED_SUPPLEMENTARY_METRICS = frozenset({
+        CanonicalMetric.ENERGY_PER_UNIT,
+        CanonicalMetric.MATERIAL_EFFICIENCY,
+    })
     
     def __init__(
         self,
         adapter: ManufacturingAdapter,
         audit_logger: AuditLogger | None = None,
         co2_service: CO2DerivationService | None = None,
+        production_data_service: ProductionDataService | None = None,
     ) -> None:
         """
         Initialize dispatcher with an adapter.
@@ -88,10 +97,13 @@ class QueryDispatcher:
             adapter: ManufacturingAdapter instance to route queries to
             audit_logger: Optional AuditLogger for compliance logging
             co2_service: Optional CO2DerivationService for derived metrics
+            production_data_service: Optional ProductionDataService for
+                supplementary data (production counts, material usage)
         """
         self._adapter = adapter
         self._audit_logger = audit_logger or AuditLogger()
         self._co2_service = co2_service
+        self._production_service = production_data_service
         self._loop: asyncio.AbstractEventLoop | None = None
     
     @property
@@ -154,6 +166,16 @@ class QueryDispatcher:
         # Intercept derived carbon metrics (DEC-007, DEC-023)
         if self._is_derived_carbon_metric(metric) and self._co2_service:
             result = self._derive_carbon_kpi(
+                metric, asset_id, period,
+            )
+            self._log_audit(
+                "get_kpi", query_id, metric.value, asset_id, result,
+            )
+            return result
+
+        # Intercept supplementary-derived metrics (DEC-023)
+        if self._is_derived_supplementary_metric(metric):
+            result = self._derive_supplementary_kpi(
                 metric, asset_id, period,
             )
             self._log_audit(
@@ -381,19 +403,82 @@ class QueryDispatcher:
                 ),
             )
             # TODO: energy_source hardcoded to "electricity" —
-            # parameterize when gas/water metering added (P4-L03+)
+            # parameterize when gas/water metering added
             return self._co2_service.derive_co2_total(
                 energy_kwh=energy.value,
                 energy_source="electricity",
                 asset_id=asset_id, period=period,
             )
+        if metric == CanonicalMetric.CO2_PER_UNIT:
+            return self._derive_co2_per_unit(asset_id, period)
         raise MetricNotSupportedError(
             message=(
                 f"{metric.value} requires production count data "
-                f"(not yet available)"
+                f"(supplementary data not available)"
             ),
             metric=metric.value,
             platform=self._adapter.platform_name,
+        )
+
+    def _get_validated_summary(
+        self,
+        asset_id: str,
+        period: TimePeriod,
+        metric: CanonicalMetric,
+    ) -> ProductionSummary:
+        """Get production summary, raising if no data.
+
+        Args:
+            asset_id: Target asset.
+            period: Time period.
+            metric: Metric being derived (for error context).
+
+        Returns:
+            ProductionSummary with non-zero total_produced.
+
+        Raises:
+            MetricNotSupportedError: If total_produced is 0.
+        """
+        summary = self._production_service.get_production_summary(
+            asset_id=asset_id,
+            start_date=period.start.date(),
+            end_date=period.end.date(),
+        )
+        if summary.total_produced == 0:
+            raise MetricNotSupportedError(
+                message="No production data for this period",
+                metric=metric.value,
+                platform=self._adapter.platform_name,
+            )
+        return summary
+
+    def _derive_co2_per_unit(
+        self, asset_id: str, period: TimePeriod,
+    ) -> KPIResult:
+        """Derive co2_per_unit from energy + production data.
+
+        Raises:
+            MetricNotSupportedError: If no production service or no data.
+        """
+        if self._production_service is None:
+            raise MetricNotSupportedError(
+                message="co2_per_unit requires production data service",
+                metric=CanonicalMetric.CO2_PER_UNIT.value,
+                platform=self._adapter.platform_name,
+            )
+        energy = self._run_async(
+            self._adapter.get_kpi(
+                CanonicalMetric.ENERGY_TOTAL, asset_id, period,
+            ),
+        )
+        summary = self._get_validated_summary(
+            asset_id, period, CanonicalMetric.CO2_PER_UNIT,
+        )
+        return self._co2_service.derive_co2_per_unit(
+            energy_kwh=energy.value,
+            production_count=summary.total_produced,
+            energy_source="electricity",
+            asset_id=asset_id, period=period,
         )
 
     def _derive_carbon_trend(
@@ -422,6 +507,95 @@ class QueryDispatcher:
             energy_source="electricity",
             asset_id=asset_id, period=period,
             granularity=granularity,
+        )
+
+    # =========================================================================
+    # Supplementary Data Derivation (DEC-023)
+    # =========================================================================
+
+    def _is_derived_supplementary_metric(
+        self, metric: CanonicalMetric,
+    ) -> bool:
+        """True if metric needs supplementary production data."""
+        return (
+            metric in self._DERIVED_SUPPLEMENTARY_METRICS
+            and self._production_service is not None
+            and not self._adapter.supports_capability(
+                "native_" + metric.value,
+            )
+        )
+
+    def _derive_supplementary_kpi(
+        self, metric: CanonicalMetric,
+        asset_id: str, period: TimePeriod,
+    ) -> KPIResult:
+        """Derive KPI from supplementary production data.
+
+        Args:
+            metric: ENERGY_PER_UNIT or MATERIAL_EFFICIENCY.
+            asset_id: Target asset.
+            period: Time period.
+
+        Returns:
+            KPIResult with derived value.
+
+        Raises:
+            MetricNotSupportedError: If no production data for period.
+        """
+        if metric == CanonicalMetric.ENERGY_PER_UNIT:
+            return self._derive_energy_per_unit(asset_id, period)
+        if metric == CanonicalMetric.MATERIAL_EFFICIENCY:
+            return self._derive_material_efficiency(asset_id, period)
+        raise MetricNotSupportedError(
+            message=f"Cannot derive {metric.value} from supplementary data",
+            metric=metric.value,
+            platform=self._adapter.platform_name,
+        )
+
+    def _derive_energy_per_unit(
+        self, asset_id: str, period: TimePeriod,
+    ) -> KPIResult:
+        """Derive energy_per_unit = energy_total / production_count.
+
+        Raises:
+            MetricNotSupportedError: If no production data.
+        """
+        energy = self._run_async(
+            self._adapter.get_kpi(
+                CanonicalMetric.ENERGY_TOTAL, asset_id, period,
+            ),
+        )
+        summary = self._get_validated_summary(
+            asset_id, period, CanonicalMetric.ENERGY_PER_UNIT,
+        )
+        value = round(energy.value / summary.total_produced, 4)
+        return KPIResult(
+            metric=CanonicalMetric.ENERGY_PER_UNIT,
+            value=value,
+            unit="kWh/unit",
+            asset_id=asset_id,
+            period=period,
+            timestamp=datetime.utcnow(),
+        )
+
+    def _derive_material_efficiency(
+        self, asset_id: str, period: TimePeriod,
+    ) -> KPIResult:
+        """Derive material_efficiency from supplementary data only.
+
+        Raises:
+            MetricNotSupportedError: If no production data.
+        """
+        summary = self._get_validated_summary(
+            asset_id, period, CanonicalMetric.MATERIAL_EFFICIENCY,
+        )
+        return KPIResult(
+            metric=CanonicalMetric.MATERIAL_EFFICIENCY,
+            value=summary.material_efficiency,
+            unit="%",
+            asset_id=asset_id,
+            period=period,
+            timestamp=datetime.utcnow(),
         )
 
     # =========================================================================

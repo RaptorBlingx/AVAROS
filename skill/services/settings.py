@@ -43,7 +43,6 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import create_engine, Column, String, Text, DateTime, Boolean
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from cryptography.fernet import Fernet
 import base64
@@ -52,6 +51,7 @@ import hashlib
 from skill.domain.emission_factors import DEFAULT_EMISSION_FACTORS, EmissionFactor
 from skill.domain.exceptions import ValidationError
 from skill.domain.models import CanonicalMetric
+from skill.services.database import Base
 
 
 logger = logging.getLogger(__name__)
@@ -83,8 +83,6 @@ INTENT_METRIC_REQUIREMENTS: dict[str, list[CanonicalMetric]] = {
     "anomaly.production.check": [CanonicalMetric.OEE],
     "whatif.temperature": [CanonicalMetric.ENERGY_PER_UNIT],
 }
-
-Base = declarative_base()
 
 
 class SettingModel(Base):

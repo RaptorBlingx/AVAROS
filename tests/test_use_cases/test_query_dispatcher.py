@@ -624,10 +624,10 @@ class TestQueryDispatcherCO2Derivation:
         assert result.value > 0
         assert result.unit == "kg CO₂-eq"
 
-    def test_co2_per_unit_not_yet_available(
+    def test_co2_per_unit_requires_production_service(
         self, dispatcher_with_co2: QueryDispatcher,
     ) -> None:
-        """CO2_PER_UNIT raises MetricNotSupportedError (needs P4-L03)."""
+        """CO2_PER_UNIT without production service raises MetricNotSupportedError."""
         period = TimePeriod.today()
         with pytest.raises(MetricNotSupportedError) as exc_info:
             dispatcher_with_co2.get_kpi(
@@ -635,7 +635,7 @@ class TestQueryDispatcherCO2Derivation:
                 asset_id="Line-1",
                 period=period,
             )
-        assert "production count" in str(exc_info.value).lower()
+        assert "production data" in str(exc_info.value).lower()
 
     def test_co2_trend_derived_from_energy_trend(
         self, dispatcher_with_co2: QueryDispatcher,
