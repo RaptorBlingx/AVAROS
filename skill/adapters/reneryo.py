@@ -17,6 +17,13 @@ from typing import TYPE_CHECKING
 
 import aiohttp
 
+from skill.adapters._reneryo_normalizers import (
+    is_native_format,
+    normalize_meter_to_kpi,
+    normalize_meters_to_comparison,
+    normalize_meters_to_raw,
+    normalize_meters_to_trend,
+)
 from skill.adapters._reneryo_parsers import (
     parse_comparison_response,
     parse_kpi_response,
@@ -25,10 +32,10 @@ from skill.adapters._reneryo_parsers import (
 )
 from skill.adapters.base import ManufacturingAdapter
 from skill.domain.exceptions import AdapterError
-from skill.domain.models import CanonicalMetric
+from skill.domain.models import CanonicalMetric, TimePeriod
 
 if TYPE_CHECKING:
-    from skill.domain.models import DataPoint, TimePeriod, WhatIfScenario
+    from skill.domain.models import DataPoint, WhatIfScenario
     from skill.domain.results import (
         AnomalyResult,
         ComparisonResult,
@@ -61,6 +68,7 @@ class ReneryoAdapter(ManufacturingAdapter):
     # RENERYO API Endpoint Mapping
     # =========================================================================
 
+    # Mock API endpoints (used by reneryo-mock server for per-metric routes)
     _ENDPOINT_MAP: dict[CanonicalMetric, str] = {
         # Energy Metrics
         CanonicalMetric.ENERGY_PER_UNIT: "/api/v1/kpis/energy/per-unit",
@@ -88,6 +96,18 @@ class ReneryoAdapter(ManufacturingAdapter):
         CanonicalMetric.CO2_PER_BATCH: "/api/v1/kpis/carbon/per-batch",
     }
 
+    # Real RENERYO API endpoints — energy metrics share one endpoint
+    _REAL_METER_ENDPOINT = "/api/u/measurement/meter/item"
+    _REAL_METRIC_ENDPOINT = "/api/u/measurement/metric/item"
+
+    # Metrics available in the real RENERYO API (energy monitoring platform)
+    _REAL_ENERGY_METRICS: frozenset[CanonicalMetric] = frozenset({
+        CanonicalMetric.ENERGY_PER_UNIT,
+        CanonicalMetric.ENERGY_TOTAL,
+        CanonicalMetric.PEAK_DEMAND,
+        CanonicalMetric.PEAK_TARIFF_EXPOSURE,
+    })
+
     _SUPPORTED_CAPABILITIES: set[str] = {"carbon", "realtime"}
 
     def __init__(
@@ -96,6 +116,7 @@ class ReneryoAdapter(ManufacturingAdapter):
         api_key: str,
         timeout: int = 30,
         auth_type: str = "bearer",
+        api_format: str = "mock",
     ) -> None:
         """
         Initialize RENERYO adapter with connection parameters.
@@ -105,11 +126,14 @@ class ReneryoAdapter(ManufacturingAdapter):
             api_key: Authentication key for RENERYO API.
             timeout: Request timeout in seconds (default 30).
             auth_type: Auth mode — "bearer" or "cookie" (DEC-022).
+            api_format: Response format — "mock" (per-metric endpoints)
+                or "native" (real RENERYO API with /api/u/ paths).
         """
         self._api_url = api_url.rstrip("/") if api_url else ""
         self._api_key = api_key
         self._timeout = timeout
         self._auth_type = auth_type
+        self._api_format = api_format
         self._session: aiohttp.ClientSession | None = None
 
     # =========================================================================
@@ -138,8 +162,10 @@ class ReneryoAdapter(ManufacturingAdapter):
         """
         self._ensure_initialized()
         endpoint = self._resolve_endpoint(metric)
-        params = {"asset_id": asset_id, "period": period.display_name or "today"}
+        params = self._build_query_params(asset_id=asset_id, period=period)
         data = await self._retry_fetch(endpoint, params)
+        if is_native_format(data):
+            data = normalize_meter_to_kpi(data, asset_id)
         return parse_kpi_response(data, metric, asset_id, period)
 
     async def compare(
@@ -164,11 +190,11 @@ class ReneryoAdapter(ManufacturingAdapter):
         """
         self._ensure_initialized()
         endpoint = self._resolve_endpoint(metric)
-        params = {
-            "asset_ids": ",".join(asset_ids),
-            "period": period.display_name or "today",
-        }
+        params = self._build_query_params(period=period)
+        params["asset_ids"] = ",".join(asset_ids)
         data = await self._retry_fetch(endpoint, params)
+        if is_native_format(data):
+            data = normalize_meters_to_comparison(data, asset_ids)
         if not isinstance(data, list):
             data = [data]
         return parse_comparison_response(data, metric, period)
@@ -197,12 +223,12 @@ class ReneryoAdapter(ManufacturingAdapter):
         """
         self._ensure_initialized()
         endpoint = self._resolve_endpoint(metric)
-        params = {
-            "asset_id": asset_id,
-            "granularity": granularity,
-            "period": period.display_name or "today",
-        }
+        params = self._build_query_params(
+            asset_id=asset_id, period=period, granularity=granularity,
+        )
         data = await self._retry_fetch(endpoint, params)
+        if is_native_format(data):
+            data = normalize_meters_to_trend(data)
         if not isinstance(data, list):
             data = [data]
         return parse_trend_response(data, metric, asset_id, period, granularity)
@@ -228,13 +254,14 @@ class ReneryoAdapter(ManufacturingAdapter):
             AdapterError: On connection, auth, or parse errors.
         """
         self._ensure_initialized()
-        params = {
-            "metric": metric.value,
-            "meter": asset_id,
-        }
-        data = await self._retry_fetch(
-            "/api/u/measurement/meter/item", params,
+        params = self._build_query_params(
+            asset_id=asset_id, period=period,
         )
+        data = await self._retry_fetch(
+            self._REAL_METER_ENDPOINT, params,
+        )
+        if is_native_format(data):
+            data = normalize_meters_to_raw(data)
         if not isinstance(data, list):
             data = [data]
         return parse_raw_data_response(data, metric)
@@ -277,9 +304,10 @@ class ReneryoAdapter(ManufacturingAdapter):
             headers=headers,
         )
         logger.info(
-            "ReneryoAdapter initialized — API URL: %s, auth: %s",
+            "ReneryoAdapter initialized — API URL: %s, auth: %s, format: %s",
             self._api_url,
             self._auth_type,
+            self._api_format,
         )
 
     async def shutdown(self) -> None:
@@ -460,6 +488,10 @@ class ReneryoAdapter(ManufacturingAdapter):
         """
         Look up the REST endpoint for a canonical metric.
 
+        For mock format: returns per-metric paths from ``_ENDPOINT_MAP``.
+        For native format: returns the shared meter endpoint for
+        energy metrics, falling back to ``_ENDPOINT_MAP`` otherwise.
+
         Args:
             metric: The canonical metric.
 
@@ -469,6 +501,8 @@ class ReneryoAdapter(ManufacturingAdapter):
         Raises:
             AdapterError: If metric has no mapped endpoint.
         """
+        if self._api_format == "native" and metric in self._REAL_ENERGY_METRICS:
+            return self._REAL_METER_ENDPOINT
         endpoint = self._ENDPOINT_MAP.get(metric)
         if endpoint is None:
             raise AdapterError(
@@ -477,6 +511,37 @@ class ReneryoAdapter(ManufacturingAdapter):
                 platform="reneryo",
             )
         return endpoint
+
+    def _build_query_params(
+        self,
+        asset_id: str = "",
+        period: TimePeriod | None = None,
+        granularity: str = "",
+    ) -> dict[str, str]:
+        """
+        Build query parameters for both mock and real API formats.
+
+        For mock API: uses ``asset_id``, ``period``, ``granularity``.
+        For real API: uses ``datetimeMin``/``datetimeMax`` ISO params.
+
+        Args:
+            asset_id: Target asset identifier.
+            period: Time period for the query.
+            granularity: Data point frequency (for trend queries).
+
+        Returns:
+            Dict of query parameter key-value pairs.
+        """
+        params: dict[str, str] = {}
+        if period is not None:
+            params["datetimeMin"] = period.start.isoformat() + "Z"
+            params["datetimeMax"] = period.end.isoformat() + "Z"
+            params["period"] = period.display_name or "today"
+        if asset_id:
+            params["asset_id"] = asset_id
+        if granularity:
+            params["granularity"] = granularity
+        return params
 
     @staticmethod
     async def _parse_json(

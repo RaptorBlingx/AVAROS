@@ -230,3 +230,142 @@ class TestAuthFromMockServer:
             )
         finally:
             await adapter.shutdown()
+
+
+# =========================================================================
+# Real API Tests — run with: pytest -m real_api
+# =========================================================================
+
+REAL_API_URL = os.environ.get("RENERYO_API_URL", "")
+REAL_API_KEY = os.environ.get("RENERYO_API_KEY", "")
+REAL_AUTH_TYPE = os.environ.get("RENERYO_AUTH_TYPE", "cookie")
+
+real_api = pytest.mark.real_api
+_skip_no_creds = pytest.mark.skipif(
+    not REAL_API_URL or not REAL_API_KEY,
+    reason="RENERYO_API_URL and RENERYO_API_KEY env vars required",
+)
+
+
+async def _make_real_adapter() -> ReneryoAdapter:
+    """Create and initialize a ReneryoAdapter for the real RENERYO API."""
+    adapter = ReneryoAdapter(
+        api_url=REAL_API_URL,
+        api_key=REAL_API_KEY,
+        timeout=30,
+        auth_type=REAL_AUTH_TYPE,
+        api_format="native",
+    )
+    await adapter.initialize()
+    return adapter
+
+
+@_skip_no_creds
+class TestRealApiGetKpi:
+    """Fetch KPIs from the real RENERYO API."""
+
+    @real_api
+    @pytest.mark.asyncio
+    async def test_real_api_get_kpi(self) -> None:
+        """Fetch energy_total from real API returns valid KPIResult."""
+        adapter = await _make_real_adapter()
+        try:
+            result = await adapter.get_kpi(
+                CanonicalMetric.ENERGY_TOTAL,
+                "Electric Main Meter",
+                TimePeriod.last_month(),
+            )
+            assert isinstance(result, KPIResult)
+            assert result.metric == CanonicalMetric.ENERGY_TOTAL
+            assert result.value > 0
+            assert result.unit != ""
+        finally:
+            await adapter.shutdown()
+
+    @real_api
+    @pytest.mark.asyncio
+    async def test_real_api_get_raw_data(self) -> None:
+        """Fetch raw meter data from real API."""
+        from skill.domain.models import DataPoint
+        adapter = await _make_real_adapter()
+        try:
+            result = await adapter.get_raw_data(
+                CanonicalMetric.ENERGY_TOTAL,
+                "Electric Main Meter",
+                TimePeriod.last_month(),
+            )
+            assert isinstance(result, list)
+            assert len(result) > 0
+            assert isinstance(result[0], DataPoint)
+            assert result[0].value > 0
+        finally:
+            await adapter.shutdown()
+
+
+@_skip_no_creds
+class TestRealApiGetTrend:
+    """Trend queries against the real RENERYO API."""
+
+    @real_api
+    @pytest.mark.asyncio
+    async def test_real_api_get_trend(self) -> None:
+        """Fetch trend from real API returns valid TrendResult."""
+        adapter = await _make_real_adapter()
+        try:
+            result = await adapter.get_trend(
+                CanonicalMetric.ENERGY_TOTAL,
+                "Electric Main Meter",
+                TimePeriod.last_month(),
+                granularity="daily",
+            )
+            assert isinstance(result, TrendResult)
+            assert len(result.data_points) > 0
+            assert result.direction in ("up", "down", "stable")
+        finally:
+            await adapter.shutdown()
+
+
+@_skip_no_creds
+class TestRealApiAuthCookie:
+    """Cookie auth against the real RENERYO API."""
+
+    @real_api
+    @pytest.mark.asyncio
+    async def test_real_api_auth_cookie(self) -> None:
+        """Cookie auth works against real RENERYO endpoint."""
+        adapter = await _make_real_adapter()
+        try:
+            result = await adapter.get_raw_data(
+                CanonicalMetric.ENERGY_TOTAL,
+                "Electric Main Meter",
+                TimePeriod.last_month(),
+            )
+            assert isinstance(result, list)
+            assert len(result) > 0
+        finally:
+            await adapter.shutdown()
+
+
+@_skip_no_creds
+class TestRealApiResponseParsing:
+    """Validate real JSON → domain model conversion."""
+
+    @real_api
+    @pytest.mark.asyncio
+    async def test_real_api_response_parsing(self) -> None:
+        """Real API JSON correctly maps to frozen domain KPIResult."""
+        adapter = await _make_real_adapter()
+        try:
+            result = await adapter.get_kpi(
+                CanonicalMetric.ENERGY_TOTAL,
+                "Electric Main Meter",
+                TimePeriod.last_month(),
+            )
+            assert isinstance(result, KPIResult)
+            assert result.metric == CanonicalMetric.ENERGY_TOTAL
+            assert isinstance(result.value, float)
+            assert isinstance(result.unit, str)
+            assert result.asset_id == "Electric Main Meter"
+            assert result.timestamp is not None
+        finally:
+            await adapter.shutdown()
