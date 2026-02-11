@@ -910,8 +910,8 @@ class TestEmissionFactorCRUD:
         )
         result = service.get_emission_factor("electricity")
         assert result is not None
-        assert result["factor"] == 0.48
-        assert result["country"] == "TR"
+        assert result.factor == 0.48
+        assert result.country == "TR"
 
     def test_get_nonexistent_factor(self, service: SettingsService) -> None:
         """get_emission_factor for unknown source returns None."""
@@ -982,7 +982,7 @@ class TestEmissionFactorCRUD:
         service.set_emission_factor("electricity", 0.48)
         service.set_emission_factor("electricity", 0.40)
         result = service.get_emission_factor("electricity")
-        assert result["factor"] == 0.40
+        assert result.factor == 0.40
 
 
 # ══════════════════════════════════════════════════════════

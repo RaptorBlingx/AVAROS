@@ -29,13 +29,13 @@ def list_emission_factors(
     return EmissionFactorListResponse(
         factors=[
             EmissionFactorResponse(
-                energy_source=data["energy_source"],
-                factor=data["factor"],
-                country=data.get("country", ""),
-                source=data.get("source", ""),
-                year=data.get("year", 2024),
+                energy_source=ef.energy_source,
+                factor=ef.factor,
+                country=ef.country,
+                source=ef.source,
+                year=ef.year,
             )
-            for data in factors.values()
+            for ef in factors.values()
         ],
     )
 

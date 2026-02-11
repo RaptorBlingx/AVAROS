@@ -16,7 +16,7 @@ Uses real MockAdapter (verified in P2-L01) and in-memory AuditLogger.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -680,3 +680,43 @@ class TestQueryDispatcherCO2Derivation:
         # CO2 value should be less than the energy value
         # (factor is 0.48 < 1.0), so verify reasonable magnitude
         assert co2.unit == "kg CO₂-eq"
+
+    def test_co2_total_equals_energy_times_factor(
+        self, co2_service: CO2DerivationService,
+    ) -> None:
+        """Verify exact multiplication: CO₂ = energy × 0.48 (TR default)."""
+        from datetime import datetime
+
+        # Arrange — adapter with fixed energy response
+        energy_result = KPIResult(
+            metric=CanonicalMetric.ENERGY_TOTAL,
+            value=250.0,
+            unit="kWh",
+            asset_id="Line-1",
+            period=TimePeriod.today(),
+            timestamp=datetime.now(),
+        )
+        mock_adapter = MagicMock()
+        mock_adapter.get_kpi = AsyncMock(return_value=energy_result)
+        mock_adapter.supports_capability.return_value = False
+        mock_adapter.platform_name = "mock"
+
+        audit = AuditLogger()
+        audit.initialize()
+        dispatcher = QueryDispatcher(
+            adapter=mock_adapter,
+            audit_logger=audit,
+            co2_service=co2_service,
+        )
+
+        # Act
+        result = dispatcher.get_kpi(
+            metric=CanonicalMetric.CO2_TOTAL,
+            asset_id="Line-1",
+            period=TimePeriod.today(),
+        )
+
+        # Assert — 250 kWh × 0.48 = 120.0 kg CO₂-eq
+        assert result.value == 120.0
+        assert result.unit == "kg CO₂-eq"
+        assert result.metric == CanonicalMetric.CO2_TOTAL

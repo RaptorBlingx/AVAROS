@@ -49,8 +49,9 @@ from cryptography.fernet import Fernet
 import base64
 import hashlib
 
+from skill.domain.emission_factors import DEFAULT_EMISSION_FACTORS, EmissionFactor
 from skill.domain.exceptions import ValidationError
-from skill.domain.models import CanonicalMetric, DEFAULT_EMISSION_FACTORS
+from skill.domain.models import CanonicalMetric
 
 
 logger = logging.getLogger(__name__)
@@ -544,31 +545,42 @@ class SettingsService:
         }
         self.set_setting(key, data)
 
-    def get_emission_factor(self, energy_source: str) -> dict[str, Any] | None:
+    def get_emission_factor(self, energy_source: str) -> EmissionFactor | None:
         """Get a stored emission factor for an energy source.
 
         Args:
             energy_source: "electricity", "gas", or "water"
 
         Returns:
-            Factor data dict or None if not configured
+            EmissionFactor instance or None if not configured
         """
         key = f"{self.EMISSION_FACTOR_PREFIX}{energy_source}"
-        return self.get_setting(key, default=None)
+        data = self.get_setting(key, default=None)
+        if data is None:
+            return None
+        return EmissionFactor(
+            energy_source=data["energy_source"],
+            factor=data["factor"],
+            country=data.get("country", ""),
+            source=data.get("source", ""),
+            year=data.get("year", 2024),
+        )
 
-    def list_emission_factors(self) -> dict[str, dict[str, Any]]:
+    def list_emission_factors(self) -> dict[str, EmissionFactor]:
         """List all stored emission factors.
 
         Returns:
-            Dict mapping energy_source to factor data
+            Dict mapping energy_source to EmissionFactor
         """
         self._ensure_initialized()
         all_keys = self.list_settings()
-        result: dict[str, dict[str, Any]] = {}
+        result: dict[str, EmissionFactor] = {}
         for key in all_keys:
             if key.startswith(self.EMISSION_FACTOR_PREFIX):
                 name = key[len(self.EMISSION_FACTOR_PREFIX):]
-                result[name] = self.get_setting(key)
+                ef = self.get_emission_factor(name)
+                if ef is not None:
+                    result[name] = ef
         return result
 
     def delete_emission_factor(self, energy_source: str) -> bool:
@@ -596,7 +608,7 @@ class SettingsService:
         """
         stored = self.get_emission_factor(energy_source)
         if stored is not None:
-            return float(stored["factor"])
+            return stored.factor
 
         # Fallback to Türkiye defaults (primary pilot site)
         turkey_defaults = DEFAULT_EMISSION_FACTORS.get("TR", {})
