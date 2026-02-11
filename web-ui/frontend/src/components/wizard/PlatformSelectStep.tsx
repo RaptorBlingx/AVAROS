@@ -35,7 +35,7 @@ export default function PlatformSelectStep({
 }: PlatformSelectStepProps) {
   return (
     <section className="space-y-4">
-      <header className="rounded-2xl border border-slate-200 bg-slate-50/95 p-6 shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900">
+      <header className="brand-hero rounded-2xl p-6 backdrop-blur-sm">
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">
           Step 2 of 6
         </p>
@@ -44,7 +44,7 @@ export default function PlatformSelectStep({
         </h2>
       </header>
 
-      <div className="rounded-2xl border border-slate-200 bg-slate-50/95 p-6 shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900">
+      <div className="brand-hero rounded-2xl p-6 backdrop-blur-sm">
         <div className="grid gap-3">
           {OPTIONS.map((option) => {
             const active = value === option.value;
@@ -54,8 +54,8 @@ export default function PlatformSelectStep({
                 type="button"
                 className={`rounded-xl border p-4 text-left transition ${
                   active
-                    ? "border-sky-400 bg-sky-50 dark:border-sky-500/60 dark:bg-sky-900/30"
-                    : "border-slate-200 bg-white hover:!bg-sky-100 dark:border-slate-700 dark:bg-slate-800 dark:hover:!bg-slate-700"
+                    ? "border-cyan-300 bg-gradient-to-r from-sky-50/90 via-white to-emerald-50/70 shadow-sm dark:border-cyan-500/50 dark:bg-sky-900/20"
+                    : "border-slate-200 bg-white/90 hover:bg-gradient-to-r hover:from-sky-50 hover:to-emerald-50 dark:border-slate-700 dark:bg-slate-800/85 dark:hover:bg-slate-700/95"
                 }`}
                 onClick={() => onChange(option.value)}
               >
@@ -74,7 +74,7 @@ export default function PlatformSelectStep({
             type="button"
             onClick={onConfirm}
             disabled={!value}
-            className="inline-flex items-center rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-500/40 dark:bg-sky-900/40 dark:text-sky-200 dark:hover:bg-sky-900/60"
+            className="btn-brand-primary inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
           >
             Select & Continue
           </button>

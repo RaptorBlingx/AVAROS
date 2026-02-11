@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 export type ToastItem = {
   id: number;
@@ -85,13 +86,13 @@ export default function Toast({ toasts, onDismiss }: ToastProps) {
     };
   }, []);
 
-  return (
-    <div className="pointer-events-none fixed right-4 top-4 z-50 space-y-2">
+  return createPortal(
+    <div className="pointer-events-none fixed bottom-4 right-4 z-[1000] space-y-2">
       {toasts.map((toast) => (
         <div
           key={toast.id}
           onClick={() => closeWithAnimation(toast.id)}
-          className={`toast-item pointer-events-auto min-w-[260px] cursor-pointer rounded-lg border px-4 py-3 text-sm shadow-lg ${
+          className={`toast-item pointer-events-auto w-[min(92vw,340px)] cursor-pointer rounded-lg border px-4 py-3 text-sm shadow-lg ${
             closingIds.has(toast.id) ? "toast-item--closing" : ""
           } ${
             toast.type === "success"
@@ -104,6 +105,7 @@ export default function Toast({ toasts, onDismiss }: ToastProps) {
           </div>
         </div>
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }

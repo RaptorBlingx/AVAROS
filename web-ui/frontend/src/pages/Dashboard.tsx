@@ -183,13 +183,13 @@ export default function Dashboard() {
 
   return (
     <section className="space-y-5">
-      <header className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="pointer-events-none absolute -right-10 -top-14 h-36 w-36 rounded-full bg-sky-200/40 blur-2xl" />
-        <div className="pointer-events-none absolute -bottom-16 right-16 h-28 w-28 rounded-full bg-emerald-200/40 blur-2xl" />
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <header className="brand-hero relative overflow-hidden rounded-2xl p-6">
+        <div className="pointer-events-none absolute -right-10 -top-14 h-36 w-36 rounded-full bg-cyan-300/35 blur-2xl dark:bg-cyan-400/15" />
+        <div className="pointer-events-none absolute -bottom-16 right-16 h-28 w-28 rounded-full bg-emerald-300/30 blur-2xl dark:bg-emerald-400/15" />
+        <div className="flex flex-wrap items-center justify-center lg:justify-between gap-3">
           <div className="flex flex-row gap-4 relative">
             <div>
-              <p className="m-0 bg-gradient-to-r from-sky-600 via-cyan-500 to-emerald-500 bg-clip-text text-xs font-bold uppercase tracking-[0.14em] text-transparent">
+              <p className="m-0 brand-title-gradient text-xs font-bold uppercase tracking-[0.14em]">
                 AVAROS Control Center
               </p>
               <h2 className="m-0 mt-1 text-2xl font-semibold text-slate-900">
@@ -205,13 +205,13 @@ export default function Dashboard() {
               </p>
             </div>
           </div>
-          <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-col items-end gap-1">
             {!loading && healthy && (
               <div
                 className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 ${
                   isDark
-                    ? "border-emerald-700 bg-gradient-to-r from-emerald-950/70 to-slate-900"
-                    : "border-emerald-200 bg-gradient-to-r from-emerald-50 to-white"
+                    ? "border-slate-700 bg-slate-900/85"
+                    : "border-slate-200 bg-white/90"
                 }`}
               >
                 <span className="relative inline-flex h-2.5 w-2.5">
@@ -220,7 +220,7 @@ export default function Dashboard() {
                 </span>
                 <p
                   className={`m-0 text-sm font-semibold ${
-                    isDark ? "text-emerald-200" : "text-black/70"
+                    isDark ? "text-slate-100" : "text-slate-700"
                   }`}
                 >
                   System Healthy
@@ -231,8 +231,8 @@ export default function Dashboard() {
               <span
                 className={`rounded-lg text-center border px-3 py-2 text-sm font-semibold ${
                   isDark
-                    ? "border-amber-700 bg-gradient-to-r from-amber-950/70 to-slate-900 text-amber-200"
-                    : "border-amber-200 bg-gradient-to-r from-amber-50 to-white text-black/50"
+                    ? "border-rose-800 bg-rose-950/40 text-rose-200"
+                    : "border-rose-200 bg-rose-50/80 text-rose-700"
                 }`}
               >
                 Setup Required: platform configuration is not complete.
@@ -242,7 +242,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="brand-panel rounded-2xl p-5">
         {loading && (
           <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 opacity-50">
             <LoadingSpinner label="Loading system status..." size="sm" />
