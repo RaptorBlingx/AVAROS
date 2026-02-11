@@ -34,6 +34,7 @@ if TYPE_CHECKING:
         AnomalyResult,
         WhatIfResult,
     )
+    from skill.services.co2_service import CO2DerivationService
 
 
 logger = logging.getLogger(__name__)
@@ -66,16 +67,23 @@ class QueryDispatcher:
         )
     """
     
-    def __init__(self, adapter: ManufacturingAdapter, audit_logger: AuditLogger | None = None):
+    def __init__(
+        self,
+        adapter: ManufacturingAdapter,
+        audit_logger: AuditLogger | None = None,
+        co2_service: CO2DerivationService | None = None,
+    ) -> None:
         """
         Initialize dispatcher with an adapter.
         
         Args:
             adapter: ManufacturingAdapter instance to route queries to
             audit_logger: Optional AuditLogger for compliance logging
+            co2_service: Optional CO2DerivationService for derived metrics
         """
         self._adapter = adapter
         self._audit_logger = audit_logger or AuditLogger()
+        self._co2_service = co2_service
         self._loop: asyncio.AbstractEventLoop | None = None
     
     @property
@@ -134,6 +142,16 @@ class QueryDispatcher:
             "[%s] get_kpi: metric=%s, asset=%s, period=%s",
             query_id, metric.value, asset_id, period.display_name,
         )
+
+        # Intercept derived carbon metrics (DEC-007, DEC-023)
+        if self._is_derived_carbon_metric(metric) and self._co2_service:
+            result = self._derive_carbon_kpi(
+                metric, asset_id, period,
+            )
+            self._log_audit(
+                "get_kpi", query_id, metric.value, asset_id, result,
+            )
+            return result
         
         result = self._run_async(
             self._adapter.get_kpi(metric, asset_id, period)
@@ -207,6 +225,16 @@ class QueryDispatcher:
             query_id, metric.value, asset_id, period.display_name, granularity,
         )
         
+        # Intercept derived carbon trend (DEC-007, DEC-023)
+        if self._is_derived_carbon_metric(metric) and self._co2_service:
+            result = self._derive_carbon_trend(
+                metric, asset_id, period, granularity,
+            )
+            self._log_audit(
+                "get_trend", query_id, metric.value, asset_id, result,
+            )
+            return result
+
         result = self._run_async(
             self._adapter.get_trend(metric, asset_id, period, granularity)
         )
@@ -320,6 +348,133 @@ class QueryDispatcher:
         )
         return result
     
+    # =========================================================================
+    # CO₂ Derivation (DEC-007, DEC-023)
+    # =========================================================================
+
+    def _is_derived_carbon_metric(
+        self, metric: CanonicalMetric,
+    ) -> bool:
+        """Check if metric should be derived from energy data.
+
+        Args:
+            metric: Canonical metric to check
+
+        Returns:
+            True if the metric is a carbon metric and the adapter
+            does not natively support carbon data.
+        """
+        from skill.domain.models import CanonicalMetric as CM
+
+        carbon_metrics = {
+            CM.CO2_TOTAL,
+            CM.CO2_PER_UNIT,
+            CM.CO2_PER_BATCH,
+        }
+        return (
+            metric in carbon_metrics
+            and not self._adapter.supports_capability(
+                "native_carbon",
+            )
+        )
+
+    def _derive_carbon_kpi(
+        self,
+        metric: CanonicalMetric,
+        asset_id: str,
+        period: TimePeriod,
+    ) -> KPIResult:
+        """Derive a carbon KPI from energy data + emission factors.
+
+        Fetches energy_total from adapter, then uses
+        CO2DerivationService to compute the carbon metric.
+
+        Args:
+            metric: Carbon metric to derive
+            asset_id: Asset identifier
+            period: Time period
+
+        Returns:
+            KPIResult with derived CO₂ value
+
+        Raises:
+            MetricNotSupportedError: If metric needs production data
+        """
+        from skill.domain.models import CanonicalMetric as CM
+        from skill.domain.exceptions import MetricNotSupportedError
+
+        if metric == CM.CO2_TOTAL:
+            energy_result = self._run_async(
+                self._adapter.get_kpi(
+                    CM.ENERGY_TOTAL, asset_id, period,
+                ),
+            )
+            return self._co2_service.derive_co2_total(
+                energy_kwh=energy_result.value,
+                energy_source="electricity",
+                asset_id=asset_id,
+                period=period,
+            )
+
+        raise MetricNotSupportedError(
+            message=(
+                f"{metric.value} requires production count data "
+                f"(not yet available)"
+            ),
+            metric=metric.value,
+            platform=self._adapter.platform_name,
+        )
+
+    def _derive_carbon_trend(
+        self,
+        metric: CanonicalMetric,
+        asset_id: str,
+        period: TimePeriod,
+        granularity: str,
+    ) -> TrendResult:
+        """Derive a carbon trend from energy trend data.
+
+        Fetches energy_total trend from adapter, then uses
+        CO2DerivationService to convert each data point.
+
+        Args:
+            metric: Carbon metric (must be CO2_TOTAL)
+            asset_id: Asset identifier
+            period: Time period
+            granularity: Data point frequency
+
+        Returns:
+            TrendResult with CO₂ data points
+
+        Raises:
+            MetricNotSupportedError: If metric is not CO2_TOTAL
+        """
+        from skill.domain.models import CanonicalMetric as CM
+        from skill.domain.exceptions import MetricNotSupportedError
+
+        if metric != CM.CO2_TOTAL:
+            raise MetricNotSupportedError(
+                message=(
+                    f"Trend for {metric.value} requires production "
+                    f"count data (not yet available)"
+                ),
+                metric=metric.value,
+                platform=self._adapter.platform_name,
+            )
+
+        energy_trend = self._run_async(
+            self._adapter.get_trend(
+                CM.ENERGY_TOTAL, asset_id, period, granularity,
+            ),
+        )
+        return self._co2_service.derive_co2_trend(
+            energy_data_points=energy_trend.data_points,
+            energy_source="electricity",
+            asset_id=asset_id,
+            period=period,
+            granularity=granularity,
+        )
+
     # =========================================================================
     # Async/Sync Bridging
     # =========================================================================

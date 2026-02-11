@@ -16,6 +16,8 @@ from skill.domain.models import (
     WhatIfScenario,
     ScenarioParameter,
     Anomaly,
+    EmissionFactor,
+    DEFAULT_EMISSION_FACTORS,
 )
 
 
@@ -563,4 +565,93 @@ class TestAnomaly:
         assert anomaly.actual_value == 35.0
         assert anomaly.deviation == -3.5
         assert "slowdown" in anomaly.description.lower()
+
+
+# ══════════════════════════════════════════════════════════
+# EmissionFactor
+# ══════════════════════════════════════════════════════════
+
+
+class TestEmissionFactor:
+    """Tests for EmissionFactor frozen dataclass."""
+
+    def test_create_electricity_factor(self) -> None:
+        """EmissionFactor stores all fields correctly."""
+        # Act
+        ef = EmissionFactor(
+            energy_source="electricity",
+            factor=0.48,
+            country="TR",
+            source="TEDAŞ / IEA 2024",
+            year=2024,
+        )
+
+        # Assert
+        assert ef.energy_source == "electricity"
+        assert ef.factor == 0.48
+        assert ef.unit == "kg_co2_per_kwh"
+        assert ef.country == "TR"
+        assert ef.source == "TEDAŞ / IEA 2024"
+        assert ef.year == 2024
+
+    def test_frozen(self) -> None:
+        """EmissionFactor is immutable."""
+        # Arrange
+        ef = EmissionFactor(energy_source="gas", factor=0.20)
+
+        # Act & Assert
+        with pytest.raises(AttributeError):
+            ef.factor = 0.30
+
+    def test_default_values(self) -> None:
+        """Optional fields have correct defaults."""
+        # Act
+        ef = EmissionFactor(energy_source="electricity", factor=0.38)
+
+        # Assert
+        assert ef.unit == "kg_co2_per_kwh"
+        assert ef.country == ""
+        assert ef.source == ""
+        assert ef.year == 2024
+
+
+class TestDefaultEmissionFactors:
+    """Tests for DEFAULT_EMISSION_FACTORS module constant."""
+
+    def test_turkey_electricity(self) -> None:
+        """Türkiye electricity factor is 0.48."""
+        ef = DEFAULT_EMISSION_FACTORS["TR"]["electricity"]
+        assert ef.factor == 0.48
+        assert ef.country == "TR"
+
+    def test_germany_electricity(self) -> None:
+        """Germany electricity factor is 0.38."""
+        ef = DEFAULT_EMISSION_FACTORS["DE"]["electricity"]
+        assert ef.factor == 0.38
+
+    def test_eu_electricity(self) -> None:
+        """EU average electricity factor is 0.26."""
+        ef = DEFAULT_EMISSION_FACTORS["EU"]["electricity"]
+        assert ef.factor == 0.26
+
+    def test_all_countries_have_electricity(self) -> None:
+        """Every country preset includes electricity."""
+        for country, sources in DEFAULT_EMISSION_FACTORS.items():
+            assert "electricity" in sources, f"{country} missing electricity"
+
+    def test_all_factors_positive(self) -> None:
+        """All default factors are > 0."""
+        for country, sources in DEFAULT_EMISSION_FACTORS.items():
+            for source_name, ef in sources.items():
+                assert ef.factor > 0, (
+                    f"{country}/{source_name} factor is {ef.factor}"
+                )
+
+    def test_all_factors_are_emission_factor_instances(self) -> None:
+        """All entries are EmissionFactor dataclass instances."""
+        for country, sources in DEFAULT_EMISSION_FACTORS.items():
+            for source_name, ef in sources.items():
+                assert isinstance(ef, EmissionFactor), (
+                    f"{country}/{source_name} is {type(ef)}"
+                )
 

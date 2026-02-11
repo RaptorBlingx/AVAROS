@@ -50,7 +50,7 @@ import base64
 import hashlib
 
 from skill.domain.exceptions import ValidationError
-from skill.domain.models import CanonicalMetric
+from skill.domain.models import CanonicalMetric, DEFAULT_EMISSION_FACTORS
 
 
 logger = logging.getLogger(__name__)
@@ -499,6 +499,132 @@ class SettingsService:
             intent: [m.value for m in metrics]
             for intent, metrics in INTENT_METRIC_REQUIREMENTS.items()
         }
+
+    # ── Emission Factor CRUD (DEC-023) ──────────────────
+
+    EMISSION_FACTOR_PREFIX = "emission_factor:"
+
+    def set_emission_factor(
+        self,
+        energy_source: str,
+        factor: float,
+        country: str = "",
+        source: str = "",
+        year: int = 2024,
+    ) -> None:
+        """Store an emission factor for an energy source.
+
+        Validates energy_source against allowed values. The factor is
+        the kg CO₂-eq per kWh (or per m³ for gas).
+
+        Args:
+            energy_source: "electricity", "gas", or "water"
+            factor: CO₂ emission factor value (must be > 0)
+            country: Country code (e.g. "TR", "DE")
+            source: Citation for the factor
+            year: Reference year
+
+        Raises:
+            ValidationError: If energy_source is invalid or factor <= 0
+        """
+        self._validate_energy_source(energy_source)
+        if factor <= 0:
+            raise ValidationError(
+                message=f"Emission factor must be positive, got {factor}",
+                field="factor",
+                value=str(factor),
+            )
+        key = f"{self.EMISSION_FACTOR_PREFIX}{energy_source}"
+        data = {
+            "energy_source": energy_source,
+            "factor": factor,
+            "country": country,
+            "source": source,
+            "year": year,
+        }
+        self.set_setting(key, data)
+
+    def get_emission_factor(self, energy_source: str) -> dict[str, Any] | None:
+        """Get a stored emission factor for an energy source.
+
+        Args:
+            energy_source: "electricity", "gas", or "water"
+
+        Returns:
+            Factor data dict or None if not configured
+        """
+        key = f"{self.EMISSION_FACTOR_PREFIX}{energy_source}"
+        return self.get_setting(key, default=None)
+
+    def list_emission_factors(self) -> dict[str, dict[str, Any]]:
+        """List all stored emission factors.
+
+        Returns:
+            Dict mapping energy_source to factor data
+        """
+        self._ensure_initialized()
+        all_keys = self.list_settings()
+        result: dict[str, dict[str, Any]] = {}
+        for key in all_keys:
+            if key.startswith(self.EMISSION_FACTOR_PREFIX):
+                name = key[len(self.EMISSION_FACTOR_PREFIX):]
+                result[name] = self.get_setting(key)
+        return result
+
+    def delete_emission_factor(self, energy_source: str) -> bool:
+        """Delete a stored emission factor.
+
+        Args:
+            energy_source: "electricity", "gas", or "water"
+
+        Returns:
+            True if deleted, False if not found
+        """
+        key = f"{self.EMISSION_FACTOR_PREFIX}{energy_source}"
+        return self.delete_setting(key)
+
+    def get_effective_emission_factor(self, energy_source: str) -> float:
+        """Get the effective emission factor, with fallback to defaults.
+
+        Priority: stored custom factor → Türkiye default (pilot site) → 0.0
+
+        Args:
+            energy_source: "electricity", "gas", or "water"
+
+        Returns:
+            Emission factor in kg CO₂/kWh (or equivalent)
+        """
+        stored = self.get_emission_factor(energy_source)
+        if stored is not None:
+            return float(stored["factor"])
+
+        # Fallback to Türkiye defaults (primary pilot site)
+        turkey_defaults = DEFAULT_EMISSION_FACTORS.get("TR", {})
+        if energy_source in turkey_defaults:
+            return turkey_defaults[energy_source].factor
+
+        return 0.0
+
+    @staticmethod
+    def _validate_energy_source(energy_source: str) -> None:
+        """Validate energy source name.
+
+        Args:
+            energy_source: Must be one of "electricity", "gas", "water"
+
+        Raises:
+            ValidationError: If not a valid energy source
+        """
+        valid = {"electricity", "gas", "water"}
+        if energy_source not in valid:
+            raise ValidationError(
+                message=(
+                    f"Invalid energy source: '{energy_source}'. "
+                    f"Must be one of: {', '.join(sorted(valid))}"
+                ),
+                field="energy_source",
+                value=energy_source,
+            )
 
     # ── Metric Mapping CRUD ─────────────────────────────
 

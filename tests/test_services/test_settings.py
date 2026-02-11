@@ -892,3 +892,119 @@ class TestIntentActivationIsolation:
         service.set_intent_active("kpi.oee", False)
         service.set_metric_mapping("energy_per_unit", sample_mapping)
         assert service.is_intent_active("kpi.oee") is False
+
+
+# ══════════════════════════════════════════════════════════
+# 17. Emission Factor CRUD (DEC-023)
+# ══════════════════════════════════════════════════════════
+
+
+class TestEmissionFactorCRUD:
+    """Tests for emission factor CRUD operations."""
+
+    def test_set_and_get_factor(self, service: SettingsService) -> None:
+        """Round-trip: set then get returns same factor."""
+        service.set_emission_factor(
+            energy_source="electricity", factor=0.48,
+            country="TR", source="IEA", year=2024,
+        )
+        result = service.get_emission_factor("electricity")
+        assert result is not None
+        assert result["factor"] == 0.48
+        assert result["country"] == "TR"
+
+    def test_get_nonexistent_factor(self, service: SettingsService) -> None:
+        """get_emission_factor for unknown source returns None."""
+        assert service.get_emission_factor("electricity") is None
+
+    def test_list_empty(self, service: SettingsService) -> None:
+        """list_emission_factors on fresh DB returns empty dict."""
+        assert service.list_emission_factors() == {}
+
+    def test_list_after_set(self, service: SettingsService) -> None:
+        """list_emission_factors returns all stored factors."""
+        service.set_emission_factor("electricity", 0.48)
+        service.set_emission_factor("gas", 0.20)
+        result = service.list_emission_factors()
+        assert len(result) == 2
+        assert "electricity" in result
+        assert "gas" in result
+
+    def test_delete_factor(self, service: SettingsService) -> None:
+        """delete_emission_factor removes the entry."""
+        service.set_emission_factor("electricity", 0.48)
+        assert service.delete_emission_factor("electricity") is True
+        assert service.get_emission_factor("electricity") is None
+
+    def test_delete_nonexistent(self, service: SettingsService) -> None:
+        """delete_emission_factor for missing key returns False."""
+        assert service.delete_emission_factor("electricity") is False
+
+    def test_invalid_energy_source(self, service: SettingsService) -> None:
+        """set_emission_factor with bad source raises ValidationError."""
+        with pytest.raises(ValidationError):
+            service.set_emission_factor("nuclear", 0.01)
+
+    def test_negative_factor(self, service: SettingsService) -> None:
+        """set_emission_factor with factor < 0 raises ValidationError."""
+        with pytest.raises(ValidationError):
+            service.set_emission_factor("electricity", -0.5)
+
+    def test_zero_factor(self, service: SettingsService) -> None:
+        """set_emission_factor with factor=0 raises ValidationError."""
+        with pytest.raises(ValidationError):
+            service.set_emission_factor("electricity", 0.0)
+
+    def test_get_effective_factor_stored(
+        self, service: SettingsService,
+    ) -> None:
+        """get_effective_emission_factor returns stored value if present."""
+        service.set_emission_factor("electricity", 0.55)
+        assert service.get_effective_emission_factor("electricity") == 0.55
+
+    def test_get_effective_factor_fallback(
+        self, service: SettingsService,
+    ) -> None:
+        """get_effective_emission_factor falls back to TR default."""
+        result = service.get_effective_emission_factor("electricity")
+        assert result == 0.48  # TR default
+
+    def test_get_effective_factor_unknown_source(
+        self, service: SettingsService,
+    ) -> None:
+        """get_effective_emission_factor returns 0.0 for unknown source."""
+        assert service.get_effective_emission_factor("solar") == 0.0
+
+    def test_update_existing_factor(
+        self, service: SettingsService,
+    ) -> None:
+        """Calling set_emission_factor twice overwrites previous value."""
+        service.set_emission_factor("electricity", 0.48)
+        service.set_emission_factor("electricity", 0.40)
+        result = service.get_emission_factor("electricity")
+        assert result["factor"] == 0.40
+
+
+# ══════════════════════════════════════════════════════════
+# 18. Emission Factor Isolation
+# ══════════════════════════════════════════════════════════
+
+
+class TestEmissionFactorIsolation:
+    """Emission factors must not interfere with other settings."""
+
+    def test_emission_factor_not_in_metric_mappings(
+        self, service: SettingsService,
+    ) -> None:
+        """Emission factor keys do not appear in list_metric_mappings."""
+        service.set_emission_factor("electricity", 0.48)
+        assert service.list_metric_mappings() == {}
+
+    def test_metric_mapping_not_in_emission_factors(
+        self,
+        service: SettingsService,
+        sample_mapping: dict[str, Any],
+    ) -> None:
+        """Metric mapping keys do not appear in list_emission_factors."""
+        service.set_metric_mapping("energy_per_unit", sample_mapping)
+        assert service.list_emission_factors() == {}
