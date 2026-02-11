@@ -3,7 +3,7 @@ RENERYO Response Normalizers — Transforms native API format to parser format.
 
 The real RENERYO API returns a different JSON structure than the mock API.
 These normalizers convert native responses into the format expected by
-``_reneryo_parsers.py``, keeping parsers unchanged and mock tests passing.
+``_parsers.py``, keeping parsers unchanged and mock tests passing.
 
 Real API format:
     Meter endpoint: ``{"records": [{"name": ..., "consumption": ..., ...}]}``
@@ -19,7 +19,7 @@ Parser-expected format:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -118,8 +118,8 @@ def normalize_meters_to_trend(data: dict) -> list[dict]:
     Normalize native meter response to trend data points.
 
     The real API returns aggregated consumption per meter, not time-series.
-    Each meter record becomes one data point. For richer trend data,
-    the caller should make multiple requests over sub-periods.
+    Each meter record becomes one data point with a synthetic timestamp
+    spaced 1 hour apart so trend analysis produces distinct points.
 
     Args:
         data: Native response ``{"records": [...]}``.
@@ -128,7 +128,22 @@ def normalize_meters_to_trend(data: dict) -> list[dict]:
         List of dicts: ``[{"value", "unit", "timestamp"}, ...]``.
     """
     records = data.get("records", [])
-    return [_meter_record_to_dict(r) for r in records if r.get("consumption") is not None]
+    consumable = [r for r in records if r.get("consumption") is not None]
+    if not consumable:
+        return []
+    now = datetime.now(tz=timezone.utc)
+    points = [
+        _meter_record_to_dict(
+            r,
+            timestamp=(now - timedelta(hours=len(consumable) - 1 - i)).isoformat(),
+        )
+        for i, r in enumerate(consumable)
+    ]
+    logger.warning(
+        "Trend timestamps are synthetic — native API returns "
+        "aggregated consumption, not time-series data",
+    )
+    return points
 
 
 def normalize_meters_to_raw(data: dict) -> list[dict]:
@@ -201,8 +216,10 @@ def _find_record(records: list[dict], asset_id: str) -> dict:
         if record.get("name") == asset_id or record.get("id") == asset_id:
             return record
     if records:
-        logger.info(
-            "Asset '%s' not found, returning first record", asset_id,
+        logger.warning(
+            "Asset '%s' not found in %d records — returning first record",
+            asset_id,
+            len(records),
         )
         return records[0]
     raise KeyError(f"No meter record found for asset_id={asset_id}")
@@ -231,12 +248,14 @@ def _find_metric_record(records: list[dict], name: str) -> dict:
     raise KeyError(f"No metric record found for name={name}")
 
 
-def _meter_record_to_dict(record: dict) -> dict:
+def _meter_record_to_dict(record: dict, *, timestamp: str = "") -> dict:
     """
     Convert a single meter record to parser-expected dict.
 
     Args:
         record: Native meter record with consumption, metric, etc.
+        timestamp: ISO-8601 timestamp override. Uses current UTC time
+            when empty (default for KPI/raw queries).
 
     Returns:
         Dict with value, unit, timestamp keys.
@@ -244,7 +263,7 @@ def _meter_record_to_dict(record: dict) -> dict:
     return {
         "value": float(record.get("consumption", 0.0)),
         "unit": _resolve_unit(record),
-        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+        "timestamp": timestamp or datetime.now(tz=timezone.utc).isoformat(),
     }
 
 

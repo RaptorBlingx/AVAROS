@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from skill.adapters._reneryo_normalizers import (
+from skill.adapters.reneryo._normalizers import (
     is_native_format,
     normalize_meter_to_kpi,
     normalize_meters_to_comparison,
