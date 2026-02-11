@@ -126,7 +126,7 @@ services:
       - ovos
 
     ports:
-      - "8080:8080"
+      - "8081:8080"
 
     volumes:
       - ../skill:/opt/avaros/skill:ro
