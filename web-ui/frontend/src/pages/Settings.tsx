@@ -8,6 +8,7 @@ import IntentActivationSection from "../components/settings/IntentActivationSect
 import MetricMappingsSection from "../components/settings/MetricMappingsSection";
 import PlatformConfigSection from "../components/settings/PlatformConfigSection";
 import SystemInfoSection from "../components/settings/SystemInfoSection";
+import { useTheme } from "../components/common/ThemeProvider";
 
 function Section({
   title,
@@ -48,7 +49,7 @@ function Section({
 export default function Settings() {
   const navigate = useNavigate();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-
+  const { isDark } = useTheme();
   const notify = useCallback((type: "success" | "error", message: string) => {
     setToasts((prev) => [
       ...prev,
@@ -73,7 +74,11 @@ export default function Settings() {
       <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">
+            <p
+              className={`m-0 text-xs font-semibold uppercase tracking-[0.14em] ${
+                isDark ? "text-sky-500" : "text-sky-700"
+              }`}
+            >
               AVAROS Control Panel
             </p>
             <h2 className="m-0 mt-2 text-2xl font-semibold text-slate-900">
@@ -83,7 +88,9 @@ export default function Settings() {
           </div>
           <button
             type="button"
-            className="rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:bg-sky-100"
+            className={`rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 ${
+              isDark ? "text-white" : "text-dark"
+            }`}
             onClick={() => navigate("/wizard?force=1")}
           >
             Run Wizard

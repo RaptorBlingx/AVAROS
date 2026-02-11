@@ -131,6 +131,9 @@ services:
     volumes:
       - ../skill:/opt/avaros/skill:ro
 
+    env_file:
+      - ../.env
+
     environment:
       - AVAROS_DATABASE_URL=postgresql://avaros:avaros@avaros_db:5432/avaros
       - AVAROS_WEB_UI_PORT=8080

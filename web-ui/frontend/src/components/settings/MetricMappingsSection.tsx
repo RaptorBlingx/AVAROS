@@ -11,6 +11,7 @@ import type { CanonicalMetricName, MetricMapping } from "../../api/types";
 import MetricMappingsTable from "../common/MetricMappingsTable";
 import EmptyState from "../common/EmptyState";
 import LoadingSpinner from "../common/LoadingSpinner";
+import { useTheme } from "../common/ThemeProvider";
 import { METRIC_OPTIONS } from "../common/metricMapping";
 import type { MetricMappingRow, MetricRowError } from "../common/metricMapping";
 
@@ -44,6 +45,7 @@ function createRow(mapping: MetricMapping): SettingsMetricRow {
 }
 
 export default function MetricMappingsSection({ onNotify }: MetricMappingsSectionProps) {
+  const { isDark } = useTheme();
   const [rows, setRows] = useState<SettingsMetricRow[]>([]);
   const [errorsByRow, setErrorsByRow] = useState<Record<string, MetricRowError>>({});
   const [loading, setLoading] = useState(true);
@@ -199,7 +201,11 @@ export default function MetricMappingsSection({ onNotify }: MetricMappingsSectio
         <button
           type="button"
           onClick={addRow}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
+          className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+            isDark
+              ? "border-slate-500 bg-slate-700 text-slate-100 hover:bg-slate-600"
+              : "border-slate-300 bg-white text-slate-700"
+          }`}
         >
           Add Mapping
         </button>
@@ -230,14 +236,22 @@ export default function MetricMappingsSection({ onNotify }: MetricMappingsSectio
                     type="button"
                     onClick={() => void saveRow(row.id)}
                     disabled={savingRowId === row.id}
-                    className="rounded border border-sky-300 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700"
+                    className={`rounded border px-2 py-1 text-xs font-semibold ${
+                      isDark
+                        ? "border-slate-400 bg-white text-slate-900"
+                        : "border-sky-300 bg-sky-50 text-sky-700"
+                    }`}
                   >
                     {savingRowId === row.id ? "Saving..." : row.persisted ? "Save" : "Create"}
                   </button>
                   <button
                     type="button"
                     onClick={() => void removeRow(row)}
-                    className="rounded border border-rose-300 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700"
+                    className={`rounded border px-2 py-1 text-xs font-semibold ${
+                      isDark
+                        ? "border-rose-400 bg-rose-950/60 text-rose-200"
+                        : "border-rose-300 bg-rose-50 text-rose-700"
+                    }`}
                   >
                     Remove
                   </button>

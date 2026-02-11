@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { ApiError, clearStoredApiKey, getStatus, getStoredApiKey } from "./api/client";
 import ErrorBoundary from "./components/common/ErrorBoundary";
+import { useTheme } from "./components/common/ThemeProvider";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
@@ -11,6 +12,7 @@ import Wizard from "./pages/Wizard";
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const { isDark } = useTheme();
 
   const checkAuth = useCallback(async () => {
     // If no stored key, go straight to login
@@ -48,9 +50,23 @@ export default function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
-        <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-slate-100 via-sky-50 to-slate-200">
-          <div className="pointer-events-none absolute -left-16 -top-20 h-56 w-56 rounded-full bg-sky-200/40 blur-3xl" />
-          <div className="pointer-events-none absolute -bottom-20 -right-12 h-64 w-64 rounded-full bg-emerald-200/40 blur-3xl" />
+        <div
+          className={`relative min-h-screen overflow-hidden transition-colors duration-300 ${
+            isDark
+              ? "bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950"
+              : "bg-gradient-to-br from-slate-100 via-sky-50 to-slate-200"
+          }`}
+        >
+          <div
+            className={`pointer-events-none absolute -left-16 -top-20 h-56 w-56 rounded-full blur-3xl ${
+              isDark ? "bg-sky-500/10" : "bg-sky-200/40"
+            }`}
+          />
+          <div
+            className={`pointer-events-none absolute -bottom-20 -right-12 h-64 w-64 rounded-full blur-3xl ${
+              isDark ? "bg-emerald-500/10" : "bg-emerald-200/40"
+            }`}
+          />
           <Sidebar />
           <main className="relative p-4 md:ml-[260px] md:p-8">
             <Routes>

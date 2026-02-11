@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import initialLogo from "../assets/initial.svg";
 
 import { getHealth, getStatus, toFriendlyErrorMessage } from "../api/client";
 import type { HealthResponse, SystemStatusResponse } from "../api/types";
@@ -9,9 +8,11 @@ import EmptyState from "../components/common/EmptyState";
 import ErrorMessage from "../components/common/ErrorMessage";
 import LoadingSpinner from "../components/common/LoadingSpinner";
 import StatusCard from "../components/StatusCard";
+import { useTheme } from "../components/common/ThemeProvider";
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { isDark } = useTheme();
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [status, setStatus] = useState<SystemStatusResponse | null>(null);
   const [error, setError] = useState<string>("");
@@ -187,11 +188,6 @@ export default function Dashboard() {
         <div className="pointer-events-none absolute -bottom-16 right-16 h-28 w-28 rounded-full bg-emerald-200/40 blur-2xl" />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-row gap-4 relative">
-            <img
-              src={initialLogo}
-              alt="AVAROS Logo"
-              className="w-40 object-cover h-fit"
-            />
             <div>
               <p className="m-0 bg-gradient-to-r from-sky-600 via-cyan-500 to-emerald-500 bg-clip-text text-xs font-bold uppercase tracking-[0.14em] text-transparent">
                 AVAROS Control Center
@@ -199,7 +195,11 @@ export default function Dashboard() {
               <h2 className="m-0 mt-1 text-2xl font-semibold text-slate-900">
                 Dashboard
               </h2>
-              <p className="mb-0 mt-1 text-sm opacity-60 text-slate-600">
+              <p
+                className={`mb-0 mt-1 text-sm opacity-80  ${
+                  isDark ? "text-white" : "text-slate-600"
+                }`}
+              >
                 Live operational summary for configuration and platform
                 readiness.
               </p>
@@ -207,18 +207,34 @@ export default function Dashboard() {
           </div>
           <div className="flex flex-col items-end gap-2">
             {!loading && healthy && (
-              <div className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-gradient-to-r from-emerald-50 to-white px-3 py-2">
+              <div
+                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 ${
+                  isDark
+                    ? "border-emerald-700 bg-gradient-to-r from-emerald-950/70 to-slate-900"
+                    : "border-emerald-200 bg-gradient-to-r from-emerald-50 to-white"
+                }`}
+              >
                 <span className="relative inline-flex h-2.5 w-2.5">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" />
                   <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.45)]" />
                 </span>
-                <p className="m-0 text-sm font-semibold text-black/70">
+                <p
+                  className={`m-0 text-sm font-semibold ${
+                    isDark ? "text-emerald-200" : "text-black/70"
+                  }`}
+                >
                   System Healthy
                 </p>
               </div>
             )}
             {!loading && status && !status.configured && (
-              <span className="rounded-lg border border-amber-200 bg-gradient-to-r from-amber-50 to-white px-3 py-2 text-sm font-semibold text-black/50">
+              <span
+                className={`rounded-lg text-center border px-3 py-2 text-sm font-semibold ${
+                  isDark
+                    ? "border-amber-700 bg-gradient-to-r from-amber-950/70 to-slate-900 text-amber-200"
+                    : "border-amber-200 bg-gradient-to-r from-amber-50 to-white text-black/50"
+                }`}
+              >
                 Setup Required: platform configuration is not complete.
               </span>
             )}

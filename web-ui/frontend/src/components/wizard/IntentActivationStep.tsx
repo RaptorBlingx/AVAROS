@@ -97,17 +97,19 @@ export default function IntentActivationStep({ onComplete, onSkip }: IntentActiv
 
   return (
     <section className="space-y-4">
-      <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">
+      <header className="rounded-2xl border border-slate-200 bg-slate-50/95 p-6 shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900">
+        <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">
           Step 5 of 6
         </p>
-        <h2 className="m-0 mt-2 text-2xl font-semibold text-slate-900">Intent Activation</h2>
-        <p className="m-0 mt-2 text-sm text-slate-600">
+        <h2 className="m-0 mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">
+          Intent Activation
+        </h2>
+        <p className="m-0 mt-2 text-sm text-slate-600 dark:text-slate-300">
           Enable or disable intents and verify required metrics are mapped.
         </p>
       </header>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/95 p-6 shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900">
         {loading ? (
           <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 opacity-50">
             <LoadingSpinner label="Loading intents..." size="sm" />
@@ -141,14 +143,14 @@ export default function IntentActivationStep({ onComplete, onSkip }: IntentActiv
             <div className="mt-6 flex flex-wrap gap-3">
               <button
                 type="button"
-                className="inline-flex items-center rounded-lg border border-sky-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-sky-50"
+                className="inline-flex items-center rounded-lg border border-sky-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-sky-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
                 onClick={onSkip}
               >
                 Skip
               </button>
               <button
                 type="button"
-                className="inline-flex items-center rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:bg-sky-100"
+                className="inline-flex items-center rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 dark:border-sky-500/40 dark:bg-sky-900/40 dark:text-sky-200 dark:hover:bg-sky-900/60"
                 onClick={onComplete}
               >
                 Continue to Success

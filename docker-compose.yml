@@ -61,6 +61,24 @@ services:
       - avaros
     labels:
       - "com.avaros.service=ovos-core"
+    avaros-web-ui:
+    build:
+      context: .
+      dockerfile: web-ui/Dockerfile
+    container_name: avaros-web-ui
+    restart: unless-stopped
+    environment:
+      - AVAROS_WEB_API_KEY=emre-strong-key-123
+      - AVAROS_DATABASE_URL=sqlite:////data/avaros.db
+    volumes:
+      - avaros-data:/data
+      - ./skill:/opt/avaros/skill:ro
+    ports:
+      - "8080:8080"
+    networks:
+      - avaros-network
+    depends_on:
+      - avaros
 
   # =========================================================================
   # Optional: Web UI for Configuration (Future)
@@ -96,7 +114,7 @@ volumes:
   avaros-data:
     driver: local
     name: avaros-data
-  
+
   # OVOS configuration
   ovos-config:
     driver: local

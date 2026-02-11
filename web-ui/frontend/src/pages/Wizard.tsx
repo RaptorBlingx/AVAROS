@@ -380,18 +380,23 @@ export default function Wizard() {
 
   return (
     <section className="mx-auto w-full max-w-4xl space-y-4">
-      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+      <div className="rounded-xl border border-slate-200 bg-slate-50/95 px-4 py-3 text-sm text-slate-600 shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
         <div className="flex items-center justify-between gap-3">
           <p className="m-0">
-            <span className="font-semibold text-slate-900">Current Step:</span> {stepLabel}
+            <span className="font-semibold text-slate-900 dark:text-slate-100">
+              Current Step:
+            </span>{" "}
+            {stepLabel}
           </p>
           <div className="flex items-center gap-2">
-            <p className="m-0 text-xs font-medium text-slate-500">{state.currentStep} / 6</p>
+            <p className="m-0 text-xs font-medium text-slate-500 dark:text-slate-400">
+              {state.currentStep} / 6
+            </p>
             <button
               type="button"
               onClick={goBackStep}
               disabled={state.currentStep === 1}
-              className="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
             >
               Back
             </button>
@@ -402,8 +407,8 @@ export default function Wizard() {
               disabled={state.currentStep === 6}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
                 nextBlocked
-                  ? "border border-rose-400 bg-rose-50 text-rose-700"
-                  : "border border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100"
+                  ? "border border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-500 dark:bg-rose-900/40 dark:text-rose-200"
+                  : "border border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100 dark:border-sky-500/40 dark:bg-sky-900/40 dark:text-sky-200 dark:hover:bg-sky-900/60"
               }`}
             >
               Next
@@ -411,7 +416,11 @@ export default function Wizard() {
           </div>
         </div>
 
-        {headerError && <p className="m-0 mt-2 text-xs font-medium text-rose-700">{headerError}</p>}
+        {headerError && (
+          <p className="m-0 mt-2 text-xs font-medium text-rose-700 dark:text-rose-300">
+            {headerError}
+          </p>
+        )}
 
         <div className="mt-3 flex flex-col gap-2 sm:grid sm:grid-cols-3 lg:grid-cols-6">
           {stepItems.map((item, index) => {
@@ -420,12 +429,18 @@ export default function Wizard() {
             const isDone = completedSteps.has(stepNumber);
             return (
               <div key={item} className="space-y-1 text-left">
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
                   <div
-                    className={`h-full ${isDone || isActive ? "w-full bg-sky-500" : "w-0 bg-transparent"} transition-all duration-500 ease-out`}
+                    className={`h-full ${isDone || isActive ? "w-full bg-sky-500 dark:bg-sky-400" : "w-0 bg-transparent"} transition-all duration-500 ease-out`}
                   />
                 </div>
-                <p className={`m-0 text-[10px] ${isActive ? "font-semibold text-sky-700" : "text-slate-500"}`}>
+                <p
+                  className={`m-0 text-[10px] ${
+                    isActive
+                      ? "font-semibold text-sky-700 dark:text-sky-300"
+                      : "text-slate-500 dark:text-slate-400"
+                  }`}
+                >
                   {item}
                 </p>
               </div>
