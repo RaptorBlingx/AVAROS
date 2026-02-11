@@ -380,7 +380,7 @@ export default function Wizard() {
 
   return (
     <section className="mx-auto w-full max-w-4xl space-y-4">
-      <div className="rounded-xl border border-slate-200 bg-slate-50/95 px-4 py-3 text-sm text-slate-600 shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+      <div className="brand-hero rounded-xl px-4 py-3 text-sm text-slate-600 backdrop-blur-sm dark:text-slate-300">
         <div className="flex items-center justify-between gap-3">
           <p className="m-0">
             <span className="font-semibold text-slate-900 dark:text-slate-100">
@@ -396,7 +396,7 @@ export default function Wizard() {
               type="button"
               onClick={goBackStep}
               disabled={state.currentStep === 1}
-              className="rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+              className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             >
               Back
             </button>
@@ -408,7 +408,7 @@ export default function Wizard() {
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
                 nextBlocked
                   ? "border border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-500 dark:bg-rose-900/40 dark:text-rose-200"
-                  : "border border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100 dark:border-sky-500/40 dark:bg-sky-900/40 dark:text-sky-200 dark:hover:bg-sky-900/60"
+                  : "btn-brand-primary"
               }`}
             >
               Next
@@ -429,9 +429,9 @@ export default function Wizard() {
             const isDone = completedSteps.has(stepNumber);
             return (
               <div key={item} className="space-y-1 text-left">
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                <div className="wizard-step-track h-1.5 w-full overflow-hidden rounded-full">
                   <div
-                    className={`h-full ${isDone || isActive ? "w-full bg-sky-500 dark:bg-sky-400" : "w-0 bg-transparent"} transition-all duration-500 ease-out`}
+                    className={`h-full ${isDone || isActive ? "wizard-step-fill w-full" : "w-0 bg-transparent"} transition-all duration-500 ease-out`}
                   />
                 </div>
                 <p

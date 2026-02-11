@@ -1,5 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
 
 import { ApiError, clearStoredApiKey, getStatus, getStoredApiKey } from "./api/client";
 import ErrorBoundary from "./components/common/ErrorBoundary";
@@ -10,6 +16,58 @@ import KPIDashboard from "./pages/KPIDashboard";
 import Login from "./pages/Login";
 import Settings from "./pages/Settings";
 import Wizard from "./pages/Wizard";
+
+const ROUTE_ORDER: Record<string, number> = {
+  "/": 0,
+  "/kpi": 1,
+  "/settings": 2,
+  "/wizard": 3,
+};
+
+function AppContent({ isDark }: { isDark: boolean }) {
+  const location = useLocation();
+  const prevPathRef = useRef(location.pathname);
+
+  const transitionClass = useMemo(() => {
+    const prevIndex = ROUTE_ORDER[prevPathRef.current] ?? 0;
+    const nextIndex = ROUTE_ORDER[location.pathname] ?? 0;
+    if (nextIndex === prevIndex) return "route-stay";
+    return nextIndex > prevIndex ? "route-forward" : "route-backward";
+  }, [location.pathname]);
+
+  useEffect(() => {
+    prevPathRef.current = location.pathname;
+  }, [location.pathname]);
+
+  return (
+    <div
+      className={`brand-app-bg relative min-h-screen overflow-hidden transition-colors duration-300 ${
+        isDark ? "brand-app-bg--dark" : "brand-app-bg--light"
+      }`}
+    >
+      <div
+        className={`pointer-events-none absolute -left-16 -top-20 h-56 w-56 rounded-full blur-3xl ${
+          isDark ? "bg-cyan-400/15" : "bg-cyan-300/35"
+        }`}
+      />
+      <div
+        className={`pointer-events-none absolute -bottom-20 -right-12 h-64 w-64 rounded-full blur-3xl ${
+          isDark ? "bg-emerald-400/15" : "bg-emerald-300/30"
+        }`}
+      />
+      <Sidebar />
+      <main className={`route-shell ${transitionClass} relative p-3 md:ml-[260px] md:px-7 md:pb-7 md:pt-4 lg:px-8 lg:pb-8 lg:pt-5`}>
+        <Routes location={location}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/kpi" element={<KPIDashboard />} />
+          <Route path="/wizard" element={<Wizard />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
+    </div>
+  );
+}
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
@@ -51,34 +109,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
-        <div
-          className={`relative min-h-screen overflow-hidden transition-colors duration-300 ${
-            isDark
-              ? "bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950"
-              : "bg-gradient-to-br from-slate-100 via-sky-50 to-slate-200"
-          }`}
-        >
-          <div
-            className={`pointer-events-none absolute -left-16 -top-20 h-56 w-56 rounded-full blur-3xl ${
-              isDark ? "bg-sky-500/10" : "bg-sky-200/40"
-            }`}
-          />
-          <div
-            className={`pointer-events-none absolute -bottom-20 -right-12 h-64 w-64 rounded-full blur-3xl ${
-              isDark ? "bg-emerald-500/10" : "bg-emerald-200/40"
-            }`}
-          />
-          <Sidebar />
-          <main className="relative p-4 md:ml-[260px] md:p-8">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/kpi" element={<KPIDashboard />} />
-              <Route path="/wizard" element={<Wizard />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </main>
-        </div>
+        <AppContent isDark={isDark} />
       </BrowserRouter>
     </ErrorBoundary>
   );

@@ -59,15 +59,15 @@ export default function IntentActivationList({
   const { isDark } = useTheme();
 
   const secondaryActionButtonClass = isDark
-    ? "rounded-lg border border-slate-500 bg-slate-700 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
-    : "rounded-lg border border-sky-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60";
+    ? "btn-brand-subtle rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+    : "btn-brand-subtle rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60";
   const primaryActionButtonClass = isDark
-    ? "rounded-lg border border-emerald-500 bg-emerald-900/60 px-4 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-800/70 disabled:cursor-not-allowed disabled:opacity-60"
-    : "rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60";
+    ? "btn-brand-primary rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+    : "btn-brand-primary rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60";
 
   const intentCardClass = isDark
-    ? "rounded-xl border border-slate-600 bg-slate-800 p-4"
-    : "rounded-xl border border-sky-200 bg-sky-50/70 p-4";
+    ? "brand-surface rounded-xl p-4"
+    : "brand-surface rounded-xl p-4";
 
   const metricBadgeClass = isDark
     ? "inline-flex items-center rounded-md bg-slate-700 px-2.5 py-1 text-xs font-medium text-slate-100"

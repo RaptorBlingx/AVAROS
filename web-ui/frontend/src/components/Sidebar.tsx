@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
 
 import { getHealth, toFriendlyErrorMessage } from "../api/client";
@@ -10,6 +10,7 @@ export default function Sidebar() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [version, setVersion] = useState<string>("--");
+  const sidebarRef = useRef<HTMLElement | null>(null);
   const { isDark, theme, toggleTheme } = useTheme();
 
   useEffect(() => {
@@ -37,10 +38,12 @@ export default function Sidebar() {
   const navItemClass = useCallback(
     (isActive: boolean): string =>
       isActive
-        ? "rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white no-underline shadow shadow-sky-900/30"
+        ? isDark
+          ? "nav-bubble-enter rounded-xl bg-gradient-to-r from-sky-700/95 via-cyan-600/90 to-emerald-600/90 px-3 py-2 text-sm font-medium text-white no-underline shadow-lg shadow-sky-950/35"
+          : "nav-bubble-enter rounded-xl bg-gradient-to-r from-cyan-100 via-sky-100 to-emerald-100 px-3 py-2 text-sm font-semibold text-sky-900 no-underline shadow-sm shadow-cyan-100/80"
         : isDark
-        ? "rounded-lg px-3 py-2 text-sm text-slate-200 no-underline hover:bg-slate-800"
-        : "rounded-lg px-3 py-2 text-sm text-slate-700 no-underline hover:bg-sky-100",
+          ? "rounded-xl px-3 py-2 text-sm text-slate-200 no-underline hover:bg-slate-800/70"
+          : "rounded-xl px-3 py-2 text-sm text-slate-700 no-underline hover:bg-sky-100/70",
     [isDark],
   );
 
@@ -59,6 +62,38 @@ export default function Sidebar() {
     [isMobileOpen],
   );
 
+  useEffect(() => {
+    if (!isMobileOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (!target || !sidebarRef.current) {
+        return;
+      }
+      if (!sidebarRef.current.contains(target)) {
+        setIsMobileOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsMobileOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown, { passive: true });
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isMobileOpen]);
+
   const actions = (
     <>
       <button
@@ -67,8 +102,8 @@ export default function Sidebar() {
         aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
         className={`group inline-flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold transition ${
           isDark
-            ? "border border-slate-700 bg-slate-900/80 text-slate-100 hover:bg-slate-800"
-            : "border border-slate-300 bg-white text-slate-800 hover:bg-sky-50"
+            ? "bg-slate-800/85 text-slate-100 hover:bg-slate-700/90"
+            : "bg-white/85 text-slate-800 hover:bg-white"
         }`}
       >
         <span className="inline-flex items-center gap-2">
@@ -101,10 +136,10 @@ export default function Sidebar() {
           {theme === "dark" ? "Dark mode" : "Light mode"}
         </span>
         <span
-          className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-colors duration-300 ${
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-300 ${
             isDark
-              ? "border-sky-500 bg-sky-900/50"
-              : "border-slate-400 bg-slate-100"
+              ? "bg-sky-900/50"
+              : "bg-slate-100"
           }`}
         >
           <span
@@ -117,8 +152,10 @@ export default function Sidebar() {
 
       <button
         type="button"
-        className={`inline-flex !mb-6 w-full items-center justify-center gap-2 rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-70 ${
-          theme === "dark" ? "!text-white" : ""
+        className={`inline-flex !mb-6 w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-70 ${
+          theme === "dark"
+            ? "bg-slate-800/85 text-slate-100 hover:bg-slate-700/90"
+            : "bg-white/85 text-slate-700 hover:bg-white"
         }`}
         onClick={handleRefresh}
         disabled={isRefreshing}
@@ -150,10 +187,11 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`relative z-20 w-full md:fixed md:inset-y-0 md:left-0 md:w-[260px] md:border-b-0 md:border-r ${
+      ref={sidebarRef}
+      className={`relative z-20 w-full backdrop-blur-sm md:fixed md:inset-y-0 md:left-0 md:w-[260px] md:border-b-0 md:border-r ${
         isDark
-          ? "border-b border-slate-800 bg-slate-950 text-slate-100"
-          : "border-b border-slate-200 bg-white text-slate-800"
+          ? "border-b border-slate-800/80 bg-gradient-to-b from-slate-950/95 via-slate-900/95 to-slate-950/92 text-slate-100"
+          : "border-b border-cyan-200/70 bg-gradient-to-b from-white/95 via-sky-50/75 to-emerald-50/40 text-slate-800"
       }`}
     >
       <div className="relative px-4 py-4 md:hidden">
@@ -163,8 +201,8 @@ export default function Sidebar() {
           onClick={() => setIsMobileOpen(false)}
           className={`mx-auto flex h-fit w-60 flex-col items-center justify-center rounded-xl px-4 py-3 text-center no-underline transition ${
             isDark
-              ? "border border-slate-800 bg-slate-900/60 hover:bg-slate-900"
-              : "border border-slate-200 bg-slate-50 hover:bg-sky-50"
+              ? "border border-slate-700 bg-slate-900/65 hover:bg-slate-900"
+              : "border border-cyan-200/70 bg-gradient-to-br from-white to-cyan-50/70 hover:from-cyan-50 hover:to-emerald-50/70"
           }`}
         >
           <img
@@ -219,7 +257,7 @@ export default function Sidebar() {
         className={`absolute left-0 right-0 top-full z-30 backdrop-blur-md transition-all duration-300 ease-out md:hidden ${
           isDark
             ? "border-b border-slate-800 bg-slate-950/95"
-            : "border-b border-slate-200 bg-white/95"
+            : "border-b border-cyan-200/70 bg-white/95"
         } ${
           isMobileOpen
             ? "pointer-events-auto translate-y-0 opacity-100"
@@ -306,8 +344,8 @@ export default function Sidebar() {
           end
           className={`flex flex-col items-center justify-center rounded-xl px-4 py-3 no-underline transition md:mb-6 ${
             isDark
-              ? "border border-slate-800 bg-slate-900/60 hover:bg-slate-900"
-              : "border border-slate-200 bg-slate-50 hover:bg-sky-50"
+              ? "bg-slate-900/60 hover:bg-slate-900"
+              : "bg-white/70 hover:bg-white/90"
           }`}
         >
           <img

@@ -40,7 +40,7 @@ export default function SystemInfoSection({ onNotify }: SystemInfoSectionProps) 
         <button
           type="button"
           onClick={() => void loadStatus()}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
+          className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
         >
           Refresh
         </button>
@@ -58,21 +58,21 @@ export default function SystemInfoSection({ onNotify }: SystemInfoSectionProps) 
         />
       ) : status ? (
         <div className="reveal-in reveal-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-4">
+          <div className="brand-surface rounded-xl p-4">
             <p className="m-0 text-xs font-semibold uppercase text-slate-500">Active Adapter</p>
             <p className="m-0 mt-2 text-base font-semibold text-slate-900">{status.active_adapter}</p>
           </div>
-          <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-4">
+          <div className="brand-surface rounded-xl p-4">
             <p className="m-0 text-xs font-semibold uppercase text-slate-500">Loaded Intents</p>
             <p className="m-0 mt-2 text-base font-semibold text-slate-900">{status.loaded_intents}</p>
           </div>
-          <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-4">
+          <div className="brand-surface rounded-xl p-4">
             <p className="m-0 text-xs font-semibold uppercase text-slate-500">Database</p>
             <p className="m-0 mt-2 text-base font-semibold text-slate-900">
               {status.database_connected ? "Connected" : "Disconnected"}
             </p>
           </div>
-          <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-4">
+          <div className="brand-surface rounded-xl p-4">
             <p className="m-0 text-xs font-semibold uppercase text-slate-500">Version</p>
             <p className="m-0 mt-2 text-base font-semibold text-slate-900">{status.version}</p>
           </div>

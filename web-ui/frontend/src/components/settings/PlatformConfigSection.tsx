@@ -194,7 +194,7 @@ export default function PlatformConfigSection({
           <LoadingSpinner label="Loading platform config..." size="sm" />
         </div>
       ) : (
-        <div className="reveal-in rounded-xl border border-sky-200 bg-sky-50/70 p-4">
+        <div className="brand-surface reveal-in rounded-xl p-4">
           <div className="grid gap-3 md:grid-cols-2">
             <label className="block">
               <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
@@ -260,11 +260,7 @@ export default function PlatformConfigSection({
               type="button"
               onClick={() => void handleTest()}
               disabled={testing || saving}
-              className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
-                isDark
-                  ? "border-slate-500 bg-slate-700 text-slate-100 hover:bg-slate-600"
-                  : "border-slate-300 bg-white text-slate-700"
-              }`}
+              className="btn-brand-subtle rounded-lg px-3 py-2 text-xs font-semibold"
             >
               {testing ? "Testing..." : "Test Connection"}
             </button>
@@ -273,11 +269,7 @@ export default function PlatformConfigSection({
                 type="button"
                 onClick={() => void handleSave()}
                 disabled={saving}
-                className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
-                  isDark
-                    ? "border-slate-400 bg-white text-slate-900"
-                    : "border-sky-300 bg-sky-50 text-sky-700"
-                }`}
+                className="btn-brand-primary rounded-lg px-3 py-2 text-xs font-semibold"
               >
                 {saving ? "Saving..." : "Save Changes"}
               </button>
