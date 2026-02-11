@@ -17,6 +17,7 @@ from skill.domain.models import (
     DataPoint,
 )
 from skill.domain.results import (
+    ConnectionTestResult,
     KPIResult,
     ComparisonResult,
     TrendResult,
@@ -597,3 +598,55 @@ class TestMockAdapterHelpers:
         ids = {adapter._generate_recommendation_id() for _ in range(100)}
 
         assert len(ids) == 100
+
+
+# ---------------------------------------------------------------------------
+# Connection Testing
+# ---------------------------------------------------------------------------
+
+
+class TestMockAdapterConnectionTest:
+    """Tests for MockAdapter.test_connection()."""
+
+    @pytest.mark.asyncio
+    async def test_connection_always_succeeds(
+        self,
+        adapter: MockAdapter,
+    ) -> None:
+        """MockAdapter.test_connection() always returns success."""
+        # Act
+        result = await adapter.test_connection()
+
+        # Assert
+        assert isinstance(result, ConnectionTestResult)
+        assert result.success is True
+        assert result.latency_ms > 0
+        assert result.adapter_name == "Demo (Mock)"
+        assert result.error_code == ""
+
+    @pytest.mark.asyncio
+    async def test_connection_returns_mock_resources(
+        self,
+        adapter: MockAdapter,
+    ) -> None:
+        """MockAdapter.test_connection() reports mock resource names."""
+        # Act
+        result = await adapter.test_connection()
+
+        # Assert
+        assert len(result.resources_discovered) == 3
+        assert "Mock Line-1" in result.resources_discovered
+        assert "Mock Line-2" in result.resources_discovered
+        assert "Mock Line-3" in result.resources_discovered
+
+    @pytest.mark.asyncio
+    async def test_connection_message_mentions_demo(
+        self,
+        adapter: MockAdapter,
+    ) -> None:
+        """MockAdapter.test_connection() message mentions demo mode."""
+        # Act
+        result = await adapter.test_connection()
+
+        # Assert
+        assert "demo" in result.message.lower()

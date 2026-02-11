@@ -26,6 +26,61 @@ from skill.domain.models import (
 )
 
 
+# =========================================================================
+# Connection Test Result
+# =========================================================================
+
+
+@dataclass(frozen=True)
+class ConnectionTestResult:
+    """
+    Result of testing an adapter's connection to its platform.
+
+    Used by the Web UI connection test endpoint to report
+    detailed connectivity diagnostics to the operator.
+
+    Attributes:
+        success: Whether the connection test succeeded.
+        latency_ms: Round-trip latency in milliseconds.
+        message: Human-readable status message.
+        adapter_name: Name of the adapter that was tested.
+        resources_discovered: Discovered resources (meters, endpoints).
+        api_version: Platform API version string, if available.
+        error_code: Machine-readable error code for troubleshooting.
+        error_details: Technical error details for debugging.
+    """
+
+    success: bool
+    latency_ms: float
+    message: str
+    adapter_name: str
+    resources_discovered: tuple[str, ...] = ()
+    api_version: str = ""
+    error_code: str = ""
+    error_details: str = ""
+
+    def __init__(
+        self,
+        success: bool,
+        latency_ms: float,
+        message: str,
+        adapter_name: str,
+        resources_discovered: list[str] | tuple[str, ...] = (),
+        api_version: str = "",
+        error_code: str = "",
+        error_details: str = "",
+    ) -> None:
+        """Initialize with resources_discovered converted to tuple."""
+        object.__setattr__(self, "success", success)
+        object.__setattr__(self, "latency_ms", latency_ms)
+        object.__setattr__(self, "message", message)
+        object.__setattr__(self, "adapter_name", adapter_name)
+        object.__setattr__(self, "resources_discovered", tuple(resources_discovered))
+        object.__setattr__(self, "api_version", api_version)
+        object.__setattr__(self, "error_code", error_code)
+        object.__setattr__(self, "error_details", error_details)
+
+
 @dataclass(frozen=True)
 class KPIResult:
     """

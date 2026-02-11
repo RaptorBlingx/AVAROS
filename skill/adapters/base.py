@@ -18,12 +18,14 @@ Usage:
 
 from __future__ import annotations
 
+import time
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from skill.domain.models import CanonicalMetric, TimePeriod, WhatIfScenario
     from skill.domain.results import (
+        ConnectionTestResult,
         KPIResult,
         ComparisonResult,
         TrendResult,
@@ -253,6 +255,45 @@ class ManufacturingAdapter(ABC):
         from skill.domain.models import CanonicalMetric
         return list(CanonicalMetric)
     
+    # =========================================================================
+    # Connection Testing
+    # =========================================================================
+
+    async def test_connection(self) -> ConnectionTestResult:
+        """
+        Test connectivity to the platform.
+
+        Default implementation: try initialize() + measure latency.
+        Subclasses should override with platform-specific health checks.
+
+        Returns:
+            ConnectionTestResult with success, latency, and discovered resources.
+        """
+        from skill.domain.results import ConnectionTestResult
+
+        start = time.monotonic()
+        try:
+            await self.initialize()
+            elapsed = (time.monotonic() - start) * 1000
+            return ConnectionTestResult(
+                success=True,
+                latency_ms=round(elapsed, 1),
+                message="Connection established",
+                adapter_name=self.platform_name,
+            )
+        except Exception as exc:
+            elapsed = (time.monotonic() - start) * 1000
+            return ConnectionTestResult(
+                success=False,
+                latency_ms=round(elapsed, 1),
+                message=str(exc),
+                adapter_name=self.platform_name,
+                error_code=getattr(exc, "code", "UNKNOWN"),
+                error_details=str(exc),
+            )
+        finally:
+            await self.shutdown()
+
     # =========================================================================
     # Lifecycle
     # =========================================================================

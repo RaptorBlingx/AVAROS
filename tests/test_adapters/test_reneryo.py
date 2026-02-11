@@ -16,6 +16,7 @@ from skill.adapters.factory import AdapterFactory
 from skill.adapters.reneryo import ReneryoAdapter
 from skill.domain.exceptions import AdapterError
 from skill.domain.models import CanonicalMetric, TimePeriod
+from skill.domain.results import ConnectionTestResult
 
 
 # ---------------------------------------------------------------------------
@@ -1100,3 +1101,213 @@ class TestReneryoLifecycleHTTP:
             api_url="https://api.test/", api_key="key",
         )
         assert adapter._api_url == "https://api.test"
+
+
+# ---------------------------------------------------------------------------
+# Connection Testing
+# ---------------------------------------------------------------------------
+
+
+class TestReneryoConnectionTest:
+    """Tests for ReneryoAdapter.test_connection()."""
+
+    @pytest.mark.asyncio
+    async def test_connection_success_returns_meters(self) -> None:
+        """test_connection returns success with meter list on 200."""
+        from aioresponses import aioresponses
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="test-key-123",
+        )
+        with aioresponses() as mocked:
+            mocked.get(
+                "https://reneryo.example.com/api/u/measurement/meter/item",
+                payload={
+                    "records": [
+                        {"name": "Electric Main Meter", "id": "m1"},
+                        {"name": "Gas Meter", "id": "m2"},
+                    ],
+                },
+            )
+            result = await adapter.test_connection()
+
+        assert isinstance(result, ConnectionTestResult)
+        assert result.success is True
+        assert result.latency_ms > 0
+        assert result.adapter_name == "RENERYO"
+        assert "2 meter(s)" in result.message
+        assert result.resources_discovered == ("Electric Main Meter", "Gas Meter")
+        assert result.error_code == ""
+
+    @pytest.mark.asyncio
+    async def test_connection_auth_failure_returns_error(self) -> None:
+        """test_connection returns error on 401."""
+        from aioresponses import aioresponses
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="bad-key",
+        )
+        with aioresponses() as mocked:
+            mocked.get(
+                "https://reneryo.example.com/api/u/measurement/meter/item",
+                status=401,
+            )
+            result = await adapter.test_connection()
+
+        assert result.success is False
+        assert result.error_code == "RENERYO_AUTH_FAILED"
+        assert "authentication" in result.message.lower()
+
+    @pytest.mark.asyncio
+    async def test_connection_server_error_returns_error(self) -> None:
+        """test_connection returns error on 500."""
+        from aioresponses import aioresponses
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="test-key",
+        )
+        with aioresponses() as mocked:
+            mocked.get(
+                "https://reneryo.example.com/api/u/measurement/meter/item",
+                status=500,
+                body="Internal Server Error",
+            )
+            result = await adapter.test_connection()
+
+        assert result.success is False
+        assert result.error_code == "HTTP_500"
+
+    @pytest.mark.asyncio
+    async def test_connection_timeout_returns_error(self) -> None:
+        """test_connection returns error on timeout."""
+        import asyncio
+
+        from aioresponses import aioresponses
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="test-key",
+            timeout=1,
+        )
+        with aioresponses() as mocked:
+            mocked.get(
+                "https://reneryo.example.com/api/u/measurement/meter/item",
+                exception=asyncio.TimeoutError(),
+            )
+            result = await adapter.test_connection()
+
+        assert result.success is False
+        assert result.error_code == "RENERYO_TIMEOUT"
+        assert "timed out" in result.message.lower()
+
+    @pytest.mark.asyncio
+    async def test_connection_unreachable_returns_error(self) -> None:
+        """test_connection returns error when server is unreachable."""
+        from unittest.mock import MagicMock
+
+        import aiohttp as _aiohttp
+
+        from aioresponses import aioresponses
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="test-key",
+        )
+        mock_key = MagicMock()
+        mock_key.ssl = None
+        with aioresponses() as mocked:
+            mocked.get(
+                "https://reneryo.example.com/api/u/measurement/meter/item",
+                exception=_aiohttp.ClientConnectorError(
+                    connection_key=mock_key,
+                    os_error=OSError("Connection refused"),
+                ),
+            )
+            result = await adapter.test_connection()
+
+        assert result.success is False
+        assert result.error_code == "RENERYO_CONNECTION_FAILED"
+        assert "cannot reach" in result.message.lower()
+
+    @pytest.mark.asyncio
+    async def test_connection_discovers_meter_names(self) -> None:
+        """test_connection lists meter names in resources_discovered."""
+        from aioresponses import aioresponses
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="test-key",
+        )
+        with aioresponses() as mocked:
+            mocked.get(
+                "https://reneryo.example.com/api/u/measurement/meter/item",
+                payload={
+                    "records": [
+                        {"name": "Meter-A"},
+                        {"name": "Meter-B"},
+                        {"name": "Meter-C"},
+                    ],
+                },
+            )
+            result = await adapter.test_connection()
+
+        assert result.resources_discovered == ("Meter-A", "Meter-B", "Meter-C")
+
+    @pytest.mark.asyncio
+    async def test_connection_latency_is_positive(self) -> None:
+        """test_connection reports latency_ms > 0."""
+        from aioresponses import aioresponses
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="test-key",
+        )
+        with aioresponses() as mocked:
+            mocked.get(
+                "https://reneryo.example.com/api/u/measurement/meter/item",
+                payload={"records": []},
+            )
+            result = await adapter.test_connection()
+
+        assert result.latency_ms > 0
+
+    @pytest.mark.asyncio
+    async def test_connection_session_cleanup_on_success(self) -> None:
+        """Session is closed after successful test (no resource leak)."""
+        from aioresponses import aioresponses
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="test-key",
+        )
+        with aioresponses() as mocked:
+            mocked.get(
+                "https://reneryo.example.com/api/u/measurement/meter/item",
+                payload={"records": []},
+            )
+            await adapter.test_connection()
+
+        # The test session is separate from the adapter's main session
+        assert adapter._session is None
+
+    @pytest.mark.asyncio
+    async def test_connection_session_cleanup_on_error(self) -> None:
+        """Session is closed even on error (no resource leak)."""
+        from aioresponses import aioresponses
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="test-key",
+        )
+        with aioresponses() as mocked:
+            mocked.get(
+                "https://reneryo.example.com/api/u/measurement/meter/item",
+                status=500,
+                body="Error",
+            )
+            await adapter.test_connection()
+
+        assert adapter._session is None

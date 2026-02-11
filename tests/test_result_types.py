@@ -21,6 +21,7 @@ from skill.domain.results import (
     TrendResult,
     AnomalyResult,
     WhatIfResult,
+    ConnectionTestResult,
 )
 
 
@@ -721,3 +722,96 @@ class TestWhatIfResult:
         
         # Assert
         assert level == "low"
+
+
+# ══════════════════════════════════════════════════════════
+# ConnectionTestResult
+# ══════════════════════════════════════════════════════════
+
+
+class TestConnectionTestResult:
+    """Tests for ConnectionTestResult frozen dataclass."""
+
+    def test_create_success_result_stores_all_fields(self) -> None:
+        """ConnectionTestResult with success=True stores all fields."""
+        # Arrange & Act
+        result = ConnectionTestResult(
+            success=True,
+            latency_ms=42.5,
+            message="Connected",
+            adapter_name="RENERYO",
+            resources_discovered=("Meter-1", "Meter-2"),
+            api_version="1.0",
+        )
+
+        # Assert
+        assert result.success is True
+        assert result.latency_ms == 42.5
+        assert result.message == "Connected"
+        assert result.adapter_name == "RENERYO"
+        assert result.resources_discovered == ("Meter-1", "Meter-2")
+        assert result.api_version == "1.0"
+        assert result.error_code == ""
+        assert result.error_details == ""
+
+    def test_create_failure_result_stores_error_fields(self) -> None:
+        """ConnectionTestResult with error fields stores correctly."""
+        # Arrange & Act
+        result = ConnectionTestResult(
+            success=False,
+            latency_ms=100.0,
+            message="Auth failed",
+            adapter_name="RENERYO",
+            error_code="RENERYO_AUTH_FAILED",
+            error_details="HTTP 401",
+        )
+
+        # Assert
+        assert result.success is False
+        assert result.error_code == "RENERYO_AUTH_FAILED"
+        assert result.error_details == "HTTP 401"
+
+    def test_frozen_immutability_raises_on_attribute_set(self) -> None:
+        """ConnectionTestResult is immutable (frozen=True)."""
+        # Arrange
+        result = ConnectionTestResult(
+            success=True,
+            latency_ms=1.0,
+            message="OK",
+            adapter_name="Mock",
+        )
+
+        # Act & Assert
+        with pytest.raises(AttributeError):
+            result.success = False  # type: ignore[misc]
+
+    def test_resources_discovered_stored_as_tuple(self) -> None:
+        """resources_discovered list input is converted to tuple."""
+        # Arrange & Act
+        result = ConnectionTestResult(
+            success=True,
+            latency_ms=1.0,
+            message="OK",
+            adapter_name="Mock",
+            resources_discovered=["A", "B", "C"],
+        )
+
+        # Assert
+        assert isinstance(result.resources_discovered, tuple)
+        assert result.resources_discovered == ("A", "B", "C")
+
+    def test_default_values_for_optional_fields(self) -> None:
+        """Optional fields have correct defaults."""
+        # Arrange & Act
+        result = ConnectionTestResult(
+            success=True,
+            latency_ms=0.0,
+            message="OK",
+            adapter_name="Test",
+        )
+
+        # Assert
+        assert result.resources_discovered == ()
+        assert result.api_version == ""
+        assert result.error_code == ""
+        assert result.error_details == ""

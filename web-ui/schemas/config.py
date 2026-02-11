@@ -72,10 +72,30 @@ class PlatformConfigResponse(BaseModel):
 
 
 class ConnectionTestResponse(BaseModel):
-    """Platform connection test result."""
+    """Platform connection test result with detailed diagnostics."""
 
     success: bool = Field(..., description="Whether the connection test succeeded.")
     message: str = Field(..., description="Connection test status message.")
+    latency_ms: float = Field(
+        default=0.0,
+        description="Round-trip latency in milliseconds.",
+    )
+    adapter_name: str = Field(
+        default="",
+        description="Name of the adapter that was tested.",
+    )
+    resources_discovered: list[str] = Field(
+        default_factory=list,
+        description="List of discovered resources (meters, endpoints, etc.).",
+    )
+    error_code: str = Field(
+        default="",
+        description="Machine-readable error code for troubleshooting.",
+    )
+    error_details: str = Field(
+        default="",
+        description="Technical error details (not shown to operators by default).",
+    )
 
 
 class ResetResponse(BaseModel):

@@ -11,6 +11,7 @@ from schemas.config import (
     PlatformConfigResponse,
     ResetResponse,
 )
+from skill.adapters.base import ManufacturingAdapter
 from skill.services.settings import PlatformConfig, SettingsService
 
 
@@ -68,14 +69,70 @@ def reset_platform_config(
 
 
 @router.post("/platform/test", response_model=ConnectionTestResponse)
-def test_platform_connection(
+async def test_platform_connection(
     payload: PlatformConfigRequest,
 ) -> ConnectionTestResponse:
-    """Stub platform connection test endpoint."""
+    """
+    Test connectivity to the configured platform.
+
+    Creates a temporary adapter from the payload config,
+    runs test_connection(), and returns detailed results.
+    Does NOT save the configuration (non-destructive).
+    """
+    try:
+        adapter = _create_adapter_from_config(payload)
+        result = await adapter.test_connection()
+        return ConnectionTestResponse(
+            success=result.success,
+            message=result.message,
+            latency_ms=result.latency_ms,
+            adapter_name=result.adapter_name,
+            resources_discovered=list(result.resources_discovered),
+            error_code=result.error_code,
+            error_details=result.error_details,
+        )
+    except Exception as exc:
+        return ConnectionTestResponse(
+            success=False,
+            message=f"Failed to create adapter: {exc}",
+            error_code="ADAPTER_CREATION_FAILED",
+            error_details=str(exc),
+        )
+
+
+def _create_adapter_from_config(
+    payload: PlatformConfigRequest,
+) -> ManufacturingAdapter:
+    """
+    Create a throwaway adapter instance from a request payload.
+
+    Used for connection testing — creates an adapter to test
+    connectivity before committing the configuration.
+
+    Args:
+        payload: Platform configuration from the request body.
+
+    Returns:
+        Configured ManufacturingAdapter instance.
+
+    Raises:
+        ValueError: If platform_type is unknown.
+    """
     if payload.platform_type == "mock":
-        return ConnectionTestResponse(success=True, message="Mock test passed")
-    return ConnectionTestResponse(
-        success=False,
-        message="Not implemented for this platform",
-    )
+        from skill.adapters.mock import MockAdapter
+
+        return MockAdapter()
+
+    if payload.platform_type == "reneryo":
+        from skill.adapters.reneryo import ReneryoAdapter
+
+        return ReneryoAdapter(
+            api_url=payload.api_url,
+            api_key=payload.api_key,
+            timeout=payload.extra_settings.get("timeout", 10),
+            auth_type=payload.extra_settings.get("auth_type", "bearer"),
+            api_format=payload.extra_settings.get("api_format", "native"),
+        )
+
+    raise ValueError(f"Unknown platform type: {payload.platform_type}")
 

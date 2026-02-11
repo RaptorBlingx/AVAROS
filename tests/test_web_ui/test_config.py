@@ -5,7 +5,7 @@ Covers:
     - POST /api/v1/config/platform  — create/update
     - GET  /api/v1/config/platform  — read (masked key)
     - DELETE /api/v1/config/platform — reset
-    - POST /api/v1/config/platform/test — connection test stub
+    - POST /api/v1/config/platform/test — real connection test
     - Validation: invalid URL, missing required fields
     - API key masking logic
 """
@@ -13,10 +13,12 @@ Covers:
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
+from skill.domain.results import ConnectionTestResult
 from skill.services.settings import SettingsService
 
 
@@ -317,14 +319,14 @@ class TestResetPlatformConfig:
 
 
 class TestConnectionTest:
-    """Tests for the stub platform connection test endpoint."""
+    """Tests for POST /api/v1/config/platform/test (real implementation)."""
 
-    def test_mock_platform_test_succeeds(
+    def test_mock_platform_succeeds_with_adapter_name(
         self,
         client: TestClient,
         valid_mock_payload: dict[str, Any],
     ) -> None:
-        """Mock platform connection test returns success=True."""
+        """Mock platform test returns success with adapter name."""
         response = client.post(
             "/api/v1/config/platform/test",
             json=valid_mock_payload,
@@ -333,23 +335,181 @@ class TestConnectionTest:
         assert response.status_code == 200
         body = response.json()
         assert body["success"] is True
-        assert "mock" in body["message"].lower()
+        assert body["adapter_name"] == "Demo (Mock)"
+        assert "demo" in body["message"].lower()
+        assert len(body["resources_discovered"]) == 3
 
-    def test_non_mock_platform_test_not_implemented(
+    def test_mock_platform_returns_latency(
+        self,
+        client: TestClient,
+        valid_mock_payload: dict[str, Any],
+    ) -> None:
+        """Mock platform test includes latency_ms field."""
+        response = client.post(
+            "/api/v1/config/platform/test",
+            json=valid_mock_payload,
+        )
+
+        body = response.json()
+        assert body["latency_ms"] >= 0
+
+    def test_reneryo_connection_success(
         self,
         client: TestClient,
         valid_reneryo_payload: dict[str, Any],
     ) -> None:
-        """Non-mock platform connection test returns success=False."""
-        response = client.post(
-            "/api/v1/config/platform/test",
-            json=valid_reneryo_payload,
+        """RENERYO test with mocked adapter returns success + meters."""
+        mock_result = ConnectionTestResult(
+            success=True,
+            latency_ms=55.3,
+            message="Connected — 2 meter(s) discovered",
+            adapter_name="RENERYO",
+            resources_discovered=("Meter-A", "Meter-B"),
         )
+        with patch(
+            "routers.config._create_adapter_from_config",
+        ) as mock_factory:
+            mock_adapter = AsyncMock()
+            mock_adapter.test_connection.return_value = mock_result
+            mock_factory.return_value = mock_adapter
+
+            response = client.post(
+                "/api/v1/config/platform/test",
+                json=valid_reneryo_payload,
+            )
 
         assert response.status_code == 200
         body = response.json()
+        assert body["success"] is True
+        assert body["latency_ms"] == 55.3
+        assert body["adapter_name"] == "RENERYO"
+        assert body["resources_discovered"] == ["Meter-A", "Meter-B"]
+
+    def test_reneryo_connection_auth_failure(
+        self,
+        client: TestClient,
+        valid_reneryo_payload: dict[str, Any],
+    ) -> None:
+        """RENERYO test with 401 returns auth error details."""
+        mock_result = ConnectionTestResult(
+            success=False,
+            latency_ms=12.0,
+            message="Authentication failed — check API key",
+            adapter_name="RENERYO",
+            error_code="RENERYO_AUTH_FAILED",
+            error_details="HTTP 401",
+        )
+        with patch(
+            "routers.config._create_adapter_from_config",
+        ) as mock_factory:
+            mock_adapter = AsyncMock()
+            mock_adapter.test_connection.return_value = mock_result
+            mock_factory.return_value = mock_adapter
+
+            response = client.post(
+                "/api/v1/config/platform/test",
+                json=valid_reneryo_payload,
+            )
+
+        body = response.json()
         assert body["success"] is False
-        assert "not implemented" in body["message"].lower()
+        assert body["error_code"] == "RENERYO_AUTH_FAILED"
+
+    def test_reneryo_connection_unreachable(
+        self,
+        client: TestClient,
+        valid_reneryo_payload: dict[str, Any],
+    ) -> None:
+        """RENERYO test with unreachable server returns connection error."""
+        mock_result = ConnectionTestResult(
+            success=False,
+            latency_ms=3000.0,
+            message="Cannot reach server — check URL and network",
+            adapter_name="RENERYO",
+            error_code="RENERYO_CONNECTION_FAILED",
+            error_details="Connection refused",
+        )
+        with patch(
+            "routers.config._create_adapter_from_config",
+        ) as mock_factory:
+            mock_adapter = AsyncMock()
+            mock_adapter.test_connection.return_value = mock_result
+            mock_factory.return_value = mock_adapter
+
+            response = client.post(
+                "/api/v1/config/platform/test",
+                json=valid_reneryo_payload,
+            )
+
+        body = response.json()
+        assert body["success"] is False
+        assert body["error_code"] == "RENERYO_CONNECTION_FAILED"
+
+    def test_response_includes_resources_list(
+        self,
+        client: TestClient,
+        valid_mock_payload: dict[str, Any],
+    ) -> None:
+        """Response includes resources_discovered as a list."""
+        response = client.post(
+            "/api/v1/config/platform/test",
+            json=valid_mock_payload,
+        )
+
+        body = response.json()
+        assert isinstance(body["resources_discovered"], list)
+        assert len(body["resources_discovered"]) > 0
+
+    def test_unknown_platform_returns_error(
+        self,
+        client: TestClient,
+    ) -> None:
+        """Unknown platform_type returns adapter creation error."""
+        payload = {
+            "platform_type": "custom_rest",
+            "api_url": "https://example.com",
+            "api_key": "key",
+        }
+        response = client.post(
+            "/api/v1/config/platform/test",
+            json=payload,
+        )
+
+        body = response.json()
+        assert body["success"] is False
+        assert body["error_code"] == "ADAPTER_CREATION_FAILED"
+
+    def test_connection_test_does_not_save_config(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+        valid_reneryo_payload: dict[str, Any],
+    ) -> None:
+        """Testing doesn't modify stored platform config."""
+        # Get config before test
+        config_before = settings_service.get_platform_config()
+
+        mock_result = ConnectionTestResult(
+            success=True,
+            latency_ms=10.0,
+            message="OK",
+            adapter_name="RENERYO",
+        )
+        with patch(
+            "routers.config._create_adapter_from_config",
+        ) as mock_factory:
+            mock_adapter = AsyncMock()
+            mock_adapter.test_connection.return_value = mock_result
+            mock_factory.return_value = mock_adapter
+
+            client.post(
+                "/api/v1/config/platform/test",
+                json=valid_reneryo_payload,
+            )
+
+        # Config should be unchanged
+        config_after = settings_service.get_platform_config()
+        assert config_before.platform_type == config_after.platform_type
 
 
 # ══════════════════════════════════════════════════════════

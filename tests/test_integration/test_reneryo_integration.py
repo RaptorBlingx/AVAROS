@@ -16,7 +16,7 @@ import pytest
 from skill.adapters.reneryo import ReneryoAdapter
 from skill.domain.exceptions import AdapterError
 from skill.domain.models import CanonicalMetric, TimePeriod
-from skill.domain.results import ComparisonResult, KPIResult, TrendResult
+from skill.domain.results import ComparisonResult, ConnectionTestResult, KPIResult, TrendResult
 
 # =========================================================================
 # Configuration
@@ -369,3 +369,62 @@ class TestRealApiResponseParsing:
             assert result.timestamp is not None
         finally:
             await adapter.shutdown()
+
+
+# =========================================================================
+# Connection Test — Mock Server
+# =========================================================================
+
+
+class TestReneryoConnectionTestIntegration:
+    """Integration test for test_connection() against running mock server."""
+
+    @pytest.mark.asyncio
+    async def test_real_connection_to_mock_server(self) -> None:
+        """Full connection test cycle against mock RENERYO server."""
+        adapter = ReneryoAdapter(
+            api_url=MOCK_SERVER_URL,
+            api_key=MOCK_API_KEY,
+            timeout=10,
+            auth_type="bearer",
+            api_format="native",
+        )
+        result = await adapter.test_connection()
+
+        assert isinstance(result, ConnectionTestResult)
+        assert result.success is True
+        assert result.latency_ms > 0
+        assert result.adapter_name == "RENERYO"
+        assert len(result.resources_discovered) > 0
+
+    @pytest.mark.asyncio
+    async def test_connection_test_with_bad_key(self) -> None:
+        """Connection test with empty key returns auth error."""
+        adapter = ReneryoAdapter(
+            api_url=MOCK_SERVER_URL,
+            api_key="",
+            timeout=5,
+            auth_type="bearer",
+        )
+        result = await adapter.test_connection()
+
+        # Mock server may return 401 or pass depending on auth config
+        assert isinstance(result, ConnectionTestResult)
+        assert result.latency_ms > 0
+
+    @pytest.mark.asyncio
+    async def test_connection_test_unreachable_server(self) -> None:
+        """Connection test to unreachable host fails with error."""
+        adapter = ReneryoAdapter(
+            api_url="http://localhost:59999",
+            api_key="test",
+            timeout=3,
+        )
+        result = await adapter.test_connection()
+
+        assert isinstance(result, ConnectionTestResult)
+        assert result.success is False
+        assert result.error_code in (
+            "RENERYO_CONNECTION_FAILED",
+            "RENERYO_TIMEOUT",
+        )

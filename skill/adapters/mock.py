@@ -37,6 +37,7 @@ from skill.domain.results import (
     TrendResult,
     AnomalyResult,
     WhatIfResult,
+    ConnectionTestResult,
 )
 
 if TYPE_CHECKING:
@@ -318,6 +319,25 @@ class MockAdapter(ManufacturingAdapter):
         
         return data_points
     
+    # =========================================================================
+    # Connection Testing
+    # =========================================================================
+
+    async def test_connection(self) -> ConnectionTestResult:
+        """
+        Mock adapter connection test — always succeeds with simulated data.
+
+        Returns:
+            ConnectionTestResult with success and mock resource names.
+        """
+        return ConnectionTestResult(
+            success=True,
+            latency_ms=1.0,
+            message="Mock adapter connected (demo mode)",
+            adapter_name=self.platform_name,
+            resources_discovered=("Mock Line-1", "Mock Line-2", "Mock Line-3"),
+        )
+
     # =========================================================================
     # Capability Discovery
     # =========================================================================
