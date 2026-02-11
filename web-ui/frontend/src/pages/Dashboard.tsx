@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import initialLogo from "../assets/initial.svg";
 
-import { getHealth, getStatus } from "../api/client";
+import { getHealth, getStatus, toFriendlyErrorMessage } from "../api/client";
 import type { HealthResponse, SystemStatusResponse } from "../api/types";
+import EmptyState from "../components/common/EmptyState";
+import ErrorMessage from "../components/common/ErrorMessage";
+import LoadingSpinner from "../components/common/LoadingSpinner";
 import StatusCard from "../components/StatusCard";
 
 export default function Dashboard() {
@@ -21,9 +25,13 @@ export default function Dashboard() {
         getHealth(),
         getStatus(),
       ]);
-      if (!statusData.configured) {
+      const shouldRedirectToWizard =
+        !import.meta.env.DEV &&
+        !statusData.configured &&
+        statusData.platform_type === "mock";
+      if (shouldRedirectToWizard) {
         const skipRedirectUntilRaw = sessionStorage.getItem(
-          "avaros_skip_wizard_until"
+          "avaros_skip_wizard_until",
         );
         const skipRedirectUntil = skipRedirectUntilRaw
           ? Number(skipRedirectUntilRaw)
@@ -40,7 +48,7 @@ export default function Dashboard() {
       setHealth(healthData);
       setStatus(statusData);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      setError(toFriendlyErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -178,64 +186,67 @@ export default function Dashboard() {
         <div className="pointer-events-none absolute -right-10 -top-14 h-36 w-36 rounded-full bg-sky-200/40 blur-2xl" />
         <div className="pointer-events-none absolute -bottom-16 right-16 h-28 w-28 rounded-full bg-emerald-200/40 blur-2xl" />
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">
-              AVAROS Control Center
-            </p>
-            <h2 className="m-0 mt-1 text-2xl font-semibold text-slate-900">
-              Dashboard
-            </h2>
-            <p className="mb-0 mt-1 text-sm text-slate-600">
-              Live operational summary for configuration and platform readiness.
-            </p>
+          <div className="flex flex-row gap-4 relative">
+            <img
+              src={initialLogo}
+              alt="AVAROS Logo"
+              className="w-40 object-cover h-fit"
+            />
+            <div>
+              <p className="m-0 bg-gradient-to-r from-sky-600 via-cyan-500 to-emerald-500 bg-clip-text text-xs font-bold uppercase tracking-[0.14em] text-transparent">
+                AVAROS Control Center
+              </p>
+              <h2 className="m-0 mt-1 text-2xl font-semibold text-slate-900">
+                Dashboard
+              </h2>
+              <p className="mb-0 mt-1 text-sm opacity-60 text-slate-600">
+                Live operational summary for configuration and platform
+                readiness.
+              </p>
+            </div>
           </div>
-          <button
-            type="button"
-            className="inline-flex items-center gap-2 rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={() => void loadData()}
-            disabled={loading}
-          >
-            <svg
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-            >
-              <path
-                d="M20 12a8 8 0 10-2.3 5.7M20 12v-5m0 5h-5"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            </svg>
-            Refresh
-          </button>
+          <div className="flex flex-col items-end gap-2">
+            {!loading && healthy && (
+              <div className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-gradient-to-r from-emerald-50 to-white px-3 py-2">
+                <span className="relative inline-flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.45)]" />
+                </span>
+                <p className="m-0 text-sm font-semibold text-black/70">
+                  System Healthy
+                </p>
+              </div>
+            )}
+            {!loading && status && !status.configured && (
+              <span className="rounded-lg border border-amber-200 bg-gradient-to-r from-amber-50 to-white px-3 py-2 text-sm font-semibold text-black/50">
+                Setup Required: platform configuration is not complete.
+              </span>
+            )}
+          </div>
         </div>
       </header>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         {loading && (
-          <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-900">
-            Loading system status...
+          <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 opacity-50">
+            <LoadingSpinner label="Loading system status..." size="sm" />
           </div>
         )}
         {error && (
-          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-900">
-            Failed to load status: {error}
+          <div className="mb-4">
+            <ErrorMessage
+              title="Unable to load dashboard"
+              message={error}
+              onRetry={() => void loadData()}
+            />
           </div>
         )}
-        {status && !status.configured && (
-          <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-            Setup Required: platform configuration is not complete.
-          </div>
-        )}
-        {healthy && (
-          <div className="mb-3 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
-            System Healthy
-          </div>
-        )}
-
         {cards.length > 0 && (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div
+            className={`grid gap-3 sm:grid-cols-2 xl:grid-cols-3 ${
+              !loading ? "dash-cards" : ""
+            }`}
+          >
             {cards.map((card) => (
               <StatusCard
                 key={card.label}
@@ -246,6 +257,14 @@ export default function Dashboard() {
               />
             ))}
           </div>
+        )}
+        {!loading && !error && cards.length === 0 && (
+          <EmptyState
+            title="No status data yet"
+            message="Dashboard data is empty. Try refreshing after AVAROS services are ready."
+            actionLabel="Refresh"
+            onAction={() => void loadData()}
+          />
         )}
       </div>
     </section>

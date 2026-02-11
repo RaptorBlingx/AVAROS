@@ -7,7 +7,7 @@ type SuccessScreenProps = {
 
 export default function SuccessScreen({
   status,
-  onGoToDashboard
+  onGoToDashboard,
 }: SuccessScreenProps) {
   return (
     <section className="space-y-4">
@@ -23,7 +23,7 @@ export default function SuccessScreen({
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         {status ? (
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="rounded-xl border border-slate-200 bg-sky-100/10 p-4">
               <p className="m-0 text-xs font-semibold uppercase text-slate-500">
                 Configured
               </p>
@@ -31,7 +31,7 @@ export default function SuccessScreen({
                 {status.configured ? "Yes" : "No"}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="rounded-xl border border-slate-200 bg-sky-100/10 p-4">
               <p className="m-0 text-xs font-semibold uppercase text-slate-500">
                 Active Adapter
               </p>
@@ -41,7 +41,9 @@ export default function SuccessScreen({
             </div>
           </div>
         ) : (
-          <p className="m-0 text-sm text-slate-600">Status is being updated...</p>
+          <p className="m-0 text-sm text-slate-600">
+            Status is being updated...
+          </p>
         )}
 
         <div className="mt-6">

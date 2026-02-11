@@ -8,3 +8,119 @@
     font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   }
 }
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(14px) scale(0.98);
+  }
+}
+
+.toast-item {
+  animation: toast-in 180ms ease-out;
+}
+
+.toast-item--closing {
+  animation: toast-out 200ms ease-in forwards;
+}
+
+@keyframes reveal-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.reveal-in {
+  animation: reveal-in 220ms ease-out both;
+}
+
+.reveal-stagger > * {
+  opacity: 0;
+  animation: reveal-in 260ms ease-out both;
+}
+
+.reveal-stagger > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.reveal-stagger > *:nth-child(2) {
+  animation-delay: 45ms;
+}
+
+.reveal-stagger > *:nth-child(3) {
+  animation-delay: 90ms;
+}
+
+.reveal-stagger > *:nth-child(4) {
+  animation-delay: 135ms;
+}
+
+@keyframes dash-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.dash-cards > * {
+  opacity: 0;
+  animation: dash-card-in 180ms ease-out both;
+}
+
+.dash-cards > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.dash-cards > *:nth-child(2) {
+  animation-delay: 15ms;
+}
+
+.dash-cards > *:nth-child(3) {
+  animation-delay: 30ms;
+}
+
+.dash-cards > *:nth-child(4) {
+  animation-delay: 45ms;
+}
+
+.dash-cards > *:nth-child(5) {
+  animation-delay: 60ms;
+}
+
+.dash-cards > *:nth-child(6) {
+  animation-delay: 75ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast-item,
+  .toast-item--closing,
+  .reveal-in,
+  .reveal-stagger > *,
+  .dash-cards > * {
+    animation: none !important;
+  }
+}

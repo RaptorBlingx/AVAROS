@@ -1,8 +1,14 @@
 import type {
+  CanonicalMetricName,
   ConnectionTestResponse,
   HealthResponse,
+  IntentListResponse,
+  IntentState,
+  MetricMapping,
+  MetricMappingRequest,
   PlatformConfigRequest,
   PlatformConfigResponse,
+  PlatformResetResponse,
   SystemStatusResponse
 } from "./types";
 
@@ -38,6 +44,22 @@ export class ApiError extends Error {
     this.name = "ApiError";
     this.status = status;
   }
+}
+
+export function toFriendlyErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 0) {
+      return "Connection lost — check if AVAROS is running.";
+    }
+    if (!error.message || error.message === "Request failed") {
+      return "Something went wrong while talking to AVAROS.";
+    }
+    return error.message;
+  }
+  if (error instanceof Error) {
+    return error.message || "Something went wrong while talking to AVAROS.";
+  }
+  return "Something went wrong while talking to AVAROS.";
 }
 
 type RequestOptions = {
@@ -81,6 +103,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     }
     throw new ApiError(message, response.status);
   }
+  if (response.status === 204) {
+    return undefined as T;
+  }
   return (await response.json()) as T;
 }
 
@@ -101,11 +126,72 @@ export function createPlatformConfig(
   });
 }
 
+export function getPlatformConfig(): Promise<PlatformConfigResponse> {
+  return request<PlatformConfigResponse>("/api/v1/config/platform");
+}
+
+export function resetPlatformConfig(): Promise<PlatformResetResponse> {
+  return request<PlatformResetResponse>("/api/v1/config/platform", {
+    method: "DELETE"
+  });
+}
+
 export function testConnection(
   payload: PlatformConfigRequest
 ): Promise<ConnectionTestResponse> {
   return request<ConnectionTestResponse>("/api/v1/config/platform/test", {
     method: "POST",
     body: payload
+  });
+}
+
+export function listMetricMappings(): Promise<MetricMapping[]> {
+  return request<MetricMapping[]>("/api/v1/config/metrics");
+}
+
+export function createMetricMapping(
+  payload: MetricMappingRequest
+): Promise<MetricMapping> {
+  return request<MetricMapping>("/api/v1/config/metrics", {
+    method: "POST",
+    body: payload
+  });
+}
+
+export function updateMetricMapping(
+  metricName: CanonicalMetricName,
+  payload: MetricMappingRequest
+): Promise<MetricMapping> {
+  return request<MetricMapping>(`/api/v1/config/metrics/${metricName}`, {
+    method: "PUT",
+    body: payload
+  });
+}
+
+export async function deleteMetricMapping(
+  metricName: CanonicalMetricName
+): Promise<void> {
+  await request<unknown>(`/api/v1/config/metrics/${metricName}`, {
+    method: "DELETE"
+  });
+}
+
+export async function getIntents(): Promise<IntentListResponse> {
+  const response = await request<IntentListResponse | { intents: IntentState[] }>(
+    "/api/v1/config/intents"
+  );
+  if (Array.isArray(response)) {
+    return response;
+  }
+  return response.intents ?? [];
+}
+
+export function setIntentActive(
+  intentName: string,
+  active: boolean
+): Promise<IntentState> {
+  return request<IntentState>(`/api/v1/config/intents/${intentName}`, {
+    method: "PUT",
+    body: { active }
   });
 }

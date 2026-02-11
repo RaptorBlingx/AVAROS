@@ -31,7 +31,7 @@ export default function ConnectionSetupStep({
   onApiUrlChange,
   onApiKeyChange,
   onTestConnection,
-  onSave
+  onSave,
 }: ConnectionSetupStepProps) {
   const isMock = platformType === "mock";
 
@@ -39,7 +39,7 @@ export default function ConnectionSetupStep({
     <section className="space-y-4">
       <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">
-          Step 3 of 3
+          Step 3 of 6
         </p>
         <h2 className="m-0 mt-2 text-2xl font-semibold text-slate-900">
           Connection Setup
@@ -72,7 +72,9 @@ export default function ConnectionSetupStep({
               </span>
               <select
                 value={authType}
-                onChange={(event) => onAuthTypeChange(event.target.value as "api_key")}
+                onChange={(event) =>
+                  onAuthTypeChange(event.target.value as "api_key")
+                }
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2"
               >
                 <option value="api_key">API Key</option>
@@ -122,7 +124,7 @@ export default function ConnectionSetupStep({
           {!isMock && (
             <button
               type="button"
-              className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
               onClick={onTestConnection}
               disabled={isTesting || isSaving}
             >

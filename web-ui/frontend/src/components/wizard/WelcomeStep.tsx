@@ -1,4 +1,6 @@
 import type { SystemStatusResponse } from "../../api/types";
+import ErrorMessage from "../common/ErrorMessage";
+import LoadingSpinner from "../common/LoadingSpinner";
 
 type WelcomeStepProps = {
   status: SystemStatusResponse | null;
@@ -11,7 +13,7 @@ export default function WelcomeStep({
   status,
   loading,
   error,
-  onNext
+  onNext,
 }: WelcomeStepProps) {
   return (
     <section className="space-y-4">
@@ -23,25 +25,23 @@ export default function WelcomeStep({
           Welcome to AVAROS Setup
         </h1>
         <p className="mb-0 mt-2 text-sm text-slate-600">
-          This guided setup configures your platform connection in three quick
+          This guided setup configures your platform connection in a few quick
           steps.
         </p>
       </header>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         {loading && (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-            Loading current system status...
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 opacity-50">
+            <LoadingSpinner label="Loading current system status..." size="sm" />
           </div>
         )}
         {!loading && error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
-            {error}
-          </div>
+          <ErrorMessage title="Status unavailable" message={error} />
         )}
         {!loading && !error && status && (
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="rounded-xl border border-slate-200 bg-sky-100/10 p-4">
               <p className="m-0 text-xs font-semibold uppercase text-slate-500">
                 Configured
               </p>
@@ -49,7 +49,7 @@ export default function WelcomeStep({
                 {status.configured ? "Yes" : "No"}
               </p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="rounded-xl border border-slate-200 bg-sky-100/10 p-4">
               <p className="m-0 text-xs font-semibold uppercase text-slate-500">
                 Database
               </p>
