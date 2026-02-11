@@ -17,7 +17,8 @@ DATABASE_URL = os.environ.get("AVAROS_DATABASE_URL", "")
 CORS_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:8080",
-    "http://localhost:5173",
+    "http://localhost:8081",  # Production port (changed from 8080 due to Keycloak conflict)
+    "http://localhost:5173",  # Vite dev server
 ]
 
 
