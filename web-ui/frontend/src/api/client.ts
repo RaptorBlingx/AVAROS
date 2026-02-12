@@ -2,6 +2,10 @@ import type {
   BaselineResponse,
   CanonicalMetricName,
   ConnectionTestResponse,
+  EmissionFactorListResponse,
+  EmissionFactorPresetResponse,
+  EmissionFactorRequest,
+  EmissionFactorResponse,
   HealthResponse,
   IntentListResponse,
   IntentState,
@@ -230,5 +234,30 @@ export function getSnapshots(
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return request<SnapshotResponse[]>(
     `/api/v1/kpi/snapshots/${resolvedSiteId}/${metric}${suffix}`
+  );
+}
+
+export function listEmissionFactors(): Promise<EmissionFactorListResponse> {
+  return request<EmissionFactorListResponse>("/api/v1/config/emission-factors");
+}
+
+export function createEmissionFactor(
+  payload: EmissionFactorRequest
+): Promise<EmissionFactorResponse> {
+  return request<EmissionFactorResponse>("/api/v1/config/emission-factors", {
+    method: "POST",
+    body: payload
+  });
+}
+
+export async function deleteEmissionFactor(energySource: string): Promise<void> {
+  await request<unknown>(`/api/v1/config/emission-factors/${energySource}`, {
+    method: "DELETE"
+  });
+}
+
+export function listEmissionFactorPresets(): Promise<EmissionFactorPresetResponse[]> {
+  return request<EmissionFactorPresetResponse[]>(
+    "/api/v1/config/emission-factors/presets"
   );
 }

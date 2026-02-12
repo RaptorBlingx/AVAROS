@@ -131,3 +131,33 @@ export type SnapshotResponse = {
   period_start: string;
   period_end: string;
 };
+
+export type EnergySource = "electricity" | "gas" | "water";
+
+export type EmissionFactorRequest = {
+  energy_source: EnergySource;
+  factor: number;
+  country: string;
+  source: string;
+  year: number;
+};
+
+export type EmissionFactorResponse = {
+  energy_source: string;
+  factor: number;
+  country: string;
+  source: string;
+  year: number;
+};
+
+export type EmissionFactorListResponse = {
+  factors: EmissionFactorResponse[];
+};
+
+export type EmissionFactorPresetResponse = {
+  country: string;
+  energy_source: string;
+  factor: number;
+  source: string;
+  year: number;
+};

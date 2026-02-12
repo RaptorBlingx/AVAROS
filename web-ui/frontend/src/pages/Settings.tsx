@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import Toast from "../components/common/Toast";
 import type { ToastItem } from "../components/common/Toast";
 import IntentActivationSection from "../components/settings/IntentActivationSection";
+import EmissionFactorsSection from "../components/settings/EmissionFactorsSection";
 import MetricMappingsSection from "../components/settings/MetricMappingsSection";
 import PlatformConfigSection from "../components/settings/PlatformConfigSection";
 import SystemInfoSection from "../components/settings/SystemInfoSection";
@@ -96,6 +97,10 @@ export default function Settings() {
 
       <Section title="Metric Mappings">
         <MetricMappingsSection onNotify={notify} />
+      </Section>
+
+      <Section title="Emission Factors">
+        <EmissionFactorsSection onNotify={notify} />
       </Section>
 
       <Section title="Intent Activation">
