@@ -5,7 +5,6 @@ and Docker Compose changes are present and well-formed. These are static
 configuration validation tests — no live Docker required.
 """
 
-import os
 import stat
 from pathlib import Path
 

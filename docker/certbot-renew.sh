@@ -8,7 +8,7 @@
 #
 # Prerequisites:
 #   - Docker Compose stack running with avaros-proxy service
-#   - Certbot container configured in docker-compose.avaros.yml
+#   - Certbot container configured in docker-compose.avaros.yml (production)
 #   - Valid domain pointing to this server
 
 set -euo pipefail
