@@ -1083,6 +1083,51 @@ more changes
 
 ---
 
+## HTTPS / TLS Setup (DEC-025)
+
+All external traffic to AVAROS is served over HTTPS via an Nginx reverse proxy (`avaros-proxy` container). The Web UI is not directly exposed — Nginx terminates TLS and proxies to the FastAPI backend over the Docker internal network.
+
+### Development (Self-Signed Certificate)
+
+```bash
+# 1. Generate self-signed cert (one-time)
+./docker/nginx/generate-dev-cert.sh
+
+# 2. Start the stack (includes Nginx proxy)
+cd docker && docker compose -f docker-compose.avaros.yml up -d
+
+# 3. Access via HTTPS (browser will warn about self-signed cert)
+curl -k https://localhost/health
+```
+
+To also have plain HTTP access on port 8081 during development:
+
+```bash
+docker compose -f docker-compose.avaros.yml -f docker-compose.dev.yml up -d
+# Now both https://localhost AND http://localhost:8081 work
+```
+
+### Production (Let's Encrypt)
+
+1. Set `AVAROS_DOMAIN` in `.env` to your real domain
+2. Replace `nginx.conf` mount with `nginx-production.conf` in the compose file
+3. Run certbot to obtain certificates
+4. Set up monthly renewal via cron: `0 0 1 * * /path/to/docker/certbot-renew.sh`
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AVAROS_HTTPS_PORT` | `443` | External HTTPS port |
+| `AVAROS_HTTP_PORT` | `80` | External HTTP port (redirects to HTTPS) |
+| `AVAROS_DOMAIN` | `avaros.local` | Domain for Let's Encrypt (production) |
+
+### Security Headers
+
+The Nginx config includes: `Strict-Transport-Security`, `X-Frame-Options DENY`, `X-Content-Type-Options nosniff`, `X-XSS-Protection`, `Referrer-Policy`. TLS 1.2+ only (no SSLv3, TLS 1.0, 1.1).
+
+---
+
 ## AVAROS Conventions
 
 ### Universal Metric Names

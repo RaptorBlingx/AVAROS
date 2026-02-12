@@ -49,6 +49,9 @@ htmlcov/
 docker/logs/
 *.log
 
+# TLS certificates (generated, never commit)
+docker/nginx/ssl/*.pem
+
 # Environment variables
 .env
 .env.local
