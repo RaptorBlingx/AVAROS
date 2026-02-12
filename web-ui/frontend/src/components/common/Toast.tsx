@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useTheme } from "./ThemeProvider";
 
 export type ToastItem = {
   id: number;
@@ -12,6 +14,7 @@ type ToastProps = {
 };
 
 export default function Toast({ toasts, onDismiss }: ToastProps) {
+  const { isDark } = useTheme();
   const autoDismissTimers = useRef<Map<number, number>>(new Map());
   const clickDismissTimers = useRef<Map<number, number>>(new Map());
   const closingIdsRef = useRef<Set<number>>(new Set());
@@ -85,25 +88,32 @@ export default function Toast({ toasts, onDismiss }: ToastProps) {
     };
   }, []);
 
-  return (
-    <div className="pointer-events-none fixed right-4 top-4 z-50 space-y-2">
+  return createPortal(
+    <div className="pointer-events-none fixed bottom-4 right-4 z-[1000] space-y-2">
       {toasts.map((toast) => (
         <div
           key={toast.id}
           onClick={() => closeWithAnimation(toast.id)}
-          className={`toast-item pointer-events-auto min-w-[260px] cursor-pointer rounded-lg border px-4 py-3 text-sm shadow-lg ${
+          className={`toast-item pointer-events-auto w-[min(92vw,340px)] cursor-pointer rounded-xl border px-4 py-3 text-sm shadow-lg ${
             closingIds.has(toast.id) ? "toast-item--closing" : ""
           } ${
             toast.type === "success"
-              ? "border-emerald-300 bg-emerald-50 text-emerald-900"
-              : "border-rose-300 bg-rose-50 text-rose-900"
+              ? isDark
+                ? "border-emerald-700/60 bg-emerald-950/55 text-emerald-200 shadow-emerald-950/35"
+                : "border-emerald-300 bg-emerald-50 text-emerald-900 shadow-emerald-100/70"
+              : isDark
+                ? "border-rose-700/60 bg-rose-950/55 text-rose-200 shadow-rose-950/35"
+                : "border-rose-300 bg-rose-50 text-rose-900 shadow-rose-100/70"
           }`}
+          role="status"
+          aria-live="polite"
         >
           <div className="flex items-center justify-between gap-3">
             <p className="m-0">{toast.message}</p>
           </div>
         </div>
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }

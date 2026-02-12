@@ -8,10 +8,12 @@ import {
   toFriendlyErrorMessage,
 } from "../../api/client";
 import type {
+  ConnectionTestResponse,
   PlatformConfigRequest,
   PlatformConfigResponse,
   PlatformType,
 } from "../../api/types";
+import ConnectionTestResult from "../common/ConnectionTestResult";
 import ErrorMessage from "../common/ErrorMessage";
 import LoadingSpinner from "../common/LoadingSpinner";
 import { useTheme } from "../common/ThemeProvider";
@@ -65,10 +67,19 @@ export default function PlatformConfigSection({
   const [platformType, setPlatformType] = useState<PlatformType>("mock");
   const [apiUrl, setApiUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [inlineMessage, setInlineMessage] = useState("");
+  const [testResult, setTestResult] = useState<ConnectionTestResponse | null>(null);
   const [inlineError, setInlineError] = useState("");
 
   const isMock = useMemo(() => platformType === "mock", [platformType]);
+  const adapterTarget = useMemo(
+    () =>
+      platformType === "reneryo"
+        ? "RENERYO"
+        : platformType === "custom_rest"
+          ? "Custom REST"
+          : "Mock",
+    [platformType],
+  );
 
   const loadConfig = useCallback(async () => {
     setLoading(true);
@@ -94,7 +105,7 @@ export default function PlatformConfigSection({
   const handleSave = useCallback(async () => {
     const validationError = validate({ platformType, apiUrl, apiKey });
     setInlineError(validationError);
-    setInlineMessage("");
+    setTestResult(null);
     if (validationError) {
       return;
     }
@@ -118,7 +129,7 @@ export default function PlatformConfigSection({
   const handleReset = useCallback(async () => {
     setSaving(true);
     setInlineError("");
-    setInlineMessage("");
+    setTestResult(null);
     try {
       await resetPlatformConfig();
       await loadConfig();
@@ -140,7 +151,7 @@ export default function PlatformConfigSection({
       apiKey: isMock ? "" : apiKey,
     });
     setInlineError(validationError);
-    setInlineMessage("");
+    setTestResult(null);
     if (validationError) {
       return;
     }
@@ -148,7 +159,7 @@ export default function PlatformConfigSection({
     try {
       const payload = createPayload({ platformType, apiUrl, apiKey });
       const result = await testConnection(payload);
-      setInlineMessage(result.message);
+      setTestResult(result);
       onNotify(result.success ? "success" : "error", result.message);
     } catch (error: unknown) {
       const message = toFriendlyErrorMessage(error);
@@ -194,7 +205,7 @@ export default function PlatformConfigSection({
           <LoadingSpinner label="Loading platform config..." size="sm" />
         </div>
       ) : (
-        <div className="reveal-in rounded-xl border border-sky-200 bg-sky-50/70 p-4">
+        <div className="brand-surface reveal-in rounded-xl p-4">
           <div className="grid gap-3 md:grid-cols-2">
             <label className="block">
               <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
@@ -249,35 +260,32 @@ export default function PlatformConfigSection({
           {inlineError && (
             <ErrorMessage title="Platform config error" message={inlineError} />
           )}
-          {inlineMessage && (
-            <p className="m-0 mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-              {inlineMessage}
-            </p>
-          )}
+          {testResult && <ConnectionTestResult result={testResult} />}
 
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => void handleTest()}
               disabled={testing || saving}
-              className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
-                isDark
-                  ? "border-slate-500 bg-slate-700 text-slate-100 hover:bg-slate-600"
-                  : "border-slate-300 bg-white text-slate-700"
-              }`}
+              className="btn-brand-subtle rounded-lg px-3 py-2 text-xs font-semibold"
             >
-              {testing ? "Testing..." : "Test Connection"}
+              {testing ? (
+                <span className="inline-flex items-center gap-2">
+                  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M21 12a9 9 0 10-9 9" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                  Testing connection to {adapterTarget}...
+                </span>
+              ) : (
+                "Test Connection"
+              )}
             </button>
             {editing && (
               <button
                 type="button"
                 onClick={() => void handleSave()}
                 disabled={saving}
-                className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
-                  isDark
-                    ? "border-slate-400 bg-white text-slate-900"
-                    : "border-sky-300 bg-sky-50 text-sky-700"
-                }`}
+                className="btn-brand-primary rounded-lg px-3 py-2 text-xs font-semibold"
               >
                 {saving ? "Saving..." : "Save Changes"}
               </button>

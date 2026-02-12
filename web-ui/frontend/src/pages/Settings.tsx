@@ -8,7 +8,6 @@ import IntentActivationSection from "../components/settings/IntentActivationSect
 import MetricMappingsSection from "../components/settings/MetricMappingsSection";
 import PlatformConfigSection from "../components/settings/PlatformConfigSection";
 import SystemInfoSection from "../components/settings/SystemInfoSection";
-import { useTheme } from "../components/common/ThemeProvider";
 
 function Section({
   title,
@@ -22,9 +21,9 @@ function Section({
   return (
     <details
       open={defaultOpen}
-      className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-colors open:border-sky-200"
+      className="brand-panel group overflow-hidden rounded-2xl p-0 transition-colors open:border-cyan-300/70 dark:open:border-cyan-500/40"
     >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-base font-semibold text-slate-900 marker:hidden">
+      <summary className="flex w-full cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 text-base font-semibold text-slate-900 marker:hidden hover:bg-white/30 dark:hover:bg-slate-900/30">
         <span>{title}</span>
         <svg
           className="h-4 w-4 text-slate-500 transition-transform duration-200 group-open:rotate-180"
@@ -41,7 +40,7 @@ function Section({
           />
         </svg>
       </summary>
-      <div className="mt-4 border-t border-slate-100 pt-4">{children}</div>
+      <div className="border-t border-slate-100 px-5 pb-5 pt-4 dark:border-slate-700">{children}</div>
     </details>
   );
 }
@@ -49,7 +48,6 @@ function Section({
 export default function Settings() {
   const navigate = useNavigate();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const { isDark } = useTheme();
   const notify = useCallback((type: "success" | "error", message: string) => {
     setToasts((prev) => [
       ...prev,
@@ -71,14 +69,10 @@ export default function Settings() {
     <section className="space-y-4">
       <Toast toasts={toasts} onDismiss={dismissToast} />
 
-      <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <header className="brand-hero rounded-2xl p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p
-              className={`m-0 text-xs font-semibold uppercase tracking-[0.14em] ${
-                isDark ? "text-sky-500" : "text-sky-700"
-              }`}
-            >
+            <p className="m-0 brand-title-gradient text-xs font-semibold uppercase tracking-[0.14em]">
               AVAROS Control Panel
             </p>
             <h2 className="m-0 mt-2 text-2xl font-semibold text-slate-900">
@@ -88,9 +82,7 @@ export default function Settings() {
           </div>
           <button
             type="button"
-            className={`rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 ${
-              isDark ? "text-white" : "text-dark"
-            }`}
+            className="btn-brand-primary rounded-lg px-4 py-2 text-sm font-semibold"
             onClick={() => navigate("/wizard?force=1")}
           >
             Run Wizard

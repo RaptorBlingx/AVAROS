@@ -17,7 +17,7 @@ export default function WelcomeStep({
 }: WelcomeStepProps) {
   return (
     <section className="space-y-4">
-      <header className="rounded-2xl border border-slate-200 bg-slate-50/95 p-6 shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900">
+      <header className="brand-hero rounded-2xl p-6 backdrop-blur-sm">
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">
           First-Run Wizard
         </p>
@@ -30,7 +30,7 @@ export default function WelcomeStep({
         </p>
       </header>
 
-      <div className="rounded-2xl border border-slate-200 bg-slate-50/95 p-6 shadow-sm backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900">
+      <div className="brand-hero rounded-2xl p-6 backdrop-blur-sm">
         {loading && (
           <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 opacity-50">
             <LoadingSpinner label="Loading current system status..." size="sm" />
@@ -63,7 +63,7 @@ export default function WelcomeStep({
         <div className="mt-6">
           <button
             type="button"
-            className="inline-flex items-center rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:bg-sky-100 dark:border-sky-500/40 dark:bg-sky-900/40 dark:text-sky-200 dark:hover:bg-sky-900/60"
+            className="btn-brand-primary inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold"
             onClick={onNext}
             disabled={loading || !!error}
           >

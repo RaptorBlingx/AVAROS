@@ -36,6 +36,11 @@ export type PlatformResetResponse = {
 export type ConnectionTestResponse = {
   success: boolean;
   message: string;
+  latency_ms?: number;
+  adapter_name?: string;
+  resources_discovered?: string[];
+  error_code?: string;
+  error_details?: string;
 };
 
 export type CanonicalMetricName =
