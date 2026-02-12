@@ -6,6 +6,7 @@ import ErrorBoundary from "./components/common/ErrorBoundary";
 import { useTheme } from "./components/common/ThemeProvider";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
+import KPIDashboard from "./pages/KPIDashboard";
 import Login from "./pages/Login";
 import Settings from "./pages/Settings";
 import Wizard from "./pages/Wizard";
@@ -71,6 +72,7 @@ export default function App() {
           <main className="relative p-4 md:ml-[260px] md:p-8">
             <Routes>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/kpi" element={<KPIDashboard />} />
               <Route path="/wizard" element={<Wizard />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/" replace />} />

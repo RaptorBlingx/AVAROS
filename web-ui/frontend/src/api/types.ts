@@ -36,6 +36,11 @@ export type PlatformResetResponse = {
 export type ConnectionTestResponse = {
   success: boolean;
   message: string;
+  latency_ms?: number;
+  adapter_name?: string;
+  resources_discovered?: string[];
+  error_code?: string;
+  error_details?: string;
 };
 
 export type CanonicalMetricName =
@@ -76,3 +81,54 @@ export type IntentState = {
 };
 
 export type IntentListResponse = IntentState[];
+
+export type KPIMetricName =
+  | "energy_per_unit"
+  | "material_efficiency"
+  | "co2_total"
+  | string;
+
+export type KPIProgressItem = {
+  metric: string;
+  site_id: string;
+  baseline_value: number;
+  current_value: number;
+  target_percent: number;
+  improvement_percent: number;
+  target_met: boolean;
+  unit: string;
+  baseline_date: string;
+  current_date: string;
+  direction: "improving" | "worsening" | "stable" | string;
+};
+
+export type SiteProgressResponse = {
+  site_id: string;
+  baselines_count: number;
+  targets_met: number;
+  targets_total: number;
+  progress: KPIProgressItem[];
+};
+
+export type BaselineResponse = {
+  id: number;
+  metric: string;
+  site_id: string;
+  baseline_value: number;
+  unit: string;
+  recorded_at: string;
+  period_start: string;
+  period_end: string;
+  notes: string | null;
+};
+
+export type SnapshotResponse = {
+  id: number;
+  metric: string;
+  site_id: string;
+  value: number;
+  unit: string;
+  measured_at: string;
+  period_start: string;
+  period_end: string;
+};
