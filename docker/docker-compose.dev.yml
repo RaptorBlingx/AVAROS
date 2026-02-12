@@ -1,0 +1,15 @@
+# AVAROS Development Override
+#
+# Re-exposes the Web UI on HTTP port 8081 for developers who don't
+# want to deal with self-signed certificate warnings during development.
+#
+# Usage:
+#   docker compose -f docker-compose.avaros.yml -f docker-compose.dev.yml up
+#
+# This does NOT disable HTTPS — it just adds direct HTTP access
+# to the Web UI alongside the Nginx proxy.
+
+services:
+  avaros-web-ui:
+    ports:
+      - "8081:8080"
