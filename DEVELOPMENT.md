@@ -1,7 +1,8 @@
 # AVAROS Development Guide
 
 > **Purpose:** Standards, patterns, and best practices for all AVAROS contributors.  
-> **Last Updated:** February 6, 2026
+> **Last Updated:** February 12, 2026  
+> **For deployment/operations:** See [Pilot Deployment Playbook](docs/PILOT-PLAYBOOK.md)
 
 ---
 

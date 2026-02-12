@@ -2,8 +2,8 @@
 
 **AVAROS** (AI-Voice-Assistant-Driven Resource-Optimized Sustainable Manufacturing) is an OVOS-based conversational AI assistant that provides manufacturing teams with voice-accessible KPIs for energy, materials, supply chain, and carbon metrics.
 
-> **Status:** Phase 2 In Progress (Web UI Foundation Delivered)  
-> **Last Updated:** February 9, 2026  
+> **Status:** Phase 4 — Dual Pilots, KPI Measurement & Data Completeness  
+> **Last Updated:** February 12, 2026  
 > **Team:** Mohamad (Lead) + Emre (Developer)
 
 ---
@@ -169,7 +169,13 @@ Closes P1-L05
 
 ## 📚 Documentation
 
-Detailed documentation is maintained locally for development purposes. For architecture and deployment information, refer to code comments and Docker configuration files.
+| Document | Audience | Description |
+|----------|----------|-------------|
+| [Pilot Deployment Playbook](docs/PILOT-PLAYBOOK.md) | Operators | Step-by-step deployment and operations guide (D3.1) |
+| [Environment Variable Reference](docs/ENV-REFERENCE.md) | Operators / Devs | All `.env` configuration variables |
+| [Voice Commands Quick Reference](docs/VOICE-COMMANDS.md) | Operators | Printable voice command card |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Developers | Coding standards and architecture decisions |
+| [Security Checklist](docs/SECURITY-CHECKLIST.md) | Developers | ISO 27001–aligned security audit |
 
 ---
 
