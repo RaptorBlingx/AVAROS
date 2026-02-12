@@ -26,7 +26,7 @@ export default function ConnectionTestResult({ result }: ConnectionTestResultPro
   const latency = Number.isFinite(result.latency_ms) ? result.latency_ms : 0;
   const hasManyResources = resources.length > 5;
   const visibleResources = hasManyResources && !showResources ? resources.slice(0, 5) : resources;
-  const tone = latencyTone(latency);
+  const tone = latencyTone(latency || 0);
 
   const latencyClass = useMemo(() => {
     if (tone === "good") {
