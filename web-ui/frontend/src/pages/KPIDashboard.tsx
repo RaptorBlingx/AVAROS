@@ -49,10 +49,10 @@ const KPI_METRICS: MetricMeta[] = [
   },
   {
     metric: "co2_total",
-    label: "CO2-eq",
+    label: "CO₂-eq",
     targetPercent: 10,
     direction: "reduction",
-    hint: "Target: >=10% CO2-eq reduction",
+    hint: "Target: >=10% CO₂-eq reduction",
   },
 ];
 
@@ -257,10 +257,12 @@ export default function KPIDashboard() {
 
   return (
     <section className="space-y-5">
-      <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900/40">
+      <header className="brand-hero relative overflow-hidden rounded-2xl p-6">
+        <div className="pointer-events-none absolute -right-12 -top-14 h-36 w-36 rounded-full bg-cyan-300/35 blur-3xl dark:bg-cyan-400/15" />
+        <div className="pointer-events-none absolute -bottom-16 left-10 h-28 w-28 rounded-full bg-emerald-300/30 blur-2xl dark:bg-emerald-400/15" />
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="m-0 text-xs font-bold uppercase tracking-[0.14em] text-sky-600 dark:text-sky-300">
+            <p className="m-0 brand-title-gradient text-xs font-bold uppercase tracking-[0.14em]">
               WASABI KPI Tracking
             </p>
             <h2 className="m-0 mt-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">
@@ -281,7 +283,7 @@ export default function KPIDashboard() {
             <select
               value={period}
               onChange={(event) => setPeriod(event.target.value as PeriodOption)}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+              className="btn-brand-subtle rounded-lg px-3 py-2 text-sm font-medium text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:text-slate-100"
             >
               {PERIOD_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -297,7 +299,7 @@ export default function KPIDashboard() {
       </header>
 
       {loading && (
-        <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 opacity-50 dark:border-slate-700 dark:bg-slate-900/40">
+        <div className="brand-surface-muted rounded-xl px-4 py-3 opacity-50">
           <LoadingSpinner label="Loading KPI progress..." size="sm" />
         </div>
       )}
@@ -321,19 +323,29 @@ export default function KPIDashboard() {
 
       {!loading && !error && !showEmpty && (
         <>
-          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-            {KPI_METRICS.map((meta) => (
-              <KPITargetCard
-                key={meta.metric}
-                metricLabel={meta.label}
-                metricHint={meta.hint}
-                targetPercent={meta.targetPercent}
-                progress={periodAwareProgressMap.get(meta.metric) ?? null}
-              />
-            ))}
+          <div className="brand-panel rounded-2xl p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="m-0 text-base font-semibold text-slate-900 dark:text-slate-100">
+                Target Progress
+              </h3>
+              <p className="m-0 text-xs text-slate-500 dark:text-slate-400">
+                Site: {siteProgress?.site_id ?? DEFAULT_SITE_ID}
+              </p>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3 reveal-stagger">
+              {KPI_METRICS.map((meta) => (
+                <KPITargetCard
+                  key={meta.metric}
+                  metricLabel={meta.label}
+                  metricHint={meta.hint}
+                  targetPercent={meta.targetPercent}
+                  progress={periodAwareProgressMap.get(meta.metric) ?? null}
+                />
+              ))}
+            </div>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-4 reveal-stagger">
             {KPI_METRICS.map((meta) => {
               const metricProgress = progressMap.get(meta.metric);
               const baseline = metricProgress?.baseline_value ?? 0;
@@ -343,7 +355,7 @@ export default function KPIDashboard() {
               return (
                 <article
                   key={`${meta.metric}-chart`}
-                  className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/40"
+                  className="brand-panel rounded-2xl p-4"
                 >
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <h3 className="m-0 text-base font-semibold text-slate-900 dark:text-slate-100">
