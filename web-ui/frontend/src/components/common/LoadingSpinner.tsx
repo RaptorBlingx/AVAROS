@@ -18,7 +18,7 @@ export default function LoadingSpinner({
 
   return (
     <div
-      className={`inline-flex items-center gap-2 text-slate-600  ${className}`}
+      className={`inline-flex items-center gap-2 text-slate-600 dark:text-slate-300 ${className}`}
       role="status"
       aria-live="polite"
     >

@@ -244,7 +244,7 @@ export default function Dashboard() {
 
       <div className="brand-panel rounded-2xl p-5">
         {loading && (
-          <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 opacity-50">
+          <div className="brand-surface-muted mb-4 rounded-lg px-4 py-3 opacity-50">
             <LoadingSpinner label="Loading system status..." size="sm" />
           </div>
         )}

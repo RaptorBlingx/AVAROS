@@ -11,6 +11,7 @@ export default function ErrorMessage({
 }: ErrorMessageProps) {
   return (
     <div className="brand-surface mt-3 rounded-xl px-4 py-3" role="alert">
+    <div className="brand-surface mt-3 rounded-xl px-4 py-3" role="alert">
       <div className="flex items-start gap-3">
         <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-rose-300/70 bg-rose-100/80 text-rose-700 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-300">
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor">

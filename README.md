@@ -56,6 +56,27 @@ AVAROS works out-of-the-box with mock data:
 ### Connect to Real Platform
 Configuration is done via the Web UI wizard or Settings API. Supports `mock`, `reneryo`, and `custom_rest` platform profiles in the current setup flow.
 
+### Web UI API Key Auth (Required)
+Web UI API routes are protected by `AVAROS_WEB_API_KEY`.
+
+1. Set key in project root `.env`:
+```bash
+AVAROS_WEB_API_KEY=your-strong-key
+```
+
+2. Start/recreate services with the AVAROS compose file:
+```bash
+docker compose -f docker/docker-compose.avaros.yml up -d --force-recreate avaros-web-ui avaros_skill
+```
+
+3. Validate API auth:
+```bash
+curl -i http://localhost:8080/api/v1/status \
+  -H "X-API-Key: your-strong-key"
+```
+
+If you get `401 Invalid or missing API key`, check `avaros-web-ui` logs and verify the value in `.env`.
+
 ---
 
 ## 📁 Project Structure

@@ -12,14 +12,16 @@ import ErrorBoundary from "./components/common/ErrorBoundary";
 import { useTheme } from "./components/common/ThemeProvider";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
+import KPIDashboard from "./pages/KPIDashboard";
 import Login from "./pages/Login";
 import Settings from "./pages/Settings";
 import Wizard from "./pages/Wizard";
 
 const ROUTE_ORDER: Record<string, number> = {
   "/": 0,
-  "/settings": 1,
-  "/wizard": 2,
+  "/kpi": 1,
+  "/settings": 2,
+  "/wizard": 3,
 };
 
 function AppContent({ isDark }: { isDark: boolean }) {
@@ -54,9 +56,10 @@ function AppContent({ isDark }: { isDark: boolean }) {
         }`}
       />
       <Sidebar />
-      <main className={`route-shell ${transitionClass} relative p-4 md:ml-[260px] md:p-8`}>
+      <main className={`route-shell ${transitionClass} relative p-3 md:ml-[260px] md:px-7 md:pb-7 md:pt-4 lg:px-8 lg:pb-8 lg:pt-5`}>
         <Routes location={location}>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/kpi" element={<KPIDashboard />} />
           <Route path="/wizard" element={<Wizard />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -290,6 +290,28 @@ export default function Sidebar() {
             </NavLink>
 
             <NavLink
+              to="/kpi"
+              className={({ isActive }) => navItemClass(isActive)}
+              onClick={() => setIsMobileOpen(false)}
+            >
+              <span className="inline-flex items-center gap-2">
+                <svg
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                >
+                  <path
+                    d="M4 18V8m6 10V6m6 12v-8m4 8H2"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                KPI Dashboard
+              </span>
+            </NavLink>
+
+            <NavLink
               to="/settings"
               className={({ isActive }) => navItemClass(isActive)}
               onClick={() => setIsMobileOpen(false)}
@@ -362,6 +384,27 @@ export default function Sidebar() {
                 />
               </svg>
               Dashboard
+            </span>
+          </NavLink>
+
+          <NavLink
+            to="/kpi"
+            className={({ isActive }) => navItemClass(isActive)}
+          >
+            <span className="inline-flex items-center gap-2">
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+              >
+                <path
+                  d="M4 18V8m6 10V6m6 12v-8m4 8H2"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+              KPI Dashboard
             </span>
           </NavLink>
 

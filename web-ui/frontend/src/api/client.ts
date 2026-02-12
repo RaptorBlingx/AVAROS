@@ -1,4 +1,5 @@
 import type {
+  BaselineResponse,
   CanonicalMetricName,
   ConnectionTestResponse,
   HealthResponse,
@@ -9,11 +10,14 @@ import type {
   PlatformConfigRequest,
   PlatformConfigResponse,
   PlatformResetResponse,
+  SiteProgressResponse,
+  SnapshotResponse,
   SystemStatusResponse
 } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 const API_KEY_STORAGE_KEY = "avaros_api_key";
+export const DEFAULT_SITE_ID = "pilot-1";
 
 /**
  * Get the stored API key from localStorage.
@@ -194,4 +198,37 @@ export function setIntentActive(
     method: "PUT",
     body: { active }
   });
+}
+
+export function getSiteProgress(
+  siteId: string = DEFAULT_SITE_ID
+): Promise<SiteProgressResponse> {
+  return request<SiteProgressResponse>(`/api/v1/kpi/progress/${siteId}`);
+}
+
+export function getBaselines(
+  siteId: string = DEFAULT_SITE_ID
+): Promise<BaselineResponse[]> {
+  return request<BaselineResponse[]>(`/api/v1/kpi/baseline/${siteId}`);
+}
+
+export function getSnapshots(
+  siteId: string,
+  metric: string,
+  startDate?: string,
+  endDate?: string
+): Promise<SnapshotResponse[]> {
+  const resolvedSiteId = siteId || DEFAULT_SITE_ID;
+  const params = new URLSearchParams();
+  if (startDate) {
+    params.set("start_date", startDate);
+  }
+  if (endDate) {
+    params.set("end_date", endDate);
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return request<SnapshotResponse[]>(
+    `/api/v1/kpi/snapshots/${resolvedSiteId}/${metric}${suffix}`
+  );
 }
