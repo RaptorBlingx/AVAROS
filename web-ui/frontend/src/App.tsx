@@ -14,14 +14,16 @@ import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
 import KPIDashboard from "./pages/KPIDashboard";
 import Login from "./pages/Login";
+import ProductionData from "./pages/ProductionData";
 import Settings from "./pages/Settings";
 import Wizard from "./pages/Wizard";
 
 const ROUTE_ORDER: Record<string, number> = {
   "/": 0,
   "/kpi": 1,
-  "/settings": 2,
-  "/wizard": 3,
+  "/production-data": 2,
+  "/settings": 3,
+  "/wizard": 4,
 };
 
 function AppContent({ isDark }: { isDark: boolean }) {
@@ -60,6 +62,7 @@ function AppContent({ isDark }: { isDark: boolean }) {
         <Routes location={location}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/kpi" element={<KPIDashboard />} />
+          <Route path="/production-data" element={<ProductionData />} />
           <Route path="/wizard" element={<Wizard />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
