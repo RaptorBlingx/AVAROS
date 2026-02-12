@@ -95,7 +95,6 @@ export default function Toast({ toasts, onDismiss }: ToastProps) {
           key={toast.id}
           onClick={() => closeWithAnimation(toast.id)}
           className={`toast-item pointer-events-auto w-[min(92vw,340px)] cursor-pointer rounded-xl border px-4 py-3 text-sm shadow-lg ${
-          className={`toast-item pointer-events-auto w-[min(92vw,340px)] cursor-pointer rounded-xl border px-4 py-3 text-sm shadow-lg ${
             closingIds.has(toast.id) ? "toast-item--closing" : ""
           } ${
             toast.type === "success"
