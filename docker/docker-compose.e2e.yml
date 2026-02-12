@@ -12,7 +12,7 @@
 
 services:
   # Lightweight OVOS message bus (no audio, no STT, no TTS)
-  ovos-messagebus:
+  ovos_messagebus:
     image: smartgic/ovos-messagebus:latest
     container_name: e2e-messagebus
     networks:
@@ -65,7 +65,7 @@ services:
       dockerfile: docker/Dockerfile
     container_name: e2e-avaros-skill
     depends_on:
-      ovos-messagebus:
+      ovos_messagebus:
         condition: service_healthy
       e2e-db:
         condition: service_healthy
@@ -74,7 +74,7 @@ services:
     environment:
       - ADAPTER_TYPE=mock
       - AVAROS_DATABASE_URL=postgresql://avaros:avaros@e2e-db:5432/avaros
-      - MESSAGEBUS_HOST=ovos-messagebus
+      - MESSAGEBUS_HOST=ovos_messagebus
       - MESSAGEBUS_PORT=8181
     networks:
       - e2e-net
@@ -87,10 +87,10 @@ services:
     depends_on:
       avaros-skill:
         condition: service_started
-      ovos-messagebus:
+      ovos_messagebus:
         condition: service_healthy
     environment:
-      - MESSAGEBUS_HOST=ovos-messagebus
+      - MESSAGEBUS_HOST=ovos_messagebus
       - MESSAGEBUS_PORT=8181
       - AVAROS_DATABASE_URL=postgresql://avaros:avaros@e2e-db:5432/avaros
     networks:

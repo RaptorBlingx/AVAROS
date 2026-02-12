@@ -7,30 +7,19 @@ in isolation — no Docker services required.
 
 from __future__ import annotations
 
-import threading
-import time
 from typing import Any
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from tests.test_e2e.conftest import (
     _CONNECT_WAIT_S,
     _DEFAULT_TIMEOUT_S,
+    Message,
     send_intent_and_wait,
 )
 
 pytestmark = pytest.mark.e2e
-
-
-# ── Fake Message ────────────────────────────────────────
-
-
-class FakeMessage:
-    """Minimal stand-in for ``ovos_bus_client.Message``."""
-
-    def __init__(self, data: dict[str, Any] | None = None) -> None:
-        self.data = data or {}
 
 
 # ── Tests ───────────────────────────────────────────────
@@ -55,7 +44,7 @@ class TestSendIntentAndWait:
         def _emit_side_effect(msg: Any) -> None:
             # Simulate immediate speak response
             if speak_callback:
-                speak_callback(FakeMessage({"utterance": "OEE is 85%"}))
+                speak_callback(Message("speak", {"utterance": "OEE is 85%"}))
 
         client.emit.side_effect = _emit_side_effect
 
@@ -114,7 +103,7 @@ class TestSendIntentAndWait:
 
         def _emit_fire(msg: Any) -> None:
             if registered_callback:
-                registered_callback(FakeMessage({"utterance": "test"}))
+                registered_callback(Message("speak", {"utterance": "test"}))
 
         client.emit.side_effect = _emit_fire
 

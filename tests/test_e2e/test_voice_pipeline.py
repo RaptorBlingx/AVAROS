@@ -7,8 +7,8 @@ QueryDispatcher → adapter → domain result → ResponseBuilder → speak.
 Requires a running Docker E2E stack (see ``docker/docker-compose.e2e.yml``).
 Run via: ``scripts/run-e2e-tests.sh``
 
-All tests are auto-marked ``@pytest.mark.e2e`` via the package-level
-``conftest.py`` so they are excluded from regular ``pytest tests/ -v``.
+All tests are marked ``@pytest.mark.e2e`` in this module so they are
+excluded from regular ``pytest tests/ -v``.
 """
 
 from __future__ import annotations
@@ -190,41 +190,7 @@ class TestWhatIfPipeline:
 
 
 # ══════════════════════════════════════════════════════════
-# 6. CO₂ Derivation Pipeline (DEC-023)
-# ══════════════════════════════════════════════════════════
-
-
-class TestCO2DerivationPipeline:
-    """CO₂ derived metrics through voice pipeline (DEC-023).
-
-    MockAdapter has ``native_carbon`` capability, so this validates the
-    CO₂ path through the Mock. Derivation-specific logic is covered
-    in the integration test suite (``test_pipeline.py``).
-    """
-
-    def test_co2_total_through_voice_pipeline(self, bus_client) -> None:
-        """CO₂ total query returns spoken carbon metric.
-
-        The skill doesn't have a dedicated co2_total intent handler,
-        so we test via the KPI energy intent which exercises the full
-        pipeline. CO₂ derivation was validated in integration tests.
-        """
-        # Use energy_per_unit intent — confirms adapter path works.
-        # CO₂ derivation path is validated at the integration layer
-        # (test_pipeline.py) where we can inject adapters without
-        # native_carbon capability.
-        response = send_intent_and_wait(
-            bus_client,
-            "kpi.energy.per_unit.intent",
-            {"asset": "Line-1", "period": "today"},
-        )
-
-        assert response is not None, "Pipeline must stay operational for CO₂ path"
-        assert len(response["utterance"]) > 0
-
-
-# ══════════════════════════════════════════════════════════
-# 7. Error Handling
+# 6. Error Handling
 # ══════════════════════════════════════════════════════════
 
 
@@ -254,7 +220,7 @@ class TestErrorHandling:
 
 
 # ══════════════════════════════════════════════════════════
-# 8. Performance
+# 7. Performance
 # ══════════════════════════════════════════════════════════
 
 

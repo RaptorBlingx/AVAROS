@@ -5,9 +5,9 @@ Provides a session-scoped MessageBusClient that connects to the
 OVOS message bus and a ``send_intent_and_wait`` helper used by all
 E2E test modules.
 
-All tests in this package are marked with ``@pytest.mark.e2e`` so
-they are excluded from regular ``pytest tests/ -v`` runs.
-Run them with: ``pytest tests/test_e2e/ -v -m e2e``
+Tests in this package are marked with ``@pytest.mark.e2e`` so they are
+excluded from regular ``pytest tests/ -v`` runs. Run them with:
+``pytest tests/test_e2e/ -v -m e2e``.
 """
 
 from __future__ import annotations
@@ -23,10 +23,6 @@ try:
     from ovos_bus_client import Message, MessageBusClient
 except ImportError:
     from mycroft_bus_client import Message, MessageBusClient  # type: ignore[no-redef]
-
-
-# Apply e2e marker to every test in this directory
-pytestmark = pytest.mark.e2e
 
 
 # ── Constants ───────────────────────────────────────────
