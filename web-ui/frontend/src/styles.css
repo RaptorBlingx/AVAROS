@@ -33,6 +33,19 @@
     @apply bg-slate-800;
   }
 
+  :root[data-theme="dark"] .bg-red-50,
+  :root[data-theme="dark"] .bg-rose-50 {
+    @apply bg-rose-900/40;
+  }
+
+  :root[data-theme="dark"] .bg-emerald-50 {
+    @apply bg-emerald-900/40;
+  }
+
+  :root[data-theme="dark"] .bg-amber-50 {
+    @apply bg-amber-900/40;
+  }
+
   :root[data-theme="dark"] .border-slate-200 {
     @apply border-slate-700;
   }
@@ -41,6 +54,19 @@
   :root[data-theme="dark"] .border-sky-200,
   :root[data-theme="dark"] .border-sky-300 {
     @apply border-slate-600;
+  }
+
+  :root[data-theme="dark"] .border-red-200,
+  :root[data-theme="dark"] .border-rose-200 {
+    @apply border-rose-500/40;
+  }
+
+  :root[data-theme="dark"] .border-emerald-200 {
+    @apply border-emerald-500/40;
+  }
+
+  :root[data-theme="dark"] .border-amber-200 {
+    @apply border-amber-500/40;
   }
 
   :root[data-theme="dark"] .text-slate-900 {
@@ -55,6 +81,19 @@
   :root[data-theme="dark"] .text-slate-600,
   :root[data-theme="dark"] .text-slate-500 {
     @apply text-slate-300;
+  }
+
+  :root[data-theme="dark"] .text-red-900,
+  :root[data-theme="dark"] .text-rose-900 {
+    @apply text-rose-200;
+  }
+
+  :root[data-theme="dark"] .text-emerald-900 {
+    @apply text-emerald-200;
+  }
+
+  :root[data-theme="dark"] .text-amber-900 {
+    @apply text-amber-200;
   }
 
   :root[data-theme="dark"] input,

@@ -54,8 +54,8 @@ export default function PlatformSelectStep({
                 type="button"
                 className={`rounded-xl border p-4 text-left transition ${
                   active
-                    ? "border-cyan-300 bg-gradient-to-r from-sky-50/90 via-white to-emerald-50/70 shadow-sm dark:border-cyan-500/50 dark:bg-sky-900/20"
-                    : "border-slate-200 bg-white/90 hover:bg-gradient-to-r hover:from-sky-50 hover:to-emerald-50 dark:border-slate-700 dark:bg-slate-800/85 dark:hover:bg-slate-700/95"
+                    ? "border-cyan-300 bg-gradient-to-r from-sky-50/90 via-white to-emerald-50/70 shadow-sm dark:border-cyan-500/50 dark:from-sky-900/50 dark:via-slate-900/90 dark:to-emerald-900/35"
+                    : "border-slate-200 bg-white/90 hover:bg-gradient-to-r hover:from-sky-50 hover:to-emerald-50 dark:border-slate-700 dark:bg-slate-800/85 dark:hover:from-slate-800 dark:hover:via-slate-800 dark:hover:to-slate-700/90"
                 }`}
                 onClick={() => onChange(option.value)}
               >
