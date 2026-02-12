@@ -231,12 +231,12 @@ export default function MetricMappingsSection({ onNotify }: MetricMappingsSectio
               usedMetrics={usedMetrics}
               onChange={updateBaseRow}
               renderActions={(row) => (
-                <div className="flex flex-wrap gap-2">
+                <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto">
                   <button
                     type="button"
                     onClick={() => void saveRow(row.id)}
                     disabled={savingRowId === row.id}
-                    className={`rounded border px-2 py-1 text-xs font-semibold ${
+                    className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${
                       isDark
                         ? "border-slate-400 bg-white text-slate-900"
                         : "border-sky-300 bg-sky-50 text-sky-700"
@@ -247,7 +247,7 @@ export default function MetricMappingsSection({ onNotify }: MetricMappingsSectio
                   <button
                     type="button"
                     onClick={() => void removeRow(row)}
-                    className={`rounded border px-2 py-1 text-xs font-semibold ${
+                    className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${
                       isDark
                         ? "border-rose-400 bg-rose-950/60 text-rose-200"
                         : "border-rose-300 bg-rose-50 text-rose-700"
