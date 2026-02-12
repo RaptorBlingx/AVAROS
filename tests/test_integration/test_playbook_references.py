@@ -7,8 +7,6 @@ documentation claim against the actual files in the repository.
 
 from __future__ import annotations
 
-import os
-import re
 from pathlib import Path
 
 import pytest
@@ -157,6 +155,26 @@ class TestPlaybookStructure:
         assert "8%" in content, "Missing 8% electricity target"
         assert "5%" in content, "Missing 5% material efficiency target"
         assert "10%" in content, "Missing 10% CO₂ target"
+
+
+class TestCriticalProceduralClaims:
+    """Validate critical operational claims in the playbook."""
+
+    def test_auth_flow_uses_api_key_not_cookie_auth(self) -> None:
+        """Wizard auth instructions must match implemented API-key model."""
+        content = PLAYBOOK.read_text()
+        assert "API key" in content or "API Key" in content
+        assert "cookie-based" not in content.lower()
+
+    def test_letsencrypt_is_not_claimed_as_automatic(self) -> None:
+        """Playbook must not claim unsupported auto Let's Encrypt flow."""
+        content = PLAYBOOK.read_text()
+        assert "certificate will be obtained automatically" not in content
+
+    def test_letsencrypt_marked_as_not_yet_available(self) -> None:
+        """Playbook should clearly state current Let's Encrypt limitation."""
+        content = PLAYBOOK.read_text()
+        assert "not yet available in the current stack" in content
 
 
 class TestVoiceCommandsReference:

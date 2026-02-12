@@ -134,16 +134,15 @@ cd ../..
 
 #### Option B: Let's Encrypt (for Production)
 
-1. Ensure your server has a public DNS name (e.g., `avaros.artibilim.com`)
-2. Ensure ports 80 and 443 are open to the internet
-3. Set `AVAROS_TLS_MODE=letsencrypt` in your `.env` file
-4. Start the services (Step 5) — the certificate will be obtained automatically
-5. Set up automatic renewal:
+Let's Encrypt automation is **not yet available in the current stack**.
 
-```bash
-# Add to crontab (runs twice daily)
-echo "0 */12 * * * /path/to/avaros-ovos-skill/docker/certbot-renew.sh" | crontab -
-```
+Current status:
+
+1. `docker/docker-compose.avaros.yml` does not yet include a `certbot` service.
+2. Automatic issuance/renewal cannot be completed until that service is added.
+3. Use **Option A (self-signed certificate)** for pilot deployment right now.
+
+> **Planned upgrade path:** When `certbot` service support is added, this section will be updated with the exact issuance and renewal steps.
 
 ### Step 5: Start the Docker Stack
 
@@ -223,8 +222,7 @@ Enter your RENERYO API connection details:
 | Field | What to Enter |
 |-------|---------------|
 | API URL | The base URL of your RENERYO instance (e.g., `https://reneryo.artibilim.com`) |
-| Authentication | Cookie-based authentication credentials |
-| Timeout | Connection timeout in seconds (recommended: 30) |
+| Authentication | API key (entered in the **API Key** field) |
 
 > **Note:** Credentials are encrypted before storage using Fernet encryption. They are never stored in plain text.
 
@@ -660,7 +658,7 @@ docker compose -f docker/docker-compose.avaros.yml up -d --build
 | Setting | Value |
 |---------|-------|
 | API URL | *(to be filled during M3–M4 coordination)* |
-| Authentication type | Cookie-based |
+| Authentication type | API key |
 | Known meters | *(to be filled after meter audit)* |
 
 #### Asset Mapping
@@ -702,7 +700,7 @@ docker compose -f docker/docker-compose.avaros.yml up -d --build
 | Setting | Value |
 |---------|-------|
 | API URL | *(to be filled during M4 coordination)* |
-| Authentication type | Cookie-based |
+| Authentication type | API key |
 | Known meters | *(to be filled — may use simulated data)* |
 
 #### Simulated Manufacturing Data
