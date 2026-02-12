@@ -1,4 +1,5 @@
 import type { ConnectionTestResponse, PlatformType } from "../../api/types";
+import ConnectionTestResult from "../common/ConnectionTestResult";
 
 type ConnectionSetupStepProps = {
   platformType: PlatformType;
@@ -34,6 +35,12 @@ export default function ConnectionSetupStep({
   onSave,
 }: ConnectionSetupStepProps) {
   const isMock = platformType === "mock";
+  const adapterTarget =
+    platformType === "reneryo"
+      ? "RENERYO"
+      : platformType === "custom_rest"
+        ? "Custom REST"
+        : "Mock";
 
   return (
     <section className="space-y-4">
@@ -108,17 +115,7 @@ export default function ConnectionSetupStep({
           </div>
         )}
 
-        {testResult && (
-          <div
-            className={`mt-4 rounded-lg border px-4 py-3 text-sm ${
-              testResult.success
-                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                : "border-red-200 bg-red-50 text-red-900"
-            }`}
-          >
-            {testResult.message}
-          </div>
-        )}
+        {testResult && <ConnectionTestResult result={testResult} />}
 
         <div className="mt-6 flex flex-wrap gap-3">
           {!isMock && (
@@ -128,7 +125,16 @@ export default function ConnectionSetupStep({
               onClick={onTestConnection}
               disabled={isTesting || isSaving}
             >
-              {isTesting ? "Testing..." : "Test Connection"}
+              {isTesting ? (
+                <span className="inline-flex items-center gap-2">
+                  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M21 12a9 9 0 10-9 9" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                  Testing connection to {adapterTarget}...
+                </span>
+              ) : (
+                "Test Connection"
+              )}
             </button>
           )}
           <button
