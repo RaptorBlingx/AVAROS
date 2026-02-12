@@ -16,17 +16,33 @@ export default function StatusCard({
 }: StatusCardProps) {
   const { isDark } = useTheme();
 
-  const cardToneClass = isDark
-    ? "border-slate-700 bg-gradient-to-br from-slate-900/90 via-slate-900/85 to-cyan-950/20"
-    : "border-slate-200 bg-gradient-to-br from-white/95 via-sky-50/55 to-emerald-50/40";
+  const cardToneClass = tone === "good"
+    ? isDark
+      ? "border-emerald-700/70 bg-gradient-to-br from-emerald-950/35 via-slate-900/90 to-slate-900/85"
+      : "border-emerald-200 bg-gradient-to-br from-emerald-50/85 via-white/95 to-emerald-50/40"
+    : tone === "warning"
+      ? isDark
+        ? "border-amber-700/70 bg-gradient-to-br from-amber-950/30 via-slate-900/90 to-slate-900/85"
+        : "border-amber-200 bg-gradient-to-br from-amber-50/85 via-white/95 to-amber-50/35"
+      : isDark
+        ? "border-sky-700/70 bg-gradient-to-br from-sky-950/30 via-slate-900/90 to-slate-900/85"
+        : "border-sky-200 bg-gradient-to-br from-sky-50/85 via-white/95 to-emerald-50/30";
 
   const valueToneClass = isDark
     ? "border-slate-600 bg-slate-800/85 text-slate-100"
     : "border-slate-200 bg-white/95 text-slate-900";
 
-  const iconToneClass = isDark
-    ? "border-slate-600 bg-slate-800/85 text-cyan-200"
-    : "border-slate-200 bg-white/95 text-sky-700";
+  const iconToneClass = tone === "good"
+    ? isDark
+      ? "border-emerald-600/70 bg-emerald-950/45 text-emerald-200"
+      : "border-emerald-200 bg-white/95 text-emerald-700"
+    : tone === "warning"
+      ? isDark
+        ? "border-amber-600/70 bg-amber-950/45 text-amber-200"
+        : "border-amber-200 bg-white/95 text-amber-700"
+      : isDark
+        ? "border-sky-600/70 bg-sky-950/45 text-sky-200"
+        : "border-sky-200 bg-white/95 text-sky-700";
 
   const toneDotClass = tone === "good"
     ? "bg-emerald-500"

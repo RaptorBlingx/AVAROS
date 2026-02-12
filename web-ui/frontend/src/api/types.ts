@@ -85,11 +85,10 @@ export type IntentListResponse = IntentState[];
 export type KPIMetricName =
   | "energy_per_unit"
   | "material_efficiency"
-  | "co2_total"
-  | string;
+  | "co2_total";
 
 export type KPIProgressItem = {
-  metric: string;
+  metric: KPIMetricName;
   site_id: string;
   baseline_value: number;
   current_value: number;
@@ -112,7 +111,7 @@ export type SiteProgressResponse = {
 
 export type BaselineResponse = {
   id: number;
-  metric: string;
+  metric: KPIMetricName;
   site_id: string;
   baseline_value: number;
   unit: string;
@@ -124,7 +123,7 @@ export type BaselineResponse = {
 
 export type SnapshotResponse = {
   id: number;
-  metric: string;
+  metric: KPIMetricName;
   site_id: string;
   value: number;
   unit: string;

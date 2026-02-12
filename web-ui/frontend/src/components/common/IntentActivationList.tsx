@@ -58,16 +58,12 @@ export default function IntentActivationList({
 }: IntentActivationListProps) {
   const { isDark } = useTheme();
 
-  const secondaryActionButtonClass = isDark
-    ? "btn-brand-subtle rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-    : "btn-brand-subtle rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60";
-  const primaryActionButtonClass = isDark
-    ? "btn-brand-primary rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-    : "btn-brand-primary rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60";
+  const secondaryActionButtonClass =
+    "btn-brand-subtle rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60";
+  const primaryActionButtonClass =
+    "btn-brand-primary rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60";
 
-  const intentCardClass = isDark
-    ? "brand-surface rounded-xl p-4"
-    : "brand-surface rounded-xl p-4";
+  const intentCardClass = "brand-surface rounded-xl p-4";
 
   const metricBadgeClass = isDark
     ? "inline-flex items-center rounded-md bg-slate-700 px-2.5 py-1 text-xs font-medium text-slate-100"
