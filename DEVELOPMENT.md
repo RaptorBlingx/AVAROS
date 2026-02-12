@@ -982,6 +982,50 @@ def test_get_kpi_with_valid_metric_returns_result(query_dispatcher):
 
 ---
 
+### E2E Voice Pipeline Tests
+
+E2E tests validate the complete AVAROS voice pipeline inside Docker:
+
+**intent → OVOS message bus → AVAROSSkill → QueryDispatcher → adapter → ResponseBuilder → speak**
+
+#### Running E2E Tests
+
+```bash
+# Via the CI script (build, run, collect logs, cleanup):
+./scripts/run-e2e-tests.sh
+
+# Or manually:
+cd docker
+docker compose -f docker-compose.e2e.yml build
+docker compose -f docker-compose.e2e.yml up -d
+# Wait ~20s for skill registration
+docker compose -f docker-compose.e2e.yml exec e2e-runner \
+    pytest tests/test_e2e/ -v --timeout=60 -m e2e
+docker compose -f docker-compose.e2e.yml down -v
+```
+
+#### Test Markers
+
+E2E tests are marked with `@pytest.mark.e2e` and excluded from regular runs:
+
+```bash
+# Regular unit + integration tests (excludes E2E):
+pytest tests/ -v
+
+# E2E tests only:
+pytest tests/test_e2e/ -v -m e2e
+```
+
+#### Test Architecture
+
+| Layer | Tests | Location |
+|-------|-------|----------|
+| Unit | Domain, services, adapters | `tests/test_domain/`, `tests/test_services/`, etc. |
+| Integration | QueryDispatcher → adapter → ResponseBuilder | `tests/test_integration/test_pipeline.py` |
+| E2E | Full OVOS voice pipeline (Docker) | `tests/test_e2e/test_voice_pipeline.py` |
+
+---
+
 ## Git Workflow
 
 ### Branch Naming

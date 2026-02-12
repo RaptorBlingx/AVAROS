@@ -1,0 +1,103 @@
+# AVAROS E2E Voice Pipeline Test Environment
+#
+# Self-contained Docker Compose for CI-runnable end-to-end tests.
+# Includes: MessageBus + Skill + MockAdapter + DB + Mock RENERYO
+#
+# Usage:
+#   docker compose -f docker-compose.e2e.yml build
+#   docker compose -f docker-compose.e2e.yml up -d
+#   docker compose -f docker-compose.e2e.yml exec e2e-runner \
+#       pytest tests/test_e2e/ -v --timeout=60
+#   docker compose -f docker-compose.e2e.yml down -v
+
+services:
+  # Lightweight OVOS message bus (no audio, no STT, no TTS)
+  ovos-messagebus:
+    image: smartgic/ovos-messagebus:latest
+    container_name: e2e-messagebus
+    networks:
+      - e2e-net
+    healthcheck:
+      test: >-
+        python3 -c "
+        import socket;
+        s = socket.create_connection(('localhost', 8181));
+        s.close()
+        "
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  e2e-db:
+    image: postgres:15-alpine
+    container_name: e2e-db
+    environment:
+      POSTGRES_USER: avaros
+      POSTGRES_PASSWORD: avaros
+      POSTGRES_DB: avaros
+    networks:
+      - e2e-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U avaros"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  reneryo-mock:
+    build:
+      context: ../tools/reneryo-mock
+    container_name: e2e-reneryo-mock
+    networks:
+      - e2e-net
+    healthcheck:
+      test: >-
+        python3 -c "
+        import urllib.request;
+        urllib.request.urlopen('http://localhost:8090/health')
+        "
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  avaros-skill:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: e2e-avaros-skill
+    depends_on:
+      ovos-messagebus:
+        condition: service_healthy
+      e2e-db:
+        condition: service_healthy
+      reneryo-mock:
+        condition: service_healthy
+    environment:
+      - ADAPTER_TYPE=mock
+      - AVAROS_DATABASE_URL=postgresql://avaros:avaros@e2e-db:5432/avaros
+      - MESSAGEBUS_HOST=ovos-messagebus
+      - MESSAGEBUS_PORT=8181
+    networks:
+      - e2e-net
+
+  e2e-runner:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.e2e
+    container_name: e2e-runner
+    depends_on:
+      avaros-skill:
+        condition: service_started
+      ovos-messagebus:
+        condition: service_healthy
+    environment:
+      - MESSAGEBUS_HOST=ovos-messagebus
+      - MESSAGEBUS_PORT=8181
+      - AVAROS_DATABASE_URL=postgresql://avaros:avaros@e2e-db:5432/avaros
+    networks:
+      - e2e-net
+    # Keep alive for test execution
+    command: ["sleep", "infinity"]
+
+networks:
+  e2e-net:
+    driver: bridge

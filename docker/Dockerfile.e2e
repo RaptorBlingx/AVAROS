@@ -1,0 +1,31 @@
+# AVAROS E2E Test Runner
+# Lightweight image with test dependencies for E2E pipeline validation
+
+FROM python:3.10-slim
+
+LABEL org.opencontainers.image.title="AVAROS E2E Test Runner" \
+      org.opencontainers.image.description="Test runner for E2E voice pipeline validation"
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# System dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/avaros
+
+# Install Python dependencies
+COPY requirements.txt .
+COPY tests/requirements-test.txt tests/
+RUN pip install --no-cache-dir -r requirements.txt -r tests/requirements-test.txt
+RUN pip install --no-cache-dir ovos-bus-client pytest-timeout
+
+# Copy application and test code
+COPY skill/ skill/
+COPY tests/ tests/
+COPY pytest.ini .
