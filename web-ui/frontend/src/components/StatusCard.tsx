@@ -17,16 +17,40 @@ export default function StatusCard({
   const { isDark } = useTheme();
 
   const cardToneClass = isDark
-    ? "border-slate-700 bg-gradient-to-br from-slate-900/90 via-slate-900/85 to-cyan-950/20"
-    : "border-slate-200 bg-gradient-to-br from-white/95 via-sky-50/55 to-emerald-50/40";
+    ? tone === "good"
+      ? "border-emerald-800/70 bg-gradient-to-br from-emerald-950/60 to-slate-900"
+      : tone === "warning"
+        ? "border-amber-800/70 bg-gradient-to-br from-amber-950/50 to-slate-900"
+        : "border-sky-800/70 bg-gradient-to-br from-sky-950/50 to-slate-900"
+    : tone === "good"
+      ? "border-emerald-200 bg-gradient-to-br from-emerald-50 to-white"
+      : tone === "warning"
+        ? "border-amber-200 bg-gradient-to-br from-amber-50 to-white"
+        : "border-sky-200 bg-gradient-to-br from-sky-50 to-white";
 
   const valueToneClass = isDark
-    ? "border-slate-600 bg-slate-800/85 text-slate-100"
-    : "border-slate-200 bg-white/95 text-slate-900";
+    ? tone === "good"
+      ? "border-emerald-700 bg-emerald-900/70 text-emerald-200"
+      : tone === "warning"
+        ? "border-amber-700 bg-amber-900/70 text-amber-200"
+        : "border-sky-700 bg-sky-900/70 text-sky-200"
+    : tone === "good"
+      ? "border-emerald-200 bg-emerald-100 text-emerald-900"
+      : tone === "warning"
+        ? "border-amber-200 bg-amber-100 text-amber-900"
+        : "border-sky-200 bg-sky-100 text-sky-900";
 
   const iconToneClass = isDark
-    ? "border-slate-600 bg-slate-800/85 text-cyan-200"
-    : "border-slate-200 bg-white/95 text-sky-700";
+    ? tone === "good"
+      ? "border-emerald-700 bg-emerald-900/60 text-emerald-300"
+      : tone === "warning"
+        ? "border-amber-700 bg-amber-900/60 text-amber-300"
+        : "border-sky-700 bg-sky-900/60 text-sky-300"
+    : tone === "good"
+      ? "border-emerald-200 bg-emerald-100 text-emerald-700"
+      : tone === "warning"
+        ? "border-amber-200 bg-amber-100 text-amber-700"
+      : "border-sky-200 bg-sky-100 text-sky-700";
 
   const toneDotClass = tone === "good"
     ? "bg-emerald-500"
