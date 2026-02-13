@@ -55,10 +55,6 @@ export default function EmissionFactorsSection({ onNotify }: EmissionFactorsSect
       ]);
       setFactors(factorResponse.factors);
       setPresets(presetResponse);
-      const countries = Array.from(new Set(presetResponse.map((item) => item.country)));
-      if (countries.length > 0 && !countries.includes(selectedCountry)) {
-        setSelectedCountry(countries[0]);
-      }
     } catch (error: unknown) {
       const message = toFriendlyErrorMessage(error);
       setInlineError(message);
@@ -66,7 +62,7 @@ export default function EmissionFactorsSection({ onNotify }: EmissionFactorsSect
     } finally {
       setLoading(false);
     }
-  }, [onNotify, selectedCountry]);
+  }, [onNotify]);
 
   useEffect(() => {
     void loadData();
@@ -76,6 +72,12 @@ export default function EmissionFactorsSection({ onNotify }: EmissionFactorsSect
     () => Array.from(new Set(presets.map((item) => item.country))).sort(),
     [presets],
   );
+
+  useEffect(() => {
+    if (countries.length > 0 && !countries.includes(selectedCountry)) {
+      setSelectedCountry(countries[0]);
+    }
+  }, [countries, selectedCountry]);
 
   const selectedPresetEntries = useMemo(
     () => presets.filter((item) => item.country === selectedCountry),
@@ -144,16 +146,18 @@ export default function EmissionFactorsSection({ onNotify }: EmissionFactorsSect
 
     setSaving(true);
     try {
-      for (const item of selectedPresetEntries) {
-        if (!isEnergySource(item.energy_source)) continue;
-        await createEmissionFactor({
-          energy_source: item.energy_source,
-          factor: item.factor,
-          country: item.country,
-          source: item.source,
-          year: item.year,
-        });
-      }
+      const tasks = selectedPresetEntries
+        .filter((item) => isEnergySource(item.energy_source))
+        .map((item) =>
+          createEmissionFactor({
+            energy_source: item.energy_source as EnergySource,
+            factor: item.factor,
+            country: item.country,
+            source: item.source,
+            year: item.year,
+          }),
+        );
+      await Promise.all(tasks);
       onNotify("success", `${selectedCountry} preset applied.`);
       await loadData();
     } catch (error: unknown) {
@@ -187,7 +191,7 @@ export default function EmissionFactorsSection({ onNotify }: EmissionFactorsSect
                 <select
                   value={selectedCountry}
                   onChange={(event) => setSelectedCountry(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                 >
                   {countries.length === 0 ? <option value="">No presets available</option> : null}
                   {countries.map((country) => (
@@ -226,17 +230,17 @@ export default function EmissionFactorsSection({ onNotify }: EmissionFactorsSect
 
             {showAddForm ? (
               <div className="mb-4 grid gap-3 md:grid-cols-5">
-                <select value={form.energy_source} onChange={(event) => updateForm("energy_source", event.target.value as EnergySource)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900">
+                <select value={form.energy_source} onChange={(event) => updateForm("energy_source", event.target.value as EnergySource)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100">
                   {ENERGY_SOURCES.map((source) => (
                     <option key={source} value={source}>{formatEnergySource(source)}</option>
                   ))}
                 </select>
-                <input type="number" min="0" step="0.0001" value={form.factor} onChange={(event) => updateForm("factor", Number(event.target.value))} placeholder="Factor" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900" />
-                <input type="text" value={form.country} onChange={(event) => updateForm("country", event.target.value)} placeholder="Country" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900" />
-                <input type="text" value={form.source} onChange={(event) => updateForm("source", event.target.value)} placeholder="Source" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900" />
-                <input type="number" min="2000" max="2030" value={form.year} onChange={(event) => updateForm("year", Number(event.target.value))} placeholder="Year" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900" />
+                <input type="number" min="0" step="0.0001" value={form.factor} onChange={(event) => updateForm("factor", Number(event.target.value))} placeholder="Factor" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+                <input type="text" value={form.country} onChange={(event) => updateForm("country", event.target.value)} placeholder="Country" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+                <input type="text" value={form.source} onChange={(event) => updateForm("source", event.target.value)} placeholder="Source" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+                <input type="number" min="2000" max="2030" value={form.year} onChange={(event) => updateForm("year", Number(event.target.value))} placeholder="Year" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
                 <div className="md:col-span-5 flex items-center justify-between gap-3">
-                  <p className="m-0 text-xs text-rose-600">{errors.factor ?? errors.energy_source ?? " "}</p>
+                  <p className="m-0 text-xs text-rose-600 dark:text-rose-300">{errors.factor ?? errors.energy_source ?? " "}</p>
                   <button type="button" onClick={() => void handleSave()} disabled={saving} className="btn-brand-primary rounded-lg px-3 py-2 text-xs font-semibold">
                     {saving ? "Saving..." : "Save Factor"}
                   </button>
