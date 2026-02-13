@@ -2,9 +2,11 @@ import type { ConnectionTestResponse, PlatformType } from "../../api/types";
 import Tooltip from "../common/Tooltip";
 import ConnectionTestResult from "../common/ConnectionTestResult";
 
+type AuthType = "api_key" | "cookie";
+
 type ConnectionSetupStepProps = {
   platformType: PlatformType;
-  authType: "api_key";
+  authType: AuthType;
   apiUrl: string;
   apiKey: string;
   formError: string;
@@ -12,7 +14,7 @@ type ConnectionSetupStepProps = {
   testError: string;
   isTesting: boolean;
   isSaving: boolean;
-  onAuthTypeChange: (value: "api_key") => void;
+  onAuthTypeChange: (value: AuthType) => void;
   onApiUrlChange: (value: string) => void;
   onApiKeyChange: (value: string) => void;
   onTestConnection: () => void;
@@ -87,23 +89,28 @@ export default function ConnectionSetupStep({
               <select
                 value={authType}
                 onChange={(event) =>
-                  onAuthTypeChange(event.target.value as "api_key")
+                  onAuthTypeChange(event.target.value as AuthType)
                 }
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
               >
                 <option value="api_key">API Key</option>
+                <option value="cookie">Session Cookie</option>
               </select>
             </label>
 
             <label className="block">
               <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">
-                API Key
+                {authType === "cookie" ? "Session Cookie Value" : "API Key"}
               </span>
               <input
                 type="password"
                 value={apiKey}
                 onChange={(event) => onApiKeyChange(event.target.value)}
-                placeholder="Enter API key"
+                placeholder={
+                  authType === "cookie"
+                    ? "Paste session cookie (S=...)"
+                    : "Enter your API key"
+                }
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
               />
             </label>

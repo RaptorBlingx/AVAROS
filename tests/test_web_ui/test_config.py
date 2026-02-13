@@ -547,3 +547,122 @@ class TestApiKeyMasking:
         response = client.post("/api/v1/config/platform", json=payload)
 
         assert response.json()["api_key"] == "****"
+
+
+# ══════════════════════════════════════════════════════════
+# Auth type pass-through in connection test
+# ══════════════════════════════════════════════════════════
+
+
+class TestConnectionTestAuthType:
+    """Tests for auth_type pass-through to adapter creation."""
+
+    def test_connection_test_with_cookie_auth_type(
+        self,
+        client: TestClient,
+    ) -> None:
+        """POST with auth_type=cookie creates adapter with cookie auth."""
+        payload = {
+            "platform_type": "reneryo",
+            "api_url": "https://api.reneryo.example.com",
+            "api_key": "session-cookie-value",
+            "extra_settings": {"auth_type": "cookie"},
+        }
+        mock_result = ConnectionTestResult(
+            success=True,
+            latency_ms=42.0,
+            message="Connected via cookie auth",
+            adapter_name="RENERYO",
+            resources_discovered=("Meter-1",),
+        )
+        with patch(
+            "routers.config._create_adapter_from_config",
+        ) as mock_factory:
+            mock_adapter = AsyncMock()
+            mock_adapter.test_connection.return_value = mock_result
+            mock_factory.return_value = mock_adapter
+
+            response = client.post(
+                "/api/v1/config/platform/test",
+                json=payload,
+            )
+
+            # Verify auth_type was passed through in the payload
+            call_args = mock_factory.call_args[0][0]
+            assert call_args.extra_settings.get("auth_type") == "cookie"
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+    def test_connection_test_with_bearer_auth_type(
+        self,
+        client: TestClient,
+    ) -> None:
+        """POST with auth_type=bearer creates adapter with bearer auth."""
+        payload = {
+            "platform_type": "reneryo",
+            "api_url": "https://api.reneryo.example.com",
+            "api_key": "api-key-value",
+            "extra_settings": {"auth_type": "bearer"},
+        }
+        mock_result = ConnectionTestResult(
+            success=True,
+            latency_ms=30.0,
+            message="Connected via bearer auth",
+            adapter_name="RENERYO",
+            resources_discovered=("Meter-A",),
+        )
+        with patch(
+            "routers.config._create_adapter_from_config",
+        ) as mock_factory:
+            mock_adapter = AsyncMock()
+            mock_adapter.test_connection.return_value = mock_result
+            mock_factory.return_value = mock_adapter
+
+            response = client.post(
+                "/api/v1/config/platform/test",
+                json=payload,
+            )
+
+            call_args = mock_factory.call_args[0][0]
+            assert call_args.extra_settings.get("auth_type") == "bearer"
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+    def test_connection_test_without_auth_type_defaults_to_bearer(
+        self,
+        client: TestClient,
+    ) -> None:
+        """POST without auth_type in extra_settings defaults to bearer."""
+        payload = {
+            "platform_type": "reneryo",
+            "api_url": "https://api.reneryo.example.com",
+            "api_key": "api-key-value",
+            "extra_settings": {},
+        }
+        mock_result = ConnectionTestResult(
+            success=True,
+            latency_ms=25.0,
+            message="Connected",
+            adapter_name="RENERYO",
+            resources_discovered=(),
+        )
+        with patch(
+            "routers.config._create_adapter_from_config",
+        ) as mock_factory:
+            mock_adapter = AsyncMock()
+            mock_adapter.test_connection.return_value = mock_result
+            mock_factory.return_value = mock_adapter
+
+            response = client.post(
+                "/api/v1/config/platform/test",
+                json=payload,
+            )
+
+            # extra_settings should have no auth_type — adapter defaults
+            call_args = mock_factory.call_args[0][0]
+            assert call_args.extra_settings.get("auth_type", "bearer") == "bearer"
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
