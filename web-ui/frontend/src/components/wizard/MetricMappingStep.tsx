@@ -8,6 +8,7 @@ import {
   updateMetricMapping,
 } from "../../api/client";
 import type { CanonicalMetricName, MetricMapping, MetricMappingRequest } from "../../api/types";
+import Tooltip from "../common/Tooltip";
 import ErrorMessage from "../common/ErrorMessage";
 import LoadingSpinner from "../common/LoadingSpinner";
 import MetricMappingsTable from "../common/MetricMappingsTable";
@@ -204,9 +205,15 @@ export default function MetricMappingStep({ onComplete, onSkip }: MetricMappingS
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">
           Step 4 of 6
         </p>
-        <h2 className="m-0 mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">
-          Metric Mapping
-        </h2>
+        <div className="mt-2 inline-flex items-center gap-2">
+          <h2 className="m-0 text-2xl font-semibold text-slate-900 dark:text-slate-100">
+            Metric Mapping
+          </h2>
+          <Tooltip
+            content="Why is this needed? Canonical metrics must be linked to your platform fields for KPI calculations."
+            ariaLabel="Why metric mapping is needed"
+          />
+        </div>
         <p className="m-0 mt-2 text-sm text-slate-600 dark:text-slate-300">
           Map AVAROS canonical metrics to your platform API fields.
         </p>

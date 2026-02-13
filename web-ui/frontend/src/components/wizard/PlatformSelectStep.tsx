@@ -1,4 +1,5 @@
 import type { PlatformType } from "../../api/types";
+import Tooltip from "../common/Tooltip";
 
 type PlatformSelectStepProps = {
   value: PlatformType | null;
@@ -39,9 +40,15 @@ export default function PlatformSelectStep({
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">
           Step 2 of 6
         </p>
-        <h2 className="m-0 mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">
-          Select Your Platform
-        </h2>
+        <div className="mt-2 inline-flex items-center gap-2">
+          <h2 className="m-0 text-2xl font-semibold text-slate-900 dark:text-slate-100">
+            Select Your Platform
+          </h2>
+          <Tooltip
+            content="Why is this needed? AVAROS adapts request/metric flows based on the selected platform type."
+            ariaLabel="Why platform selection is needed"
+          />
+        </div>
       </header>
 
       <div className="brand-hero rounded-2xl p-6 backdrop-blur-sm">

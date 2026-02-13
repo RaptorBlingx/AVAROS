@@ -1,4 +1,5 @@
 import type { ConnectionTestResponse, PlatformType } from "../../api/types";
+import Tooltip from "../common/Tooltip";
 import ConnectionTestResult from "../common/ConnectionTestResult";
 
 type ConnectionSetupStepProps = {
@@ -48,9 +49,15 @@ export default function ConnectionSetupStep({
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">
           Step 3 of 6
         </p>
-        <h2 className="m-0 mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">
-          Connection Setup
-        </h2>
+        <div className="mt-2 inline-flex items-center gap-2">
+          <h2 className="m-0 text-2xl font-semibold text-slate-900 dark:text-slate-100">
+            Connection Setup
+          </h2>
+          <Tooltip
+            content="Why is this needed? AVAROS must validate endpoint reachability and credentials before activation."
+            ariaLabel="Why connection setup is needed"
+          />
+        </div>
       </header>
 
       <div className="brand-hero rounded-2xl p-6 backdrop-blur-sm">

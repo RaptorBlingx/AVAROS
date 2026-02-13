@@ -42,8 +42,8 @@ export default function Sidebar() {
           ? "nav-bubble-enter rounded-xl bg-gradient-to-r from-sky-700/95 via-cyan-600/90 to-emerald-600/90 px-3 py-2 text-sm font-medium text-white no-underline shadow-lg shadow-sky-950/35"
           : "nav-bubble-enter rounded-xl bg-gradient-to-r from-cyan-100 via-sky-100 to-emerald-100 px-3 py-2 text-sm font-semibold text-sky-900 no-underline shadow-sm shadow-cyan-100/80"
         : isDark
-          ? "rounded-xl px-3 py-2 text-sm text-slate-200 no-underline hover:bg-slate-800/70"
-          : "rounded-xl px-3 py-2 text-sm text-slate-700 no-underline hover:bg-sky-100/70",
+        ? "rounded-xl px-3 py-2 text-sm text-slate-200 no-underline hover:bg-slate-800/70"
+        : "rounded-xl px-3 py-2 text-sm text-slate-700 no-underline hover:bg-sky-100/70",
     [isDark],
   );
 
@@ -84,7 +84,9 @@ export default function Sidebar() {
     };
 
     document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("touchstart", handlePointerDown, { passive: true });
+    document.addEventListener("touchstart", handlePointerDown, {
+      passive: true,
+    });
     document.addEventListener("keydown", handleKeyDown);
 
     return () => {
@@ -137,9 +139,7 @@ export default function Sidebar() {
         </span>
         <span
           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-300 ${
-            isDark
-              ? "bg-sky-900/50"
-              : "bg-slate-100"
+            isDark ? "bg-sky-900/50" : "bg-slate-100"
           }`}
         >
           <span
@@ -148,6 +148,20 @@ export default function Sidebar() {
             }`}
           />
         </span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          window.dispatchEvent(new CustomEvent("avaros:rerun-onboarding"));
+        }}
+        className={`inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
+          theme === "dark"
+            ? "bg-slate-800/85 text-slate-100 hover:bg-slate-700/90"
+            : "bg-white/85 text-slate-700 hover:bg-white"
+        }`}
+      >
+        Re-run Onboarding
       </button>
 
       <button
@@ -174,7 +188,6 @@ export default function Sidebar() {
         </svg>
         {isRefreshing ? "Refreshing..." : "Refresh"}
       </button>
-
       <p
         className={`m-0 text-center text-xs md:text-left ${
           isDark ? "text-slate-400" : "text-slate-500"
@@ -264,7 +277,7 @@ export default function Sidebar() {
             : "pointer-events-none -translate-y-2 opacity-0"
         }`}
       >
-        <div className="px-4 pb-4">
+        <div className="px-4 pt-4 pb-4">
           <nav className="flex flex-col gap-2">
             <NavLink
               to="/"
@@ -315,6 +328,7 @@ export default function Sidebar() {
               to="/settings"
               className={({ isActive }) => navItemClass(isActive)}
               onClick={() => setIsMobileOpen(false)}
+              data-onboarding-target="settings-nav-link"
             >
               <span className="inline-flex items-center gap-2">
                 <svg
@@ -411,6 +425,7 @@ export default function Sidebar() {
           <NavLink
             to="/settings"
             className={({ isActive }) => navItemClass(isActive)}
+            data-onboarding-target="settings-nav-link"
           >
             <span className="inline-flex items-center gap-2">
               <svg
