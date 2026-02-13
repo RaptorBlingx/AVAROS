@@ -81,22 +81,38 @@ services:
       - avaros
 
   # =========================================================================
-  # Optional: Web UI for Configuration (Future)
+  # HiveMind-core (WebSocket Proxy for Voice — DEC-026)
   # =========================================================================
-  # web-ui:
-  #   build:
-  #     context: ./web
-  #     dockerfile: Dockerfile
-  #   container_name: avaros-web-ui
-  #   restart: unless-stopped
-  #   ports:
-  #     - "${WEB_PORT:-3000}:3000"
-  #   environment:
-  #     - AVAROS_API_URL=http://avaros:8080
-  #   networks:
-  #     - avaros-network
-  #   depends_on:
-  #     - avaros
+  hivemind:
+    build:
+      context: ./docker/hivemind
+      dockerfile: Dockerfile
+    container_name: avaros-hivemind
+    restart: unless-stopped
+    environment:
+      - OVOS_BUS_HOST=avaros-ovos-core
+      - OVOS_BUS_PORT=8181
+      - HIVEMIND_WS_PORT=5678
+      - HIVEMIND_CLIENT_NAME=${HIVEMIND_CLIENT_NAME:-avaros-web-client}
+      - HIVEMIND_ACCESS_KEY=${HIVEMIND_ACCESS_KEY:-}
+      - HIVEMIND_PASSWORD=${HIVEMIND_PASSWORD:-}
+    volumes:
+      - hivemind-data:/home/hivemind/.config/hivemind-core
+    ports:
+      - "${HIVEMIND_PORT:-5678}:5678"
+    networks:
+      - avaros-network
+    depends_on:
+      - ovos-core
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',5678)); s.close(); print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      - "com.avaros.service=hivemind"
+      - "com.avaros.description=WebSocket proxy for browser voice clients"
 
 # =========================================================================
 # Networks
@@ -119,3 +135,8 @@ volumes:
   ovos-config:
     driver: local
     name: ovos-config
+
+  # HiveMind client database
+  hivemind-data:
+    driver: local
+    name: hivemind-data
