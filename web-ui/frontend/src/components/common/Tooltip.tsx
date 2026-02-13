@@ -21,17 +21,18 @@ export default function Tooltip({ content, ariaLabel, className = "" }: TooltipP
     const wrapperRect = wrapperRef.current.getBoundingClientRect();
     const bubbleRect = bubbleRef.current.getBoundingClientRect();
 
-    const overflowLeft = Math.max(0, 8 - bubbleRect.left);
-    const overflowRight = Math.max(0, bubbleRect.right - (window.innerWidth - 8));
-    const shift = overflowLeft > 0 ? overflowLeft : overflowRight > 0 ? -overflowRight : 0;
+    const centeredLeft = wrapperRect.width / 2 - bubbleRect.width / 2;
+    const absoluteLeft = wrapperRect.left + centeredLeft;
+    const minLeft = 8;
+    const maxLeft = window.innerWidth - bubbleRect.width - 8;
+    const clampedAbsoluteLeft = Math.min(maxLeft, Math.max(minLeft, absoluteLeft));
+    setLeftOffset(clampedAbsoluteLeft - wrapperRect.left);
+  }, [isOpen]);
 
-    if (shift !== 0) {
-      setLeftOffset((prev) => prev + shift);
-      return;
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      setLeftOffset(0);
     }
-
-    const centeredLeft = wrapperRect.left + wrapperRect.width / 2 - bubbleRect.width / 2;
-    setLeftOffset(centeredLeft - wrapperRect.left);
   }, [isOpen]);
 
   return (

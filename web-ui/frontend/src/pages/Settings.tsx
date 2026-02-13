@@ -3,6 +3,11 @@ import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
 import OnboardingOverlay from "../components/common/OnboardingOverlay";
+import {
+  ONBOARDING_RERUN_EVENT,
+  shouldOpenOnboardingForScope,
+  type OnboardingRerunDetail,
+} from "../components/common/onboarding";
 import Toast from "../components/common/Toast";
 import type { ToastItem } from "../components/common/Toast";
 import Tooltip from "../components/common/Tooltip";
@@ -95,6 +100,11 @@ export default function Settings() {
         selector: '[data-onboarding-target="settings-metric-mappings"]',
       },
       {
+        title: "Emission Factors",
+        description: "Configure CO2 conversion factors with custom values or country presets.",
+        selector: '[data-onboarding-target="settings-emission-factors"]',
+      },
+      {
         title: "Intent Activation",
         description: "Enable operational intents once required metrics are available.",
         selector: '[data-onboarding-target="settings-intent-activation"]',
@@ -109,9 +119,14 @@ export default function Settings() {
   );
 
   useEffect(() => {
-    const onRerun = () => setOnboardingOpen(true);
-    window.addEventListener("avaros:rerun-onboarding", onRerun);
-    return () => window.removeEventListener("avaros:rerun-onboarding", onRerun);
+    const onRerun = (event: Event) => {
+      const detail = (event as CustomEvent<OnboardingRerunDetail>).detail;
+      if (detail && shouldOpenOnboardingForScope(detail.scope, "settings")) {
+        setOnboardingOpen(true);
+      }
+    };
+    window.addEventListener(ONBOARDING_RERUN_EVENT, onRerun);
+    return () => window.removeEventListener(ONBOARDING_RERUN_EVENT, onRerun);
   }, []);
 
   return (

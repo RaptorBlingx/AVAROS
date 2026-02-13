@@ -19,7 +19,13 @@ import MetricMappingStep from "../components/wizard/MetricMappingStep";
 import PlatformSelectStep from "../components/wizard/PlatformSelectStep";
 import SuccessScreen from "../components/wizard/SuccessScreen";
 import WelcomeStep from "../components/wizard/WelcomeStep";
+import OnboardingOverlay from "../components/common/OnboardingOverlay";
 import Tooltip from "../components/common/Tooltip";
+import {
+  ONBOARDING_RERUN_EVENT,
+  shouldOpenOnboardingForScope,
+  type OnboardingRerunDetail,
+} from "../components/common/onboarding";
 
 type StepNumber = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -88,6 +94,7 @@ export default function Wizard() {
   const [isSaving, setIsSaving] = useState(false);
   const [successStatus, setSuccessStatus] = useState<SystemStatusResponse | null>(null);
   const [completedSteps, setCompletedSteps] = useState<Set<StepNumber>>(new Set());
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
 
   const [headerError, setHeaderError] = useState("");
   const [nextBlocked, setNextBlocked] = useState(false);
@@ -146,6 +153,17 @@ export default function Wizard() {
   useEffect(() => {
     setHeaderError("");
   }, [state.currentStep]);
+
+  useEffect(() => {
+    const onRerun = (event: Event) => {
+      const detail = (event as CustomEvent<OnboardingRerunDetail>).detail;
+      if (detail && shouldOpenOnboardingForScope(detail.scope, "wizard")) {
+        setOnboardingOpen(true);
+      }
+    };
+    window.addEventListener(ONBOARDING_RERUN_EVENT, onRerun);
+    return () => window.removeEventListener(ONBOARDING_RERUN_EVENT, onRerun);
+  }, []);
 
   const stepLabel = useMemo(() => {
     if (state.currentStep === 1) return "Setup";
@@ -381,7 +399,10 @@ export default function Wizard() {
 
   return (
     <section className="mx-auto w-full max-w-4xl space-y-4">
-      <div className="brand-hero rounded-xl px-4 py-3 text-sm text-slate-600 backdrop-blur-sm dark:text-slate-300">
+      <div
+        className="brand-hero rounded-xl px-4 py-3 text-sm text-slate-600 backdrop-blur-sm dark:text-slate-300"
+        data-onboarding-target="wizard-header"
+      >
         <div className="flex items-center justify-between gap-3">
           <p className="m-0 inline-flex items-center gap-2">
             <span className="font-semibold text-slate-900 dark:text-slate-100">
@@ -427,7 +448,7 @@ export default function Wizard() {
           </p>
         )}
 
-        <div className="mt-3 overflow-x-auto">
+        <div className="mt-3 overflow-x-auto" data-onboarding-target="wizard-stepper">
           <div className="flex min-w-[640px] gap-2 sm:min-w-0 sm:grid sm:grid-cols-3 lg:grid-cols-6">
           {stepItems.map((item, index) => {
             const stepNumber = (index + 1) as StepNumber;
@@ -456,7 +477,29 @@ export default function Wizard() {
         </div>
       </div>
 
-      {content}
+      <div data-onboarding-target="wizard-content">{content}</div>
+
+      <OnboardingOverlay
+        open={onboardingOpen}
+        steps={[
+          {
+            title: "Wizard Overview",
+            description: "Use this guided flow to configure AVAROS end-to-end in a safe order.",
+            selector: '[data-onboarding-target="wizard-header"]',
+          },
+          {
+            title: "Progress Stepper",
+            description: "Track your position and navigate between setup steps with Back and Next controls.",
+            selector: '[data-onboarding-target="wizard-stepper"]',
+          },
+          {
+            title: "Step Content",
+            description: "Each panel collects one required configuration area before activation.",
+            selector: '[data-onboarding-target="wizard-content"]',
+          },
+        ]}
+        onClose={() => setOnboardingOpen(false)}
+      />
     </section>
   );
 }

@@ -19,6 +19,12 @@ import type {
 import EmptyState from "../components/common/EmptyState";
 import ErrorMessage from "../components/common/ErrorMessage";
 import LoadingSpinner from "../components/common/LoadingSpinner";
+import OnboardingOverlay from "../components/common/OnboardingOverlay";
+import {
+  ONBOARDING_RERUN_EVENT,
+  shouldOpenOnboardingForScope,
+  type OnboardingRerunDetail,
+} from "../components/common/onboarding";
 import KPITrendChart from "../components/kpi/KPITrendChart";
 import KPITargetCard from "../components/kpi/KPITargetCard";
 import {
@@ -39,6 +45,7 @@ export default function KPIDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showEmpty, setShowEmpty] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
 
   const [siteProgress, setSiteProgress] = useState<SiteProgressResponse | null>(null);
   const [baselines, setBaselines] = useState<BaselineResponse[]>([]);
@@ -115,6 +122,17 @@ export default function KPIDashboard() {
     void loadKPIData();
   }, [loadKPIData]);
 
+  useEffect(() => {
+    const onRerun = (event: Event) => {
+      const detail = (event as CustomEvent<OnboardingRerunDetail>).detail;
+      if (detail && shouldOpenOnboardingForScope(detail.scope, "kpi")) {
+        setOnboardingOpen(true);
+      }
+    };
+    window.addEventListener(ONBOARDING_RERUN_EVENT, onRerun);
+    return () => window.removeEventListener(ONBOARDING_RERUN_EVENT, onRerun);
+  }, []);
+
   const progressMap = useMemo(() => {
     const map = new Map<string, KPIProgressItem>();
     for (const item of siteProgress?.progress ?? []) {
@@ -135,7 +153,7 @@ export default function KPIDashboard() {
 
   return (
     <section className="space-y-5">
-      <header className="brand-hero relative overflow-hidden rounded-2xl p-6">
+      <header className="brand-hero relative overflow-hidden rounded-2xl p-6" data-onboarding-target="kpi-header">
         <div className="pointer-events-none absolute -right-12 -top-14 h-36 w-36 rounded-full bg-cyan-300/35 blur-3xl dark:bg-cyan-400/15" />
         <div className="pointer-events-none absolute -bottom-16 left-10 h-28 w-28 rounded-full bg-emerald-300/30 blur-2xl dark:bg-emerald-400/15" />
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -161,6 +179,7 @@ export default function KPIDashboard() {
             <select
               value={period}
               onChange={(event) => setPeriod(event.target.value as PeriodOption)}
+              data-onboarding-target="kpi-period-selector"
               className="btn-brand-subtle rounded-lg px-3 py-2 text-sm font-medium text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:text-slate-100"
             >
               {PERIOD_OPTIONS.map((option) => (
@@ -201,7 +220,7 @@ export default function KPIDashboard() {
 
       {!loading && !error && !showEmpty && (
         <>
-          <div className="brand-panel rounded-2xl p-4">
+          <div className="brand-panel rounded-2xl p-4" data-onboarding-target="kpi-target-cards">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="m-0 text-base font-semibold text-slate-900 dark:text-slate-100">
                 Target Progress
@@ -227,7 +246,7 @@ export default function KPIDashboard() {
             </div>
           </div>
 
-          <div className="space-y-4 reveal-stagger">
+          <div className="space-y-4 reveal-stagger" data-onboarding-target="kpi-trend-charts">
             {KPI_METRICS.map((meta) => {
               const metricProgress = progressMap.get(meta.metric);
               const baseline = metricProgress?.baseline_value ?? 0;
@@ -268,6 +287,33 @@ export default function KPIDashboard() {
           </div>
         </>
       )}
+
+      <OnboardingOverlay
+        open={onboardingOpen}
+        steps={[
+          {
+            title: "KPI Dashboard Overview",
+            description: "This page tracks WASABI KPI performance for the selected site.",
+            selector: '[data-onboarding-target="kpi-header"]',
+          },
+          {
+            title: "Target Cards",
+            description: "Review current baseline vs current values and target attainment per KPI.",
+            selector: '[data-onboarding-target="kpi-target-cards"]',
+          },
+          {
+            title: "Period Filter",
+            description: "Change the period to load snapshots for different time windows.",
+            selector: '[data-onboarding-target="kpi-period-selector"]',
+          },
+          {
+            title: "Trend Charts",
+            description: "Inspect historical progression with baseline and target reference lines.",
+            selector: '[data-onboarding-target="kpi-trend-charts"]',
+          },
+        ]}
+        onClose={() => setOnboardingOpen(false)}
+      />
     </section>
   );
 }

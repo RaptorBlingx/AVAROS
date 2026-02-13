@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 type OnboardingStep = {
@@ -11,6 +11,7 @@ type OnboardingOverlayProps = {
   open: boolean;
   steps: readonly OnboardingStep[];
   onClose: () => void;
+  onStepChange?: (stepIndex: number) => void;
 };
 
 type Box = {
@@ -25,18 +26,35 @@ function findVisibleTarget(selector: string): HTMLElement | null {
   return nodes.find((node) => node.offsetWidth > 0 && node.offsetHeight > 0) ?? null;
 }
 
-export default function OnboardingOverlay({ open, steps, onClose }: OnboardingOverlayProps) {
+export default function OnboardingOverlay({
+  open,
+  steps,
+  onClose,
+  onStepChange,
+}: OnboardingOverlayProps) {
   const [stepIndex, setStepIndex] = useState(0);
   const [targetBox, setTargetBox] = useState<Box | null>(null);
+  const initialScrollYRef = useRef<number | null>(null);
 
   const currentStep = steps[stepIndex] ?? null;
 
   useEffect(() => {
+    if (open && initialScrollYRef.current === null) {
+      initialScrollYRef.current = window.scrollY;
+    }
+
     if (!open) {
       setStepIndex(0);
       setTargetBox(null);
+      initialScrollYRef.current = null;
     }
   }, [open]);
+
+  useEffect(() => {
+    if (open) {
+      onStepChange?.(stepIndex);
+    }
+  }, [onStepChange, open, stepIndex]);
 
   useEffect(() => {
     if (!open || !currentStep) {
@@ -73,18 +91,50 @@ export default function OnboardingOverlay({ open, steps, onClose }: OnboardingOv
     if (!open) {
       return;
     }
-    const previousOverflow = document.body.style.overflow;
-    const previousPaddingRight = document.body.style.paddingRight;
-    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-    document.body.style.overflow = "hidden";
-    if (scrollbarWidth > 0) {
-      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    const target = currentStep ? findVisibleTarget(currentStep.selector) : null;
+    if (!target) {
+      return;
     }
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.body.style.paddingRight = previousPaddingRight;
+
+    const rect = target.getBoundingClientRect();
+    const topSafe = 90;
+    const bottomSafe = window.innerHeight - 140;
+    if (rect.top < topSafe) {
+      const delta = rect.top - topSafe;
+      window.scrollBy({ top: delta, behavior: "auto" });
+      return;
+    }
+    if (rect.bottom > bottomSafe) {
+      const delta = rect.bottom - bottomSafe;
+      window.scrollBy({ top: delta, behavior: "auto" });
+    }
+  }, [currentStep, open]);
+
+  const closeTour = useCallback(() => {
+    const initialScrollY = initialScrollYRef.current;
+    if (typeof initialScrollY === "number") {
+      window.scrollTo({ top: initialScrollY, behavior: "auto" });
+    }
+    onClose();
+    if (typeof initialScrollY === "number") {
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ top: initialScrollY, behavior: "auto" });
+      });
+    }
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeTour();
+      }
     };
-  }, [open]);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [closeTour, open]);
 
   const panelPosition = useMemo(() => {
     if (!targetBox) {
@@ -156,7 +206,7 @@ export default function OnboardingOverlay({ open, steps, onClose }: OnboardingOv
         <div className="mt-4 flex items-center justify-between gap-2">
           <button
             type="button"
-            onClick={onClose}
+            onClick={closeTour}
             className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
           >
             Close Tour
@@ -165,7 +215,7 @@ export default function OnboardingOverlay({ open, steps, onClose }: OnboardingOv
             type="button"
             onClick={() => {
               if (isLast) {
-                onClose();
+                closeTour();
                 return;
               }
               setStepIndex((prev) => prev + 1);

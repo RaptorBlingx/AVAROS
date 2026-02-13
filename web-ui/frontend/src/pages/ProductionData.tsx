@@ -17,6 +17,12 @@ import ProductionDataTable from "../components/production/ProductionDataTable";
 import DatePickerInput from "../components/common/DatePickerInput";
 import ErrorMessage from "../components/common/ErrorMessage";
 import LoadingSpinner from "../components/common/LoadingSpinner";
+import OnboardingOverlay from "../components/common/OnboardingOverlay";
+import {
+  ONBOARDING_RERUN_EVENT,
+  shouldOpenOnboardingForScope,
+  type OnboardingRerunDetail,
+} from "../components/common/onboarding";
 import Toast from "../components/common/Toast";
 import type { ToastItem } from "../components/common/Toast";
 
@@ -56,6 +62,7 @@ export default function ProductionData() {
   const [summary, setSummary] = useState<ProductionSummaryResponse | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [filterDateError, setFilterDateError] = useState<string>("");
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
 
   const notify = useCallback((type: "success" | "error", message: string) => {
     setToasts((prev) => [
@@ -133,6 +140,17 @@ export default function ProductionData() {
     void loadSummary();
   }, [loadSummary]);
 
+  useEffect(() => {
+    const onRerun = (event: Event) => {
+      const detail = (event as CustomEvent<OnboardingRerunDetail>).detail;
+      if (detail && shouldOpenOnboardingForScope(detail.scope, "production")) {
+        setOnboardingOpen(true);
+      }
+    };
+    window.addEventListener(ONBOARDING_RERUN_EVENT, onRerun);
+    return () => window.removeEventListener(ONBOARDING_RERUN_EVENT, onRerun);
+  }, []);
+
   const paginatedRecords = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE;
     return records.slice(start, start + PAGE_SIZE);
@@ -175,11 +193,56 @@ export default function ProductionData() {
     setAppliedEndDateFilter("");
   }, []);
 
+  const onboardingSteps = useMemo(() => {
+    const commonSteps = [
+      {
+        title: "Production Data Overview",
+        description: "Upload CSV files or enter production records manually from this page.",
+        selector: '[data-onboarding-target="production-header"]',
+      },
+      {
+        title: "CSV and Manual Tabs",
+        description: "Choose CSV upload or manual entry based on your operator workflow.",
+        selector: '[data-onboarding-target="production-tabs"]',
+      },
+    ];
+
+    if (activeTab === "manual") {
+      return [
+        ...commonSteps,
+        {
+          title: "Add Manual Entry",
+          description: "Fill record date, asset, counts, material, and notes to create an entry.",
+          selector: '[data-onboarding-target="production-manual-form"]',
+        },
+        {
+          title: "Filters and Summary",
+          description: "Filter by asset/date range and review summary statistics for the selection.",
+          selector: '[data-onboarding-target="production-filters"]',
+        },
+        {
+          title: "Production Records",
+          description: "Review saved entries and remove incorrect records from the data table.",
+          selector: '[data-onboarding-target="production-data-table"]',
+        },
+      ] as const;
+    }
+
+    return [
+      ...commonSteps,
+      {
+        title: "CSV Upload",
+        description: "Import production records from ERP/MES exports using drag-and-drop CSV upload.",
+        selector: '[data-onboarding-target="production-csv-upload"]',
+      },
+    ] as const;
+  }, [activeTab]);
+
   return (
     <section className="space-y-4">
       <Toast toasts={toasts} onDismiss={dismissToast} />
 
-      <header className="brand-hero rounded-2xl p-6">
+      <header className="brand-hero rounded-2xl p-6" data-onboarding-target="production-header">
         <p className="m-0 brand-title-gradient text-xs font-semibold uppercase tracking-[0.14em]">
           AVAROS Control Panel
         </p>
@@ -191,7 +254,7 @@ export default function ProductionData() {
         </p>
       </header>
 
-      <div className="brand-panel rounded-2xl p-4">
+      <div className="brand-panel rounded-2xl p-4" data-onboarding-target="production-tabs">
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -219,10 +282,12 @@ export default function ProductionData() {
       </div>
 
       {activeTab === "csv" ? (
-        <CSVUploadPanel onUploadComplete={() => void loadRecords()} onNotify={notify} />
+        <div data-onboarding-target="production-csv-upload">
+          <CSVUploadPanel onUploadComplete={() => void loadRecords()} onNotify={notify} />
+        </div>
       ) : (
         <>
-          <div className="brand-panel rounded-2xl p-4">
+          <div className="brand-panel rounded-2xl p-4" data-onboarding-target="production-manual-form">
             <h3 className="m-0 text-sm font-semibold text-slate-900 dark:text-slate-100">
               Add Manual Entry
             </h3>
@@ -231,7 +296,7 @@ export default function ProductionData() {
             </div>
           </div>
 
-          <div className="brand-panel rounded-2xl p-4">
+          <div className="brand-panel rounded-2xl p-4" data-onboarding-target="production-filters">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
               <label className="block text-sm">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
@@ -350,22 +415,30 @@ export default function ProductionData() {
             </div>
           </div>
 
-          {listError ? (
-            <ErrorMessage message={listError} onRetry={() => void loadRecords()} />
-          ) : (
-            <ProductionDataTable
-              records={paginatedRecords}
-              total={total}
-              page={page}
-              pageSize={PAGE_SIZE}
-              loading={listLoading}
-              deletingId={deletingId}
-              onPageChange={setPage}
-              onDelete={(id) => void handleDelete(id)}
-            />
-          )}
+          <div data-onboarding-target="production-data-table">
+            {listError ? (
+              <ErrorMessage message={listError} onRetry={() => void loadRecords()} />
+            ) : (
+              <ProductionDataTable
+                records={paginatedRecords}
+                total={total}
+                page={page}
+                pageSize={PAGE_SIZE}
+                loading={listLoading}
+                deletingId={deletingId}
+                onPageChange={setPage}
+                onDelete={(id) => void handleDelete(id)}
+              />
+            )}
+          </div>
         </>
       )}
+
+      <OnboardingOverlay
+        open={onboardingOpen}
+        steps={onboardingSteps}
+        onClose={() => setOnboardingOpen(false)}
+      />
     </section>
   );
 }

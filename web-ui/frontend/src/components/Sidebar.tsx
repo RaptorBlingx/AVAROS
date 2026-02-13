@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 
 import { getHealth, toFriendlyErrorMessage } from "../api/client";
 import initialLightLogo from "../assets/logo.svg";
 import initialDarkLogo from "../assets/logodark.svg";
+import {
+  dispatchOnboardingRerun,
+  resolveOnboardingScope,
+} from "./common/onboarding";
 import { useTheme } from "./common/ThemeProvider";
 
 export default function Sidebar() {
+  const location = useLocation();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [version, setVersion] = useState<string>("--");
@@ -153,7 +158,7 @@ export default function Sidebar() {
       <button
         type="button"
         onClick={() => {
-          window.dispatchEvent(new CustomEvent("avaros:rerun-onboarding"));
+          dispatchOnboardingRerun(resolveOnboardingScope(location.pathname));
         }}
         className={`inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
           theme === "dark"

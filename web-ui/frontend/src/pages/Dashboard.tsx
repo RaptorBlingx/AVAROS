@@ -8,6 +8,12 @@ import ErrorMessage from "../components/common/ErrorMessage";
 import KPISummaryCard from "../components/common/KPISummaryCard";
 import LoadingSpinner from "../components/common/LoadingSpinner";
 import OnboardingOverlay from "../components/common/OnboardingOverlay";
+import {
+  ONBOARDING_RERUN_EVENT,
+  ONBOARDING_STORAGE_KEY,
+  shouldOpenOnboardingForScope,
+  type OnboardingRerunDetail,
+} from "../components/common/onboarding";
 import StatusCard from "../components/StatusCard";
 import { useTheme } from "../components/common/ThemeProvider";
 import {
@@ -15,8 +21,6 @@ import {
   DASHBOARD_ONBOARDING_STEPS,
   KPI_SUMMARY_ITEMS,
 } from "./dashboard.helpers";
-
-const ONBOARDING_STORAGE_KEY = "avaros_onboarding_complete";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -67,9 +71,14 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    const onRerun = () => setOnboardingOpen(true);
-    window.addEventListener("avaros:rerun-onboarding", onRerun);
-    return () => window.removeEventListener("avaros:rerun-onboarding", onRerun);
+    const onRerun = (event: Event) => {
+      const detail = (event as CustomEvent<OnboardingRerunDetail>).detail;
+      if (detail && shouldOpenOnboardingForScope(detail.scope, "dashboard")) {
+        setOnboardingOpen(true);
+      }
+    };
+    window.addEventListener(ONBOARDING_RERUN_EVENT, onRerun);
+    return () => window.removeEventListener(ONBOARDING_RERUN_EVENT, onRerun);
   }, []);
 
   const healthy = useMemo(() => health?.status === "ok", [health]);
