@@ -23,11 +23,16 @@ RUN apt-get update && \
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash hivemind
 
-# Install hivemind-core (Apache-2.0 licensed version)
+# Install HiveMind runtime dependencies.
+# NOTE: hivemind-websocket-plugin / hivemind-ovos-agent-plugin are plugin IDs,
+# not PyPI package names. The corresponding PyPI packages are:
+# - hivemind-websocket-protocol
+# - ovos-bus-client (+ hivemind-bus-client)
 RUN pip install --no-cache-dir \
-    "hivemind-core>=3.4.0,<4.0.0" \
-    "hivemind-websocket-plugin>=0.0.1" \
-    "hivemind-ovos-agent-plugin>=0.0.1"
+    "hivemind-core==3.4.0" \
+    "hivemind-websocket-protocol>=0.0.3,<0.1.0" \
+    "hivemind-bus-client>=0.4.4" \
+    "ovos-bus-client>=1.3.2"
 
 # Copy entrypoint script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

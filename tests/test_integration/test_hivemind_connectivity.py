@@ -13,10 +13,11 @@ Tests:
 """
 
 import json
+import base64
 import os
 import socket
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+import asyncio
 
 import pytest
 
@@ -36,6 +37,8 @@ ENV_EXAMPLE = PROJECT_ROOT / ".env.example"
 
 # Default HiveMind port
 HIVEMIND_PORT = int(os.environ.get("HIVEMIND_PORT", "5678"))
+HIVEMIND_CLIENT_NAME = os.environ.get("HIVEMIND_CLIENT_NAME", "avaros-web-client")
+HIVEMIND_CLIENT_KEY = os.environ.get("HIVEMIND_CLIENT_KEY", os.environ.get("HIVEMIND_ACCESS_KEY", "avaros-web-client"))
 
 
 # ===================================================================
@@ -188,6 +191,21 @@ class TestEnvExample:
         content = ENV_EXAMPLE.read_text()
         assert "HIVEMIND_CLIENT_NAME" in content
 
+    def test_env_example_has_hivemind_master_key(self) -> None:
+        """.env.example documents HIVEMIND_MASTER_KEY."""
+        content = ENV_EXAMPLE.read_text()
+        assert "HIVEMIND_MASTER_KEY" in content
+
+    def test_env_example_has_hivemind_client_key(self) -> None:
+        """.env.example documents HIVEMIND_CLIENT_KEY."""
+        content = ENV_EXAMPLE.read_text()
+        assert "HIVEMIND_CLIENT_KEY" in content
+
+    def test_env_example_has_hivemind_client_secret(self) -> None:
+        """.env.example documents HIVEMIND_CLIENT_SECRET."""
+        content = ENV_EXAMPLE.read_text()
+        assert "HIVEMIND_CLIENT_SECRET" in content
+
     def test_env_example_has_hivemind_access_key(self) -> None:
         """.env.example documents HIVEMIND_ACCESS_KEY."""
         content = ENV_EXAMPLE.read_text()
@@ -221,6 +239,31 @@ def _hivemind_port_open() -> bool:
         return False
 
 
+def _build_auth_token(client_name: str, access_key: str) -> str:
+    """Build websocket authorization token expected by HiveMind websocket plugin."""
+    raw = f"{client_name}:{access_key}".encode("utf-8")
+    return base64.b64encode(raw).decode("utf-8")
+
+
+def _build_bus_utterance_message(utterance: str) -> str:
+    """Build minimal HiveMessage(BUS) payload for recognizer_loop:utterance."""
+    payload = {
+        "msg_type": "bus",
+        "payload": {
+            "type": "recognizer_loop:utterance",
+            "data": {"utterances": [utterance]},
+            "context": {"source": "pytest-hivemind", "destination": "skills"},
+        },
+        "metadata": {},
+        "route": [],
+        "node": None,
+        "target_site_id": None,
+        "target_pubkey": None,
+        "source_peer": None,
+    }
+    return json.dumps(payload)
+
+
 hivemind_running = pytest.mark.skipif(
     not _hivemind_port_open(),
     reason=f"HiveMind not running on localhost:{HIVEMIND_PORT}",
@@ -240,15 +283,15 @@ class TestHiveMindConnectivity:
 
     @hivemind_running
     def test_websocket_connection(self) -> None:
-        """Can establish WebSocket connection to HiveMind."""
-        import asyncio
+        """Can establish authenticated WebSocket connection to HiveMind."""
 
         async def _connect() -> bool:
             try:
                 import websockets
 
+                token = _build_auth_token(HIVEMIND_CLIENT_NAME, HIVEMIND_CLIENT_KEY)
                 async with websockets.connect(
-                    f"ws://localhost:{HIVEMIND_PORT}",
+                    f"ws://localhost:{HIVEMIND_PORT}/?authorization={token}",
                     open_timeout=5,
                 ) as ws:
                     return ws.open
@@ -261,13 +304,12 @@ class TestHiveMindConnectivity:
     @hivemind_running
     def test_websocket_receives_handshake(self) -> None:
         """HiveMind sends handshake message after WebSocket connect."""
-        import asyncio
-
         async def _receive_handshake() -> dict:
             import websockets
 
+            token = _build_auth_token(HIVEMIND_CLIENT_NAME, HIVEMIND_CLIENT_KEY)
             async with websockets.connect(
-                f"ws://localhost:{HIVEMIND_PORT}",
+                f"ws://localhost:{HIVEMIND_PORT}/?authorization={token}",
                 open_timeout=5,
             ) as ws:
                 raw = await asyncio.wait_for(ws.recv(), timeout=10)
@@ -277,19 +319,102 @@ class TestHiveMindConnectivity:
         assert isinstance(msg, dict), "Handshake must be valid JSON"
 
     @hivemind_running
+    def test_websocket_authentication(self) -> None:
+        """Valid key succeeds; invalid key is rejected."""
+
+        async def _check() -> tuple:
+            import websockets
+
+            valid = _build_auth_token(HIVEMIND_CLIENT_NAME, HIVEMIND_CLIENT_KEY)
+            invalid = _build_auth_token("pytest-invalid", "invalid-key")
+
+            valid_ok = False
+            invalid_rejected = False
+
+            try:
+                async with websockets.connect(
+                    f"ws://localhost:{HIVEMIND_PORT}/?authorization={valid}",
+                    open_timeout=5,
+                ) as ws:
+                    await asyncio.wait_for(ws.recv(), timeout=10)
+                    valid_ok = ws.open
+            except Exception:
+                valid_ok = False
+
+            try:
+                async with websockets.connect(
+                    f"ws://localhost:{HIVEMIND_PORT}/?authorization={invalid}",
+                    open_timeout=5,
+                ) as ws:
+                    try:
+                        await asyncio.wait_for(ws.recv(), timeout=3)
+                        invalid_rejected = False
+                    except Exception:
+                        invalid_rejected = True
+            except Exception:
+                invalid_rejected = True
+
+            return valid_ok, invalid_rejected
+
+        valid_ok, invalid_rejected = asyncio.run(_check())
+        assert valid_ok, "Valid-key websocket authentication failed"
+        assert invalid_rejected, "Invalid-key websocket authentication should be rejected"
+
+    @hivemind_running
+    def test_message_roundtrip(self) -> None:
+        """Send utterance and receive speak response via HiveMind."""
+
+        async def _roundtrip() -> bool:
+            import websockets
+
+            token = _build_auth_token(HIVEMIND_CLIENT_NAME, HIVEMIND_CLIENT_KEY)
+            uri = f"ws://localhost:{HIVEMIND_PORT}/?authorization={token}"
+
+            async with websockets.connect(uri, open_timeout=5) as ws:
+                for _ in range(3):
+                    try:
+                        await asyncio.wait_for(ws.recv(), timeout=2)
+                    except Exception:
+                        break
+
+                await ws.send(_build_bus_utterance_message("what is the status"))
+
+                deadline = asyncio.get_event_loop().time() + 20
+                while asyncio.get_event_loop().time() < deadline:
+                    remaining = max(0.5, deadline - asyncio.get_event_loop().time())
+                    raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
+                    try:
+                        msg = json.loads(raw)
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+
+                    if msg.get("msg_type") != "bus":
+                        continue
+
+                    payload = msg.get("payload", {})
+                    if payload.get("type") == "speak":
+                        return True
+
+            return False
+
+        result = asyncio.run(_roundtrip())
+        assert result, "Roundtrip failed: expected 'speak' after utterance"
+
+    @hivemind_running
     def test_session_isolation_two_clients(self) -> None:
         """Two concurrent WebSocket clients get independent connections."""
-        import asyncio
-
         async def _dual_connect() -> tuple:
             import websockets
 
+            token_a = _build_auth_token(f"{HIVEMIND_CLIENT_NAME}-a", HIVEMIND_CLIENT_KEY)
+            token_b = _build_auth_token(f"{HIVEMIND_CLIENT_NAME}-b", HIVEMIND_CLIENT_KEY)
+
             async with websockets.connect(
-                f"ws://localhost:{HIVEMIND_PORT}",
+                f"ws://localhost:{HIVEMIND_PORT}/?authorization={token_a}",
                 open_timeout=5,
             ) as ws1:
                 async with websockets.connect(
-                    f"ws://localhost:{HIVEMIND_PORT}",
+                    f"ws://localhost:{HIVEMIND_PORT}/?authorization={token_b}",
                     open_timeout=5,
                 ) as ws2:
                     return ws1.open, ws2.open

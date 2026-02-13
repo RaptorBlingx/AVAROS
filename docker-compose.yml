@@ -90,10 +90,13 @@ services:
     container_name: avaros-hivemind
     restart: unless-stopped
     environment:
+      - HIVEMIND_MASTER_KEY=${HIVEMIND_MASTER_KEY:-avaros-dev-key-change-in-production}
       - OVOS_BUS_HOST=avaros-ovos-core
       - OVOS_BUS_PORT=8181
       - HIVEMIND_WS_PORT=5678
       - HIVEMIND_CLIENT_NAME=${HIVEMIND_CLIENT_NAME:-avaros-web-client}
+      - HIVEMIND_CLIENT_KEY=${HIVEMIND_CLIENT_KEY:-avaros-web-client}
+      - HIVEMIND_CLIENT_SECRET=${HIVEMIND_CLIENT_SECRET:-avaros-web-secret-change-in-production}
       - HIVEMIND_ACCESS_KEY=${HIVEMIND_ACCESS_KEY:-}
       - HIVEMIND_PASSWORD=${HIVEMIND_PASSWORD:-}
     volumes:

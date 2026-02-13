@@ -9,9 +9,12 @@
 #   OVOS_BUS_HOST          — OVOS messagebus hostname (default: ovos_core)
 #   OVOS_BUS_PORT          — OVOS messagebus port (default: 8181)
 #   HIVEMIND_WS_PORT       — HiveMind WebSocket port (default: 5678)
+#   HIVEMIND_MASTER_KEY    — Reserved master/admin key (task contract)
 #   HIVEMIND_CLIENT_NAME   — Default client name (default: avaros-web-client)
-#   HIVEMIND_ACCESS_KEY    — Default client access key (default: auto-generated)
-#   HIVEMIND_PASSWORD      — Default client password (default: auto-generated)
+#   HIVEMIND_CLIENT_KEY    — Default client access key
+#   HIVEMIND_CLIENT_SECRET — Default client password/secret
+#   HIVEMIND_ACCESS_KEY    — Legacy alias for HIVEMIND_CLIENT_KEY
+#   HIVEMIND_PASSWORD      — Legacy alias for HIVEMIND_CLIENT_SECRET
 
 set -e
 
@@ -22,13 +25,15 @@ MARKER_FILE="${CONFIG_DIR}/.initialized"
 OVOS_BUS_HOST="${OVOS_BUS_HOST:-ovos_core}"
 OVOS_BUS_PORT="${OVOS_BUS_PORT:-8181}"
 HIVEMIND_WS_PORT="${HIVEMIND_WS_PORT:-5678}"
+HIVEMIND_MASTER_KEY="${HIVEMIND_MASTER_KEY:-avaros-dev-key-change-in-production}"
 HIVEMIND_CLIENT_NAME="${HIVEMIND_CLIENT_NAME:-avaros-web-client}"
-HIVEMIND_ACCESS_KEY="${HIVEMIND_ACCESS_KEY:-}"
-HIVEMIND_PASSWORD="${HIVEMIND_PASSWORD:-}"
+HIVEMIND_CLIENT_KEY="${HIVEMIND_CLIENT_KEY:-${HIVEMIND_ACCESS_KEY:-}}"
+HIVEMIND_CLIENT_SECRET="${HIVEMIND_CLIENT_SECRET:-${HIVEMIND_PASSWORD:-}}"
 
 echo "=== AVAROS HiveMind-core Entrypoint ==="
 echo "OVOS Bus: ${OVOS_BUS_HOST}:${OVOS_BUS_PORT}"
 echo "WebSocket port: ${HIVEMIND_WS_PORT}"
+echo "Master key configured: yes"
 
 # --- Write server.json ---
 mkdir -p "${CONFIG_DIR}"
@@ -67,20 +72,19 @@ echo "Server config written to ${CONFIG_FILE}"
 if [ ! -f "${MARKER_FILE}" ]; then
     echo "First start: creating default client '${HIVEMIND_CLIENT_NAME}'..."
 
-    # Build the add-client command
-    ADD_CMD="hivemind-core add-client --name ${HIVEMIND_CLIENT_NAME}"
+  # Build the add-client command safely as argv array
+  ADD_CMD=("hivemind-core" "add-client" "--name" "${HIVEMIND_CLIENT_NAME}")
 
-    if [ -n "${HIVEMIND_ACCESS_KEY}" ]; then
-        ADD_CMD="${ADD_CMD} --access-key ${HIVEMIND_ACCESS_KEY}"
+  if [ -n "${HIVEMIND_CLIENT_KEY}" ]; then
+    ADD_CMD+=("--access-key" "${HIVEMIND_CLIENT_KEY}")
     fi
 
-    if [ -n "${HIVEMIND_PASSWORD}" ]; then
-        ADD_CMD="${ADD_CMD} --password ${HIVEMIND_PASSWORD}"
+  if [ -n "${HIVEMIND_CLIENT_SECRET}" ]; then
+    ADD_CMD+=("--password" "${HIVEMIND_CLIENT_SECRET}")
     fi
 
-    # Run add-client and capture output
-    echo "Running: ${ADD_CMD}"
-    ${ADD_CMD} || echo "WARNING: Failed to create default client (may already exist)"
+  echo "Running: hivemind-core add-client --name ${HIVEMIND_CLIENT_NAME} [...redacted...]"
+  "${ADD_CMD[@]}" || echo "WARNING: Failed to create default client (may already exist)"
 
     touch "${MARKER_FILE}"
     echo "Default client created."
