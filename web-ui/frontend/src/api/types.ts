@@ -131,3 +131,54 @@ export type SnapshotResponse = {
   period_start: string;
   period_end: string;
 };
+
+export type ProductionRecordRequest = {
+  record_date: string;
+  asset_id: string;
+  production_count: number;
+  good_count: number;
+  material_consumed_kg: number;
+  shift?: string;
+  batch_id?: string;
+  notes?: string;
+};
+
+export type ProductionRecordResponse = {
+  id: number;
+  record_date: string;
+  asset_id: string;
+  production_count: number;
+  good_count: number;
+  material_consumed_kg: number;
+  shift: string;
+  batch_id: string;
+  notes: string;
+  created_at: string | null;
+};
+
+export type ProductionRecordListResponse = {
+  records: ProductionRecordResponse[];
+  total: number;
+};
+
+export type CSVUploadResponse = {
+  total_rows: number;
+  valid_rows: number;
+  inserted: number;
+  errors: Array<{
+    row: number;
+    column: string;
+    message: string;
+  }>;
+};
+
+export type ProductionSummaryResponse = {
+  asset_id: string;
+  start_date: string;
+  end_date: string;
+  total_produced: number;
+  total_good: number;
+  total_material_kg: number;
+  record_count: number;
+  material_efficiency_pct: number;
+};

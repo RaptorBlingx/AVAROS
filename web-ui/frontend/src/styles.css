@@ -111,8 +111,7 @@
 
 @layer components {
   .brand-app-bg--light {
-    background:
-      radial-gradient(
+    background: radial-gradient(
         circle at 12% 18%,
         rgba(56, 189, 248, 0.32),
         transparent 40%
@@ -131,8 +130,7 @@
   }
 
   .brand-app-bg--dark {
-    background:
-      radial-gradient(
+    background: radial-gradient(
         circle at 18% 18%,
         rgba(25, 203, 255, 0.18),
         transparent 40%
@@ -147,15 +145,13 @@
 
   .brand-panel {
     border: 1px solid rgba(125, 211, 252, 0.62);
-    background:
-      linear-gradient(
-        150deg,
-        rgba(255, 255, 255, 0.9) 0%,
-        rgba(240, 249, 255, 0.88) 45%,
-        rgba(236, 253, 245, 0.84) 100%
-      );
-    box-shadow:
-      0 24px 54px -32px rgba(2, 132, 199, 0.34),
+    background: linear-gradient(
+      150deg,
+      rgba(255, 255, 255, 0.9) 0%,
+      rgba(240, 249, 255, 0.88) 45%,
+      rgba(236, 253, 245, 0.84) 100%
+    );
+    box-shadow: 0 24px 54px -32px rgba(2, 132, 199, 0.34),
       0 10px 24px -16px rgba(16, 185, 129, 0.26);
     backdrop-filter: blur(10px);
   }
@@ -163,30 +159,49 @@
   :root[data-theme="dark"] .brand-panel {
     border-color: rgba(51, 65, 85, 0.78);
     background: rgba(15, 23, 42, 0.78);
-    box-shadow:
-      0 18px 45px -28px rgba(2, 6, 23, 0.75),
+    box-shadow: 0 18px 45px -28px rgba(2, 6, 23, 0.75),
       0 8px 20px -18px rgba(14, 165, 233, 0.2);
   }
 
   .brand-hero {
     border: 1px solid rgba(56, 189, 248, 0.42);
-    background:
-      radial-gradient(circle at 14% 12%, rgba(56, 189, 248, 0.2), transparent 42%),
-      radial-gradient(circle at 82% 88%, rgba(16, 185, 129, 0.16), transparent 45%),
-      linear-gradient(155deg, rgba(255, 255, 255, 0.92) 0%, rgba(236, 253, 245, 0.84) 100%);
-    box-shadow:
-      0 22px 48px -30px rgba(14, 165, 233, 0.45),
+    background: radial-gradient(
+        circle at 14% 12%,
+        rgba(56, 189, 248, 0.2),
+        transparent 42%
+      ),
+      radial-gradient(
+        circle at 82% 88%,
+        rgba(16, 185, 129, 0.16),
+        transparent 45%
+      ),
+      linear-gradient(
+        155deg,
+        rgba(255, 255, 255, 0.92) 0%,
+        rgba(236, 253, 245, 0.84) 100%
+      );
+    box-shadow: 0 22px 48px -30px rgba(14, 165, 233, 0.45),
       0 8px 22px -18px rgba(16, 185, 129, 0.35);
   }
 
   :root[data-theme="dark"] .brand-hero {
     border-color: rgba(56, 189, 248, 0.24);
-    background:
-      radial-gradient(circle at 14% 12%, rgba(56, 189, 248, 0.16), transparent 45%),
-      radial-gradient(circle at 82% 88%, rgba(16, 185, 129, 0.12), transparent 50%),
-      linear-gradient(155deg, rgba(8, 16, 35, 0.92) 0%, rgba(8, 23, 38, 0.86) 100%);
-    box-shadow:
-      0 20px 42px -28px rgba(2, 6, 23, 0.82),
+    background: radial-gradient(
+        circle at 14% 12%,
+        rgba(56, 189, 248, 0.16),
+        transparent 45%
+      ),
+      radial-gradient(
+        circle at 82% 88%,
+        rgba(16, 185, 129, 0.12),
+        transparent 50%
+      ),
+      linear-gradient(
+        155deg,
+        rgba(8, 16, 35, 0.92) 0%,
+        rgba(8, 23, 38, 0.86) 100%
+      );
+    box-shadow: 0 20px 42px -28px rgba(2, 6, 23, 0.82),
       0 8px 22px -18px rgba(14, 165, 233, 0.32);
   }
 
@@ -199,7 +214,11 @@
 
   .btn-brand-primary {
     border: 1px solid rgba(14, 165, 233, 0.42);
-    background: linear-gradient(120deg, rgba(224, 242, 254, 0.92), rgba(236, 253, 245, 0.88));
+    background: linear-gradient(
+      120deg,
+      rgba(224, 242, 254, 0.92),
+      rgba(236, 253, 245, 0.88)
+    );
     color: rgb(3, 105, 161);
     transition: all 180ms ease;
   }
@@ -211,7 +230,11 @@
 
   :root[data-theme="dark"] .btn-brand-primary {
     border-color: rgba(56, 189, 248, 0.4);
-    background: linear-gradient(120deg, rgba(8, 47, 73, 0.88), rgba(6, 78, 59, 0.82));
+    background: linear-gradient(
+      120deg,
+      rgba(8, 47, 73, 0.88),
+      rgba(6, 78, 59, 0.82)
+    );
     color: rgb(186, 230, 253);
   }
 
@@ -248,13 +271,12 @@
 
   .brand-surface {
     border: 1px solid rgba(125, 211, 252, 0.58);
-    background:
-      linear-gradient(
-        145deg,
-        rgba(248, 252, 255, 0.92) 0%,
-        rgba(240, 249, 255, 0.84) 48%,
-        rgba(236, 253, 245, 0.75) 100%
-      );
+    background: linear-gradient(
+      145deg,
+      rgba(248, 252, 255, 0.92) 0%,
+      rgba(240, 249, 255, 0.84) 48%,
+      rgba(236, 253, 245, 0.75) 100%
+    );
   }
 
   :root[data-theme="dark"] .brand-surface {
@@ -449,6 +471,129 @@
 
 .route-stay {
   animation: none;
+}
+
+.rdp-avaros {
+  --rdp-accent-color: #0284c7;
+  --rdp-accent-background-color: rgba(14, 165, 233, 0.16);
+  --rdp-day-button-border-radius: 0.5rem;
+  --rdp-nav_button-width: 2rem;
+  --rdp-nav_button-height: 2rem;
+  --rdp-nav-height: 2.25rem;
+  --rdp-months-gap: 0.5rem;
+  color: #0f172a;
+}
+
+:root[data-theme="dark"] .rdp-avaros {
+  --rdp-accent-color: #38bdf8;
+  --rdp-accent-background-color: rgba(14, 165, 233, 0.24);
+  color: #e2e8f0;
+}
+
+.rdp-avaros .rdp-dropdown {
+  border: 1px solid rgba(125, 211, 252, 0.6);
+  border-radius: 0.5rem;
+  padding: 0.2rem 0.45rem;
+  background: rgba(255, 255, 255, 0.95);
+  color: #0f172a;
+  box-shadow: 0 1px 8px -6px rgba(2, 132, 199, 0.35);
+}
+
+.rdp-avaros .rdp-dropdown select {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  outline: none;
+}
+
+.rdp-avaros .rdp-dropdown option {
+  color: #0f172a;
+}
+
+:root[data-theme="dark"] .rdp-avaros .rdp-dropdown option {
+  color: #e2e8f0;
+  background: #0f172a;
+}
+
+:root[data-theme="dark"] .rdp-avaros .rdp-dropdown {
+  border-color: rgba(100, 116, 139, 0.55);
+  background: rgba(15, 23, 42, 0.9);
+  color: #e2e8f0;
+  box-shadow: none;
+}
+
+.rdp-avaros .rdp-button_previous,
+.rdp-avaros .rdp-button_next {
+  border: 0;
+  border-radius: 0.5rem;
+  color: rgba(51, 65, 85, 0.72);
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.68;
+}
+
+.rdp-avaros .rdp-button_previous:hover,
+.rdp-avaros .rdp-button_next:hover {
+  background: rgba(14, 165, 233, 0.12);
+  color: #0f172a;
+  opacity: 1;
+}
+
+:root[data-theme="dark"] .rdp-avaros .rdp-button_previous,
+:root[data-theme="dark"] .rdp-avaros .rdp-button_next {
+  color: rgba(203, 213, 225, 0.75);
+  opacity: 0.72;
+}
+
+:root[data-theme="dark"] .rdp-avaros .rdp-button_previous:hover,
+:root[data-theme="dark"] .rdp-avaros .rdp-button_next:hover {
+  background: rgba(30, 41, 59, 0.75);
+  color: #f8fafc;
+  opacity: 1;
+}
+
+.rdp-avaros .rdp-chevron {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.42;
+}
+
+.rdp-avaros .rdp-month_caption {
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.rdp-avaros .rdp-day_button {
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.rdp-avaros .rdp-day_selected .rdp-day_button {
+  background: rgba(14, 165, 233, 0.16) !important;
+  color: #0369a1 !important;
+  font-weight: 700;
+}
+
+:root[data-theme="dark"] .rdp-avaros .rdp-day_selected .rdp-day_button {
+  background: rgba(14, 165, 233, 0.24) !important;
+  color: #7dd3fc !important;
+  font-weight: 700;
+}
+
+.rdp-avaros .rdp-day_today:not(.rdp-day_selected) .rdp-day_button {
+  background: rgba(2, 132, 199, 0.08);
+  color: #075985;
+}
+
+:root[data-theme="dark"]
+  .rdp-avaros
+  .rdp-day_today:not(.rdp-day_selected)
+  .rdp-day_button {
+  background: rgba(14, 165, 233, 0.16);
+  color: #bae6fd;
 }
 
 @media (prefers-reduced-motion: reduce) {

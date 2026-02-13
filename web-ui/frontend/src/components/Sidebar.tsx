@@ -312,6 +312,29 @@ export default function Sidebar() {
             </NavLink>
 
             <NavLink
+              to="/production-data"
+              className={({ isActive }) => navItemClass(isActive)}
+              onClick={() => setIsMobileOpen(false)}
+            >
+              <span className="inline-flex items-center gap-2">
+                <svg
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                >
+                  <path
+                    d="M4 5h16v4H4V5zm0 10h7v4H4v-4zm9-2h7m-7 6h7m-7-12h7"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                Production Data
+              </span>
+            </NavLink>
+
+            <NavLink
               to="/settings"
               className={({ isActive }) => navItemClass(isActive)}
               onClick={() => setIsMobileOpen(false)}
@@ -405,6 +428,28 @@ export default function Sidebar() {
                 />
               </svg>
               KPI Dashboard
+            </span>
+          </NavLink>
+
+          <NavLink
+            to="/production-data"
+            className={({ isActive }) => navItemClass(isActive)}
+          >
+            <span className="inline-flex items-center gap-2">
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+              >
+                <path
+                  d="M4 5h16v4H4V5zm0 10h7v4H4v-4zm9-2h7m-7 6h7m-7-12h7"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              Production Data
             </span>
           </NavLink>
 
