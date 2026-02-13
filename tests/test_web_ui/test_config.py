@@ -18,6 +18,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from routers.config import _create_adapter_from_config
+from schemas.config import PlatformConfigRequest
 from skill.domain.results import ConnectionTestResult
 from skill.services.settings import SettingsService
 
@@ -593,6 +595,27 @@ class TestConnectionTestAuthType:
 
         assert response.status_code == 200
         assert response.json()["success"] is True
+
+
+class TestAdapterFactoryAuthType:
+    """Direct unit tests for adapter factory auth_type wiring."""
+
+    def test_create_adapter_with_cookie_auth_passes_cookie_to_reneryo_adapter(
+        self,
+    ) -> None:
+        """Factory forwards auth_type=cookie to ReneryoAdapter constructor."""
+        payload = PlatformConfigRequest(
+            platform_type="reneryo",
+            api_url="https://api.reneryo.example.com",
+            api_key="session-cookie-value",
+            extra_settings={"auth_type": "cookie"},
+        )
+
+        with patch("skill.adapters.reneryo.ReneryoAdapter") as mock_adapter_class:
+            _create_adapter_from_config(payload)
+
+        assert mock_adapter_class.call_count == 1
+        assert mock_adapter_class.call_args.kwargs["auth_type"] == "cookie"
 
     def test_connection_test_with_bearer_auth_type(
         self,
