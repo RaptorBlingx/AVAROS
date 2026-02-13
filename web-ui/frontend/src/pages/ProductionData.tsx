@@ -117,7 +117,8 @@ export default function ProductionData() {
         appliedEndDateFilter,
       );
       setSummary(data);
-    } catch {
+    } catch (error) {
+      console.warn("Failed to load production summary:", error);
       setSummary(null);
     } finally {
       setSummaryLoading(false);

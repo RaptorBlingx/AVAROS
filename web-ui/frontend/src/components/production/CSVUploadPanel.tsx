@@ -22,13 +22,58 @@ type CSVUploadPanelProps = {
 };
 
 function parseCsvPreview(fileText: string): string[][] {
-  const rows = fileText
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .slice(0, 6);
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentCell = "";
+  let insideQuotes = false;
 
-  return rows.map((line) => line.split(",").map((cell) => cell.trim()));
+  const text = fileText.replace(/\r\n/g, "\n");
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const nextChar = text[index + 1];
+
+    if (char === '"') {
+      if (insideQuotes && nextChar === '"') {
+        currentCell += '"';
+        index += 1;
+      } else {
+        insideQuotes = !insideQuotes;
+      }
+      continue;
+    }
+
+    if (char === "," && !insideQuotes) {
+      currentRow.push(currentCell.trim());
+      currentCell = "";
+      continue;
+    }
+
+    if (char === "\n" && !insideQuotes) {
+      currentRow.push(currentCell.trim());
+      const hasContent = currentRow.some((cell) => cell.length > 0);
+      if (hasContent) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentCell = "";
+      if (rows.length >= 6) {
+        break;
+      }
+      continue;
+    }
+
+    currentCell += char;
+  }
+
+  if (rows.length < 6 && (currentCell.length > 0 || currentRow.length > 0)) {
+    currentRow.push(currentCell.trim());
+    const hasContent = currentRow.some((cell) => cell.length > 0);
+    if (hasContent) {
+      rows.push(currentRow);
+    }
+  }
+
+  return rows.slice(0, 6);
 }
 
 export default function CSVUploadPanel({
