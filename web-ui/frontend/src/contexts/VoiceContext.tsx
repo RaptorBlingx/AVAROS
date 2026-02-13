@@ -1,8 +1,10 @@
 /**
- * React context that orchestrates STT, TTS, and HiveMind into a
- * unified voice interaction layer.
+ * React context that orchestrates STT, TTS, HiveMind, and Wake Word
+ * detection into a unified voice interaction layer.
  *
- * State machine: idle → listening → processing → speaking → idle
+ * State machine:
+ *   wake_word_listening → (detection) → listening → processing → speaking → wake_word_listening
+ *   idle → listening → processing → speaking → idle  (push-to-talk / text)
  *
  * The VoiceProvider must be placed inside HiveMindProvider since
  * it depends on the HiveMind service for message transport.
@@ -14,7 +16,7 @@
  *     </VoiceProvider>
  *   </HiveMindProvider>
  *
- *   const { startListening, voiceState, speak } = useVoice();
+ *   const { startListening, voiceState, speak, voiceMode } = useVoice();
  */
 
 import {
@@ -38,6 +40,11 @@ import {
 } from "../services/audio-permissions";
 import { STTService, type STTResult } from "../services/stt";
 import { TTSService } from "../services/tts";
+import {
+  WakeWordService,
+  type WakeWordState,
+} from "../services/wake-word";
+import { VoiceModeService } from "../services/voice-mode";
 
 // ── Types ──────────────────────────────────────────────
 
@@ -80,9 +87,21 @@ interface VoiceContextValue {
   /** True while TTS is producing audio */
   isSpeaking: boolean;
 
+  // ── Wake word ────────────────────────────────────
+  /** Current wake word engine state */
+  wakeWordState: WakeWordState;
+  /** Whether wake word mode is currently active */
+  wakeWordEnabled: boolean;
+  /** Wake word detection sensitivity (0–1) */
+  wakeWordSensitivity: number;
+  /** Adjust wake word sensitivity */
+  setWakeWordSensitivity: (value: number) => void;
+  /** True while the TF.js model is loading */
+  isModelLoading: boolean;
+
   // ── Configuration ────────────────────────────────
   /** Switch voice interaction mode */
-  setVoiceMode: (mode: VoiceMode) => void;
+  setVoiceMode: (mode: VoiceMode) => Promise<void>;
   /** Set STT and TTS language */
   setLanguage: (lang: string) => void;
   /** Available TTS voices */
@@ -107,11 +126,13 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   // ── Refs for services ──────────────────────────────
   const sttRef = useRef<STTService | null>(null);
   const ttsRef = useRef<TTSService | null>(null);
+  const wakeWordRef = useRef<WakeWordService | null>(null);
+  const voiceModeRef = useRef<VoiceModeService | null>(null);
   const voicesChangedHandlerRef = useRef<(() => void) | null>(null);
 
   // ── State ──────────────────────────────────────────
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
-  const [voiceMode, setVoiceMode] = useState<VoiceMode>("push-to-talk");
+  const [voiceMode, setVoiceModeState] = useState<VoiceMode>("push-to-talk");
   const [micPermission, setMicPermission] =
     useState<PermissionState>("prompt");
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -120,9 +141,13 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const [availableVoices, setAvailableVoices] = useState<
     SpeechSynthesisVoice[]
   >([]);
+  const [wakeWordState, setWakeWordState] = useState<WakeWordState>("idle");
+  const [wakeWordSensitivity, setWakeWordSensitivityState] = useState(0.75);
+  const [isModelLoading, setIsModelLoading] = useState(false);
 
   const sttSupported = isSpeechRecognitionSupported();
   const ttsSupported = isSpeechSynthesisSupported();
+  const wakeWordEnabled = voiceMode === "wake-word";
 
   // ── HiveMind integration ───────────────────────────
   const { sendUtterance, on, isConnected } = useHiveMind();
@@ -153,6 +178,21 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       }
     }
 
+    // Initialize wake word service (model loaded lazily on mode switch)
+    if (!wakeWordRef.current) {
+      wakeWordRef.current = new WakeWordService({
+        sensitivity: wakeWordSensitivity,
+      });
+    }
+
+    // Initialize voice mode service
+    if (!voiceModeRef.current && sttRef.current && wakeWordRef.current) {
+      voiceModeRef.current = new VoiceModeService(
+        wakeWordRef.current,
+        sttRef.current,
+      );
+    }
+
     // Check initial mic permission (without triggering dialog)
     void checkMicrophonePermission().then(setMicPermission);
 
@@ -168,8 +208,10 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
           voicesChangedHandlerRef.current,
         );
       }
+      // Cleanup wake word
+      wakeWordRef.current?.dispose();
     };
-  }, [sttSupported, ttsSupported]);
+  }, [sttSupported, ttsSupported]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Wire STT events ────────────────────────────────
   useEffect(() => {
@@ -242,6 +284,35 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     return unsub;
   }, [ttsSupported]);
 
+  // ── Wire wake word events ──────────────────────────
+  useEffect(() => {
+    const ww = wakeWordRef.current;
+    if (!ww) return;
+
+    const unsubState = ww.onStateChange((state) => {
+      setWakeWordState(state);
+      if (state === "loading") {
+        setIsModelLoading(true);
+      } else {
+        setIsModelLoading(false);
+      }
+    });
+
+    const unsubDetected = ww.onDetected(() => {
+      // Wake word detected — start STT to capture the actual utterance
+      if (sttRef.current) {
+        setInterimTranscript("");
+        setFinalTranscript("");
+        void sttRef.current.start();
+      }
+    });
+
+    return () => {
+      unsubState();
+      unsubDetected();
+    };
+  }, [sttSupported]);
+
   // ── Auto-send final transcript to HiveMind ─────────
   useEffect(() => {
     if (!finalTranscript || !isConnected) return;
@@ -310,14 +381,24 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   }, []);
 
   const handleSetVoiceMode = useCallback(
-    (mode: VoiceMode) => {
-      setVoiceMode(mode);
+    async (mode: VoiceMode) => {
+      if (voiceModeRef.current) {
+        await voiceModeRef.current.setMode(
+          mode as import("../services/voice-mode").VoiceMode,
+        );
+      }
+      setVoiceModeState(mode);
       if (sttRef.current) {
         sttRef.current.setContinuous(mode === "wake-word");
       }
     },
     [],
   );
+
+  const handleSetWakeWordSensitivity = useCallback((value: number) => {
+    setWakeWordSensitivityState(value);
+    wakeWordRef.current?.setSensitivity(value);
+  }, []);
 
   // ── Context value ──────────────────────────────────
 
@@ -335,6 +416,11 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       speak: speakText,
       stopSpeaking,
       isSpeaking,
+      wakeWordState,
+      wakeWordEnabled,
+      wakeWordSensitivity,
+      setWakeWordSensitivity: handleSetWakeWordSensitivity,
+      isModelLoading,
       setVoiceMode: handleSetVoiceMode,
       setLanguage,
       availableVoices,
@@ -354,6 +440,11 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       speakText,
       stopSpeaking,
       isSpeaking,
+      wakeWordState,
+      wakeWordEnabled,
+      wakeWordSensitivity,
+      handleSetWakeWordSensitivity,
+      isModelLoading,
       handleSetVoiceMode,
       setLanguage,
       availableVoices,
