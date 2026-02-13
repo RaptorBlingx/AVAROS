@@ -185,6 +185,11 @@ export class TTSService {
     this.config.volume = Math.max(0, Math.min(1, volume));
   }
 
+  /** Set language (BCP-47 tag). Takes effect on next speak(). */
+  setLanguage(lang: string): void {
+    this.config.language = lang;
+  }
+
   /** Get current state. */
   getState(): TTSState {
     return this.state;

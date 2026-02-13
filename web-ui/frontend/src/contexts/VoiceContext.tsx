@@ -107,6 +107,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   // ── Refs for services ──────────────────────────────
   const sttRef = useRef<STTService | null>(null);
   const ttsRef = useRef<TTSService | null>(null);
+  const voicesChangedHandlerRef = useRef<(() => void) | null>(null);
 
   // ── State ──────────────────────────────────────────
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
@@ -144,6 +145,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       };
       loadVoices();
       if (typeof window !== "undefined" && window.speechSynthesis) {
+        voicesChangedHandlerRef.current = loadVoices;
         window.speechSynthesis.addEventListener(
           "voiceschanged",
           loadVoices,
@@ -156,10 +158,14 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
     return () => {
       // Cleanup voices listener
-      if (typeof window !== "undefined" && window.speechSynthesis) {
+      if (
+        typeof window !== "undefined" &&
+        window.speechSynthesis &&
+        voicesChangedHandlerRef.current
+      ) {
         window.speechSynthesis.removeEventListener(
           "voiceschanged",
-          () => {},
+          voicesChangedHandlerRef.current,
         );
       }
     };
@@ -290,11 +296,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   const setLanguage = useCallback((lang: string) => {
     sttRef.current?.setLanguage(lang);
-    if (ttsRef.current) {
-      ttsRef.current.setRate(ttsRef.current.getState() === "idle" ? 1.0 : 1.0);
-      // Update TTS language by setting the voice config
-      // The TTSService will pick the right voice on next speak()
-    }
+    ttsRef.current?.setLanguage(lang);
   }, []);
 
   const setTTSVoice = useCallback((voiceName: string) => {
