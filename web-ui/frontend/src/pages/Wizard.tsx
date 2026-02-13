@@ -19,6 +19,7 @@ import MetricMappingStep from "../components/wizard/MetricMappingStep";
 import PlatformSelectStep from "../components/wizard/PlatformSelectStep";
 import SuccessScreen from "../components/wizard/SuccessScreen";
 import WelcomeStep from "../components/wizard/WelcomeStep";
+import Tooltip from "../components/common/Tooltip";
 
 type StepNumber = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -382,11 +383,15 @@ export default function Wizard() {
     <section className="mx-auto w-full max-w-4xl space-y-4">
       <div className="brand-hero rounded-xl px-4 py-3 text-sm text-slate-600 backdrop-blur-sm dark:text-slate-300">
         <div className="flex items-center justify-between gap-3">
-          <p className="m-0">
+          <p className="m-0 inline-flex items-center gap-2">
             <span className="font-semibold text-slate-900 dark:text-slate-100">
               Current Step:
             </span>{" "}
             {stepLabel}
+            <Tooltip
+              content="Why is this needed? Each step captures required setup inputs so AVAROS can run reliably in your factory."
+              ariaLabel="Why this wizard step is needed"
+            />
           </p>
           <div className="flex items-center gap-2">
             <p className="m-0 text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -422,7 +427,8 @@ export default function Wizard() {
           </p>
         )}
 
-        <div className="mt-3 flex flex-col gap-2 sm:grid sm:grid-cols-3 lg:grid-cols-6">
+        <div className="mt-3 overflow-x-auto">
+          <div className="flex min-w-[640px] gap-2 sm:min-w-0 sm:grid sm:grid-cols-3 lg:grid-cols-6">
           {stepItems.map((item, index) => {
             const stepNumber = (index + 1) as StepNumber;
             const isActive = state.currentStep === stepNumber;
@@ -446,6 +452,7 @@ export default function Wizard() {
               </div>
             );
           })}
+          </div>
         </div>
       </div>
 

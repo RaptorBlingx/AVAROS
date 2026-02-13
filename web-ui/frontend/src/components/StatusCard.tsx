@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 import { useTheme } from "./common/ThemeProvider";
+import Tooltip from "./common/Tooltip";
 
 type StatusCardProps = {
   label: string;
   value: string;
   icon?: ReactNode;
   tone?: "info" | "good" | "warning";
+  helpText?: string;
 };
 
 export default function StatusCard({
@@ -13,6 +15,7 @@ export default function StatusCard({
   value,
   icon,
   tone = "info",
+  helpText,
 }: StatusCardProps) {
   const { isDark } = useTheme();
 
@@ -53,7 +56,7 @@ export default function StatusCard({
 
   return (
     <article
-      className={`group relative overflow-hidden rounded-2xl border p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${cardToneClass}`}
+      className={`group relative overflow-visible rounded-2xl border p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${cardToneClass}`}
     >
       <div className="pointer-events-none absolute -right-8 -top-10 h-20 w-20 rounded-full bg-white/20 blur-xl dark:bg-cyan-300/10" />
       <div className="flex items-start justify-between gap-3">
@@ -62,6 +65,12 @@ export default function StatusCard({
           <p className={`m-0 text-xs font-semibold uppercase tracking-[0.12em] ${labelClass}`}>
             {label}
           </p>
+          {helpText ? (
+            <Tooltip
+              content={helpText}
+              ariaLabel={`More info about ${label}`}
+            />
+          ) : null}
         </div>
         <span
           className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border opacity-80 transition-transform duration-200 group-hover:scale-105 ${iconToneClass}`}

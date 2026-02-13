@@ -1,4 +1,5 @@
 import type { SystemStatusResponse } from "../../api/types";
+import Tooltip from "../common/Tooltip";
 import ErrorMessage from "../common/ErrorMessage";
 import LoadingSpinner from "../common/LoadingSpinner";
 
@@ -21,9 +22,15 @@ export default function WelcomeStep({
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">
           First-Run Wizard
         </p>
-        <h1 className="m-0 mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">
-          Welcome to AVAROS Setup
-        </h1>
+        <div className="mt-2 inline-flex items-center gap-2">
+          <h1 className="m-0 text-2xl font-semibold text-slate-900 dark:text-slate-100">
+            Welcome to AVAROS Setup
+          </h1>
+          <Tooltip
+            content="Why is this needed? The wizard helps operators configure AVAROS safely with guided steps."
+            ariaLabel="Why setup wizard is needed"
+          />
+        </div>
         <p className="mb-0 mt-2 text-sm text-slate-600 dark:text-slate-300">
           This guided setup configures your platform connection in a few quick
           steps.

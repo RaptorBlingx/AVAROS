@@ -7,6 +7,7 @@ import {
   toFriendlyErrorMessage,
 } from "../../api/client";
 import type { IntentState, MetricMapping } from "../../api/types";
+import Tooltip from "../common/Tooltip";
 import EmptyState from "../common/EmptyState";
 import ErrorMessage from "../common/ErrorMessage";
 import IntentActivationList from "../common/IntentActivationList";
@@ -101,9 +102,15 @@ export default function IntentActivationStep({ onComplete, onSkip }: IntentActiv
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">
           Step 5 of 6
         </p>
-        <h2 className="m-0 mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">
-          Intent Activation
-        </h2>
+        <div className="mt-2 inline-flex items-center gap-2">
+          <h2 className="m-0 text-2xl font-semibold text-slate-900 dark:text-slate-100">
+            Intent Activation
+          </h2>
+          <Tooltip
+            content="Why is this needed? Intents enable specific AVAROS capabilities using mapped metrics."
+            ariaLabel="Why intent activation is needed"
+          />
+        </div>
         <p className="m-0 mt-2 text-sm text-slate-600 dark:text-slate-300">
           Enable or disable intents and verify required metrics are mapped.
         </p>

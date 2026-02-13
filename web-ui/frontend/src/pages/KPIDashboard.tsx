@@ -210,15 +210,19 @@ export default function KPIDashboard() {
                 Site: {siteProgress?.site_id ?? DEFAULT_SITE_ID}
               </p>
             </div>
-            <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3 reveal-stagger">
-              {KPI_METRICS.map((meta) => (
-                <KPITargetCard
+            <div className="reveal-stagger grid items-stretch gap-4 lg:grid-cols-2 min-[1500px]:grid-cols-3">
+              {KPI_METRICS.map((meta, index) => (
+                <div
                   key={meta.metric}
-                  metricLabel={meta.label}
-                  metricHint={meta.hint}
-                  targetPercent={meta.targetPercent}
-                  progress={periodAwareProgressMap.get(meta.metric) ?? null}
-                />
+                  className={`h-full ${index === 2 ? "lg:col-span-2 min-[1500px]:col-span-1" : ""}`}
+                >
+                  <KPITargetCard
+                    metricLabel={meta.label}
+                    metricHint={meta.hint}
+                    targetPercent={meta.targetPercent}
+                    progress={periodAwareProgressMap.get(meta.metric) ?? null}
+                  />
+                </div>
               ))}
             </div>
           </div>

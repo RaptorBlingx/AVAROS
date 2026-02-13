@@ -87,7 +87,7 @@ export default function KPITargetCard({
     : "--";
 
   return (
-    <article className={`${tone.surface} rounded-2xl p-5 shadow-sm`}>
+    <article className={`${tone.surface} h-full rounded-2xl p-5 shadow-sm`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">

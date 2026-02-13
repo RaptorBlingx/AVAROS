@@ -107,6 +107,25 @@
   :root[data-theme="dark"] .hover\:bg-sky-100:hover {
     @apply bg-slate-700;
   }
+
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  summary:focus-visible {
+    outline: 2px solid rgba(14, 165, 233, 0.75);
+    outline-offset: 2px;
+  }
+
+  :root[data-theme="dark"] button:focus-visible,
+  :root[data-theme="dark"] a:focus-visible,
+  :root[data-theme="dark"] input:focus-visible,
+  :root[data-theme="dark"] select:focus-visible,
+  :root[data-theme="dark"] textarea:focus-visible,
+  :root[data-theme="dark"] summary:focus-visible {
+    outline-color: rgba(34, 211, 238, 0.9);
+  }
 }
 
 @layer components {
