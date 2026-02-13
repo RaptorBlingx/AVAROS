@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import datetime, timedelta, timezone
 
 import aiohttp
 
@@ -84,9 +85,19 @@ class ReneryoConnectionTestMixin:
             ConnectionTestResult from the response.
         """
         url = f"{self._api_url}/api/u/measurement/meter/item"
-        async with session.get(url) as response:
+        async with session.get(url, params=self._build_test_query_params()) as response:
             elapsed = (time.monotonic() - start) * 1000
             return await self._parse_test_response(response, elapsed)
+
+    @staticmethod
+    def _build_test_query_params() -> dict[str, str]:
+        """Build required datetime window params for meter endpoint."""
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(days=365)
+        return {
+            "datetimeMin": start.isoformat().replace("+00:00", "Z"),
+            "datetimeMax": end.isoformat().replace("+00:00", "Z"),
+        }
 
     # --- response parsing ---------------------------------------------------
 

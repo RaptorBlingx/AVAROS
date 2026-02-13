@@ -1122,7 +1122,7 @@ class TestReneryoConnectionTest:
         )
         with aioresponses() as mocked:
             mocked.get(
-                "https://reneryo.example.com/api/u/measurement/meter/item",
+                re.compile(r"https://reneryo\.example\.com/api/u/measurement/meter/item.*"),
                 payload={
                     "records": [
                         {"name": "Electric Main Meter", "id": "m1"},
@@ -1151,7 +1151,7 @@ class TestReneryoConnectionTest:
         )
         with aioresponses() as mocked:
             mocked.get(
-                "https://reneryo.example.com/api/u/measurement/meter/item",
+                re.compile(r"https://reneryo\.example\.com/api/u/measurement/meter/item.*"),
                 status=401,
             )
             result = await adapter.test_connection()
@@ -1171,7 +1171,7 @@ class TestReneryoConnectionTest:
         )
         with aioresponses() as mocked:
             mocked.get(
-                "https://reneryo.example.com/api/u/measurement/meter/item",
+                re.compile(r"https://reneryo\.example\.com/api/u/measurement/meter/item.*"),
                 status=500,
                 body="Internal Server Error",
             )
@@ -1194,7 +1194,7 @@ class TestReneryoConnectionTest:
         )
         with aioresponses() as mocked:
             mocked.get(
-                "https://reneryo.example.com/api/u/measurement/meter/item",
+                re.compile(r"https://reneryo\.example\.com/api/u/measurement/meter/item.*"),
                 exception=asyncio.TimeoutError(),
             )
             result = await adapter.test_connection()
@@ -1220,7 +1220,7 @@ class TestReneryoConnectionTest:
         mock_key.ssl = None
         with aioresponses() as mocked:
             mocked.get(
-                "https://reneryo.example.com/api/u/measurement/meter/item",
+                re.compile(r"https://reneryo\.example\.com/api/u/measurement/meter/item.*"),
                 exception=_aiohttp.ClientConnectorError(
                     connection_key=mock_key,
                     os_error=OSError("Connection refused"),
@@ -1243,7 +1243,7 @@ class TestReneryoConnectionTest:
         )
         with aioresponses() as mocked:
             mocked.get(
-                "https://reneryo.example.com/api/u/measurement/meter/item",
+                re.compile(r"https://reneryo\.example\.com/api/u/measurement/meter/item.*"),
                 payload={
                     "records": [
                         {"name": "Meter-A"},
@@ -1267,7 +1267,7 @@ class TestReneryoConnectionTest:
         )
         with aioresponses() as mocked:
             mocked.get(
-                "https://reneryo.example.com/api/u/measurement/meter/item",
+                re.compile(r"https://reneryo\.example\.com/api/u/measurement/meter/item.*"),
                 payload={"records": []},
             )
             result = await adapter.test_connection()
@@ -1285,7 +1285,7 @@ class TestReneryoConnectionTest:
         )
         with aioresponses() as mocked:
             mocked.get(
-                "https://reneryo.example.com/api/u/measurement/meter/item",
+                re.compile(r"https://reneryo\.example\.com/api/u/measurement/meter/item.*"),
                 payload={"records": []},
             )
             await adapter.test_connection()
@@ -1304,7 +1304,7 @@ class TestReneryoConnectionTest:
         )
         with aioresponses() as mocked:
             mocked.get(
-                "https://reneryo.example.com/api/u/measurement/meter/item",
+                re.compile(r"https://reneryo\.example\.com/api/u/measurement/meter/item.*"),
                 status=500,
                 body="Error",
             )
