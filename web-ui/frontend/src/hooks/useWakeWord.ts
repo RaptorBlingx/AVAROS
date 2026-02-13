@@ -58,6 +58,23 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
 
   const wakeWordEnabled = voiceMode === "wake-word";
 
+  const ensureVoiceModeService = useCallback((): VoiceModeService | null => {
+    if (voiceModeRef.current) {
+      return voiceModeRef.current;
+    }
+
+    if (!sttRef.current || !wakeWordRef.current) {
+      return null;
+    }
+
+    voiceModeRef.current = new VoiceModeService(
+      wakeWordRef.current,
+      sttRef.current,
+    );
+
+    return voiceModeRef.current;
+  }, [sttRef]);
+
   // Initialize services
   useEffect(() => {
     if (!wakeWordRef.current) {
@@ -66,17 +83,12 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
       });
     }
 
-    if (!voiceModeRef.current && sttRef.current && wakeWordRef.current) {
-      voiceModeRef.current = new VoiceModeService(
-        wakeWordRef.current,
-        sttRef.current,
-      );
-    }
+    ensureVoiceModeService();
 
     return () => {
       void wakeWordRef.current?.dispose();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ensureVoiceModeService]);
 
   // Wire wake word events
   useEffect(() => {
@@ -98,13 +110,14 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
 
   const setVoiceMode = useCallback(
     async (mode: VoiceMode) => {
-      if (voiceModeRef.current) {
-        await voiceModeRef.current.setMode(mode);
+      const service = ensureVoiceModeService();
+      if (service) {
+        await service.setMode(mode);
       }
       setVoiceModeState(mode);
       sttRef.current?.setContinuous(mode === "wake-word");
     },
-    [sttRef],
+    [ensureVoiceModeService, sttRef],
   );
 
   const setWakeWordSensitivity = useCallback((value: number) => {
