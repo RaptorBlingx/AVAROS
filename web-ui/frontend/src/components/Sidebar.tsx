@@ -4,6 +4,7 @@ import { NavLink } from "react-router-dom";
 import { getHealth, toFriendlyErrorMessage } from "../api/client";
 import initialLightLogo from "../assets/logo.svg";
 import initialDarkLogo from "../assets/logodark.svg";
+import HiveMindStatus from "./common/HiveMindStatus";
 import { useTheme } from "./common/ThemeProvider";
 
 export default function Sidebar() {
@@ -98,6 +99,7 @@ export default function Sidebar() {
 
   const actions = (
     <>
+      <HiveMindStatus />
       <button
         type="button"
         onClick={toggleTheme}

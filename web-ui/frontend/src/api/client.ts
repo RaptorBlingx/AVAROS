@@ -22,6 +22,7 @@ import type {
   SiteProgressResponse,
   SnapshotResponse,
   SystemStatusResponse,
+  VoiceConfigResponse,
 } from "./types";
 
 const API_BASE_URL = "";
@@ -373,4 +374,8 @@ export function listEmissionFactorPresets(): Promise<EmissionFactorPresetRespons
   return request<EmissionFactorPresetResponse[]>(
     "/api/v1/config/emission-factors/presets"
   );
+}
+
+export function getVoiceConfig(): Promise<VoiceConfigResponse> {
+  return request<VoiceConfigResponse>("/api/v1/voice/config");
 }

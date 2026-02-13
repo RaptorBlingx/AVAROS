@@ -18,6 +18,7 @@ from routers.metrics import router as metrics_router
 from routers.kpi_progress import router as kpi_progress_router
 from routers.production_data import router as production_data_router
 from routers.status import router as status_router
+from routers.voice import router as voice_router
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -78,6 +79,7 @@ app.include_router(intents_router)
 app.include_router(metrics_router)
 app.include_router(production_data_router)
 app.include_router(kpi_progress_router)
+app.include_router(voice_router)
 
 
 @app.get("/{full_path:path}", include_in_schema=False)

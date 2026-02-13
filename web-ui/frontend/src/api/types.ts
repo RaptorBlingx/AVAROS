@@ -212,3 +212,10 @@ export type EmissionFactorPresetResponse = {
   source: string;
   year: number;
 };
+
+export type VoiceConfigResponse = {
+  hivemind_url: string;
+  hivemind_key: string;
+  hivemind_secret: string;
+  voice_enabled: boolean;
+};

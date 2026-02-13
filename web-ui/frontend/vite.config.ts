@@ -15,5 +15,9 @@ export default defineConfig(({ mode }) => {
         "/health": target,
       },
     },
+    test: {
+      environment: "node",
+      include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    },
   };
 });
