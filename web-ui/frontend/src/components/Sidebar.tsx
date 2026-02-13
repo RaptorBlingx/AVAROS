@@ -166,7 +166,7 @@ export default function Sidebar() {
 
       <button
         type="button"
-        className={`inline-flex !mb-6 w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-70 ${
+        className={`mb-2 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-70 ${
           theme === "dark"
             ? "bg-slate-800/85 text-slate-100 hover:bg-slate-700/90"
             : "bg-white/85 text-slate-700 hover:bg-white"

@@ -151,6 +151,7 @@ export default function Settings() {
         title="Platform Configuration"
         helpText="Connect AVAROS to your energy monitoring platform and validate connectivity."
         targetId="settings-platform-config"
+        defaultOpen={true}
       >
         <PlatformConfigSection onNotify={notify} />
       </Section>

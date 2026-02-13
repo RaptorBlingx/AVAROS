@@ -156,16 +156,10 @@ export default function OnboardingOverlay({ open, steps, onClose }: OnboardingOv
         <div className="mt-4 flex items-center justify-between gap-2">
           <button
             type="button"
-            onClick={() => {
-              if (isLast) {
-                onClose();
-                return;
-              }
-              setStepIndex((prev) => prev + 1);
-            }}
+            onClick={onClose}
             className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
           >
-            {isLast ? "Close" : "Skip Step"}
+            Close Tour
           </button>
           <button
             type="button"
