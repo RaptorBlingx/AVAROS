@@ -32,7 +32,7 @@ class MockRecognizer {
     this._listener = callback;
   }
 
-  stopListening(): void {
+  async stopListening(): Promise<void> {
     this._isListening = false;
     this._listener = null;
   }
@@ -311,7 +311,7 @@ describe("WakeWordService", () => {
       await svc.initialize();
       await svc.startListening();
 
-      svc.dispose();
+      await svc.dispose();
 
       expect(svc.isModelLoaded()).toBe(false);
       expect(svc.state).toBe("idle");
@@ -353,6 +353,86 @@ describe("WakeWordService", () => {
 
       await svc.startListening();
       expect(states.length).toBe(countAfterInit); // No new state
+    });
+  });
+
+  describe("visibility handling", () => {
+    it("test_visibility_hidden_pauses_listening", async () => {
+      const svc = new WakeWordService();
+      await svc.initialize();
+      await svc.startListening();
+
+      expect(svc.state).toBe("listening");
+      expect(mockRecognizerInstance!.isListening()).toBe(true);
+
+      // Simulate tab becoming hidden
+      Object.defineProperty(document, "hidden", {
+        value: true,
+        writable: true,
+        configurable: true,
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+
+      expect(mockRecognizerInstance!.isListening()).toBe(false);
+    });
+
+    it("test_visibility_visible_resumes_listening", async () => {
+      const svc = new WakeWordService();
+      await svc.initialize();
+      await svc.startListening();
+
+      // Hide tab
+      Object.defineProperty(document, "hidden", {
+        value: true,
+        writable: true,
+        configurable: true,
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+
+      expect(mockRecognizerInstance!.isListening()).toBe(false);
+
+      // Show tab again
+      Object.defineProperty(document, "hidden", {
+        value: false,
+        writable: true,
+        configurable: true,
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+
+      // startListening is async — flush microtasks
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+
+      expect(mockRecognizerInstance!.isListening()).toBe(true);
+      expect(svc.state).toBe("listening");
+    });
+
+    it("test_visibility_handler_removed_on_stop", async () => {
+      const svc = new WakeWordService();
+      await svc.initialize();
+      await svc.startListening();
+
+      svc.stopListening();
+
+      // After stopping, visibility changes should not resume listening
+      Object.defineProperty(document, "hidden", {
+        value: true,
+        writable: true,
+        configurable: true,
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+
+      Object.defineProperty(document, "hidden", {
+        value: false,
+        writable: true,
+        configurable: true,
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+
+      // Should stay idle, not restart listening
+      expect(svc.state).toBe("idle");
+      expect(mockRecognizerInstance!.isListening()).toBe(false);
     });
   });
 });
