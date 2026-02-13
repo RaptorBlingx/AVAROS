@@ -38,6 +38,12 @@ export interface OVOSMessage {
   context?: Record<string, unknown>;
 }
 
+export interface HiveMindConnectionDetails {
+  url: string;
+  latencyMs: number | null;
+  sessionId: string | null;
+}
+
 interface HiveMindEnvelope {
   msg_type: string;
   payload: OVOSMessage;
@@ -122,6 +128,9 @@ export class HiveMindService {
   private eventListeners = new Map<string, Set<MessageCallback>>();
   private stateListeners = new Set<StateCallback>();
   private disposed = false;
+  private connectStartedAt: number | null = null;
+  private connectionLatencyMs: number | null = null;
+  private sessionId: string | null = null;
 
   constructor(config: HiveMindConfig) {
     this.config = {
@@ -148,6 +157,7 @@ export class HiveMindService {
 
     return new Promise<void>((resolve, reject) => {
       this.setState("connecting");
+      this.connectStartedAt = Date.now();
 
       const authToken = btoa(
         `avaros-web-client:${this.config.accessKey}`,
@@ -163,6 +173,10 @@ export class HiveMindService {
       }
 
       this.ws.onopen = () => {
+        if (this.connectStartedAt !== null) {
+          this.connectionLatencyMs = Date.now() - this.connectStartedAt;
+        }
+        this.connectStartedAt = null;
         this.reconnectAttempts = 0;
         this.setState("connected");
         resolve();
@@ -181,6 +195,7 @@ export class HiveMindService {
 
       this.ws.onclose = () => {
         const wasConnecting = this._state === "connecting";
+        this.connectStartedAt = null;
         this.setState("disconnected");
         if (!wasConnecting) {
           this.scheduleReconnect();
@@ -212,6 +227,14 @@ export class HiveMindService {
     this.disconnect();
     this.eventListeners.clear();
     this.stateListeners.clear();
+  }
+
+  getConnectionDetails(): HiveMindConnectionDetails {
+    return {
+      url: this.config.url,
+      latencyMs: this.connectionLatencyMs,
+      sessionId: this.sessionId,
+    };
   }
 
   // ── Message sending ──────────────────────────────────
@@ -342,7 +365,27 @@ export class HiveMindService {
     const msg = parsed as HiveMindEnvelope;
 
     if (msg.msg_type === "bus" && msg.payload) {
+      this.updateSessionId(msg.payload, parsed);
       this.dispatchEvent(msg.payload);
+    }
+  }
+
+  private updateSessionId(
+    payload: OVOSMessage,
+    envelope: unknown,
+  ): void {
+    const payloadContext =
+      payload.context as Record<string, unknown> | undefined;
+    const root = envelope as Record<string, unknown>;
+
+    const candidate =
+      payloadContext?.session_id ??
+      payloadContext?.session ??
+      root.session_id ??
+      root.session;
+
+    if (typeof candidate === "string" && candidate.length > 0) {
+      this.sessionId = candidate;
     }
   }
 

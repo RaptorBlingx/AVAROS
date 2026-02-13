@@ -11,9 +11,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import patch
-
-import pytest
 from fastapi.testclient import TestClient
 
 # Ensure web-ui is importable
@@ -22,6 +19,7 @@ if _WEB_UI_DIR not in sys.path:
     sys.path.insert(0, _WEB_UI_DIR)
 
 from config import WEB_API_KEY as TEST_API_KEY  # noqa: E402
+from skill.services.settings import SettingsService, VoiceConfig  # noqa: E402
 
 
 # ══════════════════════════════════════════════════════════
@@ -30,35 +28,31 @@ from config import WEB_API_KEY as TEST_API_KEY  # noqa: E402
 
 
 class TestGetVoiceConfigDefaults:
-    """Verify defaults when no HiveMind env vars are set."""
+    """Verify defaults when no explicit voice settings are saved."""
 
-    def test_returns_default_url(self, client: TestClient) -> None:
+    def test_returns_default_url(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
         """Default hivemind_url is ws://localhost:5678."""
-        with patch.dict(
-            "os.environ",
-            {},
-            clear=False,
-        ):
-            # Remove keys if present
-            import os
+        settings_service.delete_setting(SettingsService.VOICE_WS_URL_KEY)
+        settings_service.delete_setting(SettingsService.VOICE_CLIENT_KEY)
+        settings_service.delete_setting(SettingsService.VOICE_CLIENT_SECRET)
 
-            os.environ.pop("HIVEMIND_WS_URL", None)
-            os.environ.pop("HIVEMIND_CLIENT_KEY", None)
-            os.environ.pop("HIVEMIND_CLIENT_SECRET", None)
-
-            response = client.get("/api/v1/voice/config")
+        response = client.get("/api/v1/voice/config")
 
         assert response.status_code == 200
         data = response.json()
         assert data["hivemind_url"] == "ws://localhost:5678"
 
     def test_returns_empty_key_when_not_set(
-        self, client: TestClient
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
     ) -> None:
-        """hivemind_key is empty when HIVEMIND_CLIENT_KEY is not set."""
-        import os
-
-        os.environ.pop("HIVEMIND_CLIENT_KEY", None)
+        """hivemind_key is empty when no key is configured."""
+        settings_service.delete_setting(SettingsService.VOICE_CLIENT_KEY)
 
         response = client.get("/api/v1/voice/config")
 
@@ -67,12 +61,12 @@ class TestGetVoiceConfigDefaults:
         assert data["hivemind_key"] == ""
 
     def test_voice_disabled_without_key(
-        self, client: TestClient
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
     ) -> None:
-        """voice_enabled is False when HIVEMIND_CLIENT_KEY is absent."""
-        import os
-
-        os.environ.pop("HIVEMIND_CLIENT_KEY", None)
+        """voice_enabled is False when no key is configured."""
+        settings_service.delete_setting(SettingsService.VOICE_CLIENT_KEY)
 
         response = client.get("/api/v1/voice/config")
 
@@ -81,12 +75,12 @@ class TestGetVoiceConfigDefaults:
         assert data["voice_enabled"] is False
 
     def test_returns_empty_secret_when_not_set(
-        self, client: TestClient
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
     ) -> None:
-        """hivemind_secret is empty when HIVEMIND_CLIENT_SECRET is absent."""
-        import os
-
-        os.environ.pop("HIVEMIND_CLIENT_SECRET", None)
+        """hivemind_secret is empty when no secret is configured."""
+        settings_service.delete_setting(SettingsService.VOICE_CLIENT_SECRET)
 
         response = client.get("/api/v1/voice/config")
 
@@ -95,74 +89,81 @@ class TestGetVoiceConfigDefaults:
         assert data["hivemind_secret"] == ""
 
 
-class TestGetVoiceConfigFromEnv:
-    """Verify config is populated from environment variables."""
+class TestGetVoiceConfigFromSettings:
+    """Verify config is populated from SettingsService persistence."""
 
-    def test_returns_configured_url(self, client: TestClient) -> None:
-        """hivemind_url reflects HIVEMIND_WS_URL env var."""
-        with patch.dict(
-            "os.environ",
-            {"HIVEMIND_WS_URL": "wss://prod.example.com/hivemind"},
-        ):
-            response = client.get("/api/v1/voice/config")
+    def test_returns_configured_url(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """hivemind_url reflects stored SettingsService value."""
+        settings_service.update_voice_config(
+            VoiceConfig(hivemind_url="wss://prod.example.com/hivemind")
+        )
+        response = client.get("/api/v1/voice/config")
 
         assert response.status_code == 200
         data = response.json()
         assert data["hivemind_url"] == "wss://prod.example.com/hivemind"
 
-    def test_returns_configured_key(self, client: TestClient) -> None:
-        """hivemind_key reflects HIVEMIND_CLIENT_KEY env var."""
-        with patch.dict(
-            "os.environ",
-            {"HIVEMIND_CLIENT_KEY": "test-access-key-123"},
-        ):
-            response = client.get("/api/v1/voice/config")
+    def test_returns_configured_key(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """hivemind_key reflects stored SettingsService value."""
+        settings_service.update_voice_config(
+            VoiceConfig(hivemind_key="test-access-key-123")
+        )
+        response = client.get("/api/v1/voice/config")
 
         assert response.status_code == 200
         data = response.json()
         assert data["hivemind_key"] == "test-access-key-123"
 
     def test_returns_configured_secret(
-        self, client: TestClient
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
     ) -> None:
-        """hivemind_secret reflects HIVEMIND_CLIENT_SECRET env var."""
-        with patch.dict(
-            "os.environ",
-            {"HIVEMIND_CLIENT_SECRET": "super-secret-456"},
-        ):
-            response = client.get("/api/v1/voice/config")
+        """hivemind_secret reflects stored SettingsService value."""
+        settings_service.update_voice_config(
+            VoiceConfig(hivemind_secret="super-secret-456")
+        )
+        response = client.get("/api/v1/voice/config")
 
         assert response.status_code == 200
         data = response.json()
         assert data["hivemind_secret"] == "super-secret-456"
 
     def test_voice_enabled_when_key_set(
-        self, client: TestClient
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
     ) -> None:
-        """voice_enabled is True when HIVEMIND_CLIENT_KEY has a value."""
-        with patch.dict(
-            "os.environ",
-            {"HIVEMIND_CLIENT_KEY": "any-key"},
-        ):
-            response = client.get("/api/v1/voice/config")
+        """voice_enabled is True when key has a value."""
+        settings_service.update_voice_config(VoiceConfig(hivemind_key="any-key"))
+        response = client.get("/api/v1/voice/config")
 
         assert response.status_code == 200
         data = response.json()
         assert data["voice_enabled"] is True
 
     def test_full_config_response_structure(
-        self, client: TestClient
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
     ) -> None:
         """Response contains all expected fields."""
-        with patch.dict(
-            "os.environ",
-            {
-                "HIVEMIND_WS_URL": "ws://hivemind:5678",
-                "HIVEMIND_CLIENT_KEY": "key-abc",
-                "HIVEMIND_CLIENT_SECRET": "secret-xyz",
-            },
-        ):
-            response = client.get("/api/v1/voice/config")
+        settings_service.update_voice_config(
+            VoiceConfig(
+                hivemind_url="ws://hivemind:5678",
+                hivemind_key="key-abc",
+                hivemind_secret="secret-xyz",
+            )
+        )
+        response = client.get("/api/v1/voice/config")
 
         assert response.status_code == 200
         data = response.json()

@@ -38,7 +38,16 @@ const STATE_CONFIG = {
 } as const;
 
 export default function HiveMindStatus() {
-  const { connectionState, voiceEnabled, connect, disconnect, isConnected } =
+  const {
+    connectionState,
+    voiceEnabled,
+    connect,
+    disconnect,
+    isConnected,
+    connectionDetails,
+    isSpeaking,
+    isProcessing,
+  } =
     useHiveMind();
   const { isDark } = useTheme();
   const [showDetails, setShowDetails] = useState(false);
@@ -96,6 +105,29 @@ export default function HiveMindStatus() {
           <p className="mb-2">
             Status:{" "}
             <span className="font-mono">{connectionState}</span>
+          </p>
+          <p className="mb-1 truncate">
+            URL:{" "}
+            <span className="font-mono">{connectionDetails.url || "--"}</span>
+          </p>
+          <p className="mb-1">
+            Latency:{" "}
+            <span className="font-mono">
+              {connectionDetails.latencyMs === null
+                ? "--"
+                : `${connectionDetails.latencyMs} ms`}
+            </span>
+          </p>
+          <p className="mb-2">
+            Session ID:{" "}
+            <span className="font-mono">
+              {connectionDetails.sessionId ?? "--"}
+            </span>
+          </p>
+          <p className="mb-2">
+            {isProcessing ? "Processing" : "Idle"}
+            {" · "}
+            {isSpeaking ? "Speaking" : "Not speaking"}
           </p>
           <button
             type="button"

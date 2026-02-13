@@ -141,6 +141,21 @@ class PlatformConfig:
         )
 
 
+@dataclass
+class VoiceConfig:
+    """HiveMind browser client configuration.
+
+    Attributes:
+        hivemind_url: WebSocket endpoint for HiveMind-core.
+        hivemind_key: Client access key.
+        hivemind_secret: Client secret/password.
+    """
+
+    hivemind_url: str = "ws://localhost:5678"
+    hivemind_key: str = ""
+    hivemind_secret: str = ""
+
+
 class SettingsService:
     """
     Database-backed settings management.
@@ -639,6 +654,9 @@ class SettingsService:
     # ── Metric Mapping CRUD ─────────────────────────────
 
     METRIC_MAPPING_PREFIX = "metric_mapping:"
+    VOICE_WS_URL_KEY = "voice:hivemind_ws_url"
+    VOICE_CLIENT_KEY = "voice:hivemind_client_key"
+    VOICE_CLIENT_SECRET = "voice:hivemind_client_secret"
 
     def set_metric_mapping(self, metric_name: str, mapping: dict[str, Any]) -> None:
         """
@@ -657,6 +675,59 @@ class SettingsService:
         self._validate_metric_name(metric_name)
         key = f"{self.METRIC_MAPPING_PREFIX}{metric_name}"
         self.set_setting(key, mapping)
+
+    # ── Voice Config CRUD (DEC-006) ─────────────────────
+
+    def get_voice_config(self) -> VoiceConfig:
+        """Return HiveMind browser-client configuration.
+
+        Configuration source priority:
+        1. Values persisted in SettingsService storage
+        2. Environment defaults (for backwards-compatible bootstrap)
+        3. Hardcoded safe defaults
+
+        Returns:
+            VoiceConfig containing HiveMind URL, key and secret.
+        """
+        self._ensure_initialized()
+
+        env_url = os.environ.get("HIVEMIND_WS_URL", "ws://localhost:5678")
+        env_key = os.environ.get("HIVEMIND_CLIENT_KEY", "")
+        env_secret = os.environ.get("HIVEMIND_CLIENT_SECRET", "")
+
+        hivemind_url = self.get_setting(
+            self.VOICE_WS_URL_KEY,
+            default=env_url,
+        )
+        hivemind_key = self.get_setting(
+            self.VOICE_CLIENT_KEY,
+            default=env_key,
+        )
+        hivemind_secret = self.get_setting(
+            self.VOICE_CLIENT_SECRET,
+            default=env_secret,
+        )
+
+        return VoiceConfig(
+            hivemind_url=str(hivemind_url),
+            hivemind_key=str(hivemind_key),
+            hivemind_secret=str(hivemind_secret),
+        )
+
+    def update_voice_config(self, config: VoiceConfig) -> None:
+        """Persist HiveMind browser-client configuration.
+
+        Args:
+            config: New voice configuration values.
+        """
+        self._ensure_initialized()
+        self.set_setting(self.VOICE_WS_URL_KEY, config.hivemind_url)
+        self.set_setting(self.VOICE_CLIENT_KEY, config.hivemind_key)
+        self.set_setting(
+            self.VOICE_CLIENT_SECRET,
+            config.hivemind_secret,
+            encrypt=True,
+        )
 
     def get_metric_mapping(self, metric_name: str) -> dict[str, Any] | None:
         """
