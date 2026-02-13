@@ -182,3 +182,33 @@ export type ProductionSummaryResponse = {
   record_count: number;
   material_efficiency_pct: number;
 };
+
+export type EnergySource = "electricity" | "gas" | "water";
+
+export type EmissionFactorRequest = {
+  energy_source: EnergySource;
+  factor: number;
+  country: string;
+  source: string;
+  year: number;
+};
+
+export type EmissionFactorResponse = {
+  energy_source: string;
+  factor: number;
+  country: string;
+  source: string;
+  year: number;
+};
+
+export type EmissionFactorListResponse = {
+  factors: EmissionFactorResponse[];
+};
+
+export type EmissionFactorPresetResponse = {
+  country: string;
+  energy_source: string;
+  factor: number;
+  source: string;
+  year: number;
+};

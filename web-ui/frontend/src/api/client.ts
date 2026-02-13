@@ -3,6 +3,10 @@ import type {
   CSVUploadResponse,
   CanonicalMetricName,
   ConnectionTestResponse,
+  EmissionFactorListResponse,
+  EmissionFactorPresetResponse,
+  EmissionFactorRequest,
+  EmissionFactorResponse,
   HealthResponse,
   IntentListResponse,
   IntentState,
@@ -343,5 +347,30 @@ export function getProductionSummary(
   });
   return request<ProductionSummaryResponse>(
     `/api/v1/production-data/summary?${params.toString()}`,
+  );
+}
+
+export function listEmissionFactors(): Promise<EmissionFactorListResponse> {
+  return request<EmissionFactorListResponse>("/api/v1/config/emission-factors");
+}
+
+export function createEmissionFactor(
+  payload: EmissionFactorRequest
+): Promise<EmissionFactorResponse> {
+  return request<EmissionFactorResponse>("/api/v1/config/emission-factors", {
+    method: "POST",
+    body: payload
+  });
+}
+
+export async function deleteEmissionFactor(energySource: string): Promise<void> {
+  await request<unknown>(`/api/v1/config/emission-factors/${energySource}`, {
+    method: "DELETE"
+  });
+}
+
+export function listEmissionFactorPresets(): Promise<EmissionFactorPresetResponse[]> {
+  return request<EmissionFactorPresetResponse[]>(
+    "/api/v1/config/emission-factors/presets"
   );
 }
