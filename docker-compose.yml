@@ -61,7 +61,8 @@ services:
       - avaros
     labels:
       - "com.avaros.service=ovos-core"
-    avaros-web-ui:
+
+  avaros-web-ui:
     build:
       context: .
       dockerfile: web-ui/Dockerfile

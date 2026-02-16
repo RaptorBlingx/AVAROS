@@ -245,7 +245,7 @@ services:
       - ovos
 
     ports:
-      - "${AVAROS_HTTPS_PORT:-8443}:443"
+      - "${AVAROS_HTTPS_PORT:-443}:443"
 
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
