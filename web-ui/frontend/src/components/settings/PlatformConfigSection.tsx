@@ -22,16 +22,21 @@ type PlatformConfigSectionProps = {
   onNotify: (type: "success" | "error", message: string) => void;
 };
 
+type AuthType = "api_key" | "cookie";
+
 function createPayload(config: {
   platformType: PlatformType;
   apiUrl: string;
   apiKey: string;
+  authType: AuthType;
 }): PlatformConfigRequest {
   return {
     platform_type: config.platformType,
     api_url: config.platformType === "mock" ? "" : config.apiUrl.trim(),
     api_key: config.platformType === "mock" ? "" : config.apiKey.trim(),
-    extra_settings: {},
+    extra_settings: {
+      auth_type: config.authType === "cookie" ? "cookie" : "bearer",
+    },
   };
 }
 
@@ -39,6 +44,7 @@ function validate(config: {
   platformType: PlatformType;
   apiUrl: string;
   apiKey: string;
+  authType: AuthType;
 }): string {
   if (config.platformType === "mock") {
     return "";
@@ -50,7 +56,9 @@ function validate(config: {
     return "API URL must start with http:// or https://.";
   }
   if (!config.apiKey.trim()) {
-    return "API key is required.";
+    return config.authType === "cookie"
+      ? "Session cookie is required."
+      : "API key is required.";
   }
   return "";
 }
@@ -65,6 +73,7 @@ export default function PlatformConfigSection({
   const [testing, setTesting] = useState(false);
   const [config, setConfig] = useState<PlatformConfigResponse | null>(null);
   const [platformType, setPlatformType] = useState<PlatformType>("mock");
+  const [authType, setAuthType] = useState<AuthType>("api_key");
   const [apiUrl, setApiUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [testResult, setTestResult] = useState<ConnectionTestResponse | null>(null);
@@ -88,6 +97,11 @@ export default function PlatformConfigSection({
       const data = await getPlatformConfig();
       setConfig(data);
       setPlatformType(data.platform_type);
+      setAuthType(
+        data.extra_settings?.auth_type === "cookie"
+          ? "cookie"
+          : "api_key",
+      );
       setApiUrl(data.api_url);
       setApiKey("");
     } catch (error: unknown) {
@@ -103,7 +117,12 @@ export default function PlatformConfigSection({
   }, [loadConfig]);
 
   const handleSave = useCallback(async () => {
-    const validationError = validate({ platformType, apiUrl, apiKey });
+    const validationError = validate({
+      platformType,
+      apiUrl,
+      apiKey,
+      authType,
+    });
     setInlineError(validationError);
     setTestResult(null);
     if (validationError) {
@@ -111,7 +130,12 @@ export default function PlatformConfigSection({
     }
     setSaving(true);
     try {
-      const payload = createPayload({ platformType, apiUrl, apiKey });
+      const payload = createPayload({
+        platformType,
+        apiUrl,
+        apiKey,
+        authType,
+      });
       const saved = await createPlatformConfig(payload);
       setConfig(saved);
       setEditing(false);
@@ -124,7 +148,7 @@ export default function PlatformConfigSection({
     } finally {
       setSaving(false);
     }
-  }, [apiKey, apiUrl, onNotify, platformType]);
+  }, [apiKey, apiUrl, authType, onNotify, platformType]);
 
   const handleReset = useCallback(async () => {
     setSaving(true);
@@ -149,6 +173,7 @@ export default function PlatformConfigSection({
       platformType,
       apiUrl,
       apiKey: isMock ? "" : apiKey,
+      authType,
     });
     setInlineError(validationError);
     setTestResult(null);
@@ -157,7 +182,12 @@ export default function PlatformConfigSection({
     }
     setTesting(true);
     try {
-      const payload = createPayload({ platformType, apiUrl, apiKey });
+      const payload = createPayload({
+        platformType,
+        apiUrl,
+        apiKey,
+        authType,
+      });
       const result = await testConnection(payload);
       setTestResult(result);
       onNotify(result.success ? "success" : "error", result.message);
@@ -168,7 +198,7 @@ export default function PlatformConfigSection({
     } finally {
       setTesting(false);
     }
-  }, [apiKey, apiUrl, isMock, onNotify, platformType]);
+  }, [apiKey, apiUrl, authType, isMock, onNotify, platformType]);
 
   return (
     <section className="space-y-3">
@@ -238,9 +268,26 @@ export default function PlatformConfigSection({
               />
             </label>
 
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
+                Auth Type
+              </span>
+              <select
+                value={authType}
+                onChange={(event) =>
+                  setAuthType(event.target.value as AuthType)
+                }
+                disabled={!editing || saving || isMock}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+              >
+                <option value="api_key">API Key</option>
+                <option value="cookie">Session Cookie</option>
+              </select>
+            </label>
+
             <label className="block md:col-span-2">
               <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
-                API Key
+                {authType === "cookie" ? "Session Cookie Value" : "API Key"}
               </span>
               <input
                 type="password"
@@ -248,7 +295,9 @@ export default function PlatformConfigSection({
                 onChange={(event) => setApiKey(event.target.value)}
                 placeholder={
                   editing
-                    ? "Enter API key to update"
+                    ? authType === "cookie"
+                      ? "Paste session cookie (S=...)"
+                      : "Enter API key to update"
                     : config?.api_key ?? "****"
                 }
                 disabled={!editing || saving || isMock}
