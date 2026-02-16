@@ -132,6 +132,7 @@ describe("HiveMindContext event state mapping", () => {
 
     vi.mocked(getVoiceConfig).mockResolvedValue({
       hivemind_url: "ws://localhost:5678",
+      hivemind_name: "avaros-web-client",
       hivemind_key: "test-key",
       hivemind_secret: "test-secret",
       voice_enabled: true,

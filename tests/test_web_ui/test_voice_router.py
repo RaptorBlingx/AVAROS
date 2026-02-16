@@ -37,6 +37,7 @@ class TestGetVoiceConfigDefaults:
     ) -> None:
         """Default hivemind_url is ws://localhost:5678."""
         settings_service.delete_setting(SettingsService.VOICE_WS_URL_KEY)
+        settings_service.delete_setting(SettingsService.VOICE_CLIENT_NAME)
         settings_service.delete_setting(SettingsService.VOICE_CLIENT_KEY)
         settings_service.delete_setting(SettingsService.VOICE_CLIENT_SECRET)
 
@@ -45,6 +46,20 @@ class TestGetVoiceConfigDefaults:
         assert response.status_code == 200
         data = response.json()
         assert data["hivemind_url"] == "ws://localhost:5678"
+
+    def test_returns_default_name(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """Default hivemind_name is avaros-web-client."""
+        settings_service.delete_setting(SettingsService.VOICE_CLIENT_NAME)
+
+        response = client.get("/api/v1/voice/config")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["hivemind_name"] == "avaros-web-client"
 
     def test_returns_empty_key_when_not_set(
         self,
@@ -122,6 +137,21 @@ class TestGetVoiceConfigFromSettings:
         data = response.json()
         assert data["hivemind_key"] == "test-access-key-123"
 
+    def test_returns_configured_name(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """hivemind_name reflects stored SettingsService value."""
+        settings_service.update_voice_config(
+            VoiceConfig(hivemind_name="custom-web-client")
+        )
+        response = client.get("/api/v1/voice/config")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["hivemind_name"] == "custom-web-client"
+
     def test_returns_configured_secret(
         self,
         client: TestClient,
@@ -159,6 +189,7 @@ class TestGetVoiceConfigFromSettings:
         settings_service.update_voice_config(
             VoiceConfig(
                 hivemind_url="ws://hivemind:5678",
+                hivemind_name="voice-client-01",
                 hivemind_key="key-abc",
                 hivemind_secret="secret-xyz",
             )
@@ -169,11 +200,13 @@ class TestGetVoiceConfigFromSettings:
         data = response.json()
         assert set(data.keys()) == {
             "hivemind_url",
+            "hivemind_name",
             "hivemind_key",
             "hivemind_secret",
             "voice_enabled",
         }
         assert data["hivemind_url"] == "ws://hivemind:5678"
+        assert data["hivemind_name"] == "voice-client-01"
         assert data["hivemind_key"] == "key-abc"
         assert data["hivemind_secret"] == "secret-xyz"
         assert data["voice_enabled"] is True

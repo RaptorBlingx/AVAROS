@@ -147,11 +147,13 @@ class VoiceConfig:
 
     Attributes:
         hivemind_url: WebSocket endpoint for HiveMind-core.
+        hivemind_name: Client name for HiveMind authentication token.
         hivemind_key: Client access key.
         hivemind_secret: Client secret/password.
     """
 
     hivemind_url: str = "ws://localhost:5678"
+    hivemind_name: str = "avaros-web-client"
     hivemind_key: str = ""
     hivemind_secret: str = ""
 
@@ -655,6 +657,7 @@ class SettingsService:
 
     METRIC_MAPPING_PREFIX = "metric_mapping:"
     VOICE_WS_URL_KEY = "voice:hivemind_ws_url"
+    VOICE_CLIENT_NAME = "voice:hivemind_client_name"
     VOICE_CLIENT_KEY = "voice:hivemind_client_key"
     VOICE_CLIENT_SECRET = "voice:hivemind_client_secret"
 
@@ -692,12 +695,17 @@ class SettingsService:
         self._ensure_initialized()
 
         env_url = os.environ.get("HIVEMIND_WS_URL", "ws://localhost:5678")
+        env_name = os.environ.get("HIVEMIND_CLIENT_NAME", "avaros-web-client")
         env_key = os.environ.get("HIVEMIND_CLIENT_KEY", "")
         env_secret = os.environ.get("HIVEMIND_CLIENT_SECRET", "")
 
         hivemind_url = self.get_setting(
             self.VOICE_WS_URL_KEY,
             default=env_url,
+        )
+        hivemind_name = self.get_setting(
+            self.VOICE_CLIENT_NAME,
+            default=env_name,
         )
         hivemind_key = self.get_setting(
             self.VOICE_CLIENT_KEY,
@@ -710,6 +718,7 @@ class SettingsService:
 
         return VoiceConfig(
             hivemind_url=str(hivemind_url),
+            hivemind_name=str(hivemind_name),
             hivemind_key=str(hivemind_key),
             hivemind_secret=str(hivemind_secret),
         )
@@ -722,6 +731,7 @@ class SettingsService:
         """
         self._ensure_initialized()
         self.set_setting(self.VOICE_WS_URL_KEY, config.hivemind_url)
+        self.set_setting(self.VOICE_CLIENT_NAME, config.hivemind_name)
         self.set_setting(self.VOICE_CLIENT_KEY, config.hivemind_key)
         self.set_setting(
             self.VOICE_CLIENT_SECRET,

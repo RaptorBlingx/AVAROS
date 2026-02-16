@@ -215,6 +215,7 @@ export type EmissionFactorPresetResponse = {
 
 export type VoiceConfigResponse = {
   hivemind_url: string;
+  hivemind_name: string;
   hivemind_key: string;
   hivemind_secret: string;
   voice_enabled: boolean;

@@ -97,6 +97,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
         if (config.voice_enabled) {
           const svc = new HiveMindService({
             url: config.hivemind_url,
+            clientName: config.hivemind_name,
             accessKey: config.hivemind_key,
             accessSecret: config.hivemind_secret,
           });

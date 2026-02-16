@@ -20,6 +20,8 @@ export type ConnectionState =
 export interface HiveMindConfig {
   /** WebSocket URL, e.g. ws://localhost:5678 or wss://host/hivemind */
   url: string;
+  /** Client name from HiveMind credential store */
+  clientName?: string;
   /** Client access key from HiveMind credential store */
   accessKey: string;
   /** Client crypto/secret key (used for AES-GCM encryption) */
@@ -134,6 +136,7 @@ export class HiveMindService {
 
   constructor(config: HiveMindConfig) {
     this.config = {
+      clientName: "avaros-web-client",
       autoReconnect: true,
       reconnectInterval: 2000,
       maxReconnectAttempts: 8,
@@ -160,7 +163,7 @@ export class HiveMindService {
       this.connectStartedAt = Date.now();
 
       const authToken = btoa(
-        `avaros-web-client:${this.config.accessKey}`,
+        `${this.config.clientName}:${this.config.accessKey}`,
       );
       const wsUrl = `${this.config.url}?authorization=${authToken}`;
 
@@ -362,25 +365,27 @@ export class HiveMindService {
       }
     }
 
+    this.updateSessionId(parsed);
+
     const msg = parsed as HiveMindEnvelope;
 
     if (msg.msg_type === "bus" && msg.payload) {
-      this.updateSessionId(msg.payload, parsed);
       this.dispatchEvent(msg.payload);
     }
   }
 
-  private updateSessionId(
-    payload: OVOSMessage,
-    envelope: unknown,
-  ): void {
-    const payloadContext =
-      payload.context as Record<string, unknown> | undefined;
+  private updateSessionId(envelope: unknown): void {
     const root = envelope as Record<string, unknown>;
+    const payload =
+      (root.payload as Record<string, unknown> | undefined) ?? {};
+    const payloadContext =
+      (payload.context as Record<string, unknown> | undefined) ?? {};
 
     const candidate =
-      payloadContext?.session_id ??
-      payloadContext?.session ??
+      payloadContext.session_id ??
+      payloadContext.session ??
+      payload.session_id ??
+      payload.session ??
       root.session_id ??
       root.session;
 

@@ -26,6 +26,7 @@ def get_voice_config(
     config = settings_service.get_voice_config()
     return VoiceConfigResponse(
         hivemind_url=config.hivemind_url,
+        hivemind_name=config.hivemind_name,
         hivemind_key=config.hivemind_key,
         hivemind_secret=config.hivemind_secret,
         voice_enabled=bool(config.hivemind_key),

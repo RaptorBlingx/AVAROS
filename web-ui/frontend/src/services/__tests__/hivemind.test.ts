@@ -76,6 +76,7 @@ function createDefaultConfig(
 ): HiveMindConfig {
   return {
     url: "ws://localhost:5678",
+    clientName: "avaros-web-client",
     accessKey: "test-key",
     accessSecret: "",
     autoReconnect: false,
@@ -124,6 +125,24 @@ describe("HiveMindService", () => {
       await connectPromise;
 
       const expectedAuth = btoa("avaros-web-client:test-key");
+      expect(mockWsInstance!.url).toContain(
+        `?authorization=${expectedAuth}`,
+      );
+    });
+
+    it("uses configured client name in authorization token", async () => {
+      const svc = new HiveMindService(
+        createDefaultConfig({
+          clientName: "custom-client",
+          accessKey: "key-123",
+        }),
+      );
+      const connectPromise = svc.connect();
+
+      mockWsInstance!.simulateOpen();
+      await connectPromise;
+
+      const expectedAuth = btoa("custom-client:key-123");
       expect(mockWsInstance!.url).toContain(
         `?authorization=${expectedAuth}`,
       );
@@ -372,6 +391,23 @@ describe("HiveMindService", () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(received).toHaveLength(0);
+    });
+
+    it("captures session id from handshake payload", async () => {
+      const svc = new HiveMindService(
+        createDefaultConfig({ accessSecret: "" }),
+      );
+      const connectPromise = svc.connect();
+      mockWsInstance!.simulateOpen();
+      await connectPromise;
+
+      mockWsInstance!.simulateMessage({
+        msg_type: "handshake",
+        payload: { session_id: "session-xyz" },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(svc.getConnectionDetails().sessionId).toBe("session-xyz");
     });
   });
 

@@ -12,6 +12,10 @@ class VoiceConfigResponse(BaseModel):
         ...,
         description="WebSocket URL for HiveMind-core connection.",
     )
+    hivemind_name: str = Field(
+        ...,
+        description="Client name for HiveMind authentication token.",
+    )
     hivemind_key: str = Field(
         ...,
         description="Client access key for HiveMind authentication.",
