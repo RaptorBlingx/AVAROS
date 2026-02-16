@@ -11,6 +11,7 @@ import { ApiError, clearStoredApiKey, getStatus, getStoredApiKey } from "./api/c
 import ErrorBoundary from "./components/common/ErrorBoundary";
 import { useTheme } from "./components/common/ThemeProvider";
 import Sidebar from "./components/Sidebar";
+import VoiceWidget from "./components/voice/VoiceWidget";
 import Dashboard from "./pages/Dashboard";
 import KPIDashboard from "./pages/KPIDashboard";
 import Login from "./pages/Login";
@@ -68,6 +69,7 @@ function AppContent({ isDark }: { isDark: boolean }) {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
+      <VoiceWidget />
     </div>
   );
 }

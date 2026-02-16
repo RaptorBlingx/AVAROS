@@ -1,0 +1,211 @@
+/**
+ * Voice Widget — CSS animations and styles.
+ *
+ * Uses CSS-only animations for recording indicator, pulse, ripple,
+ * and expand/collapse transitions to keep the bundle lightweight.
+ */
+
+/* ── Mic button pulse (idle state) ─────────────────── */
+
+@keyframes voice-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(100, 116, 139, 0.35);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(100, 116, 139, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(100, 116, 139, 0);
+  }
+}
+
+.voice-mic--idle {
+  animation: voice-pulse 2.4s ease-in-out infinite;
+}
+
+/* ── Listening pulse (blue) ────────────────────────── */
+
+@keyframes voice-pulse-listening {
+  0% {
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 14px rgba(56, 189, 248, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0);
+  }
+}
+
+.voice-mic--listening {
+  animation: voice-pulse-listening 1.2s ease-in-out infinite;
+}
+
+/* ── Speaking pulse (green) ────────────────────────── */
+
+@keyframes voice-pulse-speaking {
+  0% {
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgba(52, 211, 153, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(52, 211, 153, 0);
+  }
+}
+
+.voice-mic--speaking {
+  animation: voice-pulse-speaking 1.4s ease-in-out infinite;
+}
+
+/* ── Processing spinner ────────────────────────────── */
+
+@keyframes voice-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.voice-spinner {
+  animation: voice-spin 0.9s linear infinite;
+}
+
+/* ── Ripple on click ───────────────────────────────── */
+
+@keyframes voice-ripple {
+  0% {
+    transform: scale(0.5);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+
+.voice-ripple {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.voice-ripple--active {
+  animation: voice-ripple 500ms ease-out forwards;
+}
+
+/* ── Recording indicator rings ─────────────────────── */
+
+@keyframes voice-ring-expand {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+.voice-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(56, 189, 248, 0.5);
+  pointer-events: none;
+}
+
+.voice-ring--1 {
+  animation: voice-ring-expand 1.8s ease-out infinite;
+}
+
+.voice-ring--2 {
+  animation: voice-ring-expand 1.8s ease-out 0.6s infinite;
+}
+
+.voice-ring--3 {
+  animation: voice-ring-expand 1.8s ease-out 1.2s infinite;
+}
+
+/* ── Speaking bars (equalizer-style) ───────────────── */
+
+@keyframes voice-bar {
+  0%,
+  100% {
+    height: 4px;
+  }
+  50% {
+    height: 16px;
+  }
+}
+
+.voice-bar {
+  width: 3px;
+  border-radius: 1.5px;
+  animation: voice-bar 0.8s ease-in-out infinite;
+}
+
+.voice-bar--1 {
+  animation-delay: 0s;
+}
+
+.voice-bar--2 {
+  animation-delay: 0.15s;
+}
+
+.voice-bar--3 {
+  animation-delay: 0.3s;
+}
+
+.voice-bar--4 {
+  animation-delay: 0.45s;
+}
+
+/* ── Panel expand/collapse ─────────────────────────── */
+
+.voice-panel-enter {
+  animation: voice-panel-in 200ms ease forwards;
+}
+
+.voice-panel-exit {
+  animation: voice-panel-out 200ms ease forwards;
+}
+
+@keyframes voice-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes voice-panel-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+}
+
+/* ── Status dot ────────────────────────────────────── */
+
+@keyframes voice-dot-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.voice-dot--active {
+  animation: voice-dot-blink 1.2s ease-in-out infinite;
+}
