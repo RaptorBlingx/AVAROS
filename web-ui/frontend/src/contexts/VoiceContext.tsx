@@ -22,6 +22,7 @@ import {
 } from "../services/audio-permissions";
 import { STTService, type STTResult } from "../services/stt";
 import { TTSService } from "../services/tts";
+import { VoiceMetricsService } from "../services/voice-metrics";
 import { useWakeWord } from "../hooks/useWakeWord";
 
 // Re-export types for consumer convenience
@@ -37,6 +38,7 @@ interface VoiceProviderProps {
 export function VoiceProvider({ children }: VoiceProviderProps) {
   const sttRef = useRef<STTService | null>(null);
   const ttsRef = useRef<TTSService | null>(null);
+  const metricsRef = useRef(new VoiceMetricsService());
   const voicesChangedHandlerRef = useRef<(() => void) | null>(null);
 
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
@@ -56,6 +58,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   // ── Wake word detection ────────────────────────────
   const onWakeWordDetected = useCallback(() => {
+    metricsRef.current.reset();
+    metricsRef.current.mark("wake_word_detected");
     setInterimTranscript("");
     setFinalTranscript("");
     void sttRef.current?.start();
@@ -115,6 +119,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
     const unsubResult = stt.onResult((result: STTResult) => {
       if (result.isFinal) {
+        metricsRef.current.mark("stt_completed");
         setFinalTranscript(result.transcript);
         setInterimTranscript("");
       } else {
@@ -125,6 +130,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     const unsubState = stt.onStateChange((state) => {
       switch (state) {
         case "listening":
+          metricsRef.current.mark("stt_started");
           setVoiceState("listening");
           break;
         case "processing":
@@ -158,7 +164,11 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         setVoiceState("speaking");
       } else {
         setIsSpeaking(false);
-        if (state === "idle") setVoiceState("idle");
+        if (state === "idle") {
+          metricsRef.current.mark("tts_completed");
+          metricsRef.current.toConsoleLog();
+          setVoiceState("idle");
+        }
       }
     });
   }, [ttsSupported]);
@@ -166,6 +176,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   // ── Auto-send final transcript to HiveMind ─────────
   useEffect(() => {
     if (!finalTranscript || !isConnected) return;
+    metricsRef.current.mark("utterance_sent");
     void sendUtterance(finalTranscript).then(() =>
       setVoiceState("processing"),
     );
@@ -174,8 +185,12 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   // ── Auto-speak HiveMind responses ──────────────────
   useEffect(() => {
     return on("speak", (msg) => {
+      metricsRef.current.mark("response_received");
       const text = (msg.data.utterance as string | undefined) ?? "";
-      if (text && ttsRef.current) void ttsRef.current.speak(text);
+      if (text && ttsRef.current) {
+        metricsRef.current.mark("tts_started");
+        void ttsRef.current.speak(text);
+      }
     });
   }, [on]);
 
@@ -188,6 +203,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       setMicPermission(result);
       if (result !== "granted") return;
     }
+    metricsRef.current.reset();
+    metricsRef.current.mark("stt_started");
     setInterimTranscript("");
     setFinalTranscript("");
     await sttRef.current.start();

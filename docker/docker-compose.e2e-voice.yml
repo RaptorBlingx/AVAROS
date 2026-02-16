@@ -1,0 +1,70 @@
+# AVAROS Voice E2E Test Environment
+#
+# Extends the base E2E compose with HiveMind WebSocket bridge for
+# testing the complete voice pipeline path:
+#   Browser client → HiveMind WebSocket → OVOS messagebus → AVAROSSkill
+#
+# MockAdapter enabled for predictable responses.
+# HiveMind configured with test access keys (no TLS).
+#
+# Usage:
+#   docker compose -f docker/docker-compose.e2e.yml \
+#       -f docker/docker-compose.e2e-voice.yml up -d
+#   sleep 15
+#   docker compose -f docker/docker-compose.e2e.yml \
+#       -f docker/docker-compose.e2e-voice.yml exec -T e2e-runner \
+#       pytest tests/test_e2e/ -v --timeout=60 -m e2e
+#   docker compose -f docker/docker-compose.e2e.yml \
+#       -f docker/docker-compose.e2e-voice.yml down -v
+
+services:
+  # HiveMind WebSocket bridge — connects to messagebus and exposes
+  # a WebSocket endpoint for browser/test clients.
+  hivemind:
+    build:
+      context: hivemind
+      dockerfile: Dockerfile
+    container_name: e2e-hivemind
+    depends_on:
+      ovos_messagebus:
+        condition: service_healthy
+    networks:
+      - e2e-net
+    ports:
+      - "5678:5678"
+    environment:
+      - OVOS_BUS_HOST=ovos_messagebus
+      - OVOS_BUS_PORT=8181
+      - HIVEMIND_WS_PORT=5678
+      - HIVEMIND_MASTER_KEY=e2e-test-master-key
+      - HIVEMIND_CLIENT_NAME=e2e-test-client
+      - HIVEMIND_CLIENT_KEY=e2e-test-access-key
+      - HIVEMIND_CLIENT_SECRET=e2e-test-secret-key
+    healthcheck:
+      test: >-
+        python -c "
+        import socket;
+        s = socket.socket();
+        s.settimeout(2);
+        s.connect(('127.0.0.1', 5678));
+        s.close();
+        print('OK')
+        "
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Override e2e-runner to also expose HiveMind env vars
+  e2e-runner:
+    environment:
+      - MESSAGEBUS_HOST=ovos_messagebus
+      - MESSAGEBUS_PORT=8181
+      - AVAROS_DATABASE_URL=postgresql://avaros:avaros@e2e-db:5432/avaros
+      - HIVEMIND_HOST=e2e-hivemind
+      - HIVEMIND_PORT=5678
+      - HIVEMIND_CLIENT_KEY=e2e-test-access-key
+      - HIVEMIND_CLIENT_SECRET=e2e-test-secret-key
+    depends_on:
+      hivemind:
+        condition: service_healthy
