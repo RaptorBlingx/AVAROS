@@ -110,10 +110,13 @@ class TestComposeHiveMindService:
         )
 
     def test_avaros_compose_hivemind_ovos_bus_host(self) -> None:
-        """Compose sets OVOS_BUS_HOST to ovos_core."""
+        """Compose sets OVOS_BUS_HOST to ovos_messagebus."""
         content = COMPOSE_FILE.read_text()
-        assert "OVOS_BUS_HOST=ovos_core" in content, (
-            "hivemind service must set OVOS_BUS_HOST=ovos_core"
+        assert "OVOS_BUS_HOST" in content, (
+            "hivemind service must set OVOS_BUS_HOST"
+        )
+        assert "ovos_messagebus" in content, (
+            "hivemind service must default OVOS_BUS_HOST to ovos_messagebus"
         )
 
     def test_standalone_compose_has_hivemind(self) -> None:

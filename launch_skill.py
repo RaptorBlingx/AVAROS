@@ -7,6 +7,7 @@ connecting it to the OVOS messagebus for intent handling.
 """
 
 import sys
+import os
 import logging
 import time
 from pathlib import Path
@@ -35,7 +36,8 @@ def main() -> None:
         # Create MessageBus client connection
         # In WASABI OVOS, the messagebus is accessible at ovos_messagebus:8181
         logger.info("Connecting to OVOS messagebus...")
-        bus = MessageBusClient(host="ovos_messagebus", port=8181)
+        bus_host = os.environ.get("MESSAGEBUS_HOST", "ovos_messagebus")
+        bus = MessageBusClient(host=bus_host, port=8181)
         bus.run_in_thread()
         
         # Create skill instance with skill_id and bus

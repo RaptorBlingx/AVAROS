@@ -15,7 +15,7 @@
 #   ./scripts/run-voice-e2e.sh
 #   ./scripts/run-voice-e2e.sh --keep   # Keep containers after tests
 # =================================================================
-set -e
+set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -28,7 +28,9 @@ if [[ "${1:-}" == "--keep" ]]; then
     KEEP_CONTAINERS=true
 fi
 
-COMPOSE_CMD="docker compose -f $BASE_COMPOSE -f $VOICE_COMPOSE"
+COMPOSE_CMD=(docker compose -f "$BASE_COMPOSE" -f "$VOICE_COMPOSE")
+EXIT_CODE=0
+STACK_STARTED=false
 
 echo "=== AVAROS Voice E2E Pipeline Tests ==="
 echo "Project root: $PROJECT_ROOT"
@@ -39,22 +41,46 @@ cleanup() {
     if [[ "$KEEP_CONTAINERS" == "false" ]]; then
         echo ""
         echo "Tearing down containers..."
-        $COMPOSE_CMD down -v --remove-orphans 2>/dev/null || true
+        "${COMPOSE_CMD[@]}" down -v --remove-orphans 2>/dev/null || true
     else
         echo ""
         echo "Keeping containers running (--keep flag)."
-        echo "Tear down manually: $COMPOSE_CMD down -v"
+        echo "Tear down manually: ${COMPOSE_CMD[*]} down -v"
     fi
 }
 trap cleanup EXIT
 
+collect_logs() {
+    echo ""
+    echo "=== docker compose status ==="
+    "${COMPOSE_CMD[@]}" ps --format "table {{.Name}}\t{{.Status}}" || true
+    echo ""
+    echo "=== avaros-skill logs ==="
+    "${COMPOSE_CMD[@]}" logs --tail=100 avaros-skill || true
+    echo ""
+    echo "=== ovos-messagebus logs ==="
+    "${COMPOSE_CMD[@]}" logs --tail=60 ovos_messagebus || true
+    echo ""
+    echo "=== hivemind logs ==="
+    "${COMPOSE_CMD[@]}" logs --tail=80 hivemind || true
+    echo ""
+    echo "=== reneryo-mock logs ==="
+    "${COMPOSE_CMD[@]}" logs --tail=60 reneryo-mock || true
+}
+
 # ── Build ────────────────────────────────────────────────
 echo "Building Docker images..."
-$COMPOSE_CMD build --quiet
+"${COMPOSE_CMD[@]}" build --quiet
 
 # ── Start ────────────────────────────────────────────────
 echo "Starting all services (messagebus + skill + DB + mock RENERYO + HiveMind)..."
-$COMPOSE_CMD up -d
+if ! "${COMPOSE_CMD[@]}" up -d --wait --wait-timeout 120; then
+    EXIT_CODE=1
+    echo "❌ Startup failed before tests"
+    collect_logs
+    exit "$EXIT_CODE"
+fi
+STACK_STARTED=true
 
 # ── Wait for readiness ───────────────────────────────────
 echo "Waiting ${STARTUP_WAIT}s for services to initialise..."
@@ -62,27 +88,20 @@ sleep "$STARTUP_WAIT"
 
 # Quick health check
 echo "Checking service health..."
-$COMPOSE_CMD ps --format "table {{.Name}}\t{{.Status}}"
+"${COMPOSE_CMD[@]}" ps --format "table {{.Name}}\t{{.Status}}"
 echo ""
 
 # ── Run tests ────────────────────────────────────────────
 echo "Running Voice E2E tests..."
-$COMPOSE_CMD exec -T e2e-runner \
-    pytest tests/test_e2e/ -v --tb=short --timeout=60 -m e2e
-
+set +e
+"${COMPOSE_CMD[@]}" exec -T e2e-runner \
+    pytest tests/test_e2e/test_hivemind_pipeline.py -v --tb=short -m e2e
 EXIT_CODE=$?
+set -e
 
 # ── Collect logs on failure ──────────────────────────────
 if [ "$EXIT_CODE" -ne 0 ]; then
-    echo ""
-    echo "=== avaros-skill logs ==="
-    $COMPOSE_CMD logs --tail=80 avaros-skill
-    echo ""
-    echo "=== ovos-messagebus logs ==="
-    $COMPOSE_CMD logs --tail=40 ovos_messagebus
-    echo ""
-    echo "=== hivemind logs ==="
-    $COMPOSE_CMD logs --tail=40 hivemind
+    collect_logs
 fi
 
 # ── Summary ──────────────────────────────────────────────

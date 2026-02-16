@@ -76,6 +76,10 @@ services:
     environment:
       # Adapter configuration (DEC-005: MockAdapter default)
       - ADAPTER_TYPE=mock
+
+      # OVOS messagebus endpoint (used by launch_skill.py)
+      - MESSAGEBUS_HOST=${MESSAGEBUS_HOST:-ovos_messagebus}
+      - MESSAGEBUS_PORT=${MESSAGEBUS_PORT:-8181}
       
       # Database configuration (PostgreSQL — production-grade)
       - AVAROS_DATABASE_URL=postgresql://avaros:avaros@avaros_db:5432/avaros
@@ -139,6 +143,10 @@ services:
     environment:
       - AVAROS_DATABASE_URL=postgresql://avaros:avaros@avaros_db:5432/avaros
       - AVAROS_WEB_UI_PORT=8080
+      # HiveMind voice config: passed via env_file (.env) — do NOT redeclare
+      # here or compose defaults will override the .env values.
+      # Required .env vars: HIVEMIND_WS_URL, HIVEMIND_CLIENT_KEY,
+      # HIVEMIND_CLIENT_SECRET (see .env for details).
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
 
@@ -186,7 +194,8 @@ services:
     restart: unless-stopped
 
     depends_on:
-      - avaros_skill
+      avaros_skill:
+        condition: service_healthy
 
     networks:
       - ovos
@@ -194,16 +203,17 @@ services:
     ports:
       - "${HIVEMIND_PORT:-5678}:5678"
 
+    env_file:
+      - ../.env
+
     environment:
       - HIVEMIND_MASTER_KEY=${HIVEMIND_MASTER_KEY:-avaros-dev-key-change-in-production}
-      - OVOS_BUS_HOST=ovos_core
-      - OVOS_BUS_PORT=8181
-      - HIVEMIND_WS_PORT=5678
-      - HIVEMIND_CLIENT_NAME=${HIVEMIND_CLIENT_NAME:-avaros-web-client}
-      - HIVEMIND_CLIENT_KEY=${HIVEMIND_CLIENT_KEY:-avaros-web-client}
-      - HIVEMIND_CLIENT_SECRET=${HIVEMIND_CLIENT_SECRET:-avaros-web-secret-change-in-production}
-      - HIVEMIND_ACCESS_KEY=${HIVEMIND_ACCESS_KEY:-}
-      - HIVEMIND_PASSWORD=${HIVEMIND_PASSWORD:-}
+      - OVOS_BUS_HOST=${OVOS_BUS_HOST:-ovos_messagebus}
+      - OVOS_BUS_PORT=${OVOS_BUS_PORT:-8181}
+      - HIVEMIND_WS_PORT=${HIVEMIND_WS_PORT:-5678}
+      # Client credentials and allowed_types come from env_file (.env).
+      # When .env is absent, entrypoint.sh applies dev defaults (DEC-005).
+      - HIVEMIND_CLIENT_ALLOWED_TYPES=${HIVEMIND_CLIENT_ALLOWED_TYPES:-recognizer_loop:utterance,recognizer_loop:record_begin,recognizer_loop:record_end,recognizer_loop:audio_output_start,recognizer_loop:audio_output_end,recognizer_loop:b64_transcribe,speak:b64_audio,ovos.common_play.SEI.get.response}
 
     volumes:
       - hivemind_data:/home/hivemind/.config/hivemind-core
@@ -243,7 +253,7 @@ services:
       - certbot_webroot:/var/www/certbot:ro
 
     healthcheck:
-      test: ["CMD", "wget", "--spider", "--no-check-certificate", "-q", "https://localhost"]
+      test: ["CMD", "wget", "--spider", "--no-check-certificate", "-q", "https://127.0.0.1"]
       interval: 30s
       timeout: 10s
       start_period: 10s

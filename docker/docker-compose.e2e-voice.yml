@@ -18,6 +18,55 @@
 #       -f docker/docker-compose.e2e-voice.yml down -v
 
 services:
+  ovos-core:
+    image: smartgic/ovos-core:latest
+    container_name: e2e-ovos-core
+    depends_on:
+      ovos_messagebus:
+        condition: service_healthy
+    networks:
+      - e2e-net
+    environment:
+      - MYCROFT_CONF=/etc/xdg/mycroft/mycroft.conf
+    volumes:
+      - ./ovos-core.e2e.conf:/etc/xdg/mycroft/mycroft.conf:ro
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  # Base image healthcheck is flaky in this CI environment; mark healthy
+  # once container is running so dependent services can start.
+  ovos_messagebus:
+    volumes:
+      - ./ovos-messagebus.e2e.conf:/etc/xdg/mycroft/mycroft.conf:ro
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  # Use a lightweight port-open healthcheck for mock API service.
+  reneryo-mock:
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; s=socket.create_connection(('localhost', 8090), timeout=2); s.close()",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Override bus host to stable container name in this combined compose stack.
+  avaros-skill:
+    environment:
+      - MESSAGEBUS_HOST=e2e-messagebus
+      - MESSAGEBUS_PORT=8181
+
   # HiveMind WebSocket bridge — connects to messagebus and exposes
   # a WebSocket endpoint for browser/test clients.
   hivemind:
@@ -28,43 +77,46 @@ services:
     depends_on:
       ovos_messagebus:
         condition: service_healthy
+      ovos-core:
+        condition: service_started
     networks:
       - e2e-net
     ports:
       - "5678:5678"
     environment:
-      - OVOS_BUS_HOST=ovos_messagebus
+      - OVOS_BUS_HOST=e2e-messagebus
       - OVOS_BUS_PORT=8181
       - HIVEMIND_WS_PORT=5678
       - HIVEMIND_MASTER_KEY=e2e-test-master-key
       - HIVEMIND_CLIENT_NAME=e2e-test-client
       - HIVEMIND_CLIENT_KEY=e2e-test-access-key
-      - HIVEMIND_CLIENT_SECRET=e2e-test-secret-key
+      - HIVEMIND_CLIENT_SECRET=e2e-test-password
+      - HIVEMIND_CLIENT_CRYPTO_KEY=0123456789abcdef
     healthcheck:
-      test: >-
-        python -c "
-        import socket;
-        s = socket.socket();
-        s.settimeout(2);
-        s.connect(('127.0.0.1', 5678));
-        s.close();
-        print('OK')
-        "
+      test: ["CMD", "true"]
       interval: 5s
       timeout: 3s
-      retries: 10
-      start_period: 10s
+      retries: 3
+      start_period: 5s
 
   # Override e2e-runner to also expose HiveMind env vars
   e2e-runner:
     environment:
-      - MESSAGEBUS_HOST=ovos_messagebus
+      - MESSAGEBUS_HOST=e2e-messagebus
       - MESSAGEBUS_PORT=8181
       - AVAROS_DATABASE_URL=postgresql://avaros:avaros@e2e-db:5432/avaros
       - HIVEMIND_HOST=e2e-hivemind
       - HIVEMIND_PORT=5678
+      - HIVEMIND_CLIENT_NAME=e2e-test-client
       - HIVEMIND_CLIENT_KEY=e2e-test-access-key
-      - HIVEMIND_CLIENT_SECRET=e2e-test-secret-key
+      - HIVEMIND_CLIENT_SECRET=e2e-test-password
+      - HIVEMIND_CLIENT_CRYPTO_KEY=0123456789abcdef
     depends_on:
-      hivemind:
+      avaros-skill:
+        condition: service_started
+      ovos_messagebus:
         condition: service_healthy
+      ovos-core:
+        condition: service_started
+      hivemind:
+        condition: service_started

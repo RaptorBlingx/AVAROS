@@ -31,6 +31,7 @@ _DEFAULT_HOST = "localhost"
 _DEFAULT_PORT = 8181
 _CONNECT_WAIT_S = 5
 _DEFAULT_TIMEOUT_S = 15
+_SKILL_ID = "avaros-manufacturing.avaros"
 
 
 # ── Helper ──────────────────────────────────────────────
@@ -55,6 +56,7 @@ def send_intent_and_wait(
     """
     response: list[dict[str, Any]] = []
     event = threading.Event()
+    full_intent_name = f"{_SKILL_ID}:{intent_name}"
 
     def _on_speak(msg: Message) -> None:
         response.append(msg.data)
@@ -62,7 +64,7 @@ def send_intent_and_wait(
 
     client.on("speak", _on_speak)
     try:
-        client.emit(Message(intent_name, data or {}))
+        client.emit(Message(full_intent_name, data or {}))
         event.wait(timeout=timeout)
     finally:
         # Remove subscriber to avoid cross-test leakage

@@ -12,6 +12,9 @@ aioresponses>=0.7.6  # For mocking aiohttp HTTP calls
 
 # Web UI test client (FastAPI TestClient requires httpx)
 httpx>=0.25.0
+websockets>=12.0
+pycryptodomex>=3.20.0
+cryptography>=42.0.0
 
 # Code quality
 flake8>=6.1.0
