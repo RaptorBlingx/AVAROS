@@ -36,6 +36,9 @@ def mock_settings_service() -> MagicMock:
     service = MagicMock()
     config = MagicMock()
     config.platform_type = "mock"
+    service.get_active_profile_name.return_value = "mock"
+    service.get_profile.return_value = config
+    # Keep old API mocked for backward compat tests
     service.get_platform_config.return_value = config
     return service
 
@@ -116,7 +119,8 @@ class TestAdapterFactoryCreate:
         service = MagicMock()
         config = MagicMock()
         config.platform_type = "demo"
-        service.get_platform_config.return_value = config
+        service.get_active_profile_name.return_value = "demo"
+        service.get_profile.return_value = config
 
         factory = AdapterFactory(settings_service=service)
         adapter = factory.create()
@@ -128,7 +132,8 @@ class TestAdapterFactoryCreate:
         service = MagicMock()
         config = MagicMock()
         config.platform_type = "nonexistent_platform"
-        service.get_platform_config.return_value = config
+        service.get_active_profile_name.return_value = "nope"
+        service.get_profile.return_value = config
 
         factory = AdapterFactory(settings_service=service)
         adapter = factory.create()
@@ -191,7 +196,7 @@ class TestGetConfiguredPlatform:
     def test_settings_error_falls_back_to_mock(self) -> None:
         """If SettingsService raises, fall back to 'mock'."""
         service = MagicMock()
-        service.get_platform_config.side_effect = RuntimeError("DB down")
+        service.get_active_profile_name.side_effect = RuntimeError("DB down")
 
         factory = AdapterFactory(settings_service=service)
         result = factory._get_configured_platform()
@@ -199,9 +204,10 @@ class TestGetConfiguredPlatform:
         assert result == "mock"
 
     def test_settings_returns_none_config_falls_back(self) -> None:
-        """If get_platform_config() returns None, use 'mock'."""
+        """If get_profile() returns None, use 'mock'."""
         service = MagicMock()
-        service.get_platform_config.return_value = None
+        service.get_active_profile_name.return_value = "deleted"
+        service.get_profile.return_value = None
 
         factory = AdapterFactory(settings_service=service)
         result = factory._get_configured_platform()
@@ -209,11 +215,12 @@ class TestGetConfiguredPlatform:
         assert result == "mock"
 
     def test_settings_returns_empty_platform_type_falls_back(self) -> None:
-        """If platform_type is empty string, use 'mock'."""
+        """If platform_type is 'mock', use 'mock'."""
         service = MagicMock()
         config = MagicMock()
-        config.platform_type = ""
-        service.get_platform_config.return_value = config
+        config.platform_type = "mock"
+        service.get_active_profile_name.return_value = "mock"
+        service.get_profile.return_value = config
 
         factory = AdapterFactory(settings_service=service)
         result = factory._get_configured_platform()
@@ -224,13 +231,14 @@ class TestGetConfiguredPlatform:
         """Platform identification must be case-insensitive."""
         service = MagicMock()
         config = MagicMock()
-        config.platform_type = "MOCK"
-        service.get_platform_config.return_value = config
+        config.platform_type = "RENERYO"
+        service.get_active_profile_name.return_value = "reneryo"
+        service.get_profile.return_value = config
 
         factory = AdapterFactory(settings_service=service)
         result = factory._get_configured_platform()
 
-        assert result == "mock"
+        assert result == "reneryo"
 
 
 # ---------------------------------------------------------------------------
@@ -288,7 +296,8 @@ class TestAdapterFactoryRegister:
         service = MagicMock()
         config = MagicMock()
         config.platform_type = "stub"
-        service.get_platform_config.return_value = config
+        service.get_active_profile_name.return_value = "stub"
+        service.get_profile.return_value = config
 
         factory = AdapterFactory(settings_service=service)
         adapter = factory.create()
@@ -395,3 +404,88 @@ class TestAdapterFactoryReload:
         ) as mock_init:
             await factory.reload()
             mock_init.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Profile-Based Adapter Creation (DEC-028)
+# ---------------------------------------------------------------------------
+
+
+class TestAdapterFactoryProfiles:
+    """Tests for profile-based adapter creation and reload."""
+
+    def test_create_with_active_profile_mock(self) -> None:
+        """When active profile is 'mock', MockAdapter is created."""
+        service = MagicMock()
+        service.get_active_profile_name.return_value = "mock"
+        service.get_profile.return_value = MagicMock(
+            platform_type="mock",
+        )
+
+        factory = AdapterFactory(settings_service=service)
+        adapter = factory.create()
+
+        assert isinstance(adapter, MockAdapter)
+
+    def test_create_with_active_profile_reneryo(self) -> None:
+        """When active profile is 'reneryo', ReneryoAdapter is created."""
+        from skill.adapters.reneryo import ReneryoAdapter
+
+        config = MagicMock()
+        config.platform_type = "reneryo"
+        config.api_url = "https://api.example.com"
+        config.api_key = "test-key"
+        config.timeout = 30
+        config.extra_settings = {"auth_type": "bearer"}
+
+        service = MagicMock()
+        service.get_active_profile_name.return_value = "reneryo"
+        service.get_profile.return_value = config
+
+        factory = AdapterFactory(settings_service=service)
+        adapter = factory.create()
+
+        assert isinstance(adapter, ReneryoAdapter)
+
+    def test_create_with_missing_profile_falls_back_to_mock(self) -> None:
+        """When active profile config returns None, fall back to mock."""
+        service = MagicMock()
+        service.get_active_profile_name.return_value = "deleted"
+        service.get_profile.return_value = None
+
+        factory = AdapterFactory(settings_service=service)
+        adapter = factory.create()
+
+        assert isinstance(adapter, MockAdapter)
+
+    @pytest.mark.asyncio
+    async def test_reload_with_profile_name_switches_active(self) -> None:
+        """reload(profile_name=...) calls set_active_profile first."""
+        service = MagicMock()
+        service.get_active_profile_name.return_value = "mock"
+        service.get_profile.return_value = MagicMock(
+            platform_type="mock",
+        )
+
+        factory = AdapterFactory(settings_service=service)
+        factory.create()
+
+        await factory.reload(profile_name="reneryo")
+
+        service.set_active_profile.assert_called_once_with("reneryo")
+
+    @pytest.mark.asyncio
+    async def test_reload_without_profile_name_uses_current(self) -> None:
+        """reload() without profile_name does not change active."""
+        service = MagicMock()
+        service.get_active_profile_name.return_value = "mock"
+        service.get_profile.return_value = MagicMock(
+            platform_type="mock",
+        )
+
+        factory = AdapterFactory(settings_service=service)
+        factory.create()
+
+        await factory.reload()
+
+        service.set_active_profile.assert_not_called()

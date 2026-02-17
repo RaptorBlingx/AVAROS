@@ -91,7 +91,7 @@ class TestStatusConfigured:
                 api_key="secret-key-1234",
             )
         )
-        settings_service.delete_setting("platform_config")
+        settings_service.delete_profile("reneryo")
 
         body = client.get("/api/v1/status").json()
 
