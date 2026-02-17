@@ -195,8 +195,6 @@ class SettingsService(ProfileMixin):
 
         # Auto-migrate legacy platform_config → named profile (DEC-028)
         self._migrate_legacy_config()
-        # Migrate global settings → profile-scoped keys (DEC-029)
-        self._migrate_global_settings_to_profile()
     
     def is_configured(self) -> bool:
         """
@@ -321,31 +319,25 @@ class SettingsService(ProfileMixin):
     INTENT_ACTIVE_PREFIX = "intent_active:"
 
     def set_intent_active(self, intent_name: str, active: bool) -> None:
-        """Store intent activation state (profile-scoped, DEC-029).
+        """
+        Store intent activation state.
 
         Args:
             intent_name: Intent identifier (e.g. ``kpi.energy.per_unit``)
             active: Whether the intent is active
 
         Raises:
-            ValidationError: If intent_name unknown or profile is mock
+            ValidationError: If intent_name is not in KNOWN_INTENTS
         """
         self._validate_intent_name(intent_name)
-        profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
-            raise ValidationError(
-                message="Cannot modify intent state for mock profile",
-                field="profile",
-                value="mock",
-            )
-        key = f"{self.INTENT_ACTIVE_PREFIX}{profile}:{intent_name}"
+        key = f"{self.INTENT_ACTIVE_PREFIX}{intent_name}"
         self.set_setting(key, str(active).lower())
 
     def is_intent_active(self, intent_name: str) -> bool:
-        """Read intent activation state (profile-scoped, DEC-029).
+        """
+        Read intent activation state.
 
-        Mock profile always returns ``True``. Custom profiles
-        return stored state or ``True`` by default (DEC-005).
+        Returns ``True`` by default (DEC-005: zero-config).
 
         Args:
             intent_name: Intent identifier
@@ -353,10 +345,7 @@ class SettingsService(ProfileMixin):
         Returns:
             True if the intent is active (or not yet configured)
         """
-        profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
-            return True
-        key = f"{self.INTENT_ACTIVE_PREFIX}{profile}:{intent_name}"
+        key = f"{self.INTENT_ACTIVE_PREFIX}{intent_name}"
         value = self.get_setting(key, default=None)
         if value is None:
             return True
@@ -403,7 +392,10 @@ class SettingsService(ProfileMixin):
         source: str = "",
         year: int = 2024,
     ) -> None:
-        """Store an emission factor (profile-scoped, DEC-029).
+        """Store an emission factor for an energy source.
+
+        Validates energy_source against allowed values. The factor is
+        the kg CO₂-eq per kWh (or per m³ for gas).
 
         Args:
             energy_source: "electricity", "gas", or "water"
@@ -413,73 +405,27 @@ class SettingsService(ProfileMixin):
             year: Reference year
 
         Raises:
-            ValidationError: If invalid input or profile is mock
+            ValidationError: If energy_source is invalid or factor <= 0
         """
         self._validate_energy_source(energy_source)
-        self._validate_positive_factor(factor)
-        profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
-            raise ValidationError(
-                message="Cannot modify emission factors for mock profile",
-                field="profile",
-                value="mock",
-            )
-        key = f"{self.EMISSION_FACTOR_PREFIX}{profile}:{energy_source}"
-        data = self._build_emission_data(
-            energy_source, factor, country, source, year,
-        )
-        self.set_setting(key, data)
-
-    @staticmethod
-    def _validate_positive_factor(factor: float) -> None:
-        """Raise if emission factor is not positive.
-
-        Args:
-            factor: Value to validate.
-
-        Raises:
-            ValidationError: If factor <= 0.
-        """
         if factor <= 0:
             raise ValidationError(
                 message=f"Emission factor must be positive, got {factor}",
                 field="factor",
                 value=str(factor),
             )
-
-    @staticmethod
-    def _build_emission_data(
-        energy_source: str,
-        factor: float,
-        country: str,
-        source: str,
-        year: int,
-    ) -> dict[str, Any]:
-        """Build the emission factor storage dict.
-
-        Args:
-            energy_source: Energy source identifier.
-            factor: CO₂ emission factor value.
-            country: Country code.
-            source: Citation string.
-            year: Reference year.
-
-        Returns:
-            Dict ready for persistence.
-        """
-        return {
+        key = f"{self.EMISSION_FACTOR_PREFIX}{energy_source}"
+        data = {
             "energy_source": energy_source,
             "factor": factor,
             "country": country,
             "source": source,
             "year": year,
         }
+        self.set_setting(key, data)
 
     def get_emission_factor(self, energy_source: str) -> EmissionFactor | None:
-        """Get an emission factor (profile-scoped, DEC-029).
-
-        Mock profile returns Türkiye defaults. Custom profiles
-        read from profile-scoped storage.
+        """Get a stored emission factor for an energy source.
 
         Args:
             energy_source: "electricity", "gas", or "water"
@@ -487,11 +433,7 @@ class SettingsService(ProfileMixin):
         Returns:
             EmissionFactor instance or None if not configured
         """
-        profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
-            turkey = DEFAULT_EMISSION_FACTORS.get("TR", {})
-            return turkey.get(energy_source)
-        key = f"{self.EMISSION_FACTOR_PREFIX}{profile}:{energy_source}"
+        key = f"{self.EMISSION_FACTOR_PREFIX}{energy_source}"
         data = self.get_setting(key, default=None)
         if data is None:
             return None
@@ -504,33 +446,24 @@ class SettingsService(ProfileMixin):
         )
 
     def list_emission_factors(self) -> dict[str, EmissionFactor]:
-        """List emission factors (profile-scoped, DEC-029).
-
-        Mock returns Türkiye defaults. Custom profiles return
-        only that profile's stored factors.
+        """List all stored emission factors.
 
         Returns:
             Dict mapping energy_source to EmissionFactor
         """
         self._ensure_initialized()
-        profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
-            return dict(DEFAULT_EMISSION_FACTORS.get("TR", {}))
-        prefix = f"{self.EMISSION_FACTOR_PREFIX}{profile}:"
+        all_keys = self.list_settings()
         result: dict[str, EmissionFactor] = {}
-        for key in self.list_settings():
-            if not key.startswith(prefix):
-                continue
-            source = key[len(prefix):]
-            ef = self.get_emission_factor(source)
-            if ef is not None:
-                result[source] = ef
+        for key in all_keys:
+            if key.startswith(self.EMISSION_FACTOR_PREFIX):
+                name = key[len(self.EMISSION_FACTOR_PREFIX):]
+                ef = self.get_emission_factor(name)
+                if ef is not None:
+                    result[name] = ef
         return result
 
     def delete_emission_factor(self, energy_source: str) -> bool:
-        """Delete a stored emission factor (profile-scoped, DEC-029).
-
-        Returns ``False`` for mock profile (nothing to delete).
+        """Delete a stored emission factor.
 
         Args:
             energy_source: "electricity", "gas", or "water"
@@ -538,10 +471,7 @@ class SettingsService(ProfileMixin):
         Returns:
             True if deleted, False if not found
         """
-        profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
-            return False
-        key = f"{self.EMISSION_FACTOR_PREFIX}{profile}:{energy_source}"
+        key = f"{self.EMISSION_FACTOR_PREFIX}{energy_source}"
         return self.delete_setting(key)
 
     def get_effective_emission_factor(self, energy_source: str) -> float:
@@ -596,24 +526,21 @@ class SettingsService(ProfileMixin):
     VOICE_CLIENT_SECRET = "voice:hivemind_client_secret"
 
     def set_metric_mapping(self, metric_name: str, mapping: dict[str, Any]) -> None:
-        """Store a metric mapping (profile-scoped, DEC-029).
+        """
+        Store a metric mapping.
+
+        Validates the metric name against CanonicalMetric, then persists
+        the mapping data using the ``metric_mapping:{name}`` key prefix.
 
         Args:
             metric_name: Canonical metric name (e.g. ``energy_per_unit``)
             mapping: Mapping data (endpoint, json_path, unit, etc.)
 
         Raises:
-            ValidationError: If metric_name invalid or profile is mock
+            ValidationError: If metric_name is not a valid CanonicalMetric
         """
         self._validate_metric_name(metric_name)
-        profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
-            raise ValidationError(
-                message="Cannot modify metric mappings for mock profile",
-                field="profile",
-                value="mock",
-            )
-        key = f"{self.METRIC_MAPPING_PREFIX}{profile}:{metric_name}"
+        key = f"{self.METRIC_MAPPING_PREFIX}{metric_name}"
         self.set_setting(key, mapping)
 
     # ── Voice Config CRUD (DEC-006) ─────────────────────
@@ -677,9 +604,8 @@ class SettingsService(ProfileMixin):
         )
 
     def get_metric_mapping(self, metric_name: str) -> dict[str, Any] | None:
-        """Get a metric mapping (profile-scoped, DEC-029).
-
-        Mock profile returns ``None`` (MockAdapter generates data).
+        """
+        Get a single metric mapping by canonical name.
 
         Args:
             metric_name: Canonical metric name
@@ -687,38 +613,28 @@ class SettingsService(ProfileMixin):
         Returns:
             Mapping data dictionary, or None if not found
         """
-        profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
-            return None
-        key = f"{self.METRIC_MAPPING_PREFIX}{profile}:{metric_name}"
+        key = f"{self.METRIC_MAPPING_PREFIX}{metric_name}"
         return self.get_setting(key, default=None)
 
     def list_metric_mappings(self) -> dict[str, dict[str, Any]]:
-        """List metric mappings (profile-scoped, DEC-029).
-
-        Mock returns ``{}``. Custom profiles return only that
-        profile's stored mappings.
+        """
+        List all stored metric mappings.
 
         Returns:
             Dictionary mapping canonical metric names to their mapping data
         """
         self._ensure_initialized()
-        profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
-            return {}
-        prefix = f"{self.METRIC_MAPPING_PREFIX}{profile}:"
+        all_keys = self.list_settings()
         result: dict[str, dict[str, Any]] = {}
-        for key in self.list_settings():
-            if not key.startswith(prefix):
-                continue
-            name = key[len(prefix):]
-            result[name] = self.get_setting(key)
+        for key in all_keys:
+            if key.startswith(self.METRIC_MAPPING_PREFIX):
+                name = key[len(self.METRIC_MAPPING_PREFIX):]
+                result[name] = self.get_setting(key)
         return result
 
     def delete_metric_mapping(self, metric_name: str) -> bool:
-        """Delete a metric mapping (profile-scoped, DEC-029).
-
-        Returns ``False`` for mock profile (nothing to delete).
+        """
+        Delete a metric mapping.
 
         Args:
             metric_name: Canonical metric name
@@ -726,10 +642,7 @@ class SettingsService(ProfileMixin):
         Returns:
             True if mapping was deleted, False if not found
         """
-        profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
-            return False
-        key = f"{self.METRIC_MAPPING_PREFIX}{profile}:{metric_name}"
+        key = f"{self.METRIC_MAPPING_PREFIX}{metric_name}"
         return self.delete_setting(key)
 
     # ── Private Helpers ─────────────────────────────────

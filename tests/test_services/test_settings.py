@@ -374,15 +374,6 @@ class TestGenericSettings:
 class TestSetMetricMapping:
     """Tests for set_metric_mapping()."""
 
-    @pytest.fixture(autouse=True)
-    def _activate_profile(self, service: SettingsService) -> None:
-        """Activate a non-mock profile for CRUD tests (DEC-029)."""
-        service.create_profile("reneryo", PlatformConfig(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.example.com",
-        ))
-        service.set_active_profile("reneryo")
-
     def test_set_metric_mapping_stores_successfully(
         self,
         service: SettingsService,
@@ -434,15 +425,6 @@ class TestSetMetricMapping:
 class TestGetMetricMapping:
     """Tests for get_metric_mapping()."""
 
-    @pytest.fixture(autouse=True)
-    def _activate_profile(self, service: SettingsService) -> None:
-        """Activate a non-mock profile for CRUD tests (DEC-029)."""
-        service.create_profile("reneryo", PlatformConfig(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.example.com",
-        ))
-        service.set_active_profile("reneryo")
-
     def test_get_metric_mapping_returns_stored_data(
         self,
         service: SettingsService,
@@ -476,15 +458,6 @@ class TestGetMetricMapping:
 
 class TestListMetricMappings:
     """Tests for list_metric_mappings()."""
-
-    @pytest.fixture(autouse=True)
-    def _activate_profile(self, service: SettingsService) -> None:
-        """Activate a non-mock profile for CRUD tests (DEC-029)."""
-        service.create_profile("reneryo", PlatformConfig(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.example.com",
-        ))
-        service.set_active_profile("reneryo")
 
     def test_list_metric_mappings_empty_returns_empty_dict(
         self, service: SettingsService
@@ -549,15 +522,6 @@ class TestListMetricMappings:
 class TestDeleteMetricMapping:
     """Tests for delete_metric_mapping()."""
 
-    @pytest.fixture(autouse=True)
-    def _activate_profile(self, service: SettingsService) -> None:
-        """Activate a non-mock profile for CRUD tests (DEC-029)."""
-        service.create_profile("reneryo", PlatformConfig(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.example.com",
-        ))
-        service.set_active_profile("reneryo")
-
     def test_delete_metric_mapping_existing_returns_true(
         self,
         service: SettingsService,
@@ -597,15 +561,6 @@ class TestDeleteMetricMapping:
 
 class TestMetricMappingIsolation:
     """Metric mappings must not interfere with other settings."""
-
-    @pytest.fixture(autouse=True)
-    def _activate_profile(self, service: SettingsService) -> None:
-        """Activate a non-mock profile for CRUD tests (DEC-029)."""
-        service.create_profile("reneryo", PlatformConfig(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.example.com",
-        ))
-        service.set_active_profile("reneryo")
 
     def test_metric_mapping_does_not_affect_platform_config(
         self,
@@ -656,15 +611,6 @@ class TestMetricMappingIsolation:
 
 class TestMetricMappingValidation:
     """Edge cases for metric name validation."""
-
-    @pytest.fixture(autouse=True)
-    def _activate_profile(self, service: SettingsService) -> None:
-        """Activate a non-mock profile for CRUD tests (DEC-029)."""
-        service.create_profile("reneryo", PlatformConfig(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.example.com",
-        ))
-        service.set_active_profile("reneryo")
 
     def test_empty_string_raises_validation_error(
         self, service: SettingsService
@@ -740,15 +686,6 @@ class TestEncryption:
 class TestSetIntentActive:
     """Tests for set_intent_active()."""
 
-    @pytest.fixture(autouse=True)
-    def _activate_profile(self, service: SettingsService) -> None:
-        """Activate a non-mock profile for CRUD tests (DEC-029)."""
-        service.create_profile("reneryo", PlatformConfig(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.example.com",
-        ))
-        service.set_active_profile("reneryo")
-
     def test_set_intent_active_true_stores_state(
         self, service: SettingsService
     ) -> None:
@@ -809,15 +746,6 @@ class TestSetIntentActive:
 class TestIsIntentActive:
     """Tests for is_intent_active()."""
 
-    @pytest.fixture(autouse=True)
-    def _activate_profile(self, service: SettingsService) -> None:
-        """Activate a non-mock profile for CRUD tests (DEC-029)."""
-        service.create_profile("reneryo", PlatformConfig(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.example.com",
-        ))
-        service.set_active_profile("reneryo")
-
     def test_is_intent_active_default_true(
         self, service: SettingsService
     ) -> None:
@@ -847,15 +775,6 @@ class TestIsIntentActive:
 
 class TestListIntentStates:
     """Tests for list_intent_states()."""
-
-    @pytest.fixture(autouse=True)
-    def _activate_profile(self, service: SettingsService) -> None:
-        """Activate a non-mock profile for CRUD tests (DEC-029)."""
-        service.create_profile("reneryo", PlatformConfig(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.example.com",
-        ))
-        service.set_active_profile("reneryo")
 
     def test_list_intent_states_returns_all_eight(
         self, service: SettingsService
@@ -943,15 +862,6 @@ class TestGetIntentMetricRequirements:
 class TestIntentActivationIsolation:
     """Intent state must not interfere with other settings."""
 
-    @pytest.fixture(autouse=True)
-    def _activate_profile(self, service: SettingsService) -> None:
-        """Activate a non-mock profile for CRUD tests (DEC-029)."""
-        service.create_profile("reneryo", PlatformConfig(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.example.com",
-        ))
-        service.set_active_profile("reneryo")
-
     def test_intent_state_not_in_metric_mappings(
         self, service: SettingsService
     ) -> None:
@@ -991,15 +901,6 @@ class TestIntentActivationIsolation:
 
 class TestEmissionFactorCRUD:
     """Tests for emission factor CRUD operations."""
-
-    @pytest.fixture(autouse=True)
-    def _activate_profile(self, service: SettingsService) -> None:
-        """Activate a non-mock profile for CRUD tests (DEC-029)."""
-        service.create_profile("reneryo", PlatformConfig(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.example.com",
-        ))
-        service.set_active_profile("reneryo")
 
     def test_set_and_get_factor(self, service: SettingsService) -> None:
         """Round-trip: set then get returns same factor."""
@@ -1091,15 +992,6 @@ class TestEmissionFactorCRUD:
 
 class TestEmissionFactorIsolation:
     """Emission factors must not interfere with other settings."""
-
-    @pytest.fixture(autouse=True)
-    def _activate_profile(self, service: SettingsService) -> None:
-        """Activate a non-mock profile for CRUD tests (DEC-029)."""
-        service.create_profile("reneryo", PlatformConfig(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.example.com",
-        ))
-        service.set_active_profile("reneryo")
 
     def test_emission_factor_not_in_metric_mappings(
         self, service: SettingsService,

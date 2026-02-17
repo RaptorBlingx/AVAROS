@@ -20,7 +20,7 @@ from skill.domain.exceptions import ConfigurationError, ValidationError
 from skill.domain.models import CanonicalMetric, DataPoint, TimePeriod
 from skill.domain.results import KPIResult, TrendResult
 from skill.services.co2_service import CO2DerivationService
-from skill.services.settings import PlatformConfig, SettingsService
+from skill.services.settings import SettingsService
 
 
 # ── Fixtures ──────────────────────────────────────────
@@ -28,14 +28,9 @@ from skill.services.settings import PlatformConfig, SettingsService
 
 @pytest.fixture
 def settings_service() -> SettingsService:
-    """In-memory SettingsService with active non-mock profile."""
+    """In-memory SettingsService, initialized and ready."""
     svc = SettingsService()
     svc.initialize()
-    svc.create_profile("reneryo", PlatformConfig(
-        platform_type="reneryo",
-        api_url="https://api.reneryo.example.com",
-    ))
-    svc.set_active_profile("reneryo")
     return svc
 
 
