@@ -1,8 +1,11 @@
 import type {
+  ActivateProfileResponse,
   BaselineResponse,
   CSVUploadResponse,
   CanonicalMetricName,
   ConnectionTestResponse,
+  CreateProfileRequest,
+  DeleteProfileResponse,
   EmissionFactorListResponse,
   EmissionFactorPresetResponse,
   EmissionFactorRequest,
@@ -19,9 +22,12 @@ import type {
   ProductionRecordRequest,
   ProductionRecordResponse,
   ProductionSummaryResponse,
+  ProfileDetailResponse,
+  ProfileListResponse,
   SiteProgressResponse,
   SnapshotResponse,
   SystemStatusResponse,
+  UpdateProfileRequest,
   VoiceConfigResponse,
 } from "./types";
 
@@ -378,4 +384,50 @@ export function listEmissionFactorPresets(): Promise<EmissionFactorPresetRespons
 
 export function getVoiceConfig(): Promise<VoiceConfigResponse> {
   return request<VoiceConfigResponse>("/api/v1/voice/config");
+}
+
+// ── Profile API ────────────────────────────────────────
+
+export function listProfiles(): Promise<ProfileListResponse> {
+  return request<ProfileListResponse>("/api/v1/config/profiles");
+}
+
+export function getProfile(name: string): Promise<ProfileDetailResponse> {
+  return request<ProfileDetailResponse>(`/api/v1/config/profiles/${name}`);
+}
+
+export function createProfile(
+  payload: CreateProfileRequest,
+): Promise<ProfileDetailResponse> {
+  return request<ProfileDetailResponse>("/api/v1/config/profiles", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateProfile(
+  name: string,
+  payload: UpdateProfileRequest,
+): Promise<ProfileDetailResponse> {
+  return request<ProfileDetailResponse>(`/api/v1/config/profiles/${name}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export async function deleteProfile(
+  name: string,
+): Promise<DeleteProfileResponse> {
+  return request<DeleteProfileResponse>(`/api/v1/config/profiles/${name}`, {
+    method: "DELETE",
+  });
+}
+
+export function activateProfile(
+  name: string,
+): Promise<ActivateProfileResponse> {
+  return request<ActivateProfileResponse>(
+    `/api/v1/config/profiles/${name}/activate`,
+    { method: "POST" },
+  );
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   createPlatformConfig,
+  getProfile,
   getPlatformConfig,
   resetPlatformConfig,
   testConnection,
@@ -17,6 +18,7 @@ import ConnectionTestResult from "../common/ConnectionTestResult";
 import ErrorMessage from "../common/ErrorMessage";
 import LoadingSpinner from "../common/LoadingSpinner";
 import { useTheme } from "../common/ThemeProvider";
+import ProfileSelector from "./ProfileSelector";
 
 type PlatformConfigSectionProps = {
   onNotify: (type: "success" | "error", message: string) => void;
@@ -78,6 +80,7 @@ export default function PlatformConfigSection({
   const [apiKey, setApiKey] = useState("");
   const [testResult, setTestResult] = useState<ConnectionTestResponse | null>(null);
   const [inlineError, setInlineError] = useState("");
+  const [profileReadOnly, setProfileReadOnly] = useState(false);
 
   const isMock = useMemo(() => platformType === "mock", [platformType]);
   const adapterTarget = useMemo(
@@ -115,6 +118,29 @@ export default function PlatformConfigSection({
   useEffect(() => {
     void loadConfig();
   }, [loadConfig]);
+
+  const handleProfileChange = useCallback(
+    async (profileName: string) => {
+      setInlineError("");
+      setTestResult(null);
+      try {
+        const detail = await getProfile(profileName);
+        setPlatformType(detail.platform_type as PlatformType);
+        setApiUrl(detail.api_url);
+        setApiKey("");
+        setAuthType(
+          detail.extra_settings?.auth_type === "cookie"
+            ? "cookie"
+            : "api_key",
+        );
+        setProfileReadOnly(detail.is_builtin);
+        setEditing(false);
+      } catch (error: unknown) {
+        onNotify("error", toFriendlyErrorMessage(error));
+      }
+    },
+    [onNotify],
+  );
 
   const handleSave = useCallback(async () => {
     const validationError = validate({
@@ -202,6 +228,11 @@ export default function PlatformConfigSection({
 
   return (
     <section className="space-y-3">
+      <ProfileSelector
+        onNotify={onNotify}
+        onProfileChange={(name) => void handleProfileChange(name)}
+      />
+
       <header className="flex items-center justify-end gap-2">
         <div className="flex items-center gap-2">
           <button
@@ -246,7 +277,7 @@ export default function PlatformConfigSection({
                 onChange={(event) =>
                   setPlatformType(event.target.value as PlatformType)
                 }
-                disabled={!editing || saving}
+                disabled={!editing || saving || profileReadOnly}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               >
                 <option value="mock">Mock</option>
@@ -263,7 +294,7 @@ export default function PlatformConfigSection({
                 type="url"
                 value={apiUrl}
                 onChange={(event) => setApiUrl(event.target.value)}
-                disabled={!editing || saving || isMock}
+                disabled={!editing || saving || isMock || profileReadOnly}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               />
             </label>
@@ -277,7 +308,7 @@ export default function PlatformConfigSection({
                 onChange={(event) =>
                   setAuthType(event.target.value as AuthType)
                 }
-                disabled={!editing || saving || isMock}
+                disabled={!editing || saving || isMock || profileReadOnly}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               >
                 <option value="api_key">API Key</option>
@@ -300,7 +331,7 @@ export default function PlatformConfigSection({
                       : "Enter API key to update"
                     : config?.api_key ?? "****"
                 }
-                disabled={!editing || saving || isMock}
+                disabled={!editing || saving || isMock || profileReadOnly}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               />
             </label>
