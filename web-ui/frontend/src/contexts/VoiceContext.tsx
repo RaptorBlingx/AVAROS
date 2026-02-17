@@ -190,6 +190,9 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       if (text && ttsRef.current) {
         metricsRef.current.mark("tts_started");
         void ttsRef.current.speak(text);
+      } else {
+        // TTS unavailable — transition out of "processing" directly
+        setVoiceState("idle");
       }
     });
   }, [on]);

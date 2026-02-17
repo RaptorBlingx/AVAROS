@@ -90,6 +90,7 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
         self._auth_type = auth_type
         self._api_format = api_format
         self._session: aiohttp.ClientSession | None = None
+        self._initialized = False
 
     # =========================================================================
     # Query Methods
@@ -251,13 +252,10 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
     # =========================================================================
 
     async def initialize(self) -> None:
-        """Create aiohttp session with auth headers and timeout."""
-        timeout = aiohttp.ClientTimeout(total=self._timeout)
-        headers = self._build_auth_headers()
-        self._session = aiohttp.ClientSession(
-            timeout=timeout,
-            headers=headers,
-        )
+        """Mark adapter as initialized (session created on first use)."""
+        # Session creation is deferred until first API call to avoid
+        # event loop binding issues between initialization and request threads
+        self._initialized = True
         logger.info(
             "ReneryoAdapter initialized — API URL: %s, auth: %s, format: %s",
             self._api_url,

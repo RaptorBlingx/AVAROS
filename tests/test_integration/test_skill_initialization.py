@@ -18,6 +18,7 @@ import os
 from unittest.mock import Mock, patch
 
 import pytest
+from ovos_workshop.skills import OVOSSkill
 
 from skill import AVAROSSkill
 from skill.adapters.mock import MockAdapter
@@ -187,3 +188,27 @@ class TestSkillAttributesAfterInitialization:
         assert skill.response_builder is not None
         # settings_service may be None (no DB) but attribute exists
         assert hasattr(skill, "settings_service")
+
+
+def test_constructor_preserves_initialize_assigned_components(monkeypatch):
+    """Constructor must not overwrite components assigned during initialize()."""
+    sentinel = object()
+
+    def fake_initialize(self):
+        self.settings_service = sentinel
+        self.adapter_factory = sentinel
+        self.dispatcher = sentinel
+        self.response_builder = sentinel
+
+    def fake_super_init(self, *args, **kwargs):
+        self.initialize()
+
+    monkeypatch.setattr(AVAROSSkill, "initialize", fake_initialize)
+    monkeypatch.setattr(OVOSSkill, "__init__", fake_super_init)
+
+    skill = AVAROSSkill()
+
+    assert skill.settings_service is sentinel
+    assert skill.adapter_factory is sentinel
+    assert skill.dispatcher is sentinel
+    assert skill.response_builder is sentinel

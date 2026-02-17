@@ -84,6 +84,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
 
   const serviceRef = useRef<HiveMindService | null>(null);
   const configLoadedRef = useRef(false);
+  const [serviceReady, setServiceReady] = useState(false);
 
   // Load voice config from backend once
   useEffect(() => {
@@ -137,6 +138,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
           });
 
           serviceRef.current = svc;
+          setServiceReady(true);
         }
       })
       .catch(() => {
@@ -174,7 +176,9 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
       if (!serviceRef.current) return () => {};
       return serviceRef.current.on(eventType, callback);
     },
-    [],
+    // Re-create when service initialises so child contexts re-subscribe
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [serviceReady],
   );
 
   const value = useMemo<HiveMindContextValue>(

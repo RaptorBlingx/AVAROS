@@ -51,13 +51,16 @@ class AVAROSSkill(OVOSSkill):
         # Use the directory containing this __init__.py file
         from pathlib import Path
         self._dir = str(Path(__file__).parent)
-        
-        super().__init__(*args, **kwargs)
-        
+
+        # OVOSSkill.__init__ may call initialize() as part of lifecycle setup.
+        # Set defaults before calling super() so initialize-populated values are
+        # never overwritten after construction.
         self.settings_service = None
         self.adapter_factory: AdapterFactory | None = None
         self.dispatcher: QueryDispatcher | None = None
         self.response_builder: ResponseBuilder | None = None
+        
+        super().__init__(*args, **kwargs)
 
     @property
     def native_langs(self) -> List[str]:
@@ -81,6 +84,8 @@ class AVAROSSkill(OVOSSkill):
         configuration from SettingsService (DB-backed) if available, otherwise
         uses MockAdapter for zero-config demo deployment (DEC-005).
         """
+        import asyncio
+        
         # Import SettingsService lazily to avoid circular imports
         from skill.services.settings import SettingsService
         
@@ -98,6 +103,15 @@ class AVAROSSkill(OVOSSkill):
         self.settings_service = settings_service
         self.adapter_factory = AdapterFactory(settings_service=self.settings_service)
         adapter = self.adapter_factory.create()
+        
+        # Initialize the adapter (async operation)
+        try:
+            asyncio.run(adapter.initialize())
+            self.log.info("Adapter initialized successfully")
+        except Exception as e:
+            self.log.error("Failed to initialize adapter: %s", e, exc_info=True)
+            raise
+        
         self.dispatcher = QueryDispatcher(adapter=adapter)
         self.response_builder = ResponseBuilder(verbosity="normal")
         self.log.info("AVAROS skill initialized with adapter: %s", type(adapter).__name__)

@@ -58,7 +58,8 @@ class ReneryoHttpMixin:
             AdapterError: On connection, auth, timeout, or parse errors.
         """
         self._ensure_initialized()
-        assert self._session is not None  # guarded by _ensure_initialized
+        await self._ensure_session()  # Create session in current event loop
+        assert self._session is not None  # guarded by _ensure_session
         url = f"{self._api_url}{endpoint}"
 
         try:
@@ -181,16 +182,32 @@ class ReneryoHttpMixin:
 
     def _ensure_initialized(self) -> None:
         """
-        Guard: raise AdapterError if session is not created.
+        Guard: check if initialized flag is set.
 
         Raises:
             AdapterError: If initialize() was not called.
         """
-        if self._session is None:
+        if not getattr(self, '_initialized', False):
             raise AdapterError(
                 message="ReneryoAdapter not initialized — call initialize() first",
                 code="RENERYO_NOT_CONNECTED",
                 platform="reneryo",
+            )
+    
+    async def _ensure_session(self) -> None:
+        """
+        Lazily create aiohttp session if needed.
+        
+        This avoids event loop binding issues by creating the session
+        in the current event loop, not the initialization loop.
+        """
+        if self._session is None:
+            import aiohttp
+            timeout = aiohttp.ClientTimeout(total=self._timeout)
+            headers = self._build_auth_headers()
+            self._session = aiohttp.ClientSession(
+                timeout=timeout,
+                headers=headers,
             )
 
     @staticmethod

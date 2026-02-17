@@ -623,11 +623,19 @@ class QueryDispatcher:
                 import concurrent.futures
                 future = asyncio.run_coroutine_threadsafe(coro, loop)
                 return future.result(timeout=30)
-            else:
+            elif not loop.is_closed():
+                # Loop exists but not running, use it
                 return loop.run_until_complete(coro)
         except RuntimeError:
-            # No event loop, create one
-            return asyncio.run(coro)
+            pass  # No loop or loop is closed, create a new one below
+        
+        # Create a fresh event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
     
     # =========================================================================
     # Audit Logging (GDPR Compliance)

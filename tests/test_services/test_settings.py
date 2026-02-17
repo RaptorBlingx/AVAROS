@@ -263,8 +263,8 @@ class TestPlatformConfigService:
         )
         service.update_platform_config(config)
 
-        # Read raw value from DB — should not contain plaintext
-        raw = service.get_setting("platform_config")
+        # Read raw value from DB — stored under profile key (DEC-028)
+        raw = service.get_setting("platform_config:reneryo")
         assert isinstance(raw, dict)
         assert raw["api_key"] != "super-secret"
 
