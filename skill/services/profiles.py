@@ -233,6 +233,81 @@ class ProfileMixin:
             "Migrated legacy platform_config → '%s'", profile_name,
         )
 
+    def _migrate_global_settings_to_profile(self) -> None:
+        """Migrate global metric/emission/intent keys to active profile.
+
+        Runs once on ``initialize()`` after ``_migrate_legacy_config()``.
+        Idempotent — if scoped keys exist or no global keys found, skips.
+        """
+        active = self.get_active_profile_name()
+        if active == self.BUILTIN_MOCK_PROFILE:
+            return
+
+        migrated = 0
+        for old_prefix, new_prefix in [
+            ("metric_mapping:", f"metric_mapping:{active}:"),
+            ("emission_factor:", f"emission_factor:{active}:"),
+            ("intent_active:", f"intent_active:{active}:"),
+        ]:
+            for key in self.list_settings():
+                if not key.startswith(old_prefix):
+                    continue
+                item = key[len(old_prefix):]
+                if ":" in item:
+                    continue
+                new_key = f"{new_prefix}{item}"
+                if self.get_setting(new_key, default=None) is not None:
+                    continue
+                value = self.get_setting(key)
+                self.set_setting(key=new_key, value=value)
+                self.delete_setting(key)
+                migrated += 1
+
+        if migrated > 0:
+            logger.info(
+                "Migrated %d global settings to profile '%s'",
+                migrated, active,
+            )
+
+    # ── Scoped Key Helpers ──────────────────────────────
+
+    def _scoped_key(self, prefix: str, item: str) -> str:
+        """Build a profile-scoped DB key for the active profile.
+
+        Args:
+            prefix: Domain prefix (e.g. ``"metric_mapping:"``).
+            item: Item identifier (e.g. ``"energy_per_unit"``).
+
+        Returns:
+            Key like ``metric_mapping:reneryo:energy_per_unit``.
+
+        Raises:
+            ValidationError: If active profile is mock.
+        """
+        profile = self.get_active_profile_name()
+        if profile == self.BUILTIN_MOCK_PROFILE:
+            raise ValidationError(
+                message="Cannot write settings for built-in mock profile",
+                field="profile",
+                value=profile,
+            )
+        return f"{prefix}{profile}:{item}"
+
+    def _scoped_key_for(
+        self, prefix: str, profile: str, item: str,
+    ) -> str:
+        """Build a profile-scoped DB key for a specific profile.
+
+        Args:
+            prefix: Domain prefix (e.g. ``"intent_active:"``).
+            profile: Profile name (e.g. ``"reneryo"``).
+            item: Item identifier.
+
+        Returns:
+            Key like ``intent_active:reneryo:kpi.energy.per_unit``.
+        """
+        return f"{prefix}{profile}:{item}"
+
     # ── Private Helpers ─────────────────────────────────
 
     def _read_legacy_config(

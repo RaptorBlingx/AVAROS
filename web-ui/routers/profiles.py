@@ -87,6 +87,51 @@ def _notify_skill_via_bus(profile_name: str) -> bool:
         return False
 
 
+def _validate_activation(
+    name: str,
+    svc: SettingsService,
+) -> None:
+    """Pre-check that a profile can be activated.
+
+    Verifies the profile exists, uses a supported platform, and has
+    required configuration fields.  Raises early *before* any state
+    change so the caller can abort cleanly.
+
+    Args:
+        name: Profile to validate.
+        svc: Settings service.
+
+    Raises:
+        HTTPException: 404 if profile not found, 422 if config invalid.
+    """
+    if name == svc.BUILTIN_MOCK_PROFILE:
+        return  # mock always valid
+
+    config = svc.get_profile(name)
+    if config is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Profile '{name}' not found",
+        )
+
+    platform = config.platform_type.lower()
+    available = AdapterFactory.get_available_platforms()
+    if platform not in available:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Platform '{config.platform_type}' is not supported. "
+                f"Available: {', '.join(available)}"
+            ),
+        )
+
+    if platform == "reneryo" and not config.api_url:
+        raise HTTPException(
+            status_code=422,
+            detail="RENERYO profile requires api_url to be configured",
+        )
+
+
 def _mask_api_key(api_key: str) -> str:
     """Mask key as ****XXXX; short keys return ****."""
     if len(api_key) <= 4:
@@ -258,7 +303,17 @@ async def activate_profile(
     svc: SettingsService = Depends(get_settings_service),
     adapter_factory: AdapterFactory = Depends(get_adapter_factory),
 ) -> ActivateProfileResponse:
-    """Activate a profile and trigger adapter config switch."""
+    """Activate a profile with pre-validation and rollback.
+
+    Pre-checks profile validity before any state change.  On adapter
+    creation failure, rolls back to the previous working profile.
+    """
+    # Phase 1: Pre-validation (no state change)
+    _validate_activation(name, svc)
+
+    old_profile = svc.get_active_profile_name()
+
+    # Phase 2: Attempt activation with rollback
     try:
         svc.set_active_profile(name)
     except ValidationError as exc:
@@ -267,16 +322,32 @@ async def activate_profile(
     try:
         await adapter_factory.reload()
     except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Adapter reload failed: {exc}",
+        logger.error(
+            "Activation failed for '%s': %s. Rolling back to '%s'.",
+            name, exc, old_profile,
         )
+        try:
+            svc.set_active_profile(old_profile)
+            await adapter_factory.reload()
+        except Exception as rollback_exc:
+            logger.error(
+                "Rollback to '%s' also failed: %s. "
+                "System may be in bad state.",
+                old_profile, rollback_exc,
+            )
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Cannot activate profile '{name}': {exc}. "
+                f"Rolled back to '{old_profile}'."
+            ),
+        )
+
+    # Phase 3: Notify skill (best-effort, no rollback on failure)
+    voice_reloaded = _notify_skill_via_bus(name)
 
     config = svc.get_profile(name)
     adapter_type = config.platform_type if config else "mock"
-
-    voice_reloaded = _notify_skill_via_bus(name)
-
     return ActivateProfileResponse(
         status="activated",
         active_profile=name,

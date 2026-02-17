@@ -448,13 +448,14 @@ class TestActivateProfile:
 
         assert resp.status_code == 404
 
-    def test_activate_profile_reload_failure_returns_500(
+    def test_activate_reload_failure_rolls_back_returns_422(
         self,
         client: TestClient,
         settings_service: SettingsService,
     ) -> None:
-        """Reload errors return 500 and keep active profile switched."""
+        """Reload failure rolls back to previous profile and returns 422."""
         _seed_profile(settings_service, "reneryo")
+        assert settings_service.get_active_profile_name() == "mock"
 
         with patch(
             "skill.adapters.factory.AdapterFactory.reload",
@@ -464,9 +465,10 @@ class TestActivateProfile:
                 "/api/v1/config/profiles/reneryo/activate",
             )
 
-        assert resp.status_code == 500
-        assert "Adapter reload failed" in resp.json()["detail"]
-        assert settings_service.get_active_profile_name() == "reneryo"
+        assert resp.status_code == 422
+        assert "reload exploded" in resp.json()["detail"]
+        assert "Rolled back" in resp.json()["detail"]
+        assert settings_service.get_active_profile_name() == "mock"
 
 
 # ══════════════════════════════════════════════════════════
@@ -597,3 +599,239 @@ class TestNotifySkillViaBus:
         body = resp.json()
         assert "voice_reloaded" in body
         assert body["voice_reloaded"] is False
+
+
+# ══════════════════════════════════════════════════════════
+# Pre-Validation Tests (DEC-029 P5-L11)
+# ══════════════════════════════════════════════════════════
+
+
+class TestActivatePreValidation:
+    """Pre-validation rejects bad profiles *before* state change."""
+
+    def test_activate_nonexistent_profile_returns_404(
+        self,
+        client: TestClient,
+    ) -> None:
+        """Profile that doesn't exist → 404 (pre-validation)."""
+        resp = client.post(
+            "/api/v1/config/profiles/does-not-exist/activate",
+        )
+
+        assert resp.status_code == 404
+        assert "not found" in resp.json()["detail"].lower()
+
+    def test_activate_unsupported_platform_returns_422(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """Profile with unknown platform_type → 422."""
+        _seed_profile(
+            settings_service, "bad-plat",
+            platform_type="quantum_computer",
+        )
+
+        resp = client.post(
+            "/api/v1/config/profiles/bad-plat/activate",
+        )
+
+        assert resp.status_code == 422
+        detail = resp.json()["detail"]
+        assert "not supported" in detail.lower()
+        assert "quantum_computer" in detail
+        # Active profile unchanged
+        assert settings_service.get_active_profile_name() == "mock"
+
+    def test_activate_reneryo_missing_url_returns_422(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """RENERYO profile without api_url → 422."""
+        _seed_profile(
+            settings_service, "ren-broken",
+            platform_type="reneryo",
+            api_url="",
+        )
+
+        resp = client.post(
+            "/api/v1/config/profiles/ren-broken/activate",
+        )
+
+        assert resp.status_code == 422
+        assert "api_url" in resp.json()["detail"].lower()
+        assert settings_service.get_active_profile_name() == "mock"
+
+    def test_activate_mock_always_succeeds(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """Mock profile requires no validation — always activates."""
+        _seed_profile(settings_service, "reneryo")
+        settings_service.set_active_profile("reneryo")
+
+        with patch(
+            "routers.profiles._notify_skill_via_bus",
+            return_value=True,
+        ):
+            resp = client.post(
+                "/api/v1/config/profiles/mock/activate",
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["active_profile"] == "mock"
+        assert body["status"] == "activated"
+
+
+# ══════════════════════════════════════════════════════════
+# Rollback Tests (DEC-029 P5-L11)
+# ══════════════════════════════════════════════════════════
+
+
+class TestActivateRollback:
+    """On adapter failure the system rolls back to previous profile."""
+
+    def test_rollback_on_adapter_failure(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """factory.reload() raises → old profile restored, 422 returned."""
+        _seed_profile(settings_service, "reneryo")
+
+        with patch(
+            "skill.adapters.factory.AdapterFactory.reload",
+            new=AsyncMock(
+                side_effect=ConnectionError("cannot connect"),
+            ),
+        ):
+            resp = client.post(
+                "/api/v1/config/profiles/reneryo/activate",
+            )
+
+        assert resp.status_code == 422
+        detail = resp.json()["detail"]
+        assert "cannot connect" in detail.lower()
+        assert "Rolled back" in detail
+        assert settings_service.get_active_profile_name() == "mock"
+
+    def test_rollback_on_initialize_failure(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """Initialize failure via reload() path restores old profile."""
+        _seed_profile(settings_service, "reneryo")
+
+        with patch(
+            "skill.adapters.factory.AdapterFactory.reload",
+            new=AsyncMock(side_effect=RuntimeError("init boom")),
+        ):
+            resp = client.post(
+                "/api/v1/config/profiles/reneryo/activate",
+            )
+
+        assert resp.status_code == 422
+        detail = resp.json()["detail"]
+        assert "init boom" in detail
+        assert "Rolled back" in detail
+        assert settings_service.get_active_profile_name() == "mock"
+
+    def test_rollback_failure_logged_still_returns_422(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """Both activation and rollback fail → 422 returned, error logged."""
+        _seed_profile(settings_service, "reneryo")
+        call_count = 0
+
+        async def _reload_side_effects() -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("primary failure")
+            raise RuntimeError("rollback failure")
+
+        with patch(
+            "skill.adapters.factory.AdapterFactory.reload",
+            new=AsyncMock(side_effect=_reload_side_effects),
+        ), patch(
+            "routers.profiles.logger",
+        ) as mock_logger:
+            resp = client.post(
+                "/api/v1/config/profiles/reneryo/activate",
+            )
+
+        assert resp.status_code == 422
+        assert "primary failure" in resp.json()["detail"]
+        # Verify rollback failure was logged
+        error_calls = [
+            str(c) for c in mock_logger.error.call_args_list
+        ]
+        assert any("rollback" in c.lower() for c in error_calls)
+
+    def test_success_returns_voice_reloaded_field(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """Successful activation includes voice_reloaded in response."""
+        _seed_profile(settings_service, "reneryo")
+
+        with patch(
+            "routers.profiles._notify_skill_via_bus",
+            return_value=True,
+        ):
+            resp = client.post(
+                "/api/v1/config/profiles/reneryo/activate",
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["voice_reloaded"] is True
+        assert body["status"] == "activated"
+        assert body["active_profile"] == "reneryo"
+
+    def test_full_activation_mock_to_mock(
+        self,
+        client: TestClient,
+    ) -> None:
+        """Trivial switch from mock to mock always works."""
+        with patch(
+            "routers.profiles._notify_skill_via_bus",
+            return_value=True,
+        ):
+            resp = client.post(
+                "/api/v1/config/profiles/mock/activate",
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["active_profile"] == "mock"
+        assert body["adapter_type"] == "mock"
+
+    def test_notification_failure_does_not_rollback(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """Message bus failure → voice_reloaded=false, activation succeeds."""
+        _seed_profile(settings_service, "reneryo")
+
+        with patch(
+            "routers.profiles._notify_skill_via_bus",
+            return_value=False,
+        ):
+            resp = client.post(
+                "/api/v1/config/profiles/reneryo/activate",
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["voice_reloaded"] is False
+        assert body["active_profile"] == "reneryo"
+        assert settings_service.get_active_profile_name() == "reneryo"
