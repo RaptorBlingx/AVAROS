@@ -220,3 +220,56 @@ export type VoiceConfigResponse = {
   hivemind_secret: string;
   voice_enabled: boolean;
 };
+
+// ── Profile Types ──────────────────────────────────────
+
+export type ProfileMetadata = {
+  name: string;
+  platform_type: string;
+  is_builtin: boolean;
+  is_active: boolean;
+};
+
+export type ProfileListResponse = {
+  active_profile: string;
+  profiles: ProfileMetadata[];
+};
+
+export type ProfileDetailResponse = {
+  name: string;
+  platform_type: string;
+  api_url: string;
+  api_key: string;
+  extra_settings: Record<string, string>;
+  is_builtin: boolean;
+  is_active: boolean;
+};
+
+export type CreateProfileRequest = {
+  name: string;
+  platform_type: string;
+  api_url: string;
+  api_key: string;
+  extra_settings: Record<string, string>;
+};
+
+export type UpdateProfileRequest = {
+  platform_type: string;
+  api_url: string;
+  api_key: string;
+  extra_settings: Record<string, string>;
+};
+
+export type ActivateProfileResponse = {
+  status: string;
+  active_profile: string;
+  adapter_type: string;
+  message: string;
+};
+
+export type DeleteProfileResponse = {
+  status: string;
+  deleted_profile: string;
+  active_profile: string;
+  message: string;
+};
