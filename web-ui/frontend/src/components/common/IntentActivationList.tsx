@@ -9,6 +9,7 @@ type IntentActivationListProps = {
   intents: IntentViewModel[];
   savingIntent: string | null;
   bulkAction: "enable" | "disable" | null;
+  readOnly?: boolean;
   onEnableAll: () => void;
   onDisableAll: () => void;
   onToggle: (intentName: string, active: boolean) => void;
@@ -52,6 +53,7 @@ export default function IntentActivationList({
   intents,
   savingIntent,
   bulkAction,
+  readOnly = false,
   onEnableAll,
   onDisableAll,
   onToggle,
@@ -85,7 +87,7 @@ export default function IntentActivationList({
         <button
           type="button"
           onClick={onEnableAll}
-          disabled={bulkAction !== null}
+          disabled={readOnly || bulkAction !== null}
           className={primaryActionButtonClass}
         >
           {bulkAction === "enable" ? "Enabling..." : "Enable All"}
@@ -93,7 +95,7 @@ export default function IntentActivationList({
         <button
           type="button"
           onClick={onDisableAll}
-          disabled={bulkAction !== null}
+          disabled={readOnly || bulkAction !== null}
           className={secondaryActionButtonClass}
         >
           {bulkAction === "disable" ? "Disabling..." : "Disable All"}
@@ -149,6 +151,7 @@ export default function IntentActivationList({
                   aria-checked={intent.active}
                   onClick={() => onToggle(intent.intent_name, !intent.active)}
                   disabled={
+                    readOnly ||
                     savingIntent === intent.intent_name || bulkAction !== null
                   }
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
