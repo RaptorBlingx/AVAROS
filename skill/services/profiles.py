@@ -140,6 +140,8 @@ class ProfileMixin:
         _reject_mock_mutation(name, "delete")
         key = f"{self.PROFILE_PREFIX}{name}"
         deleted = self.delete_setting(key)
+        if deleted:
+            self._delete_scoped_settings_for_profile(name)
         if deleted and self.get_active_profile_name() == name:
             self.delete_setting(self.ACTIVE_PROFILE_KEY)
             logger.info(
@@ -257,8 +259,11 @@ class ProfileMixin:
                     continue
                 new_key = f"{new_prefix}{item}"
                 if self.get_setting(new_key, default=None) is not None:
+                    self.delete_setting(key)
                     continue
                 value = self.get_setting(key)
+                if isinstance(value, bool):
+                    value = str(value).lower()
                 self.set_setting(key=new_key, value=value)
                 self.delete_setting(key)
                 migrated += 1
@@ -433,6 +438,21 @@ class ProfileMixin:
             for k in self.list_settings()
             if k.startswith(prefix)
         )
+
+    def _delete_scoped_settings_for_profile(self, profile: str) -> None:
+        """Delete all profile-scoped settings for a given profile.
+
+        Args:
+            profile: Profile name whose scoped settings should be removed.
+        """
+        prefixes = (
+            f"metric_mapping:{profile}:",
+            f"emission_factor:{profile}:",
+            f"intent_active:{profile}:",
+        )
+        for key in self.list_settings():
+            if key.startswith(prefixes):
+                self.delete_setting(key)
 
     def _auto_create_from_config(
         self, config: PlatformConfig,
