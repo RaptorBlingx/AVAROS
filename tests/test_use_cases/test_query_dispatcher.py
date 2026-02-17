@@ -368,60 +368,46 @@ class TestRunAsync:
     def test_run_async_no_event_loop_fallback(
         self, dispatcher: QueryDispatcher
     ) -> None:
-        """_run_async() works even when no event loop exists in the caller."""
+        """_run_async() falls back to asyncio.run on RuntimeError."""
         import asyncio
 
         async def sample_coro() -> str:
             return "fallback_ok"
 
-        result = dispatcher._run_async(sample_coro())
+        with patch(
+            "skill.use_cases.query_dispatcher.asyncio.get_event_loop",
+            side_effect=RuntimeError("no current event loop"),
+        ):
+            result = dispatcher._run_async(sample_coro())
         assert result == "fallback_ok"
 
-    def test_run_async_uses_dedicated_thread(
+    def test_run_async_running_loop_branch(
         self, dispatcher: QueryDispatcher
     ) -> None:
-        """_run_async() runs coroutine on a dedicated executor thread."""
-        import threading
+        """_run_async() uses run_coroutine_threadsafe when loop is running."""
+        import asyncio
+        from unittest.mock import MagicMock
 
-        async def get_thread_name() -> str:
-            return threading.current_thread().name
+        mock_loop = MagicMock()
+        mock_loop.is_running.return_value = True
+        mock_future = MagicMock()
+        mock_future.result.return_value = "from_running_loop"
 
-        result = dispatcher._run_async(get_thread_name())
-        assert "avaros-dispatcher" in result
+        async def sample_coro() -> str:
+            return "from_running_loop"
 
+        with patch(
+            "skill.use_cases.query_dispatcher.asyncio.get_event_loop",
+            return_value=mock_loop,
+        ), patch(
+            "skill.use_cases.query_dispatcher.asyncio.run_coroutine_threadsafe",
+            return_value=mock_future,
+        ) as mock_rcts:
+            result = dispatcher._run_async(sample_coro())
 
-# ══════════════════════════════════════════════════════════
-# 9a. shutdown
-# ══════════════════════════════════════════════════════════
-
-
-class TestShutdown:
-    """Tests for QueryDispatcher.shutdown() lifecycle."""
-
-    def test_shutdown_calls_adapter_shutdown(
-        self, adapter: MockAdapter
-    ) -> None:
-        """shutdown() invokes the adapter's shutdown coroutine."""
-        d = QueryDispatcher(adapter=adapter)
-        # Force loop creation so shutdown has something to close
-        d._run_async(adapter.initialize())
-        d.shutdown()
-        # After shutdown, executor is no longer usable
-        with pytest.raises(RuntimeError):
-            d._executor.submit(lambda: None)
-
-    def test_shutdown_tolerates_adapter_error(
-        self, adapter: MockAdapter
-    ) -> None:
-        """shutdown() logs warning but doesn't raise if adapter fails."""
-        d = QueryDispatcher(adapter=adapter)
-        d._run_async(adapter.initialize())
-
-        with patch.object(
-            adapter, "shutdown", side_effect=RuntimeError("oops")
-        ):
-            # Should not raise
-            d.shutdown()
+        assert result == "from_running_loop"
+        mock_rcts.assert_called_once()
+        mock_future.result.assert_called_once_with(timeout=30)
 
 
 # ══════════════════════════════════════════════════════════

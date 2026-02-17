@@ -21,7 +21,6 @@ from ovos_workshop.decorators import intent_handler
 
 from skill.domain.models import CanonicalMetric, TimePeriod
 from skill.domain.results import KPIResult, ComparisonResult, TrendResult, AnomalyResult, WhatIfResult
-from skill.domain.exceptions import AVAROSError
 from skill.use_cases.query_dispatcher import QueryDispatcher
 from skill.adapters.factory import AdapterFactory
 from skill.services.response_builder import ResponseBuilder
@@ -52,16 +51,13 @@ class AVAROSSkill(OVOSSkill):
         # Use the directory containing this __init__.py file
         from pathlib import Path
         self._dir = str(Path(__file__).parent)
-
-        # NOTE: OVOS may call initialize() during super().__init__(),
-        # so these attributes must exist beforehand.
+        
+        super().__init__(*args, **kwargs)
+        
         self.settings_service = None
         self.adapter_factory: AdapterFactory | None = None
         self.dispatcher: QueryDispatcher | None = None
         self.response_builder: ResponseBuilder | None = None
-        self._is_initialized = False
-
-        super().__init__(*args, **kwargs)
 
     @property
     def native_langs(self) -> List[str]:
@@ -85,10 +81,6 @@ class AVAROSSkill(OVOSSkill):
         configuration from SettingsService (DB-backed) if available, otherwise
         uses MockAdapter for zero-config demo deployment (DEC-005).
         """
-        if self._is_initialized:
-            self.log.debug("AVAROS skill initialize() called again; skipping.")
-            return
-
         # Import SettingsService lazily to avoid circular imports
         from skill.services.settings import SettingsService
         
@@ -107,9 +99,7 @@ class AVAROSSkill(OVOSSkill):
         self.adapter_factory = AdapterFactory(settings_service=self.settings_service)
         adapter = self.adapter_factory.create()
         self.dispatcher = QueryDispatcher(adapter=adapter)
-        self.dispatcher.initialize_adapter()
         self.response_builder = ResponseBuilder(verbosity="normal")
-        self._is_initialized = True
         self.log.info("AVAROS skill initialized with adapter: %s", type(adapter).__name__)
 
     def _safe_dispatch(self, handler_name: str, action: Callable) -> Any:
@@ -127,15 +117,6 @@ class AVAROSSkill(OVOSSkill):
             return None
         try:
             return action()
-        except AVAROSError as e:
-            self.log.warning(
-                "Handled domain error in %s: %s (%s)",
-                handler_name,
-                e,
-                e.code,
-            )
-            self.speak(e.user_message)
-            return None
         except Exception as e:
             self.log.error("Error in %s: %s", handler_name, e, exc_info=True)
             self.speak("Sorry, I encountered an error. Please try again.")
@@ -330,10 +311,7 @@ class AVAROSSkill(OVOSSkill):
 
     def stop(self):
         """Optional cleanup when skill is stopped."""
-        dispatcher = getattr(self, "dispatcher", None)
-        if dispatcher is not None:
-            dispatcher.shutdown()
-            self._is_initialized = False
+        pass
 
 
 def create_skill():
