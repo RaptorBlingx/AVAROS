@@ -17,6 +17,7 @@ from routers.intents import router as intents_router
 from routers.metrics import router as metrics_router
 from routers.kpi_progress import router as kpi_progress_router
 from routers.production_data import router as production_data_router
+from routers.profiles import router as profiles_router
 from routers.status import router as status_router
 from routers.voice import router as voice_router
 
@@ -74,6 +75,7 @@ def health() -> dict[str, str]:
 
 app.include_router(status_router)
 app.include_router(config_router)
+app.include_router(profiles_router)
 app.include_router(emission_factors_router)
 app.include_router(intents_router)
 app.include_router(metrics_router)
