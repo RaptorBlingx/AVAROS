@@ -17,7 +17,17 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from skill.services.settings import SettingsService
+from skill.services.settings import PlatformConfig, SettingsService
+
+
+@pytest.fixture(autouse=True)
+def _activate_profile(settings_service: SettingsService) -> None:
+    """Activate a non-mock profile for all CRUD tests (DEC-029)."""
+    settings_service.create_profile("test", PlatformConfig(
+        platform_type="reneryo",
+        api_url="https://test.example.com",
+    ))
+    settings_service.set_active_profile("test")
 
 
 # ── Fixtures ────────────────────────────────────────────

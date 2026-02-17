@@ -664,3 +664,136 @@ class TestBackwardCompatibility:
         # Read via old API
         old_config = service.get_platform_config()
         assert old_config.platform_type == "reneryo"
+
+
+# ══════════════════════════════════════════════════════════
+# Global → Profile-Scoped Migration (DEC-029)
+# ══════════════════════════════════════════════════════════
+
+
+class TestGlobalToProfileMigration:
+    """Tests for _migrate_global_settings_to_profile()."""
+
+    def test_migrate_global_metric_mappings_to_active_profile(
+        self, service: SettingsService,
+    ) -> None:
+        """Old-format metric_mapping:X keys migrate to active profile."""
+        # Insert old-format keys directly
+        service.set_setting(
+            "metric_mapping:energy_per_unit", {"endpoint": "/old"},
+        )
+        service.set_setting(
+            "metric_mapping:oee", {"endpoint": "/old-oee"},
+        )
+
+        # Create and activate profile
+        service.create_profile("reneryo", PlatformConfig(
+            platform_type="reneryo",
+            api_url="https://api.reneryo.example.com",
+        ))
+        service.set_active_profile("reneryo")
+
+        # Run migration
+        service._migrate_global_settings_to_profile()
+
+        # Scoped keys exist
+        keys = service.list_settings()
+        assert "metric_mapping:reneryo:energy_per_unit" in keys
+        assert "metric_mapping:reneryo:oee" in keys
+
+        # Old keys removed
+        assert "metric_mapping:energy_per_unit" not in keys
+        assert "metric_mapping:oee" not in keys
+
+    def test_migrate_global_emission_factors_to_active_profile(
+        self, service: SettingsService,
+    ) -> None:
+        """Old-format emission_factor:X keys migrate to active profile."""
+        service.set_setting(
+            "emission_factor:electricity",
+            {"energy_source": "electricity", "factor": 0.48},
+        )
+
+        service.create_profile("reneryo", PlatformConfig(
+            platform_type="reneryo",
+            api_url="https://api.reneryo.example.com",
+        ))
+        service.set_active_profile("reneryo")
+
+        service._migrate_global_settings_to_profile()
+
+        keys = service.list_settings()
+        assert "emission_factor:reneryo:electricity" in keys
+        assert "emission_factor:electricity" not in keys
+
+    def test_migrate_global_intent_states_to_active_profile(
+        self, service: SettingsService,
+    ) -> None:
+        """Old-format intent_active:X keys migrate to active profile."""
+        service.set_setting("intent_active:kpi.oee", "false")
+
+        service.create_profile("reneryo", PlatformConfig(
+            platform_type="reneryo",
+            api_url="https://api.reneryo.example.com",
+        ))
+        service.set_active_profile("reneryo")
+
+        service._migrate_global_settings_to_profile()
+
+        keys = service.list_settings()
+        assert "intent_active:reneryo:kpi.oee" in keys
+        assert "intent_active:kpi.oee" not in keys
+
+        # Value preserved (set_setting stores str(value))
+        val = service.get_setting("intent_active:reneryo:kpi.oee")
+        assert str(val).lower() == "false"
+
+    def test_migrate_idempotent_skips_existing_scoped_keys(
+        self, service: SettingsService,
+    ) -> None:
+        """Running migration twice does not overwrite scoped keys."""
+        service.set_setting(
+            "metric_mapping:energy_per_unit", {"endpoint": "/old"},
+        )
+
+        service.create_profile("reneryo", PlatformConfig(
+            platform_type="reneryo",
+            api_url="https://api.reneryo.example.com",
+        ))
+        service.set_active_profile("reneryo")
+
+        # First migration
+        service._migrate_global_settings_to_profile()
+
+        # Modify scoped key
+        service.set_setting(
+            "metric_mapping:reneryo:energy_per_unit",
+            {"endpoint": "/new"},
+        )
+
+        # Insert another old-format key
+        service.set_setting(
+            "metric_mapping:oee", {"endpoint": "/old-oee"},
+        )
+
+        # Second migration — must not overwrite the modified key
+        service._migrate_global_settings_to_profile()
+
+        val = service.get_setting("metric_mapping:reneryo:energy_per_unit")
+        assert val["endpoint"] == "/new"
+
+        # But the new old-format key should be migrated
+        assert "metric_mapping:reneryo:oee" in service.list_settings()
+
+    def test_migrate_skips_when_active_is_mock(
+        self, service: SettingsService,
+    ) -> None:
+        """Migration does nothing when active profile is mock."""
+        service.set_setting(
+            "metric_mapping:energy_per_unit", {"endpoint": "/old"},
+        )
+
+        service._migrate_global_settings_to_profile()
+
+        # Old key still present — not migrated
+        assert "metric_mapping:energy_per_unit" in service.list_settings()
