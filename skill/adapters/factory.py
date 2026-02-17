@@ -123,17 +123,27 @@ class AdapterFactory:
         await adapter.initialize()
         return adapter
     
-    async def reload(self) -> ManufacturingAdapter:
-        """
-        Hot-reload adapter based on current configuration.
-        
+    async def reload(
+        self, profile_name: str | None = None,
+    ) -> ManufacturingAdapter:
+        """Hot-reload adapter based on current configuration.
+
+        Optionally switches the active profile before reloading.
         Called when user changes platform settings via Web UI.
         Gracefully shuts down old adapter before creating new one.
-        
+
+        Args:
+            profile_name: If provided, set this as the active profile
+                before creating the new adapter.
+
         Returns:
             New ManufacturingAdapter instance
         """
-        logger.info("Reloading adapter due to configuration change")
+        if profile_name is not None and self._settings_service is not None:
+            self._settings_service.set_active_profile(profile_name)
+            logger.info("Reloading adapter for profile '%s'", profile_name)
+        else:
+            logger.info("Reloading adapter due to configuration change")
         
         # Shutdown existing adapter
         if self._current_adapter is not None:
@@ -147,23 +157,30 @@ class AdapterFactory:
         return await self.create_async()
     
     def _get_configured_platform(self) -> str:
-        """
-        Get the configured platform name from settings.
-        
+        """Get the configured platform name from the active profile.
+
+        Uses the profile system (DEC-028) to resolve the active
+        adapter.  Falls back to ``"mock"`` when no profile is set.
+
         Returns:
             Platform name (e.g., "mock", "reneryo")
         """
         if self._settings_service is None:
             logger.debug("No settings service, defaulting to mock adapter")
             return "mock"
-        
+
         try:
-            config = self._settings_service.get_platform_config()
-            if config is None or not config.platform_type:
+            profile_name = (
+                self._settings_service.get_active_profile_name()
+            )
+            config = self._settings_service.get_profile(profile_name)
+            if config is None or config.platform_type == "mock":
                 return "mock"
             return config.platform_type.lower()
         except Exception as e:
-            logger.warning("Error reading platform config: %s. Using mock.", e)
+            logger.warning(
+                "Error reading platform config: %s. Using mock.", e,
+            )
             return "mock"
     
     def _instantiate_adapter(
@@ -193,11 +210,10 @@ class AdapterFactory:
         return adapter_class()
     
     def _create_reneryo_adapter(self) -> ReneryoAdapter:
-        """
-        Create ReneryoAdapter with config from SettingsService.
+        """Create ReneryoAdapter with config from the active profile.
 
-        Reads api_url and api_key from platform configuration.
-        Falls back to empty strings if settings are unavailable.
+        Reads api_url, api_key, timeout and auth_type from the
+        active profile's ``PlatformConfig`` (DEC-028).
 
         Returns:
             Configured ReneryoAdapter instance
@@ -209,15 +225,28 @@ class AdapterFactory:
 
         if self._settings_service is not None:
             try:
-                config = self._settings_service.get_platform_config()
+                profile_name = (
+                    self._settings_service.get_active_profile_name()
+                )
+                config = self._settings_service.get_profile(
+                    profile_name,
+                )
                 if config is not None:
                     api_url = getattr(config, "api_url", "") or ""
                     api_key = getattr(config, "api_key", "") or ""
                     timeout = getattr(config, "timeout", 30) or 30
-                    extra = getattr(config, "extra_settings", {}) or {}
-                    auth_type = extra.get("auth_type", "bearer") if isinstance(extra, dict) else "bearer"
+                    extra = (
+                        getattr(config, "extra_settings", {}) or {}
+                    )
+                    auth_type = (
+                        extra.get("auth_type", "bearer")
+                        if isinstance(extra, dict)
+                        else "bearer"
+                    )
             except Exception as exc:
-                logger.warning("Error reading RENERYO config: %s", exc)
+                logger.warning(
+                    "Error reading RENERYO config: %s", exc,
+                )
 
         return ReneryoAdapter(
             api_url=api_url,

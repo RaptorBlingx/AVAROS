@@ -35,23 +35,24 @@ Usage:
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import logging
 import os
-from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import create_engine, Column, String, Text, DateTime, Boolean
-from sqlalchemy.orm import sessionmaker, Session
 from cryptography.fernet import Fernet
-import base64
-import hashlib
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from skill.domain.emission_factors import DEFAULT_EMISSION_FACTORS, EmissionFactor
 from skill.domain.exceptions import ValidationError
 from skill.domain.models import CanonicalMetric
-from skill.services.database import Base
+from skill.services.database import Base, SettingModel
+from skill.services.models import PlatformConfig, VoiceConfig  # re-export
+from skill.services.profiles import ProfileMixin
 
 
 logger = logging.getLogger(__name__)
@@ -85,80 +86,12 @@ INTENT_METRIC_REQUIREMENTS: dict[str, list[CanonicalMetric]] = {
 }
 
 
-class SettingModel(Base):
-    """
-    SQLAlchemy model for settings storage.
-    
-    Stores key-value settings with metadata.
-    """
-    
-    __tablename__ = "settings"
-    
-    key = Column(String(255), primary_key=True, index=True)
-    value = Column(Text, nullable=False)
-    encrypted = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    def __repr__(self) -> str:
-        return f"<Setting(key={self.key}, encrypted={self.encrypted})>"
+# SettingModel re-exported from database for backward compatibility
+# PlatformConfig, VoiceConfig re-exported from models
+# ProfileMixin provides profile CRUD (DEC-028)
 
 
-@dataclass
-class PlatformConfig:
-    """
-    Platform connection configuration.
-    
-    Attributes:
-        platform_type: Adapter type ("mock", "reneryo", etc.)
-        api_url: Platform API endpoint
-        api_key: Authentication key (encrypted at rest)
-        extra_settings: Platform-specific settings
-    """
-    
-    platform_type: str = "mock"
-    api_url: str = ""
-    api_key: str = ""
-    extra_settings: dict[str, Any] = field(default_factory=dict)
-    
-    @property
-    def is_configured(self) -> bool:
-        """Check if a real platform is configured (not mock)."""
-        return self.platform_type != "mock" and bool(self.api_url)
-    
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return asdict(self)
-    
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> PlatformConfig:
-        """Create from dictionary."""
-        return cls(
-            platform_type=data.get("platform_type", "mock"),
-            api_url=data.get("api_url", ""),
-            api_key=data.get("api_key", ""),
-            extra_settings=data.get("extra_settings", {}),
-        )
-
-
-@dataclass
-class VoiceConfig:
-    """HiveMind browser client configuration.
-
-    Attributes:
-        hivemind_url: WebSocket endpoint for HiveMind-core.
-        hivemind_name: Client name for HiveMind authentication token.
-        hivemind_key: Client access key.
-        hivemind_secret: Client secret/password.
-    """
-
-    hivemind_url: str = "ws://localhost:5678"
-    hivemind_name: str = "avaros-web-client"
-    hivemind_key: str = ""
-    hivemind_secret: str = ""
-
-
-class SettingsService:
+class SettingsService(ProfileMixin):
     """
     Database-backed settings management.
     
@@ -259,6 +192,9 @@ class SettingsService:
         
         self._initialized = True
         logger.info("SettingsService initialized (db=%s)", self._database_url)
+
+        # Auto-migrate legacy platform_config → named profile (DEC-028)
+        self._migrate_legacy_config()
     
     def is_configured(self) -> bool:
         """
@@ -271,80 +207,8 @@ class SettingsService:
         config = self.get_platform_config()
         return config.is_configured
     
-    def get_platform_config(self) -> PlatformConfig:
-        """
-        Get current platform configuration.
-        
-        Returns:
-            PlatformConfig with current settings (API key decrypted)
-        """
-        self._ensure_initialized()
-        
-        with self._get_session() as session:
-            setting = session.query(SettingModel).filter_by(key="platform_config").first()
-            
-            if not setting:
-                # First run - return default mock config
-                return PlatformConfig()
-            
-            # Deserialize from JSON
-            config_data = json.loads(setting.value)
-            
-            # Decrypt API key if it was encrypted
-            if config_data.get("api_key") and setting.encrypted:
-                config_data["api_key"] = self._decrypt(config_data["api_key"])
-            
-            return PlatformConfig.from_dict(config_data)
-    
-    def update_platform_config(self, config: PlatformConfig) -> None:
-        """
-        Update platform configuration.
-        
-        Args:
-            config: New platform configuration
-            
-        Note:
-            API key is encrypted before storage.
-            This triggers adapter hot-reload via AdapterFactory.
-        """
-        self._ensure_initialized()
-        
-        # Prepare config data
-        config_data = config.to_dict()
-        
-        # Encrypt API key
-        if config_data.get("api_key"):
-            config_data["api_key"] = self._encrypt(config_data["api_key"])
-            encrypted = True
-        else:
-            encrypted = False
-        
-        # Store in database
-        with self._get_session() as session:
-            setting = session.query(SettingModel).filter_by(key="platform_config").first()
-            
-            if setting:
-                # Update existing
-                setting.value = json.dumps(config_data)
-                setting.encrypted = encrypted
-                setting.updated_at = datetime.utcnow()
-            else:
-                # Create new
-                setting = SettingModel(
-                    key="platform_config",
-                    value=json.dumps(config_data),
-                    encrypted=encrypted,
-                )
-                session.add(setting)
-            
-            session.commit()
-        
-        logger.info(
-            "Platform config updated: type=%s, url=%s",
-            config.platform_type,
-            config.api_url[:30] + "..." if len(config.api_url) > 30 else config.api_url,
-        )
-    
+    # get_platform_config / update_platform_config → ProfileMixin
+
     def get_setting(self, key: str, default: Any = None) -> Any:
         """
         Get a generic setting value.
@@ -404,7 +268,7 @@ class SettingsService:
             if setting:
                 setting.value = serialized
                 setting.encrypted = encrypt
-                setting.updated_at = datetime.utcnow()
+                setting.updated_at = datetime.now(timezone.utc)
             else:
                 setting = SettingModel(
                     key=key,

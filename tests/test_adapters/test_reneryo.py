@@ -348,7 +348,8 @@ class TestReneryoAdapterFactoryIntegration:
         config.api_url = "https://reneryo.example.com"
         config.api_key = "test-key"
         config.timeout = 30
-        settings.get_platform_config.return_value = config
+        settings.get_active_profile_name.return_value = "reneryo"
+        settings.get_profile.return_value = config
 
         factory = AdapterFactory(settings_service=settings)
         adapter = factory.create()
@@ -365,7 +366,8 @@ class TestReneryoAdapterFactoryIntegration:
         config.api_url = "https://api.reneryo.test"
         config.api_key = "my-secret-key"
         config.timeout = 45
-        settings.get_platform_config.return_value = config
+        settings.get_active_profile_name.return_value = "reneryo"
+        settings.get_profile.return_value = config
 
         factory = AdapterFactory(settings_service=settings)
         adapter = factory.create()
@@ -384,7 +386,8 @@ class TestReneryoAdapterFactoryIntegration:
         config.api_url = None
         config.api_key = None
         config.timeout = None
-        settings.get_platform_config.return_value = config
+        settings.get_active_profile_name.return_value = "reneryo"
+        settings.get_profile.return_value = config
 
         factory = AdapterFactory(settings_service=settings)
         adapter = factory.create()
@@ -402,7 +405,8 @@ class TestReneryoAdapterFactoryIntegration:
         config.api_key = "my-key"
         config.timeout = 30
         config.extra_settings = {"auth_type": "cookie"}
-        settings.get_platform_config.return_value = config
+        settings.get_active_profile_name.return_value = "reneryo"
+        settings.get_profile.return_value = config
 
         factory = AdapterFactory(settings_service=settings)
         adapter = factory.create()
@@ -420,7 +424,8 @@ class TestReneryoAdapterFactoryIntegration:
         config.api_key = "my-key"
         config.timeout = 30
         config.extra_settings = {}
-        settings.get_platform_config.return_value = config
+        settings.get_active_profile_name.return_value = "reneryo"
+        settings.get_profile.return_value = config
 
         factory = AdapterFactory(settings_service=settings)
         adapter = factory.create()

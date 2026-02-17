@@ -63,8 +63,10 @@ def get_platform_config(
 def reset_platform_config(
     settings_service: SettingsService = Depends(get_settings_service),
 ) -> ResetResponse:
-    """Reset configuration by deleting saved platform config."""
-    settings_service.delete_setting("platform_config")
+    """Reset configuration by switching back to mock profile."""
+    active = settings_service.get_active_profile_name()
+    if active != settings_service.BUILTIN_MOCK_PROFILE:
+        settings_service.delete_profile(active)
     return ResetResponse(status="reset", platform_type="mock")
 
 
