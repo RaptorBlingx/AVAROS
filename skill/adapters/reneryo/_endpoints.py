@@ -39,6 +39,7 @@ ENDPOINT_MAP: dict[CanonicalMetric, str] = {
 
 # Real RENERYO API endpoints — energy metrics share one endpoint
 REAL_METER_ENDPOINT = "/api/u/measurement/meter/item"
+REAL_SEU_VALUES_ENDPOINT = "/api/u/measurement/seu/item/{seu_id}/values"
 REAL_METRIC_ENDPOINT = "/api/u/measurement/metric/item"  # reserved for future use
 
 # Metrics available in the real RENERYO API (energy monitoring platform)

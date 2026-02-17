@@ -6,3 +6,11 @@ how much energy does {asset} use per unit
 what's our (energy|power) efficiency on {asset}
 energy usage for {asset} {period}
 (energy|power) per unit {period}
+show (the )?(energy|power|electricity) per unit {period}
+show (the )?(energy|power|electricity) per unit today
+what is (the )?(energy|power|electricity) per unit {period}
+what is (the )?(energy|power|electricity) per unit today
+show energy per unit today
+show energy per unit {period}
+what is energy per unit today
+what is energy per unit {period}

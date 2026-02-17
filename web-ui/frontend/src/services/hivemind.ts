@@ -24,8 +24,13 @@ export interface HiveMindConfig {
   clientName?: string;
   /** Client access key from HiveMind credential store */
   accessKey: string;
-  /** Client crypto/secret key (used for AES-GCM encryption) */
+  /** Client password/secret from HiveMind credential store */
   accessSecret: string;
+  /**
+   * Optional AES key for encrypted HiveMind envelopes.
+   * Not required for standard AVAROS setup.
+   */
+  encryptionKey?: string;
   /** Whether to auto-reconnect on close (default: true) */
   autoReconnect?: boolean;
   /** Base reconnect interval in ms (default: 2000) */
@@ -48,7 +53,7 @@ export interface HiveMindConnectionDetails {
 
 interface HiveMindEnvelope {
   msg_type: string;
-  payload: OVOSMessage;
+  payload: unknown;
 }
 
 interface EncryptedEnvelope {
@@ -59,6 +64,15 @@ interface EncryptedEnvelope {
 
 type MessageCallback = (msg: OVOSMessage) => void;
 type StateCallback = (state: ConnectionState) => void;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isOVOSMessage(value: unknown): value is OVOSMessage {
+  if (!isRecord(value)) return false;
+  return typeof value.type === "string" && isRecord(value.data);
+}
 
 // ── Crypto helpers ─────────────────────────────────────
 
@@ -133,6 +147,12 @@ export class HiveMindService {
   private connectStartedAt: number | null = null;
   private connectionLatencyMs: number | null = null;
   private sessionId: string | null = null;
+  private readonly fallbackSessionId: string =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `session-${Date.now()}`;
+  private handshakeSent = false;
+  private decryptionKeysPromise: Promise<string[]> | null = null;
 
   constructor(config: HiveMindConfig) {
     this.config = {
@@ -162,48 +182,67 @@ export class HiveMindService {
       this.setState("connecting");
       this.connectStartedAt = Date.now();
 
-      const authToken = btoa(
-        `${this.config.clientName}:${this.config.accessKey}`,
-      );
-      const wsUrl = `${this.config.url}?authorization=${authToken}`;
+      const candidateUrls = this.buildWebSocketUrls();
 
-      try {
-        this.ws = new WebSocket(wsUrl);
-      } catch (err) {
-        this.setState("error");
-        reject(err);
-        return;
-      }
-
-      this.ws.onopen = () => {
-        if (this.connectStartedAt !== null) {
-          this.connectionLatencyMs = Date.now() - this.connectStartedAt;
-        }
-        this.connectStartedAt = null;
-        this.reconnectAttempts = 0;
-        this.setState("connected");
-        resolve();
-      };
-
-      this.ws.onmessage = (event: MessageEvent) => {
-        void this.handleMessage(event);
-      };
-
-      this.ws.onerror = () => {
-        if (this._state === "connecting") {
+      const tryConnect = (urlIndex: number): void => {
+        const wsUrl = candidateUrls[urlIndex];
+        if (!wsUrl) {
           this.setState("error");
           reject(new Error("WebSocket connection failed"));
+          return;
         }
+
+        let advanced = false;
+        const advanceToNextUrl = (): void => {
+          if (advanced || this._state !== "connecting") return;
+          advanced = true;
+          this.ws = null;
+          tryConnect(urlIndex + 1);
+        };
+
+        try {
+          this.ws = new WebSocket(wsUrl);
+        } catch {
+          advanceToNextUrl();
+          return;
+        }
+
+        this.ws.onopen = () => {
+          if (this.connectStartedAt !== null) {
+            this.connectionLatencyMs = Date.now() - this.connectStartedAt;
+          }
+          this.connectStartedAt = null;
+          this.reconnectAttempts = 0;
+          this.handshakeSent = false;
+          this.sendHelloHandshake();
+          this.setState("connected");
+          resolve();
+        };
+
+        this.ws.onmessage = (event: MessageEvent) => {
+          void this.handleMessage(event);
+        };
+
+        this.ws.onerror = () => {
+          if (this._state === "connecting") {
+            advanceToNextUrl();
+          }
+        };
+
+        this.ws.onclose = () => {
+          const wasConnecting = this._state === "connecting";
+          this.connectStartedAt = null;
+          this.handshakeSent = false;
+          if (wasConnecting) {
+            advanceToNextUrl();
+            return;
+          }
+          this.setState("disconnected");
+          this.scheduleReconnect();
+        };
       };
 
-      this.ws.onclose = () => {
-        const wasConnecting = this._state === "connecting";
-        this.connectStartedAt = null;
-        this.setState("disconnected");
-        if (!wasConnecting) {
-          this.scheduleReconnect();
-        }
-      };
+      tryConnect(0);
     });
   }
 
@@ -246,13 +285,17 @@ export class HiveMindService {
     text: string,
     lang = "en-us",
   ): Promise<void> {
+    const session_id = this.sessionId ?? this.fallbackSessionId;
     const payload: OVOSMessage = {
       type: "recognizer_loop:utterance",
       data: { utterances: [text], lang },
       context: {
         source: "avaros-web-ui",
-        destination: "HiveMind",
         platform: "AVAROS-WebUI-v1",
+        session: {
+          session_id,
+          site_id: "default",
+        },
       },
     };
     await this.sendBusMessage(payload);
@@ -267,16 +310,7 @@ export class HiveMindService {
       msg_type: "bus",
       payload,
     };
-
-    if (this.config.accessSecret) {
-      const encrypted = await encryptMessage(
-        JSON.stringify(envelope),
-        this.config.accessSecret,
-      );
-      this.ws.send(JSON.stringify(encrypted));
-    } else {
-      this.ws.send(JSON.stringify(envelope));
-    }
+    await this.sendEnvelope(envelope);
   }
 
   // ── Event listening ──────────────────────────────────
@@ -346,22 +380,36 @@ export class HiveMindService {
     const envelope = parsed as Record<string, unknown>;
 
     // Handle encrypted messages
-    if (
-      this.config.accessSecret &&
-      typeof envelope.ciphertext === "string"
-    ) {
-      try {
-        const ciphertext = envelope.tag
-          ? (envelope.ciphertext as string) + (envelope.tag as string)
-          : (envelope.ciphertext as string);
-        const decrypted = await decryptMessage(
-          ciphertext,
-          envelope.nonce as string,
-          this.config.accessSecret,
+    if (typeof envelope.ciphertext === "string") {
+      const ciphertext = envelope.tag
+        ? (envelope.ciphertext as string) + (envelope.tag as string)
+        : (envelope.ciphertext as string);
+      const nonce = envelope.nonce as string;
+      const keys = await this.getDecryptionKeys();
+
+      let decryptedPayload: string | null = null;
+      for (const key of keys) {
+        try {
+          decryptedPayload = await decryptMessage(ciphertext, nonce, key);
+          break;
+        } catch {
+          // try next key candidate
+        }
+      }
+
+      if (!decryptedPayload) {
+        // Keep socket alive, but surface a useful signal for debugging.
+        // eslint-disable-next-line no-console
+        console.warn(
+          "HiveMind message decryption failed (possible secret/crypto-key mismatch).",
         );
-        parsed = JSON.parse(decrypted);
+        return;
+      }
+
+      try {
+        parsed = JSON.parse(decryptedPayload);
       } catch {
-        return; // decryption failed — skip
+        return;
       }
     }
 
@@ -369,9 +417,66 @@ export class HiveMindService {
 
     const msg = parsed as HiveMindEnvelope;
 
-    if (msg.msg_type === "bus" && msg.payload) {
+    if (msg.msg_type === "hello" && !this.handshakeSent) {
+      this.sendHelloHandshake();
+    }
+
+    if (msg.msg_type === "bus" && isOVOSMessage(msg.payload)) {
       this.dispatchEvent(msg.payload);
     }
+  }
+
+  private async sendEnvelope(
+    envelope: HiveMindEnvelope,
+  ): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error("WebSocket is not connected");
+    }
+
+    if (this.config.encryptionKey) {
+      const encrypted = await encryptMessage(
+        JSON.stringify(envelope),
+        this.config.encryptionKey,
+      );
+      this.ws.send(JSON.stringify(encrypted));
+      return;
+    }
+
+    this.ws.send(JSON.stringify(envelope));
+  }
+
+  private sendHelloHandshake(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    if (this.handshakeSent) {
+      return;
+    }
+
+    const session_id = this.sessionId ?? this.fallbackSessionId;
+    const helloEnvelope: HiveMindEnvelope = {
+      msg_type: "hello",
+      payload: {
+        site_id: "default",
+        session: {
+          session_id,
+          site_id: "default",
+          lang: "en-us",
+          context: {},
+          active_skills: [],
+          utterance_states: {},
+        },
+      },
+    };
+
+    void this.sendEnvelope(helloEnvelope)
+      .then(() => {
+        this.handshakeSent = true;
+        this.sessionId = session_id;
+      })
+      .catch(() => {
+        // Keep connection alive; utterance flow can still work with fallback.
+      });
   }
 
   private updateSessionId(envelope: unknown): void {
@@ -391,6 +496,22 @@ export class HiveMindService {
 
     if (typeof candidate === "string" && candidate.length > 0) {
       this.sessionId = candidate;
+      return;
+    }
+
+    if (
+      candidate &&
+      typeof candidate === "object" &&
+      "session_id" in candidate
+    ) {
+      const nestedSessionId = (candidate as { session_id?: unknown })
+        .session_id;
+      if (
+        typeof nestedSessionId === "string" &&
+        nestedSessionId.length > 0
+      ) {
+        this.sessionId = nestedSessionId;
+      }
     }
   }
 
@@ -465,5 +586,66 @@ export class HiveMindService {
       this.reconnectTimer = null;
     }
     this.reconnectAttempts = 0;
+  }
+
+  private buildWebSocketUrls(): string[] {
+    const baseUrls = [this.config.url];
+    try {
+      const parsed = new URL(this.config.url);
+      if (parsed.hostname === "localhost") {
+        const fallback = new URL(this.config.url);
+        fallback.hostname = "127.0.0.1";
+        baseUrls.push(fallback.toString());
+      }
+    } catch {
+      // Keep original URL only.
+    }
+
+    const authToken = btoa(
+      `${this.config.clientName}:${this.config.accessKey}`,
+    );
+    const withAuth = baseUrls.map((url) => {
+      const separator = url.includes("?") ? "&" : "?";
+      return `${url}${separator}authorization=${authToken}`;
+    });
+    return [...new Set(withAuth)];
+  }
+
+  private async getDecryptionKeys(): Promise<string[]> {
+    if (this.decryptionKeysPromise) {
+      return this.decryptionKeysPromise;
+    }
+
+    this.decryptionKeysPromise = (async () => {
+      const keys = new Set<string>();
+      const configured = (this.config.encryptionKey ?? "").trim();
+      const secret = (this.config.accessSecret ?? "").trim();
+
+      const pushIfAesLength = (value: string): void => {
+        if (value.length === 16 || value.length === 24 || value.length === 32) {
+          keys.add(value);
+        }
+      };
+
+      pushIfAesLength(configured);
+      pushIfAesLength(secret);
+
+      if (secret.length >= 16) {
+        keys.add(secret.slice(0, 16));
+      }
+
+      if (secret.length > 0) {
+        const digest = await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(secret),
+        );
+        const digestHex = bytesToHex(new Uint8Array(digest));
+        keys.add(digestHex.slice(0, 16));
+      }
+
+      return Array.from(keys);
+    })();
+
+    return this.decryptionKeysPromise;
   }
 }

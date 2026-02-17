@@ -15,12 +15,15 @@ Golden Rule:
     Adapters understand platform-specific APIs.
 """
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Any, List
 from ovos_workshop.skills import OVOSSkill
 from ovos_workshop.decorators import intent_handler
 
 from skill.domain.models import CanonicalMetric, TimePeriod
 from skill.domain.results import KPIResult, ComparisonResult, TrendResult, AnomalyResult, WhatIfResult
+from skill.domain.exceptions import AVAROSError
 from skill.use_cases.query_dispatcher import QueryDispatcher
 from skill.adapters.factory import AdapterFactory
 from skill.services.response_builder import ResponseBuilder
@@ -51,13 +54,16 @@ class AVAROSSkill(OVOSSkill):
         # Use the directory containing this __init__.py file
         from pathlib import Path
         self._dir = str(Path(__file__).parent)
-        
-        super().__init__(*args, **kwargs)
-        
+
+        # NOTE: OVOS may call initialize() during super().__init__(),
+        # so these attributes must exist beforehand.
         self.settings_service = None
         self.adapter_factory: AdapterFactory | None = None
         self.dispatcher: QueryDispatcher | None = None
         self.response_builder: ResponseBuilder | None = None
+        self._is_initialized = False
+        
+        super().__init__(*args, **kwargs)
 
     @property
     def native_langs(self) -> List[str]:
@@ -73,6 +79,25 @@ class AVAROSSkill(OVOSSkill):
         available = [d.name for d in locale_dir.iterdir() if d.is_dir()]
         return available or [self.lang]
 
+    def _run_coro_sync(self, coro):
+        """Run async adapter lifecycle hooks from sync OVOS callbacks."""
+        try:
+            running_loop = asyncio.get_running_loop()
+            if running_loop.is_running():
+                with ThreadPoolExecutor(max_workers=1) as ex:
+                    return ex.submit(asyncio.run, coro).result(timeout=30)
+        except RuntimeError:
+            pass
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                with ThreadPoolExecutor(max_workers=1) as ex:
+                    return ex.submit(asyncio.run, coro).result(timeout=30)
+            return loop.run_until_complete(coro)
+        except RuntimeError:
+            return asyncio.run(coro)
+
     def initialize(self):
         """
         Called after the skill is fully constructed and registered.
@@ -81,6 +106,10 @@ class AVAROSSkill(OVOSSkill):
         configuration from SettingsService (DB-backed) if available, otherwise
         uses MockAdapter for zero-config demo deployment (DEC-005).
         """
+        if self._is_initialized:
+            self.log.debug("AVAROS skill initialize() called again; skipping.")
+            return
+
         # Import SettingsService lazily to avoid circular imports
         from skill.services.settings import SettingsService
         
@@ -99,7 +128,9 @@ class AVAROSSkill(OVOSSkill):
         self.adapter_factory = AdapterFactory(settings_service=self.settings_service)
         adapter = self.adapter_factory.create()
         self.dispatcher = QueryDispatcher(adapter=adapter)
+        self.dispatcher._run_async(adapter.initialize())
         self.response_builder = ResponseBuilder(verbosity="normal")
+        self._is_initialized = True
         self.log.info("AVAROS skill initialized with adapter: %s", type(adapter).__name__)
 
     def _safe_dispatch(self, handler_name: str, action: Callable) -> Any:
@@ -117,6 +148,15 @@ class AVAROSSkill(OVOSSkill):
             return None
         try:
             return action()
+        except AVAROSError as e:
+            self.log.warning(
+                "Handled domain error in %s: %s (%s)",
+                handler_name,
+                e,
+                getattr(e, "code", "AVAROS_ERROR"),
+            )
+            self.speak(getattr(e, "user_message", "I couldn't complete that request."))
+            return None
         except Exception as e:
             self.log.error("Error in %s: %s", handler_name, e, exc_info=True)
             self.speak("Sorry, I encountered an error. Please try again.")
@@ -131,7 +171,26 @@ class AVAROSSkill(OVOSSkill):
         """Handle: 'What's the energy per unit for {asset}?'"""
         def _execute():
             asset_id = message.data.get("asset", "default")
-            period = self._parse_period(message.data.get("period", "today"))
+            period_value = message.data.get("period", "today")
+            # Padatious may capture temporal words (e.g. "today") as {asset}
+            # for some phrasings; treat that as period and use default asset.
+            if (
+                isinstance(asset_id, str)
+                and not message.data.get("period")
+                and asset_id.strip().lower() in {
+                    "today",
+                    "yesterday",
+                    "this week",
+                    "last week",
+                    "this month",
+                    "last month",
+                    "this year",
+                    "last year",
+                }
+            ):
+                period_value = asset_id
+                asset_id = "default"
+            period = self._parse_period(period_value)
             
             result: KPIResult = self.dispatcher.get_kpi(
                 metric=CanonicalMetric.ENERGY_PER_UNIT,
@@ -273,11 +332,30 @@ class AVAROSSkill(OVOSSkill):
     
     @intent_handler("whatif.temperature.intent")
     def handle_whatif_temperature(self, message):
-        """Handle: 'What if we reduce temperature by {amount} degrees?'"""
+        """Handle: 'What if we increase/decrease temperature by {amount} degrees?'"""
         def _execute():
             from skill.domain.models import WhatIfScenario, ScenarioParameter
-            
-            amount = float(message.data.get("amount", "5"))
+
+            raw_amount = str(message.data.get("amount", "5")).strip()
+            try:
+                amount = abs(float(raw_amount))
+            except (TypeError, ValueError):
+                amount = 5.0
+
+            direction = str(message.data.get("direction", "")).strip().lower()
+            utterance = str(message.data.get("utterance", "")).strip().lower()
+            if not direction:
+                if any(token in utterance for token in ("increase", "raise", "up")):
+                    direction = "increase"
+                else:
+                    direction = "decrease"
+
+            is_increase = direction in {
+                "increase", "increases", "increased",
+                "raise", "raises", "raised", "up",
+            }
+            proposed_value = 25.0 + amount if is_increase else 25.0 - amount
+
             asset_id = message.data.get("asset", "default")
             
             scenario = WhatIfScenario(
@@ -287,7 +365,7 @@ class AVAROSSkill(OVOSSkill):
                     ScenarioParameter(
                         name="temperature",
                         baseline_value=25.0,
-                        proposed_value=25.0 - amount,
+                        proposed_value=proposed_value,
                         unit="°C"
                     )
                 ],
@@ -311,7 +389,10 @@ class AVAROSSkill(OVOSSkill):
 
     def stop(self):
         """Optional cleanup when skill is stopped."""
-        pass
+        dispatcher = getattr(self, "dispatcher", None)
+        if dispatcher is not None:
+            dispatcher.shutdown()
+            self._is_initialized = False
 
 
 def create_skill():

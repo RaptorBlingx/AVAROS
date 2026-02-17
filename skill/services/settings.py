@@ -716,11 +716,18 @@ class SettingsService:
             default=env_secret,
         )
 
+        # If persisted values are empty strings, fall back to environment
+        # bootstrap defaults to keep voice bridge operable.
+        hivemind_url = str(hivemind_url or env_url)
+        hivemind_name = str(hivemind_name or env_name)
+        hivemind_key = str(hivemind_key or env_key)
+        hivemind_secret = str(hivemind_secret or env_secret)
+
         return VoiceConfig(
-            hivemind_url=str(hivemind_url),
-            hivemind_name=str(hivemind_name),
-            hivemind_key=str(hivemind_key),
-            hivemind_secret=str(hivemind_secret),
+            hivemind_url=hivemind_url,
+            hivemind_name=hivemind_name,
+            hivemind_key=hivemind_key,
+            hivemind_secret=hivemind_secret,
         )
 
     def update_voice_config(self, config: VoiceConfig) -> None:
@@ -733,11 +740,13 @@ class SettingsService:
         self.set_setting(self.VOICE_WS_URL_KEY, config.hivemind_url)
         self.set_setting(self.VOICE_CLIENT_NAME, config.hivemind_name)
         self.set_setting(self.VOICE_CLIENT_KEY, config.hivemind_key)
-        self.set_setting(
-            self.VOICE_CLIENT_SECRET,
-            config.hivemind_secret,
-            encrypt=True,
-        )
+        # Keep existing secret if UI submits an empty value.
+        if config.hivemind_secret:
+            self.set_setting(
+                self.VOICE_CLIENT_SECRET,
+                config.hivemind_secret,
+                encrypt=True,
+            )
 
     def get_metric_mapping(self, metric_name: str) -> dict[str, Any] | None:
         """

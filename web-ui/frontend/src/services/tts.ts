@@ -267,8 +267,44 @@ export class TTSService {
       if (match) return match;
     }
 
-    // Fall back to first voice matching the language
+    // For English playback, prefer well-known high-quality voices first.
+    if (this.config.language.toLowerCase().startsWith("en")) {
+      const preferredEnglishVoices = [
+        "Samantha",
+        "Alex",
+        "Karen",
+        "Google US English",
+        "Microsoft Zira",
+      ];
+
+      const normalized = voices.map((voice) => ({
+        voice,
+        name: voice.name.toLowerCase(),
+        lang: voice.lang.toLowerCase(),
+      }));
+
+      for (const preferredName of preferredEnglishVoices) {
+        const hit = normalized.find(
+          ({ name, lang }) =>
+            name.includes(preferredName.toLowerCase()) &&
+            lang.startsWith("en"),
+        );
+        if (hit) return hit.voice;
+      }
+    }
+
+    // Prefer OS/browser default voice when it matches configured language.
     const langPrefix = this.config.language.toLowerCase();
+    const defaultForLang = voices.find(
+      (v) => v.default && v.lang.toLowerCase().startsWith(langPrefix),
+    );
+    if (defaultForLang) return defaultForLang;
+
+    // Next best: any default voice.
+    const defaultVoice = voices.find((v) => v.default);
+    if (defaultVoice) return defaultVoice;
+
+    // Fall back to first voice matching the language
     const langMatch = voices.find((v) =>
       v.lang.toLowerCase().startsWith(langPrefix),
     );

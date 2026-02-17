@@ -20,6 +20,8 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
+from urllib.parse import urlparse
 from typing import TYPE_CHECKING
 
 from skill.adapters.base import ManufacturingAdapter
@@ -206,6 +208,8 @@ class AdapterFactory:
         api_key = ""
         timeout = 30
         auth_type = "bearer"
+        api_format = ""
+        native_seu_id = ""
 
         if self._settings_service is not None:
             try:
@@ -216,15 +220,69 @@ class AdapterFactory:
                     timeout = getattr(config, "timeout", 30) or 30
                     extra = getattr(config, "extra_settings", {}) or {}
                     auth_type = extra.get("auth_type", "bearer") if isinstance(extra, dict) else "bearer"
+                    api_format = extra.get("api_format", "") if isinstance(extra, dict) else ""
+                    native_seu_id = extra.get("seu_id", "") if isinstance(extra, dict) else ""
             except Exception as exc:
                 logger.warning("Error reading RENERYO config: %s", exc)
+
+        if not native_seu_id:
+            native_seu_id = os.getenv("RENERYO_SEU_ID", "")
+
+        if not api_format:
+            api_format = self._detect_reneryo_api_format(api_url)
+        api_url = self._normalize_reneryo_api_url(api_url, api_format)
+
+        logger.info(
+            "RENERYO adapter config resolved: format=%s auth_type=%s url=%s seu_id=%s",
+            api_format,
+            auth_type,
+            api_url,
+            "set" if native_seu_id else "empty",
+        )
 
         return ReneryoAdapter(
             api_url=api_url,
             api_key=api_key,
             timeout=timeout,
             auth_type=auth_type,
+            api_format=api_format,
+            native_seu_id=native_seu_id,
         )
+
+    @staticmethod
+    def _detect_reneryo_api_format(api_url: str) -> str:
+        """Infer API format from URL when extra_settings doesn't provide it."""
+        lowered = (api_url or "").strip().lower()
+        if not lowered:
+            return "mock"
+
+        if any(token in lowered for token in ("localhost", "127.0.0.1", "reneryo-mock", "mockserver")):
+            return "mock"
+
+        if any(token in lowered for token in ("preview.reneryo.com", "deploys.int.arti.ac", "reneryo.com")):
+            return "native"
+
+        if "/api/u" in lowered or "/api/ui" in lowered:
+            return "native"
+
+        return "mock"
+
+    @staticmethod
+    def _normalize_reneryo_api_url(api_url: str, api_format: str) -> str:
+        """Normalize URL to host-root for native format requests."""
+        raw = (api_url or "").rstrip("/")
+        if not raw or api_format != "native":
+            return raw
+
+        parsed = urlparse(raw)
+        path = parsed.path.rstrip("/")
+        for suffix in ("/api/ui", "/api/u"):
+            if path.endswith(suffix):
+                path = path[: -len(suffix)]
+                break
+
+        normalized = parsed._replace(path=path, params="", query="", fragment="")
+        return normalized.geturl().rstrip("/")
 
     @classmethod
     def register_adapter(

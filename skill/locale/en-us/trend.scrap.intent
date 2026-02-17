@@ -1,7 +1,13 @@
 (show|display) (scrap|waste) (rate|) trend (for|) {period}
 scrap rate trend {period}
+show scrap trend {period}
+show scrap rate trend {period}
+show waste trend {period}
+show waste rate trend {period}
 how has scrap rate changed {period}
 scrap trend for {asset} {period}
 (show me|tell me) the scrap trend
 what's the scrap rate trend
 waste trend {period}
+show scrap train {period}
+show waste train {period}
