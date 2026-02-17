@@ -29,6 +29,16 @@ def service() -> SettingsService:
 
 
 @pytest.fixture
+def active_profile(service: SettingsService) -> None:
+    """Activate a non-mock profile for profile-scoped CRUD tests."""
+    service.create_profile("reneryo", PlatformConfig(
+        platform_type="reneryo",
+        api_url="https://api.reneryo.example.com",
+    ))
+    service.set_active_profile("reneryo")
+
+
+@pytest.fixture
 def uninitialized_service() -> SettingsService:
     """SettingsService before initialize() is called."""
     return SettingsService()
@@ -371,6 +381,7 @@ class TestGenericSettings:
 # ══════════════════════════════════════════════════════════
 
 
+@pytest.mark.usefixtures("active_profile")
 class TestSetMetricMapping:
     """Tests for set_metric_mapping()."""
 
@@ -422,6 +433,7 @@ class TestSetMetricMapping:
 # ══════════════════════════════════════════════════════════
 
 
+@pytest.mark.usefixtures("active_profile")
 class TestGetMetricMapping:
     """Tests for get_metric_mapping()."""
 
@@ -456,6 +468,7 @@ class TestGetMetricMapping:
 # ══════════════════════════════════════════════════════════
 
 
+@pytest.mark.usefixtures("active_profile")
 class TestListMetricMappings:
     """Tests for list_metric_mappings()."""
 
@@ -519,6 +532,7 @@ class TestListMetricMappings:
 # ══════════════════════════════════════════════════════════
 
 
+@pytest.mark.usefixtures("active_profile")
 class TestDeleteMetricMapping:
     """Tests for delete_metric_mapping()."""
 
@@ -559,6 +573,7 @@ class TestDeleteMetricMapping:
 # ══════════════════════════════════════════════════════════
 
 
+@pytest.mark.usefixtures("active_profile")
 class TestMetricMappingIsolation:
     """Metric mappings must not interfere with other settings."""
 
@@ -609,6 +624,7 @@ class TestMetricMappingIsolation:
 # ══════════════════════════════════════════════════════════
 
 
+@pytest.mark.usefixtures("active_profile")
 class TestMetricMappingValidation:
     """Edge cases for metric name validation."""
 
@@ -683,6 +699,7 @@ class TestEncryption:
 # ══════════════════════════════════════════════════════════
 
 
+@pytest.mark.usefixtures("active_profile")
 class TestSetIntentActive:
     """Tests for set_intent_active()."""
 
@@ -743,6 +760,7 @@ class TestSetIntentActive:
 # ══════════════════════════════════════════════════════════
 
 
+@pytest.mark.usefixtures("active_profile")
 class TestIsIntentActive:
     """Tests for is_intent_active()."""
 
@@ -773,6 +791,7 @@ class TestIsIntentActive:
 # ══════════════════════════════════════════════════════════
 
 
+@pytest.mark.usefixtures("active_profile")
 class TestListIntentStates:
     """Tests for list_intent_states()."""
 
@@ -859,6 +878,7 @@ class TestGetIntentMetricRequirements:
 # ══════════════════════════════════════════════════════════
 
 
+@pytest.mark.usefixtures("active_profile")
 class TestIntentActivationIsolation:
     """Intent state must not interfere with other settings."""
 
@@ -899,6 +919,7 @@ class TestIntentActivationIsolation:
 # ══════════════════════════════════════════════════════════
 
 
+@pytest.mark.usefixtures("active_profile")
 class TestEmissionFactorCRUD:
     """Tests for emission factor CRUD operations."""
 
@@ -990,6 +1011,7 @@ class TestEmissionFactorCRUD:
 # ══════════════════════════════════════════════════════════
 
 
+@pytest.mark.usefixtures("active_profile")
 class TestEmissionFactorIsolation:
     """Emission factors must not interfere with other settings."""
 
