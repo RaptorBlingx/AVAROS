@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from dependencies import get_settings_service
+from dependencies import get_adapter_factory, get_settings_service
 from schemas.config import (
     ActivateProfileResponse,
     CreateProfileRequest,
@@ -20,6 +20,7 @@ from schemas.config import (
     ProfileMetadataResponse,
     UpdateProfileRequest,
 )
+from skill.adapters.factory import AdapterFactory
 from skill.domain.exceptions import ValidationError
 from skill.services.models import PlatformConfig
 from skill.services.settings import SettingsService
@@ -113,6 +114,12 @@ def create_profile(
     svc: SettingsService = Depends(get_settings_service),
 ) -> ProfileDetailResponse:
     """Create a new named profile."""
+    if payload.name == svc.BUILTIN_MOCK_PROFILE:
+        raise HTTPException(
+            status_code=400,
+            detail="Profile 'mock' is built-in and cannot be created",
+        )
+
     config = PlatformConfig(
         platform_type=payload.platform_type,
         api_url=payload.api_url,
@@ -191,15 +198,25 @@ def delete_profile(
     "/profiles/{name}/activate",
     response_model=ActivateProfileResponse,
 )
-def activate_profile(
+async def activate_profile(
     name: str,
     svc: SettingsService = Depends(get_settings_service),
+    adapter_factory: AdapterFactory = Depends(get_adapter_factory),
 ) -> ActivateProfileResponse:
     """Activate a profile and trigger adapter config switch."""
     try:
         svc.set_active_profile(name)
     except ValidationError as exc:
         raise HTTPException(status_code=404, detail=exc.message)
+
+    try:
+        await adapter_factory.reload()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Adapter reload failed: {exc}",
+        )
+
     config = svc.get_profile(name)
     adapter_type = config.platform_type if config else "mock"
     return ActivateProfileResponse(

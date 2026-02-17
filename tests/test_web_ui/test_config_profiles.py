@@ -14,6 +14,7 @@ Covers:
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -196,11 +197,11 @@ class TestCreateProfile:
         assert body["api_key"].startswith("****")
         assert body["is_builtin"] is False
 
-    def test_create_profile_mock_name_returns_422(
+    def test_create_profile_mock_name_returns_400(
         self,
         client: TestClient,
     ) -> None:
-        """Creating profile named 'mock' returns 422 (validation)."""
+        """Creating profile named 'mock' returns 400 (built-in guard)."""
         resp = client.post(
             "/api/v1/config/profiles",
             json={
@@ -209,7 +210,10 @@ class TestCreateProfile:
             },
         )
 
-        assert resp.status_code == 422
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == (
+            "Profile 'mock' is built-in and cannot be created"
+        )
 
     def test_create_profile_duplicate_returns_409(
         self,
@@ -434,6 +438,26 @@ class TestActivateProfile:
         )
 
         assert resp.status_code == 404
+
+    def test_activate_profile_reload_failure_returns_500(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """Reload errors return 500 and keep active profile switched."""
+        _seed_profile(settings_service, "reneryo")
+
+        with patch(
+            "skill.adapters.factory.AdapterFactory.reload",
+            new=AsyncMock(side_effect=RuntimeError("reload exploded")),
+        ):
+            resp = client.post(
+                "/api/v1/config/profiles/reneryo/activate",
+            )
+
+        assert resp.status_code == 500
+        assert "Adapter reload failed" in resp.json()["detail"]
+        assert settings_service.get_active_profile_name() == "reneryo"
 
 
 # ══════════════════════════════════════════════════════════

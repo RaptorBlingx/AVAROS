@@ -165,10 +165,6 @@ class CreateProfileRequest(BaseModel):
     @classmethod
     def validate_name(cls, value: str) -> str:
         """Enforce profile naming rules."""
-        if value == "mock":
-            raise ValueError(
-                "Profile 'mock' is built-in and cannot be created",
-            )
         if not _PROFILE_NAME_PATTERN.match(value):
             raise ValueError(
                 f"Invalid profile name: '{value}'. "
