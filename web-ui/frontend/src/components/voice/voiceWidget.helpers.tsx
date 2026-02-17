@@ -135,3 +135,14 @@ export function isLikelyIncompleteUtterance(raw: string): boolean {
 
   return false;
 }
+
+export function buildGuidanceForUtterance(raw: string): string | null {
+  const text = raw.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!text) {
+    return "Try a full request, for example: 'show energy trend today'.";
+  }
+  if (isLikelyIncompleteUtterance(text)) {
+    return "I need a bit more detail. Try: 'show energy trend today' or 'check production anomaly'.";
+  }
+  return null;
+}

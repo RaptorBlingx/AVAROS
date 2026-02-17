@@ -215,8 +215,10 @@ export class WakeWordService {
 
   private isBrowserCompatible(): boolean {
     if (typeof window === "undefined") return false;
+    const hasAudioContext =
+      "AudioContext" in window || "webkitAudioContext" in window;
     return (
-      "AudioContext" in window &&
+      hasAudioContext &&
       typeof navigator !== "undefined" &&
       !!navigator.mediaDevices?.getUserMedia
     );

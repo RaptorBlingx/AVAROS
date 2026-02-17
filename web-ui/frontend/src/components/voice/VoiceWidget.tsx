@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useHiveMind } from "../../contexts/HiveMindContext";
 import { useVoice } from "../../contexts/VoiceContext";
+import { useConversation } from "../../hooks/useConversation";
+import ChatPanel from "./ChatPanel";
 import RecordingIndicator from "./RecordingIndicator";
 import ResponseDisplay from "./ResponseDisplay";
 import TranscriptDisplay from "./TranscriptDisplay";
 import {
+  buildGuidanceForUtterance,
   MICROPHONE_HELP_URL,
   POSITION_CLASS,
   STATE_META,
@@ -24,6 +27,7 @@ type VoiceWidgetProps = {
 export default function VoiceWidget({
   position = "bottom-right",
 }: VoiceWidgetProps) {
+  const widgetRef = useRef<HTMLElement | null>(null);
   const {
     voiceState,
     micPermission,
@@ -41,6 +45,7 @@ export default function VoiceWidget({
   const {
     connectionState,
     isConnected,
+    sendUtterance,
     lastResponse,
     isSpeaking: isHiveSpeaking,
     isProcessing,
@@ -56,7 +61,15 @@ export default function VoiceWidget({
   const [awaitingResponse, setAwaitingResponse] = useState(false);
   const [responseFallback, setResponseFallback] = useState<string | null>(null);
   const [activeResponse, setActiveResponse] = useState<string | null>(null);
+  const lastUserUtteranceRef = useRef("");
   const displayedResponse = activeResponse ?? responseFallback;
+  const {
+    messages: conversationMessages,
+    isProcessing: isConversationProcessing,
+    addUserMessage,
+    addAvarosResponse,
+    clearConversation,
+  } = useConversation();
 
   const visualState = useMemo(
     () =>
@@ -106,15 +119,19 @@ export default function VoiceWidget({
   useEffect(() => {
     const transcript = finalTranscript.trim();
     if (!transcript) return;
+    lastUserUtteranceRef.current = transcript;
 
-    if (isLikelyIncompleteUtterance(transcript)) {
+    const guidance = buildGuidanceForUtterance(transcript);
+    if (guidance || isLikelyIncompleteUtterance(transcript)) {
       setActiveResponse(null);
       setResponseReceivedAt(null);
       setAwaitingResponse(false);
-      setResponseFallback(
-        "Incomplete voice command. Try: 'what if we increase temperature by 5 degrees'.",
-      );
-      setLocalError("Please speak a complete command.");
+      const fallbackText =
+        guidance ??
+        "Incomplete voice command. Try: 'what if we increase temperature by 5 degrees'.";
+      setResponseFallback(fallbackText);
+      setLocalError("");
+      addAvarosResponse(fallbackText);
       return;
     }
 
@@ -123,7 +140,7 @@ export default function VoiceWidget({
     setAwaitingResponse(true);
     setResponseFallback(null);
     setLocalError("");
-  }, [finalTranscript]);
+  }, [finalTranscript, addAvarosResponse]);
 
   useEffect(() => {
     if (!awaitingResponse) {
@@ -132,14 +149,17 @@ export default function VoiceWidget({
 
     const timer = window.setTimeout(() => {
       setAwaitingResponse(false);
-      setResponseFallback(
-        "No response from AVAROS for this utterance. Try another command.",
-      );
-      setLocalError("No response received. Please try a different command.");
+      const guidance = buildGuidanceForUtterance(lastUserUtteranceRef.current);
+      const fallbackText =
+        guidance ??
+        "I couldn't match that request yet. Try: 'show energy trend today', 'check production anomaly', or 'compare energy'.";
+      setResponseFallback(fallbackText);
+      setLocalError("");
+      addAvarosResponse(fallbackText);
     }, 7000);
 
     return () => window.clearTimeout(timer);
-  }, [awaitingResponse]);
+  }, [awaitingResponse, addAvarosResponse]);
 
   useEffect(() => {
     if (!expanded) {
@@ -155,6 +175,27 @@ export default function VoiceWidget({
 
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
+  }, [expanded, visualState, stopListening, stopSpeaking]);
+
+  useEffect(() => {
+    if (!expanded) return;
+
+    const onPointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (widgetRef.current?.contains(target)) return;
+
+      if (visualState === "listening") stopListening();
+      if (visualState === "speaking") stopSpeaking();
+      setExpanded(false);
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+    };
   }, [expanded, visualState, stopListening, stopSpeaking]);
 
   const requestListening = useCallback(async () => {
@@ -250,6 +291,57 @@ export default function VoiceWidget({
     });
   }, [displayedResponse, ttsSupported, speak, stopSpeaking]);
 
+  const handleReplayMessage = useCallback(
+    (text: string) => {
+      if (!ttsSupported || !text.trim()) return;
+      setLocalError("");
+      stopSpeaking();
+      void speak(text).catch(() => {
+        setLocalError("Could not replay the response.");
+      });
+    },
+    [ttsSupported, stopSpeaking, speak],
+  );
+
+  const handleSendText = useCallback(
+    async (text: string) => {
+      const normalized = text.trim();
+      if (!normalized) return;
+      lastUserUtteranceRef.current = normalized;
+
+      const guidance = buildGuidanceForUtterance(normalized);
+      if (guidance) {
+        setLocalError("");
+        setActiveResponse(null);
+        setResponseReceivedAt(null);
+        setAwaitingResponse(false);
+        setResponseFallback(guidance);
+        addUserMessage(normalized, "text");
+        addAvarosResponse(guidance);
+        return;
+      }
+
+      setLocalError("");
+      setActiveResponse(null);
+      setResponseReceivedAt(null);
+      setAwaitingResponse(true);
+      setResponseFallback(null);
+      addUserMessage(normalized, "text");
+
+      try {
+        await sendUtterance(normalized);
+      } catch {
+        setAwaitingResponse(false);
+        setLocalError("");
+        const fallbackText =
+          "I can't send this right now. Check HiveMind connection and try again.";
+        setResponseFallback(fallbackText);
+        addAvarosResponse(fallbackText);
+      }
+    },
+    [addUserMessage, addAvarosResponse, sendUtterance],
+  );
+
   const buttonTitle =
     localError ||
     (micPermission === "denied"
@@ -258,6 +350,7 @@ export default function VoiceWidget({
 
   return (
     <aside
+      ref={widgetRef}
       className={`voice-widget !mr-4 ${POSITION_CLASS[position]} ${
         expanded ? "voice-widget--expanded" : ""
       }`}
@@ -343,6 +436,16 @@ export default function VoiceWidget({
               {getActionLabel(visualState)}
             </button>
           </div>
+
+          <ChatPanel
+            messages={conversationMessages}
+            isProcessing={isConversationProcessing}
+            isConnected={isConnected && voiceEnabled}
+            canReplay={ttsSupported}
+            onSendText={handleSendText}
+            onReplayResponse={handleReplayMessage}
+            onClearConversation={clearConversation}
+          />
         </section>
       )}
     </aside>

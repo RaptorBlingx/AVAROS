@@ -22,6 +22,7 @@ import type { STTService } from "../services/stt";
 
 export interface UseWakeWordResult {
   wakeWordState: WakeWordState;
+  wakeWordFallbackActive: boolean;
   wakeWordEnabled: boolean;
   wakeWordSensitivity: number;
   setWakeWordSensitivity: (value: number) => void;
@@ -52,6 +53,7 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
   const voiceModeRef = useRef<VoiceModeService | null>(null);
 
   const [wakeWordState, setWakeWordState] = useState<WakeWordState>("idle");
+  const [wakeWordFallbackActive, setWakeWordFallbackActive] = useState(false);
   const [wakeWordSensitivity, setWakeWordSensitivityState] = useState(0.75);
   const [isModelLoading, setIsModelLoading] = useState(false);
   const [voiceMode, setVoiceModeState] = useState<VoiceMode>("text");
@@ -110,12 +112,50 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
 
   const setVoiceMode = useCallback(
     async (mode: VoiceMode) => {
+      const activateWakeWordFallback = async () => {
+        if (!sttRef.current) {
+          throw new Error("STT service is not ready");
+        }
+        // Fallback mode: keep wake-word UX by using continuous STT and
+        // filtering utterances by "hey avaros" in VoiceContext.
+        sttRef.current.setContinuous(true);
+        await sttRef.current.start();
+        setWakeWordFallbackActive(true);
+        setWakeWordState("listening");
+        setIsModelLoading(false);
+        setVoiceModeState("wake-word");
+      };
+
       const service = ensureVoiceModeService();
-      if (service) {
+      try {
+        if (!service) {
+          if (mode === "wake-word") {
+            await activateWakeWordFallback();
+            return;
+          }
+          throw new Error("Voice mode service is not ready");
+        }
+
         await service.setMode(mode);
+        setWakeWordFallbackActive(false);
+        if (mode !== "wake-word") {
+          sttRef.current?.stop();
+        }
+        setVoiceModeState(mode);
+        sttRef.current?.setContinuous(mode === "wake-word");
+      } catch (error) {
+        if (mode === "wake-word") {
+          try {
+            await activateWakeWordFallback();
+            return;
+          } catch (fallbackError) {
+            console.warn("Wake-word mode failed to start.", error, fallbackError);
+          }
+        }
+        setWakeWordFallbackActive(false);
+        sttRef.current?.setContinuous(false);
+        throw error;
       }
-      setVoiceModeState(mode);
-      sttRef.current?.setContinuous(mode === "wake-word");
     },
     [ensureVoiceModeService, sttRef],
   );
@@ -127,6 +167,7 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
 
   return {
     wakeWordState,
+    wakeWordFallbackActive,
     wakeWordEnabled,
     wakeWordSensitivity,
     setWakeWordSensitivity,

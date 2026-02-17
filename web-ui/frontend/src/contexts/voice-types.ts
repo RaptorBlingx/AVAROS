@@ -35,6 +35,7 @@ export interface VoiceContextValue {
   isSpeaking: boolean;
 
   wakeWordState: WakeWordState;
+  wakeWordFallbackActive: boolean;
   wakeWordEnabled: boolean;
   wakeWordSensitivity: number;
   setWakeWordSensitivity: (value: number) => void;
