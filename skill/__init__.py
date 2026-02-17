@@ -15,15 +15,22 @@ Golden Rule:
     Adapters understand platform-specific APIs.
 """
 
-from typing import Callable, Any, List
-from ovos_workshop.skills import OVOSSkill
-from ovos_workshop.decorators import intent_handler
+from typing import Any, Callable, List
 
-from skill.domain.models import CanonicalMetric, TimePeriod
-from skill.domain.results import KPIResult, ComparisonResult, TrendResult, AnomalyResult, WhatIfResult
-from skill.use_cases.query_dispatcher import QueryDispatcher
+from ovos_workshop.decorators import intent_handler
+from ovos_workshop.skills import OVOSSkill
+
 from skill.adapters.factory import AdapterFactory
+from skill.domain.models import CanonicalMetric, TimePeriod
+from skill.domain.results import (
+    AnomalyResult,
+    ComparisonResult,
+    KPIResult,
+    TrendResult,
+    WhatIfResult,
+)
 from skill.services.response_builder import ResponseBuilder
+from skill.use_cases.query_dispatcher import QueryDispatcher
 
 
 class AVAROSSkill(OVOSSkill):
@@ -58,6 +65,7 @@ class AVAROSSkill(OVOSSkill):
         self.adapter_factory: AdapterFactory | None = None
         self.dispatcher: QueryDispatcher | None = None
         self.response_builder: ResponseBuilder | None = None
+        self._loaded_profile: str = "mock"
 
     @property
     def native_langs(self) -> List[str]:
@@ -100,21 +108,136 @@ class AVAROSSkill(OVOSSkill):
         adapter = self.adapter_factory.create()
         self.dispatcher = QueryDispatcher(adapter=adapter)
         self.response_builder = ResponseBuilder(verbosity="normal")
-        self.log.info("AVAROS skill initialized with adapter: %s", type(adapter).__name__)
+
+        # Track active profile for lazy-reload (DEC-029)
+        self._loaded_profile = self._resolve_active_profile()
+
+        # Listen for profile activation events from Web UI (DEC-029)
+        self.bus.on("avaros.profile.activated", self._handle_profile_switch)
+        self.log.info(
+            "AVAROS skill initialized with adapter: %s (profile='%s')",
+            type(adapter).__name__,
+            self._loaded_profile,
+        )
+
+    # =================================================================
+    # Profile Reload (DEC-029)
+    # =================================================================
+
+    def _resolve_active_profile(self) -> str:
+        """Return the active profile name from SettingsService.
+
+        Returns:
+            Profile name, or ``"mock"`` when unavailable.
+        """
+        if self.settings_service is None:
+            return "mock"
+        try:
+            return self.settings_service.get_active_profile_name()
+        except Exception:
+            return "mock"
+
+    def _handle_profile_switch(self, message) -> None:
+        """Reload adapter when profile is switched via Web UI.
+
+        Triggered by ``avaros.profile.activated`` message bus event.
+        Gracefully handles reload failures by falling back to
+        MockAdapter (DEC-005).
+
+        Args:
+            message: OVOS message with ``data.profile`` string.
+        """
+        profile_name = message.data.get("profile", "")
+        self.log.info(
+            "Profile switch event received: '%s'", profile_name,
+        )
+        try:
+            self._reload_adapter(profile_name)
+        except Exception as exc:
+            self.log.error(
+                "Profile switch reload failed: %s — falling back to mock",
+                exc,
+            )
+            self._force_mock_fallback()
+
+    def _reload_adapter(self, profile_name: str) -> None:
+        """Reload adapter factory and rebuild QueryDispatcher.
+
+        Args:
+            profile_name: Profile that triggered the reload.
+        """
+        if self.adapter_factory is None:
+            self.log.warning("No adapter factory — cannot reload")
+            return
+
+        import asyncio
+
+        loop = asyncio.new_event_loop()
+        try:
+            new_adapter = loop.run_until_complete(
+                self.adapter_factory.reload(profile_name),
+            )
+        finally:
+            loop.close()
+
+        self.dispatcher = QueryDispatcher(adapter=new_adapter)
+        self._loaded_profile = profile_name
+        self.log.info(
+            "Adapter reloaded: %s (profile='%s')",
+            type(new_adapter).__name__,
+            profile_name,
+        )
+
+    def _force_mock_fallback(self) -> None:
+        """Force MockAdapter as a safety fallback (DEC-005)."""
+        from skill.adapters.mock import MockAdapter
+
+        mock = MockAdapter()
+        self.dispatcher = QueryDispatcher(adapter=mock)
+        self._loaded_profile = "mock"
+        self.log.info("Forced MockAdapter fallback")
+
+    def _check_profile_mismatch(self) -> None:
+        """Reload adapter if active profile differs from loaded one.
+
+        Defense-in-depth: ensures the skill eventually catches up
+        even if the message bus notification was missed.
+        """
+        if self.settings_service is None:
+            return
+        try:
+            current = self.settings_service.get_active_profile_name()
+            if current != self._loaded_profile:
+                self.log.info(
+                    "Profile mismatch: loaded='%s', active='%s'. Reloading.",
+                    self._loaded_profile,
+                    current,
+                )
+                self._reload_adapter(current)
+        except Exception as exc:
+            self.log.warning("Profile mismatch check failed: %s", exc)
+
+    # =================================================================
+    # Dispatch
+    # =================================================================
 
     def _safe_dispatch(self, handler_name: str, action: Callable) -> Any:
         """Safely execute a dispatch action with error handling.
-        
+
         Args:
-            handler_name: Name of the handler for logging
-            action: Callable that performs the query and speaks response
-            
+            handler_name: Name of the handler for logging.
+            action: Callable that performs the query and speaks response.
+
         Returns:
-            Result from action() or None if error occurred
+            Result from action() or None if error occurred.
         """
         if self.dispatcher is None:
             self.speak("AVAROS is still initializing. Please try again.")
             return None
+
+        # DEC-029: lazy profile reload if message bus event was missed
+        self._check_profile_mismatch()
+
         try:
             return action()
         except Exception as e:

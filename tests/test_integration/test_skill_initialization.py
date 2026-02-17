@@ -15,13 +15,22 @@ Test scenarios:
 from __future__ import annotations
 
 import os
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from ovos_bus_client import MessageBusClient
 
 from skill import AVAROSSkill
 from skill.adapters.mock import MockAdapter
 from skill.adapters.reneryo import ReneryoAdapter
+
+
+def _make_skill() -> AVAROSSkill:
+    """Create an AVAROSSkill with mocked OVOS framework parts."""
+    skill = AVAROSSkill()
+    skill.log = Mock()
+    skill.bus = MagicMock(spec=MessageBusClient)
+    return skill
 
 
 # ══════════════════════════════════════════════════════════
@@ -39,9 +48,7 @@ class TestSkillInitializationNoDatabase:
             if "AVAROS_DATABASE_URL" in os.environ:
                 del os.environ["AVAROS_DATABASE_URL"]
             
-            # Create skill instance (mocking OVOS framework parts)
-            skill = AVAROSSkill()
-            skill.log = Mock()
+            skill = _make_skill()
             
             # Act: initialize the skill
             skill.initialize()
@@ -51,9 +58,6 @@ class TestSkillInitializationNoDatabase:
             adapter = skill.adapter_factory._current_adapter
             assert isinstance(adapter, MockAdapter)
             assert skill.dispatcher is not None
-            skill.log.info.assert_any_call(
-                "AVAROS skill initialized with adapter: %s", "MockAdapter"
-            )
 
 
 class TestSkillInitializationWithDatabase:
@@ -63,8 +67,7 @@ class TestSkillInitializationWithDatabase:
         """When DB is set but no platform configured, skill uses MockAdapter."""
         # Arrange: in-memory SQLite DB
         with patch.dict(os.environ, {"AVAROS_DATABASE_URL": "sqlite:///:memory:"}):
-            skill = AVAROSSkill()
-            skill.log = Mock()
+            skill = _make_skill()
             
             # Act: initialize the skill
             skill.initialize()
@@ -78,8 +81,7 @@ class TestSkillInitializationWithDatabase:
         """When Reneryo is configured via Web UI, skill uses ReneryoAdapter."""
         # Arrange: in-memory SQLite DB with Reneryo config
         with patch.dict(os.environ, {"AVAROS_DATABASE_URL": "sqlite:///:memory:"}):
-            skill = AVAROSSkill()
-            skill.log = Mock()
+            skill = _make_skill()
             
             # Initialize first
             skill.initialize()
@@ -116,8 +118,7 @@ class TestSkillInitializationErrorHandling:
             os.environ,
             {"AVAROS_DATABASE_URL": "postgresql://invalid:5432/nonexistent"},
         ):
-            skill = AVAROSSkill()
-            skill.log = Mock()
+            skill = _make_skill()
             
             # Act: initialize the skill (SettingsService will fail)
             skill.initialize()
@@ -133,24 +134,21 @@ class TestSkillInitializationErrorHandling:
             
             # Still initialized successfully with MockAdapter
             skill.log.info.assert_any_call(
-                "AVAROS skill initialized with adapter: %s", "MockAdapter"
+                "AVAROS skill initialized with adapter: %s (profile='%s')",
+                "MockAdapter",
+                "mock",
             )
 
     def test_settings_service_exists_even_when_db_is_inaccessible(self):
         """
         When SettingsService can't connect to DB, skill still initializes with MockAdapter.
-        
-        This test verifies that even when the database URL points to an inaccessible
-        database (e.g., PostgreSQL without psycopg2 driver), the SettingsService
-        object is still created and the skill gracefully falls back to MockAdapter.
         """
         # Arrange: PostgreSQL URL without psycopg2 installed
         with patch.dict(
             os.environ,
             {"AVAROS_DATABASE_URL": "postgresql://invalid:5432/bad"},
         ):
-            skill = AVAROSSkill()
-            skill.log = Mock()
+            skill = _make_skill()
             
             # Act
             skill.initialize()
@@ -165,7 +163,9 @@ class TestSkillInitializationErrorHandling:
             
             # Assert: Skill initialized successfully (using MockAdapter)
             skill.log.info.assert_any_call(
-                "AVAROS skill initialized with adapter: %s", "MockAdapter"
+                "AVAROS skill initialized with adapter: %s (profile='%s')",
+                "MockAdapter",
+                "mock",
             )
 
 
@@ -175,8 +175,7 @@ class TestSkillAttributesAfterInitialization:
     def test_all_required_attributes_are_set(self):
         """After initialize(), skill has all required components."""
         # Arrange
-        skill = AVAROSSkill()
-        skill.log = Mock()
+        skill = _make_skill()
         
         # Act
         skill.initialize()

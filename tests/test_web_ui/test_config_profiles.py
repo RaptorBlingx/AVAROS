@@ -14,7 +14,7 @@ Covers:
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -397,18 +397,23 @@ class TestActivateProfile:
         client: TestClient,
         settings_service: SettingsService,
     ) -> None:
-        """Activating an existing profile succeeds."""
+        """Activating an existing profile succeeds with voice_reloaded."""
         _seed_profile(settings_service, "reneryo")
 
-        resp = client.post(
-            "/api/v1/config/profiles/reneryo/activate",
-        )
+        with patch(
+            "routers.profiles._notify_skill_via_bus",
+            return_value=True,
+        ):
+            resp = client.post(
+                "/api/v1/config/profiles/reneryo/activate",
+            )
 
         assert resp.status_code == 200
         body = resp.json()
         assert body["status"] == "activated"
         assert body["active_profile"] == "reneryo"
         assert body["adapter_type"] == "reneryo"
+        assert body["voice_reloaded"] is True
 
     def test_activate_mock_success(
         self,
@@ -419,9 +424,13 @@ class TestActivateProfile:
         _seed_profile(settings_service, "reneryo")
         settings_service.set_active_profile("reneryo")
 
-        resp = client.post(
-            "/api/v1/config/profiles/mock/activate",
-        )
+        with patch(
+            "routers.profiles._notify_skill_via_bus",
+            return_value=True,
+        ):
+            resp = client.post(
+                "/api/v1/config/profiles/mock/activate",
+            )
 
         assert resp.status_code == 200
         body = resp.json()
@@ -514,3 +523,77 @@ class TestLegacyEndpoints:
 
         assert resp.status_code == 200
         assert resp.json()["platform_type"] == "mock"
+
+
+# ══════════════════════════════════════════════════════════
+# _notify_skill_via_bus unit tests (DEC-029)
+# ══════════════════════════════════════════════════════════
+
+
+class TestNotifySkillViaBus:
+    """Tests for the _notify_skill_via_bus helper."""
+
+    def test_notify_skill_via_bus_success(self) -> None:
+        """Successful send returns True with correct message format."""
+        mock_ws = MagicMock()
+        mock_websocket = MagicMock()
+        mock_websocket.create_connection.return_value = mock_ws
+
+        with patch(
+            "routers.profiles.websocket",
+            mock_websocket,
+        ):
+            from routers.profiles import _notify_skill_via_bus
+
+            result = _notify_skill_via_bus("reneryo")
+
+        assert result is True
+        mock_websocket.create_connection.assert_called_once()
+
+        # Verify sent message format
+        import json
+
+        sent = mock_ws.send.call_args[0][0]
+        msg = json.loads(sent)
+        assert msg["type"] == "avaros.profile.activated"
+        assert msg["data"]["profile"] == "reneryo"
+        assert "context" in msg
+        mock_ws.close.assert_called_once()
+
+    def test_notify_skill_via_bus_timeout_returns_false(self) -> None:
+        """Connection failure returns False, never raises."""
+        mock_websocket = MagicMock()
+        mock_websocket.create_connection.side_effect = ConnectionRefusedError(
+            "refused",
+        )
+
+        with patch(
+            "routers.profiles.websocket",
+            mock_websocket,
+        ):
+            from routers.profiles import _notify_skill_via_bus
+
+            result = _notify_skill_via_bus("reneryo")
+
+        assert result is False
+
+    def test_activate_profile_response_includes_voice_reloaded(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """Activation response always includes voice_reloaded field."""
+        _seed_profile(settings_service, "reneryo")
+
+        with patch(
+            "routers.profiles._notify_skill_via_bus",
+            return_value=False,
+        ):
+            resp = client.post(
+                "/api/v1/config/profiles/reneryo/activate",
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "voice_reloaded" in body
+        assert body["voice_reloaded"] is False

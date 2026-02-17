@@ -4,11 +4,23 @@ Exposes profile management over REST:
 list, get, create, update, delete, and activate.
 When activated, the adapter configuration is switched
 so the next query uses the new platform — no restart needed.
+
+DEC-029: on activation the voice skill is also notified
+via the OVOS message bus so it can hot-reload its adapter.
 """
 
 from __future__ import annotations
 
+import json
+import logging
+import os
+
 from fastapi import APIRouter, Depends, HTTPException
+
+try:
+    import websocket  # websocket-client
+except ImportError:  # pragma: no cover
+    websocket = None  # type: ignore[assignment]
 
 from dependencies import get_adapter_factory, get_settings_service
 from schemas.config import (
@@ -26,10 +38,53 @@ from skill.services.models import PlatformConfig
 from skill.services.settings import SettingsService
 
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/v1/config", tags=["profiles"])
+
+MESSAGEBUS_URL = os.environ.get(
+    "OVOS_MESSAGEBUS_URL", "ws://ovos_messagebus:8181/core",
+)
 
 
 # ── Helpers ─────────────────────────────────────────────
+
+
+def _notify_skill_via_bus(profile_name: str) -> bool:
+    """Emit profile activation event to OVOS message bus.
+
+    Best-effort — returns False on failure, never raises.
+
+    Args:
+        profile_name: The newly activated profile name.
+
+    Returns:
+        True if event sent successfully, False otherwise.
+    """
+    try:
+        if websocket is None:
+            logger.warning("websocket-client not installed")
+            return False
+        ws = websocket.create_connection(
+            MESSAGEBUS_URL, timeout=3,
+        )
+        msg = {
+            "type": "avaros.profile.activated",
+            "data": {"profile": profile_name},
+            "context": {},
+        }
+        ws.send(json.dumps(msg))
+        ws.close()
+        logger.info(
+            "Sent avaros.profile.activated to messagebus (profile='%s')",
+            profile_name,
+        )
+        return True
+    except Exception as exc:
+        logger.warning(
+            "Could not notify skill via messagebus: %s", exc,
+        )
+        return False
 
 
 def _mask_api_key(api_key: str) -> str:
@@ -219,11 +274,15 @@ async def activate_profile(
 
     config = svc.get_profile(name)
     adapter_type = config.platform_type if config else "mock"
+
+    voice_reloaded = _notify_skill_via_bus(name)
+
     return ActivateProfileResponse(
         status="activated",
         active_profile=name,
         adapter_type=adapter_type,
         message="Adapter reloaded successfully",
+        voice_reloaded=voice_reloaded,
     )
 
 

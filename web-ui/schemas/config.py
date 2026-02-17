@@ -193,6 +193,10 @@ class ActivateProfileResponse(BaseModel):
     active_profile: str = Field(..., description="Name of the now-active profile.")
     adapter_type: str = Field(..., description="Platform type of active adapter.")
     message: str = Field(..., description="Human-readable result message.")
+    voice_reloaded: bool = Field(
+        default=False,
+        description="True if the OVOS skill was notified via message bus.",
+    )
 
 
 class DeleteProfileResponse(BaseModel):
