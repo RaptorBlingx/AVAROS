@@ -9,9 +9,28 @@ Covers:
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
-from skill.services.settings import KNOWN_INTENTS, SettingsService
+from skill.services.settings import (
+    KNOWN_INTENTS,
+    PlatformConfig,
+    SettingsService,
+)
+
+
+@pytest.fixture(autouse=True)
+def active_profile(settings_service: SettingsService) -> None:
+    """Use a non-mock active profile for legacy API compatibility tests."""
+    if settings_service.get_profile("reneryo") is None:
+        settings_service.create_profile(
+            "reneryo",
+            PlatformConfig(
+                platform_type="reneryo",
+                api_url="https://api.reneryo.example.com",
+            ),
+        )
+    settings_service.set_active_profile("reneryo")
 
 
 # ══════════════════════════════════════════════════════════
