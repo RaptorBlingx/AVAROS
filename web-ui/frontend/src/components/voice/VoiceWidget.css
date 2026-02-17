@@ -177,6 +177,7 @@
 
 .voice-widget__header {
   align-items: flex-start;
+  justify-content: flex-start;
   margin-bottom: 0.55rem;
 }
 
@@ -411,6 +412,12 @@
   display: grid;
   align-content: start;
   gap: 0.42rem;
+}
+
+.voice-chat-history__scroller--empty {
+  overflow-y: hidden;
+  scrollbar-gutter: auto;
+  align-content: center;
 }
 
 .voice-chat-history__empty {

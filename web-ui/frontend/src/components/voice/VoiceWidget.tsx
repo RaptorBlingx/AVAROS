@@ -385,14 +385,6 @@ export default function VoiceWidget({
                 {STATE_META[visualState].label}
               </p>
             </div>
-            <button
-              type="button"
-              className="voice-widget__minimize"
-              onClick={() => setExpanded(false)}
-              aria-label="Minimize voice panel"
-            >
-              −
-            </button>
           </header>
 
           {permissionMessage && (

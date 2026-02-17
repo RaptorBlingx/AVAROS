@@ -11,6 +11,7 @@ import EmissionFactorsSection from "../components/settings/EmissionFactorsSectio
 import MetricMappingsSection from "../components/settings/MetricMappingsSection";
 import PlatformConfigSection from "../components/settings/PlatformConfigSection";
 import SystemInfoSection from "../components/settings/SystemInfoSection";
+import VoiceSettingsSection from "../components/settings/VoiceSettingsSection";
 
 function Section({
   title,
@@ -73,7 +74,7 @@ export default function Settings() {
 
   const headerSubtitle = useMemo(
     () =>
-      "Manage platform config, metric mappings, intents, and live system state.",
+      "Manage platform config, voice/audio preferences, metric mappings, intents, and live system state.",
     [],
   );
 
@@ -88,6 +89,11 @@ export default function Settings() {
         title: "Platform Configuration",
         description: "Connect AVAROS to your platform and test credentials safely.",
         selector: '[data-onboarding-target="settings-platform-config"]',
+      },
+      {
+        title: "Voice & Audio",
+        description: "Set interaction mode, wake-word behavior, and microphone/audio preferences.",
+        selector: '[data-onboarding-target="settings-voice-audio"]',
       },
       {
         title: "Metric Mappings",
@@ -155,6 +161,14 @@ export default function Settings() {
         defaultOpen={true}
       >
         <PlatformConfigSection onNotify={notify} />
+      </Section>
+
+      <Section
+        title="🎙️ Voice & Audio"
+        helpText="Configure wake word, push-to-talk behavior, microphone test, and speech settings."
+        targetId="settings-voice-audio"
+      >
+        <VoiceSettingsSection onNotify={notify} />
       </Section>
 
       <Section

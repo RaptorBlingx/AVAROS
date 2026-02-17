@@ -27,11 +27,16 @@ export default function MessageHistory({
   onClear,
 }: MessageHistoryProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const isEmptyState = messages.length === 0 && !isProcessing;
 
   useEffect(() => {
     if (!scrollerRef.current) return;
+    if (isEmptyState) {
+      scrollerRef.current.scrollTop = 0;
+      return;
+    }
     scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
-  }, [messages, isProcessing]);
+  }, [messages, isProcessing, isEmptyState]);
 
   const handleClear = () => {
     if (!messages.length) return;
@@ -56,7 +61,14 @@ export default function MessageHistory({
         </button>
       </header>
 
-      <div className="voice-chat-history__scroller" ref={scrollerRef} role="log" aria-live="polite">
+      <div
+        className={`voice-chat-history__scroller ${
+          isEmptyState ? "voice-chat-history__scroller--empty" : ""
+        }`}
+        ref={scrollerRef}
+        role="log"
+        aria-live="polite"
+      >
         {!messages.length ? (
           <div className="voice-chat-history__empty">
             <p className="voice-chat-history__empty-icon" aria-hidden="true">💬</p>
@@ -109,4 +121,3 @@ export default function MessageHistory({
     </section>
   );
 }
-

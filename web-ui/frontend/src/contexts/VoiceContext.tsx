@@ -171,6 +171,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const [availableVoices, setAvailableVoices] = useState<
     SpeechSynthesisVoice[]
   >([]);
+  const [ttsRate, setTTSRateState] = useState(1.0);
+  const [ttsVolume, setTTSVolumeState] = useState(1.0);
 
   const sttSupported = isSpeechRecognitionSupported();
   const ttsSupported = isSpeechSynthesisSupported();
@@ -486,6 +488,18 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     ttsRef.current?.setVoice(voiceName);
   }, []);
 
+  const setTTSRate = useCallback((rate: number) => {
+    const normalized = Math.max(0.5, Math.min(2, rate));
+    setTTSRateState(normalized);
+    ttsRef.current?.setRate(normalized);
+  }, []);
+
+  const setTTSVolume = useCallback((volume: number) => {
+    const normalized = Math.max(0, Math.min(1, volume));
+    setTTSVolumeState(normalized);
+    ttsRef.current?.setVolume(normalized);
+  }, []);
+
   const requestMicPermission = useCallback(
     async (): Promise<PermissionState> => {
       const result = await requestMicrophonePermission();
@@ -504,6 +518,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     wakeWordState, wakeWordEnabled, wakeWordSensitivity,
     wakeWordFallbackActive, setWakeWordSensitivity, isModelLoading,
     setVoiceMode, setLanguage, availableVoices, setTTSVoice,
+    ttsRate, setTTSRate, ttsVolume, setTTSVolume,
     requestMicPermission,
   }), [
     voiceState, voiceMode, micPermission, sttSupported, ttsSupported,
@@ -512,6 +527,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     wakeWordState, wakeWordEnabled, wakeWordSensitivity,
     wakeWordFallbackActive, setWakeWordSensitivity, isModelLoading,
     setVoiceMode, setLanguage, availableVoices, setTTSVoice,
+    ttsRate, setTTSRate, ttsVolume, setTTSVolume,
     requestMicPermission,
   ]);
 
