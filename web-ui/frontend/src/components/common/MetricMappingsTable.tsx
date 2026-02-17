@@ -7,6 +7,7 @@ type MetricMappingsTableProps<TRow extends MetricMappingRow> = {
   rows: TRow[];
   errorsByRow: Record<string, MetricRowError>;
   usedMetrics: Set<CanonicalMetricName>;
+  readOnly?: boolean;
   onChange: <K extends keyof MetricMappingRow>(
     id: string,
     key: K,
@@ -21,6 +22,7 @@ export default function MetricMappingsTable<TRow extends MetricMappingRow>({
   rows,
   errorsByRow,
   usedMetrics,
+  readOnly = false,
   onChange,
   renderActions,
 }: MetricMappingsTableProps<TRow>) {
@@ -28,6 +30,7 @@ export default function MetricMappingsTable<TRow extends MetricMappingRow>({
     <>
       <select
         value={row.canonical_metric}
+        disabled={readOnly}
         onChange={(event) =>
           onChange(
             row.id,
@@ -66,6 +69,7 @@ export default function MetricMappingsTable<TRow extends MetricMappingRow>({
       <input
         type="text"
         value={row.endpoint}
+        disabled={readOnly}
         onChange={(event) => onChange(row.id, "endpoint", event.target.value)}
         placeholder="/api/v1/kpis/energy"
         className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
@@ -83,6 +87,7 @@ export default function MetricMappingsTable<TRow extends MetricMappingRow>({
       <input
         type="text"
         value={row.json_path}
+        disabled={readOnly}
         onChange={(event) => onChange(row.id, "json_path", event.target.value)}
         placeholder="$.data.value"
         className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
@@ -100,6 +105,7 @@ export default function MetricMappingsTable<TRow extends MetricMappingRow>({
       <input
         type="text"
         value={row.unit}
+        disabled={readOnly}
         onChange={(event) => onChange(row.id, "unit", event.target.value)}
         placeholder="kWh/unit"
         className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"

@@ -30,9 +30,15 @@ import {
 
 type EmissionFactorsSectionProps = {
   onNotify: (type: "success" | "error", message: string) => void;
+  refreshKey?: number;
+  activeProfile?: string;
 };
 
-export default function EmissionFactorsSection({ onNotify }: EmissionFactorsSectionProps) {
+export default function EmissionFactorsSection({
+  onNotify,
+  refreshKey = 0,
+  activeProfile = "mock",
+}: EmissionFactorsSectionProps) {
   const { isDark } = useTheme();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -66,7 +72,12 @@ export default function EmissionFactorsSection({ onNotify }: EmissionFactorsSect
 
   useEffect(() => {
     void loadData();
-  }, [loadData]);
+  }, [loadData, refreshKey]);
+
+  const isMockProfile = useMemo(
+    () => activeProfile === "mock",
+    [activeProfile],
+  );
 
   const countries = useMemo(
     () => Array.from(new Set(presets.map((item) => item.country))).sort(),
@@ -100,6 +111,9 @@ export default function EmissionFactorsSection({ onNotify }: EmissionFactorsSect
   }, []);
 
   const handleSave = useCallback(async () => {
+    if (isMockProfile) {
+      return;
+    }
     const validationErrors = validateForm(form);
     setErrors(validationErrors);
     if (Object.keys(validationErrors).length > 0) {
@@ -120,10 +134,13 @@ export default function EmissionFactorsSection({ onNotify }: EmissionFactorsSect
     } finally {
       setSaving(false);
     }
-  }, [form, loadData, onNotify]);
+  }, [form, isMockProfile, loadData, onNotify]);
 
   const handleDelete = useCallback(
     async (energySource: string) => {
+      if (isMockProfile) {
+        return;
+      }
       setDeletingSource(energySource);
       try {
         await deleteEmissionFactor(energySource);
@@ -135,10 +152,13 @@ export default function EmissionFactorsSection({ onNotify }: EmissionFactorsSect
         setDeletingSource(null);
       }
     },
-    [loadData, onNotify],
+    [isMockProfile, loadData, onNotify],
   );
 
   const applyPreset = useCallback(async () => {
+    if (isMockProfile) {
+      return;
+    }
     if (selectedPresetEntries.length === 0) {
       onNotify("error", "No preset entries found for selected country.");
       return;
@@ -165,7 +185,13 @@ export default function EmissionFactorsSection({ onNotify }: EmissionFactorsSect
     } finally {
       setSaving(false);
     }
-  }, [loadData, onNotify, selectedCountry, selectedPresetEntries]);
+  }, [
+    isMockProfile,
+    loadData,
+    onNotify,
+    selectedCountry,
+    selectedPresetEntries,
+  ]);
 
   return (
     <section className="space-y-3">
@@ -184,6 +210,11 @@ export default function EmissionFactorsSection({ onNotify }: EmissionFactorsSect
         </div>
       ) : (
         <>
+          {isMockProfile && (
+            <div className="rounded-lg bg-blue-50 p-3 text-sm text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+              Mock profile uses built-in demo data. Emission factors are not configurable.
+            </div>
+          )}
           <div className="brand-surface reveal-in rounded-xl p-4">
             <div className="grid gap-3 md:grid-cols-[minmax(0,240px)_auto] md:items-end">
               <label className="block">
@@ -204,7 +235,7 @@ export default function EmissionFactorsSection({ onNotify }: EmissionFactorsSect
               <button
                 type="button"
                 onClick={() => void applyPreset()}
-                disabled={saving || !selectedCountry}
+                disabled={isMockProfile || saving || !selectedCountry}
                 className="btn-brand-primary rounded-lg px-3 py-2 text-xs font-semibold md:w-fit"
               >
                 {saving ? "Applying..." : `Apply ${selectedCountry || "Preset"} Preset`}
@@ -218,6 +249,7 @@ export default function EmissionFactorsSection({ onNotify }: EmissionFactorsSect
               <button
                 type="button"
                 onClick={() => setShowAddForm((prev) => !prev)}
+                disabled={isMockProfile}
                 className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
                   isDark
                     ? "border-slate-500 bg-slate-700 text-slate-100 hover:bg-slate-600"
@@ -230,18 +262,18 @@ export default function EmissionFactorsSection({ onNotify }: EmissionFactorsSect
 
             {showAddForm ? (
               <div className="mb-4 grid gap-3 md:grid-cols-5">
-                <select value={form.energy_source} onChange={(event) => updateForm("energy_source", event.target.value as EnergySource)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100">
+                <select disabled={isMockProfile} value={form.energy_source} onChange={(event) => updateForm("energy_source", event.target.value as EnergySource)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100">
                   {ENERGY_SOURCES.map((source) => (
                     <option key={source} value={source}>{formatEnergySource(source)}</option>
                   ))}
                 </select>
-                <input type="number" min="0" step="0.0001" value={form.factor} onChange={(event) => updateForm("factor", Number(event.target.value))} placeholder="Factor" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
-                <input type="text" value={form.country} onChange={(event) => updateForm("country", event.target.value)} placeholder="Country" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
-                <input type="text" value={form.source} onChange={(event) => updateForm("source", event.target.value)} placeholder="Source" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
-                <input type="number" min="2000" max="2030" value={form.year} onChange={(event) => updateForm("year", Number(event.target.value))} placeholder="Year" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+                <input type="number" min="0" step="0.0001" disabled={isMockProfile} value={form.factor} onChange={(event) => updateForm("factor", Number(event.target.value))} placeholder="Factor" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+                <input type="text" disabled={isMockProfile} value={form.country} onChange={(event) => updateForm("country", event.target.value)} placeholder="Country" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+                <input type="text" disabled={isMockProfile} value={form.source} onChange={(event) => updateForm("source", event.target.value)} placeholder="Source" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+                <input type="number" min="2000" max="2030" disabled={isMockProfile} value={form.year} onChange={(event) => updateForm("year", Number(event.target.value))} placeholder="Year" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
                 <div className="md:col-span-5 flex items-center justify-between gap-3">
                   <p className="m-0 text-xs text-rose-600 dark:text-rose-300">{errors.factor ?? errors.energy_source ?? " "}</p>
-                  <button type="button" onClick={() => void handleSave()} disabled={saving} className="btn-brand-primary rounded-lg px-3 py-2 text-xs font-semibold">
+                  <button type="button" onClick={() => void handleSave()} disabled={isMockProfile || saving} className="btn-brand-primary rounded-lg px-3 py-2 text-xs font-semibold">
                     {saving ? "Saving..." : "Save Factor"}
                   </button>
                 </div>
@@ -252,6 +284,7 @@ export default function EmissionFactorsSection({ onNotify }: EmissionFactorsSect
               factors={factors}
               deletingSource={deletingSource}
               isDark={isDark}
+              readOnly={isMockProfile}
               onDelete={(energySource) => void handleDelete(energySource)}
             />
           </div>

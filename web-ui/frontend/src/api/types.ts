@@ -265,6 +265,7 @@ export type ActivateProfileResponse = {
   active_profile: string;
   adapter_type: string;
   message: string;
+  voice_reloaded?: boolean;
 };
 
 export type DeleteProfileResponse = {

@@ -22,6 +22,8 @@ type SettingsMetricRow = MetricMappingRow & {
 
 type MetricMappingsSectionProps = {
   onNotify: (type: "success" | "error", message: string) => void;
+  refreshKey?: number;
+  activeProfile?: string;
 };
 
 const EMPTY_ROW_DEFAULTS: Omit<SettingsMetricRow, "id" | "canonical_metric" | "persisted" | "originalMetric"> = {
@@ -44,7 +46,11 @@ function createRow(mapping: MetricMapping): SettingsMetricRow {
   };
 }
 
-export default function MetricMappingsSection({ onNotify }: MetricMappingsSectionProps) {
+export default function MetricMappingsSection({
+  onNotify,
+  refreshKey = 0,
+  activeProfile = "mock",
+}: MetricMappingsSectionProps) {
   const { isDark } = useTheme();
   const [rows, setRows] = useState<SettingsMetricRow[]>([]);
   const [errorsByRow, setErrorsByRow] = useState<Record<string, MetricRowError>>({});
@@ -70,7 +76,12 @@ export default function MetricMappingsSection({ onNotify }: MetricMappingsSectio
 
   useEffect(() => {
     void loadMappings();
-  }, [loadMappings]);
+  }, [loadMappings, refreshKey]);
+
+  const isMockProfile = useMemo(
+    () => activeProfile === "mock",
+    [activeProfile],
+  );
 
   const updateRow = useCallback(
     <K extends keyof SettingsMetricRow>(id: string, key: K, value: SettingsMetricRow[K]) => {
@@ -113,6 +124,9 @@ export default function MetricMappingsSection({ onNotify }: MetricMappingsSectio
   }, []);
 
   const addRow = useCallback(() => {
+    if (isMockProfile) {
+      return;
+    }
     const existing = new Set(rows.map((row) => row.canonical_metric));
     const candidate = METRIC_OPTIONS.find((option) => !existing.has(option.value));
     if (!candidate) {
@@ -129,9 +143,12 @@ export default function MetricMappingsSection({ onNotify }: MetricMappingsSectio
         ...EMPTY_ROW_DEFAULTS,
       },
     ]);
-  }, [onNotify, rows]);
+  }, [isMockProfile, onNotify, rows]);
 
   const saveRow = useCallback(async (rowId: string) => {
+    if (isMockProfile) {
+      return;
+    }
     const row = rows.find((item) => item.id === rowId);
     if (!row) return;
     if (!validateRow(row, rows)) {
@@ -176,9 +193,12 @@ export default function MetricMappingsSection({ onNotify }: MetricMappingsSectio
     } finally {
       setSavingRowId(null);
     }
-  }, [onNotify, rows, validateRow]);
+  }, [isMockProfile, onNotify, rows, validateRow]);
 
   const removeRow = useCallback(async (row: SettingsMetricRow) => {
+    if (isMockProfile) {
+      return;
+    }
     try {
       if (row.persisted) {
         await deleteMetricMapping(row.originalMetric ?? row.canonical_metric);
@@ -193,7 +213,7 @@ export default function MetricMappingsSection({ onNotify }: MetricMappingsSectio
     } catch (error: unknown) {
       onNotify("error", toFriendlyErrorMessage(error));
     }
-  }, [onNotify]);
+  }, [isMockProfile, onNotify]);
 
   return (
     <section className="space-y-3">
@@ -201,6 +221,7 @@ export default function MetricMappingsSection({ onNotify }: MetricMappingsSectio
         <button
           type="button"
           onClick={addRow}
+          disabled={isMockProfile}
           className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
             isDark
               ? "border-slate-500 bg-slate-700 text-slate-100 hover:bg-slate-600"
@@ -217,6 +238,11 @@ export default function MetricMappingsSection({ onNotify }: MetricMappingsSectio
         </div>
       ) : (
         <div className="reveal-in">
+          {isMockProfile && (
+            <div className="mb-3 rounded-lg bg-blue-50 p-3 text-sm text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+              Mock profile uses built-in demo data. Metric mappings are not configurable.
+            </div>
+          )}
           {rows.length === 0 ? (
             <EmptyState
               title="No metric mappings"
@@ -229,13 +255,14 @@ export default function MetricMappingsSection({ onNotify }: MetricMappingsSectio
               rows={rows}
               errorsByRow={errorsByRow}
               usedMetrics={usedMetrics}
+              readOnly={isMockProfile}
               onChange={updateBaseRow}
               renderActions={(row) => (
                 <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto">
                   <button
                     type="button"
                     onClick={() => void saveRow(row.id)}
-                    disabled={savingRowId === row.id}
+                    disabled={isMockProfile || savingRowId === row.id}
                     className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${
                       isDark
                         ? "border-slate-400 bg-white text-slate-900"
@@ -247,6 +274,7 @@ export default function MetricMappingsSection({ onNotify }: MetricMappingsSectio
                   <button
                     type="button"
                     onClick={() => void removeRow(row)}
+                    disabled={isMockProfile}
                     className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${
                       isDark
                         ? "border-rose-400 bg-rose-950/60 text-rose-200"

@@ -14,9 +14,15 @@ import type { IntentViewModel } from "../common/IntentActivationList";
 
 type IntentActivationSectionProps = {
   onNotify: (type: "success" | "error", message: string) => void;
+  refreshKey?: number;
+  activeProfile?: string;
 };
 
-export default function IntentActivationSection({ onNotify }: IntentActivationSectionProps) {
+export default function IntentActivationSection({
+  onNotify,
+  refreshKey = 0,
+  activeProfile = "mock",
+}: IntentActivationSectionProps) {
   const [intents, setIntents] = useState<IntentState[]>([]);
   const [mappedMetrics, setMappedMetrics] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -38,7 +44,12 @@ export default function IntentActivationSection({ onNotify }: IntentActivationSe
 
   useEffect(() => {
     void loadData();
-  }, [loadData]);
+  }, [loadData, refreshKey]);
+
+  const isMockProfile = useMemo(
+    () => activeProfile === "mock",
+    [activeProfile],
+  );
 
   const intentView = useMemo<IntentViewModel[]>(
     () =>
@@ -53,6 +64,9 @@ export default function IntentActivationSection({ onNotify }: IntentActivationSe
 
   const toggleIntent = useCallback(
     async (intentName: string, nextValue: boolean) => {
+      if (isMockProfile) {
+        return;
+      }
       setSavingIntent(intentName);
       try {
         const updated = await setIntentActive(intentName, nextValue);
@@ -68,11 +82,14 @@ export default function IntentActivationSection({ onNotify }: IntentActivationSe
         setSavingIntent(null);
       }
     },
-    [onNotify],
+    [isMockProfile, onNotify],
   );
 
   const setAll = useCallback(
     async (active: boolean) => {
+      if (isMockProfile) {
+        return;
+      }
       if (intents.length === 0) return;
       setBulkAction(active ? "enable" : "disable");
       try {
@@ -89,7 +106,7 @@ export default function IntentActivationSection({ onNotify }: IntentActivationSe
         setBulkAction(null);
       }
     },
-    [intents, onNotify],
+    [isMockProfile, intents, onNotify],
   );
 
   return (
@@ -100,6 +117,11 @@ export default function IntentActivationSection({ onNotify }: IntentActivationSe
         </div>
       ) : (
         <div className="reveal-in">
+          {isMockProfile && (
+            <div className="mb-3 rounded-lg bg-blue-50 p-3 text-sm text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+              Mock profile uses built-in demo data. Intent activation is not configurable.
+            </div>
+          )}
           {intentView.length === 0 ? (
             <EmptyState
               title="No intents available"
@@ -112,6 +134,7 @@ export default function IntentActivationSection({ onNotify }: IntentActivationSe
               intents={intentView}
               savingIntent={savingIntent}
               bulkAction={bulkAction}
+              readOnly={isMockProfile}
               onEnableAll={() => void setAll(true)}
               onDisableAll={() => void setAll(false)}
               onToggle={(intentName, active) => void toggleIntent(intentName, active)}

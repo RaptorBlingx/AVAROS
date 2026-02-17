@@ -5,6 +5,7 @@ type EmissionFactorsConfiguredListProps = {
   factors: EmissionFactorResponse[];
   deletingSource: string | null;
   isDark: boolean;
+  readOnly?: boolean;
   onDelete: (energySource: string) => void;
 };
 
@@ -12,6 +13,7 @@ export default function EmissionFactorsConfiguredList({
   factors,
   deletingSource,
   isDark,
+  readOnly = false,
   onDelete,
 }: EmissionFactorsConfiguredListProps) {
   if (factors.length === 0) {
@@ -56,7 +58,7 @@ export default function EmissionFactorsConfiguredList({
               type="button"
               onClick={() => onDelete(factor.energy_source)}
               className={`${deleteButtonClass} mt-3 w-full py-1.5`}
-              disabled={deletingSource === factor.energy_source}
+              disabled={readOnly || deletingSource === factor.energy_source}
             >
               {deletingSource === factor.energy_source ? "Removing..." : "Delete"}
             </button>
@@ -89,7 +91,7 @@ export default function EmissionFactorsConfiguredList({
                     type="button"
                     onClick={() => onDelete(factor.energy_source)}
                     className={deleteButtonClass}
-                    disabled={deletingSource === factor.energy_source}
+                    disabled={readOnly || deletingSource === factor.energy_source}
                   >
                     {deletingSource === factor.energy_source ? "Removing..." : "Delete"}
                   </button>

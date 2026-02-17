@@ -15,11 +15,13 @@ const PROFILE_NAME_REGEX = /^[a-z0-9][a-z0-9-]{0,48}[a-z0-9]$/;
 type ProfileSelectorProps = {
   onNotify: (type: "success" | "error", message: string) => void;
   onProfileChange: (profileName: string) => void;
+  onProfileSwitched?: (profileName: string, voiceReloaded: boolean) => void;
 };
 
 export default function ProfileSelector({
   onNotify,
   onProfileChange,
+  onProfileSwitched,
 }: ProfileSelectorProps) {
   const { isDark } = useTheme();
   const [profiles, setProfiles] = useState<ProfileMetadata[]>([]);
@@ -62,13 +64,24 @@ export default function ProfileSelector({
       setActiveProfile(result.active_profile);
       onNotify("success", `Switched to profile "${result.active_profile}"`);
       onProfileChange(result.active_profile);
+      onProfileSwitched?.(
+        result.active_profile,
+        result.voice_reloaded ?? false,
+      );
       await loadProfiles();
     } catch (error: unknown) {
       onNotify("error", toFriendlyErrorMessage(error));
     } finally {
       setSwitching(false);
     }
-  }, [selectedProfile, activeProfile, onNotify, onProfileChange, loadProfiles]);
+  }, [
+    selectedProfile,
+    activeProfile,
+    onNotify,
+    onProfileChange,
+    onProfileSwitched,
+    loadProfiles,
+  ]);
 
   const handleDelete = useCallback(
     async (name: string) => {

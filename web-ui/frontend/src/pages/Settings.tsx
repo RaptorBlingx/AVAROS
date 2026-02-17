@@ -60,6 +60,8 @@ export default function Settings() {
   const navigate = useNavigate();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [profileRefreshKey, setProfileRefreshKey] = useState(0);
+  const [activeProfileName, setActiveProfileName] = useState("mock");
   const notify = useCallback((type: "success" | "error", message: string) => {
     setToasts((prev) => [
       ...prev,
@@ -114,6 +116,20 @@ export default function Settings() {
     return () => window.removeEventListener("avaros:rerun-onboarding", onRerun);
   }, []);
 
+  const handleProfileSwitch = useCallback(
+    (profileName: string, voiceReloaded: boolean) => {
+      setActiveProfileName(profileName);
+      setProfileRefreshKey((value) => value + 1);
+      if (!voiceReloaded) {
+        notify(
+          "error",
+          "Voice runtime was not notified — voice queries may use the previous profile until next restart.",
+        );
+      }
+    },
+    [notify],
+  );
+
   return (
     <section className="space-y-4">
       <Toast toasts={toasts} onDismiss={dismissToast} />
@@ -127,7 +143,12 @@ export default function Settings() {
             <h2 className="m-0 mt-2 text-2xl font-semibold text-slate-900">
               Settings
             </h2>
-            <p className="m-0 mt-2 text-sm text-slate-600">{headerSubtitle}</p>
+            <p className="m-0 mt-2 text-sm text-slate-600">
+              {headerSubtitle}
+              <span className="ml-2 inline-flex items-center rounded-full bg-cyan-100 px-2.5 py-0.5 text-xs font-medium text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">
+                Profile: {activeProfileName}
+              </span>
+            </p>
           </div>
           <div className="flex w-full flex-col gap-2 sm:w-auto">
             <button
@@ -154,7 +175,10 @@ export default function Settings() {
         targetId="settings-platform-config"
         defaultOpen={true}
       >
-        <PlatformConfigSection onNotify={notify} />
+        <PlatformConfigSection
+          onNotify={notify}
+          onProfileSwitch={handleProfileSwitch}
+        />
       </Section>
 
       <Section
@@ -162,7 +186,11 @@ export default function Settings() {
         helpText="Map canonical AVAROS metrics to your platform endpoint fields."
         targetId="settings-metric-mappings"
       >
-        <MetricMappingsSection onNotify={notify} />
+        <MetricMappingsSection
+          onNotify={notify}
+          refreshKey={profileRefreshKey}
+          activeProfile={activeProfileName}
+        />
       </Section>
 
       <Section
@@ -170,7 +198,11 @@ export default function Settings() {
         helpText="Configure CO2 conversion factors per energy source or apply country presets."
         targetId="settings-emission-factors"
       >
-        <EmissionFactorsSection onNotify={notify} />
+        <EmissionFactorsSection
+          onNotify={notify}
+          refreshKey={profileRefreshKey}
+          activeProfile={activeProfileName}
+        />
       </Section>
 
       <Section
@@ -178,7 +210,11 @@ export default function Settings() {
         helpText="Enable business intents and verify required metrics are available."
         targetId="settings-intent-activation"
       >
-        <IntentActivationSection onNotify={notify} />
+        <IntentActivationSection
+          onNotify={notify}
+          refreshKey={profileRefreshKey}
+          activeProfile={activeProfileName}
+        />
       </Section>
 
       <Section

@@ -22,6 +22,7 @@ import ProfileSelector from "./ProfileSelector";
 
 type PlatformConfigSectionProps = {
   onNotify: (type: "success" | "error", message: string) => void;
+  onProfileSwitch?: (profileName: string, voiceReloaded: boolean) => void;
 };
 
 type AuthType = "api_key" | "cookie";
@@ -67,6 +68,7 @@ function validate(config: {
 
 export default function PlatformConfigSection({
   onNotify,
+  onProfileSwitch,
 }: PlatformConfigSectionProps) {
   const { isDark } = useTheme();
   const [loading, setLoading] = useState(true);
@@ -231,6 +233,9 @@ export default function PlatformConfigSection({
       <ProfileSelector
         onNotify={onNotify}
         onProfileChange={(name) => void handleProfileChange(name)}
+        onProfileSwitched={(name, voiceReloaded) => {
+          onProfileSwitch?.(name, voiceReloaded);
+        }}
       />
 
       <header className="flex items-center justify-end gap-2">
