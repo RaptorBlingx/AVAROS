@@ -18,9 +18,10 @@ Design Pattern:
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Coroutine, TypeVar
 import uuid
 
 from skill.domain.exceptions import MetricNotSupportedError
@@ -43,6 +44,7 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+T = TypeVar("T")
 
 
 class QueryDispatcher:
@@ -105,6 +107,10 @@ class QueryDispatcher:
         self._co2_service = co2_service
         self._production_service = production_data_service
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="avaros-dispatcher",
+        )
     
     @property
     def adapter(self) -> ManufacturingAdapter:
@@ -601,13 +607,20 @@ class QueryDispatcher:
     # =========================================================================
     # Async/Sync Bridging
     # =========================================================================
+
+    def initialize_adapter(self) -> None:
+        """Initialize current adapter on dispatcher-managed loop/thread."""
+        self._run_async(self._adapter.initialize())
     
-    def _run_async(self, coro):
+    def _run_async(self, coro: Coroutine[Any, Any, T]) -> T:
         """
         Run an async coroutine synchronously.
         
-        Creates a new event loop if needed. This bridges the sync OVOS
-        handler world with async adapter calls.
+        Uses a dedicated thread with a persistent event loop so the
+        aiohttp session is always used on the same loop/thread.
+        This avoids the deadlock that occurs when
+        ``run_coroutine_threadsafe`` is called from the same thread
+        as the running loop.
         
         Args:
             coro: Coroutine to run
@@ -615,19 +628,32 @@ class QueryDispatcher:
         Returns:
             Result of the coroutine
         """
+        def _runner() -> T:
+            if self._loop is None or self._loop.is_closed():
+                self._loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(self._loop)
+            return self._loop.run_until_complete(coro)
+
+        future = self._executor.submit(_runner)
+        return future.result(timeout=30)
+
+    def shutdown(self) -> None:
+        """Shutdown adapter and dispatcher async resources cleanly."""
         try:
-            # Try to get existing loop
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # We're in an async context, use run_coroutine_threadsafe
-                import concurrent.futures
-                future = asyncio.run_coroutine_threadsafe(coro, loop)
-                return future.result(timeout=30)
-            else:
-                return loop.run_until_complete(coro)
-        except RuntimeError:
-            # No event loop, create one
-            return asyncio.run(coro)
+            self._run_async(self._adapter.shutdown())
+        except (RuntimeError, OSError) as exc:
+            logger.warning("Adapter shutdown during dispatcher.stop failed: %s", exc)
+
+        def _close_loop() -> None:
+            if self._loop is not None and not self._loop.is_closed():
+                self._loop.close()
+
+        try:
+            self._executor.submit(_close_loop).result(timeout=10)
+        except (RuntimeError, OSError) as exc:
+            logger.warning("Dispatcher event loop close failed: %s", exc)
+        finally:
+            self._executor.shutdown(wait=True, cancel_futures=True)
     
     # =========================================================================
     # Audit Logging (GDPR Compliance)

@@ -44,9 +44,12 @@ def main() -> None:
         # The skill_id must be unique and follow OVOS conventions
         logger.info("Creating and initializing AVAROS skill...")
         skill = AVAROSSkill(skill_id="avaros-manufacturing.avaros", bus=bus)
-        
-        # Wait for skill initialization to complete
-        # OVOSSkill.initialize() is called automatically during construction
+
+        # In standalone mode (outside OVOS SkillManager), initialize()
+        # is not guaranteed to be called automatically.
+        skill.initialize()
+
+        # Wait briefly for async bus wiring to settle
         time.sleep(2)
         
         logger.info("AVAROS skill initialized successfully!")
