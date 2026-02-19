@@ -12,11 +12,13 @@ import type {
   PlatformConfigRequest,
   PlatformConfigResponse,
   PlatformType,
+  ProfileConfig,
 } from "../../api/types";
 import ConnectionTestResult from "../common/ConnectionTestResult";
 import ErrorMessage from "../common/ErrorMessage";
 import LoadingSpinner from "../common/LoadingSpinner";
 import { useTheme } from "../common/ThemeProvider";
+import ProfileSelector from "./ProfileSelector";
 
 type PlatformConfigSectionProps = {
   onNotify: (type: "success" | "error", message: string) => void;
@@ -83,6 +85,9 @@ export default function PlatformConfigSection({
   const [apiKey, setApiKey] = useState("");
   const [testResult, setTestResult] = useState<ConnectionTestResponse | null>(null);
   const [inlineError, setInlineError] = useState("");
+  const [isBuiltinProfile, setIsBuiltinProfile] = useState(false);
+  const [isSelectedActive, setIsSelectedActive] = useState(true);
+  const [profileRefreshKey, setProfileRefreshKey] = useState(0);
 
   const isMock = useMemo(() => platformType === "mock", [platformType]);
   const adapterTarget = useMemo(
@@ -94,6 +99,29 @@ export default function PlatformConfigSection({
           : "Mock",
     [platformType],
   );
+
+  const formLocked = isBuiltinProfile || !isSelectedActive;
+
+  const handleProfileChange = useCallback((profile: ProfileConfig) => {
+    setPlatformType(profile.platform_type);
+    setApiUrl(profile.api_url);
+    setApiKey("");
+    setAuthType(
+      profile.extra_settings?.auth_type === "cookie" ? "cookie" : "api_key",
+    );
+    setSeuId(profile.extra_settings?.seu_id ?? "");
+    setConfig({
+      platform_type: profile.platform_type,
+      api_url: profile.api_url,
+      api_key: profile.api_key,
+      extra_settings: profile.extra_settings,
+    });
+    setIsBuiltinProfile(profile.is_builtin);
+    setIsSelectedActive(profile.is_active);
+    setEditing(false);
+    setInlineError("");
+    setTestResult(null);
+  }, []);
 
   const loadConfig = useCallback(async () => {
     setLoading(true);
@@ -110,6 +138,8 @@ export default function PlatformConfigSection({
       setSeuId(data.extra_settings?.seu_id ?? "");
       setApiUrl(data.api_url);
       setApiKey("");
+      setIsBuiltinProfile(data.platform_type === "mock");
+      setIsSelectedActive(true);
     } catch (error: unknown) {
       const message = toFriendlyErrorMessage(error);
       setInlineError(message);
@@ -148,6 +178,7 @@ export default function PlatformConfigSection({
       setConfig(saved);
       setEditing(false);
       setApiKey("");
+      setProfileRefreshKey((k) => k + 1);
       onNotify("success", "Platform config updated.");
     } catch (error: unknown) {
       const message = toFriendlyErrorMessage(error);
@@ -166,6 +197,9 @@ export default function PlatformConfigSection({
       await resetPlatformConfig();
       await loadConfig();
       setEditing(false);
+      setProfileRefreshKey((k) => k + 1);
+      setIsBuiltinProfile(true);
+      setIsSelectedActive(true);
       onNotify("success", "Platform config reset to mock.");
     } catch (error: unknown) {
       const message = toFriendlyErrorMessage(error);
@@ -212,19 +246,27 @@ export default function PlatformConfigSection({
 
   return (
     <section className="space-y-3">
+      <ProfileSelector
+        refreshKey={profileRefreshKey}
+        onProfileChange={handleProfileChange}
+        onNotify={onNotify}
+      />
+
       <header className="flex items-center justify-end gap-2">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
-              isDark
-                ? "border-slate-500 bg-slate-700 text-slate-100 hover:bg-slate-600"
-                : "border-slate-300 bg-white text-slate-700"
-            }`}
-            onClick={() => setEditing((prev) => !prev)}
-          >
-            {editing ? "Cancel" : "Edit"}
-          </button>
+          {!formLocked && (
+            <button
+              type="button"
+              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+                isDark
+                  ? "border-slate-500 bg-slate-700 text-slate-100 hover:bg-slate-600"
+                  : "border-slate-300 bg-white text-slate-700"
+              }`}
+              onClick={() => setEditing((prev) => !prev)}
+            >
+              {editing ? "Cancel" : "Edit"}
+            </button>
+          )}
           <button
             type="button"
             className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
@@ -256,7 +298,7 @@ export default function PlatformConfigSection({
                 onChange={(event) =>
                   setPlatformType(event.target.value as PlatformType)
                 }
-                disabled={!editing || saving}
+                disabled={!editing || saving || formLocked}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               >
                 <option value="mock">Mock</option>
@@ -273,7 +315,7 @@ export default function PlatformConfigSection({
                 type="url"
                 value={apiUrl}
                 onChange={(event) => setApiUrl(event.target.value)}
-                disabled={!editing || saving || isMock}
+                disabled={!editing || saving || formLocked || isMock}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               />
             </label>
@@ -287,7 +329,7 @@ export default function PlatformConfigSection({
                 onChange={(event) =>
                   setAuthType(event.target.value as AuthType)
                 }
-                disabled={!editing || saving || isMock}
+                disabled={!editing || saving || formLocked || isMock}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               >
                 <option value="api_key">API Key</option>
@@ -304,7 +346,7 @@ export default function PlatformConfigSection({
                 value={seuId}
                 onChange={(event) => setSeuId(event.target.value)}
                 placeholder="Paste SEU ID for direct energy per unit endpoint"
-                disabled={!editing || saving || isMock || platformType !== "reneryo"}
+                disabled={!editing || saving || formLocked || isMock || platformType !== "reneryo"}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               />
             </label>
@@ -324,7 +366,7 @@ export default function PlatformConfigSection({
                       : "Enter API key to update"
                     : config?.api_key ?? "****"
                 }
-                disabled={!editing || saving || isMock}
+                disabled={!editing || saving || formLocked || isMock}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               />
             </label>

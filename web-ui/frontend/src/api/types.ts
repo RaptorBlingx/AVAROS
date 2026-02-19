@@ -220,3 +220,34 @@ export type VoiceConfigResponse = {
   hivemind_secret: string;
   voice_enabled: boolean;
 };
+
+export type ProfileMetadata = {
+  name: string;
+  platform_type: PlatformType;
+  is_active: boolean;
+  is_builtin: boolean;
+  created_at?: string;
+};
+
+export type ProfileListResponse = {
+  profiles: ProfileMetadata[];
+  active_profile: string;
+};
+
+export type ProfileConfig = {
+  name: string;
+  platform_type: PlatformType;
+  api_url: string;
+  api_key: string;
+  extra_settings: Record<string, string>;
+  is_builtin: boolean;
+  is_active: boolean;
+};
+
+export type CreateProfileRequest = {
+  name: string;
+  platform_type: PlatformType;
+  api_url?: string;
+  api_key?: string;
+  extra_settings?: Record<string, string>;
+};

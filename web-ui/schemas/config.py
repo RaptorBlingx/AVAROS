@@ -104,3 +104,101 @@ class ResetResponse(BaseModel):
     status: str = Field(..., description="Reset operation status.")
     platform_type: PlatformType = Field(..., description="Current platform after reset.")
 
+
+class ProfileMetadataResponse(BaseModel):
+    """Profile metadata used in profile listing responses."""
+
+    name: str = Field(
+        ...,
+        description="Unique profile name.",
+        min_length=2,
+        max_length=50,
+        pattern=r"^[a-z0-9][a-z0-9-]*$",
+    )
+    platform_type: PlatformType = Field(..., description="Profile adapter type.")
+    is_active: bool = Field(..., description="Whether this profile is currently active.")
+    is_builtin: bool = Field(..., description="Whether this profile is built-in and read-only.")
+
+
+class ProfileListResponse(BaseModel):
+    """List of available adapter profiles and current active profile."""
+
+    profiles: list[ProfileMetadataResponse] = Field(
+        default_factory=list,
+        description="All available profiles (mock + custom).",
+    )
+    active_profile: str = Field(
+        ...,
+        description="Name of the currently active profile.",
+        min_length=2,
+        max_length=50,
+        pattern=r"^[a-z0-9][a-z0-9-]*$",
+    )
+
+
+class ProfileConfigResponse(BaseModel):
+    """Profile configuration payload returned by profile endpoints."""
+
+    name: str = Field(
+        ...,
+        description="Profile name.",
+        min_length=2,
+        max_length=50,
+        pattern=r"^[a-z0-9][a-z0-9-]*$",
+    )
+    platform_type: PlatformType = Field(..., description="Configured platform type.")
+    api_url: str = Field(..., description="Configured API URL.")
+    api_key: str = Field(..., description="Masked API key.")
+    extra_settings: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Profile-specific extra settings.",
+    )
+    is_builtin: bool = Field(..., description="Whether profile is built-in.")
+    is_active: bool = Field(..., description="Whether profile is currently active.")
+
+
+class ProfileCreateRequest(BaseModel):
+    """Create a new custom profile."""
+
+    name: str = Field(
+        ...,
+        description="Custom profile name.",
+        min_length=2,
+        max_length=50,
+        pattern=r"^[a-z0-9][a-z0-9-]*$",
+    )
+    platform_type: PlatformType = Field(..., description="Platform type for this profile.")
+    api_url: str = Field(
+        default="",
+        description="Optional API URL. Can be configured later.",
+    )
+    api_key: str = Field(
+        default="",
+        description="Optional API key. Can be configured later.",
+    )
+    extra_settings: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Optional extra settings.",
+    )
+
+
+class ProfileUpdateRequest(BaseModel):
+    """Update an existing custom profile."""
+
+    platform_type: PlatformType | None = Field(
+        default=None,
+        description="Updated platform type.",
+    )
+    api_url: str | None = Field(
+        default=None,
+        description="Updated API URL.",
+    )
+    api_key: str | None = Field(
+        default=None,
+        description="Updated API key.",
+    )
+    extra_settings: dict[str, Any] | None = Field(
+        default=None,
+        description="Updated extra settings.",
+    )
+

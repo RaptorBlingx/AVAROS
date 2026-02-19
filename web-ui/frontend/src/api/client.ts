@@ -3,6 +3,7 @@ import type {
   CSVUploadResponse,
   CanonicalMetricName,
   ConnectionTestResponse,
+  CreateProfileRequest,
   EmissionFactorListResponse,
   EmissionFactorPresetResponse,
   EmissionFactorRequest,
@@ -19,6 +20,8 @@ import type {
   ProductionRecordRequest,
   ProductionRecordResponse,
   ProductionSummaryResponse,
+  ProfileConfig,
+  ProfileListResponse,
   SiteProgressResponse,
   SnapshotResponse,
   SystemStatusResponse,
@@ -373,6 +376,49 @@ export async function deleteEmissionFactor(energySource: string): Promise<void> 
 export function listEmissionFactorPresets(): Promise<EmissionFactorPresetResponse[]> {
   return request<EmissionFactorPresetResponse[]>(
     "/api/v1/config/emission-factors/presets"
+  );
+}
+
+export function listProfiles(): Promise<ProfileListResponse> {
+  return request<ProfileListResponse>("/api/v1/config/profiles");
+}
+
+export function getProfile(name: string): Promise<ProfileConfig> {
+  return request<ProfileConfig>(
+    `/api/v1/config/profiles/${encodeURIComponent(name)}`,
+  );
+}
+
+export function createProfile(
+  payload: CreateProfileRequest,
+): Promise<ProfileConfig> {
+  return request<ProfileConfig>("/api/v1/config/profiles", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateProfile(
+  name: string,
+  payload: Partial<CreateProfileRequest>,
+): Promise<ProfileConfig> {
+  return request<ProfileConfig>(
+    `/api/v1/config/profiles/${encodeURIComponent(name)}`,
+    { method: "PUT", body: payload },
+  );
+}
+
+export async function deleteProfile(name: string): Promise<void> {
+  await request<unknown>(
+    `/api/v1/config/profiles/${encodeURIComponent(name)}`,
+    { method: "DELETE" },
+  );
+}
+
+export function activateProfile(name: string): Promise<ProfileConfig> {
+  return request<ProfileConfig>(
+    `/api/v1/config/profiles/${encodeURIComponent(name)}/activate`,
+    { method: "POST" },
   );
 }
 

@@ -35,7 +35,7 @@ export default function BrandSelect({
         }
       >
         <Select.Value placeholder={placeholder} />
-        <Select.Icon>
+        <Select.Icon className="mr-2">
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor">
             <path d="M6 9l6 6 6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
