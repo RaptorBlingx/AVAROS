@@ -54,6 +54,11 @@ services:
     # Join WASABI OVOS network
     networks:
       - ovos
+
+    # Corporate DNS name doesn't always resolve inside Docker Desktop.
+    # Pin the current internal deploy host for stable demo/runtime access.
+    extra_hosts:
+      - "deploys.int.arti.ac:${RENERYO_DEPLOYS_IP:-10.33.10.110}"
     
     # Mount WASABI OVOS shared volumes and skill code
     volumes:
@@ -128,6 +133,9 @@ services:
 
     networks:
       - ovos
+
+    extra_hosts:
+      - "deploys.int.arti.ac:${RENERYO_DEPLOYS_IP:-10.33.10.110}"
 
     # Web UI is only accessible via avaros-proxy (HTTPS)
     # For direct HTTP access in dev, use docker-compose.dev.yml override

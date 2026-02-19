@@ -105,9 +105,10 @@ def normalize_meters_to_comparison(
     items: list[dict] = []
     for aid in asset_ids:
         record = _find_record(records, aid)
+        raw_consumption = record.get("consumption")
         items.append({
             "asset_id": record.get("name", record.get("id", aid)),
-            "value": float(record["consumption"]),
+            "value": float(raw_consumption) if raw_consumption is not None else 0.0,
             "unit": _resolve_unit(record),
         })
     return items
@@ -288,7 +289,7 @@ def _meter_record_to_dict(record: dict, *, timestamp: str = "") -> dict:
         Dict with value, unit, timestamp keys.
     """
     return {
-        "value": float(record.get("consumption", 0.0)),
+        "value": float(record.get("consumption") or 0.0),
         "unit": _resolve_unit(record),
         "timestamp": timestamp or datetime.now(tz=timezone.utc).isoformat(),
     }

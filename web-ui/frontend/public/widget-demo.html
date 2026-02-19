@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AVAROS Widget Demo</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Inter", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+        background:
+          radial-gradient(1200px 460px at 8% 0%, rgba(191, 219, 254, 0.7), transparent 70%),
+          radial-gradient(980px 420px at 92% 100%, rgba(167, 243, 208, 0.55), transparent 70%),
+          linear-gradient(160deg, #f8fafc, #eef6ff 45%, #ecfdf5);
+        color: #0f172a;
+        padding: 28px;
+      }
+
+      .layout {
+        max-width: 1020px;
+        margin: 0 auto;
+        display: grid;
+        gap: 18px;
+      }
+
+      .hero,
+      .controls-card {
+        border: 1px solid rgba(125, 211, 252, 0.65);
+        border-radius: 16px;
+        background: linear-gradient(
+          145deg,
+          rgba(255, 255, 255, 0.96),
+          rgba(240, 249, 255, 0.88),
+          rgba(236, 253, 245, 0.84)
+        );
+        box-shadow: 0 22px 44px -30px rgba(2, 132, 199, 0.32);
+      }
+
+      .hero {
+        padding: 20px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 1.25rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #0369a1;
+      }
+
+      .subtitle {
+        margin: 0.45rem 0 0;
+        color: #334155;
+        line-height: 1.5;
+      }
+
+      .controls-card {
+        padding: 16px;
+      }
+
+      .controls-title {
+        margin: 0;
+        font-size: 0.9rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #64748b;
+      }
+
+      .config-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      label {
+        display: grid;
+        gap: 4px;
+        font-size: 0.74rem;
+        font-weight: 600;
+        color: #334155;
+      }
+
+      input {
+        border: 1px solid rgba(148, 163, 184, 0.45);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.92);
+        color: #0f172a;
+        padding: 8px 10px;
+        font-size: 0.8rem;
+      }
+
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      button {
+        border: 1px solid rgba(14, 165, 233, 0.45);
+        background: rgba(224, 242, 254, 0.92);
+        color: #0f172a;
+        border-radius: 10px;
+        padding: 8px 12px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      button:hover {
+        filter: brightness(1.02);
+      }
+
+      .status {
+        margin: 12px 0 0;
+        padding: 8px 10px;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.72);
+        color: #334155;
+        font-size: 0.78rem;
+      }
+
+      .tips {
+        margin: 10px 0 0;
+        color: #475569;
+        font-size: 0.78rem;
+      }
+
+      @media (max-width: 900px) {
+        .config-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <section class="hero">
+        <h1>AVAROS Widget Demo</h1>
+        <p class="subtitle">
+          Default theme is <strong>light</strong>. You can switch to dark and re-initialize
+          the widget from this page while keeping the host UI isolated.
+        </p>
+      </section>
+
+      <section class="controls-card">
+        <h2 class="controls-title">Widget Configuration</h2>
+
+        <div class="config-grid">
+          <label>
+            HiveMind Host
+            <input id="host" value="ws://127.0.0.1:5678" />
+          </label>
+          <label>
+            Client Name
+            <input id="client-name" value="avaros-web-client" />
+          </label>
+          <label>
+            Access Key
+            <input id="access-key" value="avaros-web-client" />
+          </label>
+          <label>
+            Access Secret
+            <input id="access-secret" value="avaros-web-secret-change-in-production" />
+          </label>
+          <label>
+            Encryption Key (optional)
+            <input id="encryption-key" value="" placeholder="auto-derive from secret" />
+          </label>
+        </div>
+
+        <div class="controls">
+          <button type="button" onclick="applyConfig()">Apply Config</button>
+          <button type="button" onclick="setTheme('light')">Theme: Light</button>
+          <button type="button" onclick="setTheme('dark')">Theme: Dark</button>
+          <button type="button" onclick="openWidget()">Open Widget</button>
+          <button type="button" onclick="closeWidget()">Close Widget</button>
+          <button type="button" onclick="sendWidgetMessage('show energy trend today')">
+            Send Test Message
+          </button>
+          <button type="button" onclick="destroyWidget()">Destroy Widget</button>
+        </div>
+
+        <p id="widget-status" class="status">Widget API status: waiting...</p>
+        <p id="widget-connection" class="status">Widget connection: unknown</p>
+        <p class="tips">
+          If widget is not visible, run <code>npm run build:widget</code>, then refresh.
+        </p>
+      </section>
+    </div>
+
+    <script>
+      const statusEl = document.getElementById("widget-status");
+      const connectionEl = document.getElementById("widget-connection");
+      const hostInput = document.getElementById("host");
+      const clientNameInput = document.getElementById("client-name");
+      const accessKeyInput = document.getElementById("access-key");
+      const accessSecretInput = document.getElementById("access-secret");
+      const encryptionKeyInput = document.getElementById("encryption-key");
+
+      const SCRIPT_ID = "avaros-widget-loader";
+      let currentTheme = "light";
+
+      function setStatus(text) {
+        statusEl.textContent = "Widget API status: " + text;
+      }
+
+      function setConnection(text) {
+        connectionEl.textContent = "Widget connection: " + text;
+      }
+
+      function api() {
+        if (!window.AvarosWidget) {
+          setStatus("not ready (build widget first, then refresh)");
+          return null;
+        }
+        return window.AvarosWidget;
+      }
+
+      function injectWidget() {
+        window.AvarosWidget?.destroy?.();
+
+        const existing = document.getElementById(SCRIPT_ID);
+        if (existing) {
+          existing.remove();
+        }
+
+        const script = document.createElement("script");
+        script.id = SCRIPT_ID;
+        script.src = "/dist/avaros-widget.js?v=" + Date.now();
+        script.dataset.host = String(hostInput.value || "").trim();
+        script.dataset.clientName = String(clientNameInput.value || "").trim();
+        script.dataset.accessKey = String(accessKeyInput.value || "").trim();
+        script.dataset.accessSecret = String(accessSecretInput.value || "").trim();
+        script.dataset.encryptionKey = String(encryptionKeyInput.value || "").trim();
+        script.dataset.position = "bottom-right";
+        script.dataset.theme = currentTheme;
+        script.dataset.size = "medium";
+        script.dataset.offsetX = "20";
+        script.dataset.offsetY = "20";
+        script.dataset.label = "";
+        script.dataset.disabledModes = "";
+
+        script.onload = () => {
+          setStatus("widget script loaded (" + currentTheme + " mode)");
+          window.setTimeout(() => {
+            if (window.AvarosWidget) {
+              setStatus("ready");
+            }
+          }, 120);
+        };
+        script.onerror = () => {
+          setStatus("failed to load /dist/avaros-widget.js");
+        };
+
+        document.body.appendChild(script);
+      }
+
+      function applyConfig() {
+        injectWidget();
+        setConnection("reinitializing...");
+      }
+
+      function setTheme(theme) {
+        currentTheme = theme;
+        injectWidget();
+      }
+
+      function openWidget() {
+        const widget = api();
+        if (!widget) return;
+        widget.open();
+        setStatus("open() called");
+      }
+
+      function closeWidget() {
+        const widget = api();
+        if (!widget) return;
+        widget.close();
+        setStatus("close() called");
+      }
+
+      function sendWidgetMessage(text) {
+        const widget = api();
+        if (!widget) return;
+        widget.send(text);
+        setStatus('send("' + text + '") called');
+      }
+
+      function destroyWidget() {
+        const widget = api();
+        if (!widget) return;
+        widget.destroy();
+        setStatus("destroy() called");
+        setConnection("destroyed");
+      }
+
+      window.setInterval(() => {
+        if (!window.AvarosWidget) {
+          setConnection("not ready");
+          return;
+        }
+        setConnection(window.AvarosWidget.isConnected() ? "connected" : "disconnected");
+      }, 1200);
+
+      window.addEventListener("load", () => {
+        injectWidget();
+      });
+    </script>
+  </body>
+</html>
