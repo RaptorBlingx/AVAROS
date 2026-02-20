@@ -41,6 +41,12 @@ vi.mock("../../components/settings/MetricMappingsSection", () => ({
   ),
 }));
 
+vi.mock("../../components/settings/IntentBindingsSection", () => ({
+  default: ({ refreshKey }: { refreshKey?: number }) => (
+    <div data-testid="intent-bindings-refresh">{refreshKey ?? 0}</div>
+  ),
+}));
+
 vi.mock("../../components/settings/EmissionFactorsSection", () => ({
   default: ({ refreshKey }: { refreshKey?: number }) => (
     <div data-testid="emission-refresh">{refreshKey ?? 0}</div>
@@ -83,12 +89,14 @@ describe("Settings page profile refresh", () => {
     render(<Settings />);
 
     expect(screen.getByTestId("metrics-refresh").textContent).toBe("0");
+    expect(screen.getByTestId("intent-bindings-refresh").textContent).toBe("0");
     expect(screen.getByTestId("emission-refresh").textContent).toBe("0");
     expect(screen.getByTestId("intent-refresh").textContent).toBe("0");
 
     fireEvent.click(screen.getByText("Switch Profile Success"));
 
     expect(screen.getByTestId("metrics-refresh").textContent).toBe("1");
+    expect(screen.getByTestId("intent-bindings-refresh").textContent).toBe("1");
     expect(screen.getByTestId("emission-refresh").textContent).toBe("1");
     expect(screen.getByTestId("intent-refresh").textContent).toBe("1");
   });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -7,6 +7,7 @@ import Toast from "../components/common/Toast";
 import type { ToastItem } from "../components/common/Toast";
 import Tooltip from "../components/common/Tooltip";
 import IntentActivationSection from "../components/settings/IntentActivationSection";
+import IntentBindingsSection from "../components/settings/IntentBindingsSection";
 import EmissionFactorsSection from "../components/settings/EmissionFactorsSection";
 import MetricMappingsSection from "../components/settings/MetricMappingsSection";
 import PlatformConfigSection from "../components/settings/PlatformConfigSection";
@@ -62,6 +63,7 @@ export default function Settings() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
   const [activeProfileName, setActiveProfileName] = useState("mock");
+  const activeProfileRef = useRef("mock");
   const notify = useCallback((type: "success" | "error", message: string) => {
     setToasts((prev) => [
       ...prev,
@@ -75,7 +77,7 @@ export default function Settings() {
 
   const headerSubtitle = useMemo(
     () =>
-      "Manage platform config, metric mappings, intents, and live system state.",
+      "Manage platform config, metric mappings, intent bindings, intents, and live system state.",
     [],
   );
 
@@ -97,6 +99,11 @@ export default function Settings() {
         selector: '[data-onboarding-target="settings-metric-mappings"]',
       },
       {
+        title: "Intent Bindings",
+        description: "Map non-metric intents (control/status/help) to your API endpoints.",
+        selector: '[data-onboarding-target="settings-intent-bindings"]',
+      },
+      {
         title: "Intent Activation",
         description: "Enable operational intents once required metrics are available.",
         selector: '[data-onboarding-target="settings-intent-activation"]',
@@ -116,10 +123,18 @@ export default function Settings() {
     return () => window.removeEventListener("avaros:rerun-onboarding", onRerun);
   }, []);
 
+  const syncActiveProfile = useCallback((profileName: string) => {
+    if (activeProfileRef.current === profileName) {
+      return;
+    }
+    activeProfileRef.current = profileName;
+    setActiveProfileName(profileName);
+    setProfileRefreshKey((value) => value + 1);
+  }, []);
+
   const handleProfileSwitch = useCallback(
     (profileName: string, voiceReloaded: boolean) => {
-      setActiveProfileName(profileName);
-      setProfileRefreshKey((value) => value + 1);
+      syncActiveProfile(profileName);
       if (!voiceReloaded) {
         notify(
           "error",
@@ -127,7 +142,14 @@ export default function Settings() {
         );
       }
     },
-    [notify],
+    [notify, syncActiveProfile],
+  );
+
+  const handleActiveProfileResolved = useCallback(
+    (profileName: string) => {
+      syncActiveProfile(profileName);
+    },
+    [syncActiveProfile],
   );
 
   return (
@@ -178,6 +200,7 @@ export default function Settings() {
         <PlatformConfigSection
           onNotify={notify}
           onProfileSwitch={handleProfileSwitch}
+          onActiveProfileResolved={handleActiveProfileResolved}
         />
       </Section>
 
@@ -187,6 +210,18 @@ export default function Settings() {
         targetId="settings-metric-mappings"
       >
         <MetricMappingsSection
+          onNotify={notify}
+          refreshKey={profileRefreshKey}
+          activeProfile={activeProfileName}
+        />
+      </Section>
+
+      <Section
+        title="Intent Bindings"
+        helpText="Map non-metric intents like control, status, and help to your platform APIs."
+        targetId="settings-intent-bindings"
+      >
+        <IntentBindingsSection
           onNotify={notify}
           refreshKey={profileRefreshKey}
           activeProfile={activeProfileName}

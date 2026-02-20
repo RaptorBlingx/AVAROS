@@ -42,7 +42,10 @@ def test_get_metrics_returns_active_profile_data(
     settings_service.set_active_profile("mock")
     mock_resp = client.get("/api/v1/config/metrics")
     assert mock_resp.status_code == 200
-    assert mock_resp.json() == []
+    mock_items = mock_resp.json()
+    assert len(mock_items) >= 3
+    by_metric = {item["canonical_metric"]: item for item in mock_items}
+    assert by_metric["energy_per_unit"]["endpoint"] == "/api/v1/kpis/energy/per-unit"
 
 
 def test_put_metric_writes_to_active_profile(

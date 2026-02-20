@@ -54,6 +54,11 @@ export default function EmissionFactorsSection({
   const loadData = useCallback(async () => {
     setLoading(true);
     setInlineError("");
+    setSaving(false);
+    setDeletingSource(null);
+    setShowAddForm(false);
+    setForm(EMPTY_FORM);
+    setErrors({});
     try {
       const [factorResponse, presetResponse] = await Promise.all([
         listEmissionFactors(),
@@ -72,7 +77,7 @@ export default function EmissionFactorsSection({
 
   useEffect(() => {
     void loadData();
-  }, [loadData, refreshKey]);
+  }, [loadData, refreshKey, activeProfile]);
 
   const isMockProfile = useMemo(
     () => activeProfile === "mock",

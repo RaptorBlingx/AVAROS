@@ -103,6 +103,24 @@ class TestGetVoiceConfigDefaults:
         data = response.json()
         assert data["hivemind_secret"] == ""
 
+    def test_prefers_crypto_key_over_legacy_secret(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+        monkeypatch,
+    ) -> None:
+        """hivemind_secret prefers crypto key when both env values exist."""
+        settings_service.delete_setting(SettingsService.VOICE_CLIENT_CRYPTO_KEY)
+        settings_service.delete_setting(SettingsService.VOICE_CLIENT_SECRET)
+        monkeypatch.setenv("HIVEMIND_CLIENT_CRYPTO_KEY", "crypto-key-123")
+        monkeypatch.setenv("HIVEMIND_CLIENT_SECRET", "legacy-secret-xyz")
+
+        response = client.get("/api/v1/voice/config")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["hivemind_secret"] == "crypto-key-123"
+
 
 class TestGetVoiceConfigFromSettings:
     """Verify config is populated from SettingsService persistence."""

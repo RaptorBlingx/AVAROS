@@ -64,6 +64,8 @@ export default function MetricMappingsSection({
 
   const loadMappings = useCallback(async () => {
     setLoading(true);
+    setSavingRowId(null);
+    setErrorsByRow({});
     try {
       const mappings = await listMetricMappings();
       setRows(mappings.map(createRow));
@@ -76,7 +78,7 @@ export default function MetricMappingsSection({
 
   useEffect(() => {
     void loadMappings();
-  }, [loadMappings, refreshKey]);
+  }, [loadMappings, refreshKey, activeProfile]);
 
   const isMockProfile = useMemo(
     () => activeProfile === "mock",

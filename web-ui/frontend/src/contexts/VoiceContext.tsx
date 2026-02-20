@@ -22,6 +22,7 @@ import {
 } from "../services/audio-permissions";
 import { STTService, type STTResult } from "../services/stt";
 import { TTSService } from "../services/tts";
+import { normalizeUtterance } from "../services/utterance-normalizer";
 import { VoiceMetricsService } from "../services/voice-metrics";
 import { useWakeWord } from "../hooks/useWakeWord";
 
@@ -38,6 +39,7 @@ interface VoiceProviderProps {
 export function VoiceProvider({ children }: VoiceProviderProps) {
   const sttRef = useRef<STTService | null>(null);
   const ttsRef = useRef<TTSService | null>(null);
+  const processingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const metricsRef = useRef(new VoiceMetricsService());
   const voicesChangedHandlerRef = useRef<(() => void) | null>(null);
 
@@ -54,7 +56,23 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const sttSupported = isSpeechRecognitionSupported();
   const ttsSupported = isSpeechSynthesisSupported();
 
-  const { sendUtterance, on, isConnected } = useHiveMind();
+  const { sendUtterance, on, isConnected, clearLastResponse } = useHiveMind();
+
+  const clearProcessingTimeout = useCallback(() => {
+    if (processingTimeoutRef.current !== null) {
+      clearTimeout(processingTimeoutRef.current);
+      processingTimeoutRef.current = null;
+    }
+  }, []);
+
+  const armProcessingTimeout = useCallback(() => {
+    clearProcessingTimeout();
+    processingTimeoutRef.current = setTimeout(() => {
+      setVoiceState((prev) =>
+        prev === "processing" ? "idle" : prev,
+      );
+    }, 15_000);
+  }, [clearProcessingTimeout]);
 
   // ── Wake word detection ────────────────────────────
   const onWakeWordDetected = useCallback(() => {
@@ -99,6 +117,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     void checkMicrophonePermission().then(setMicPermission);
 
     return () => {
+      clearProcessingTimeout();
       if (
         typeof window !== "undefined" &&
         window.speechSynthesis &&
@@ -110,7 +129,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         );
       }
     };
-  }, [sttSupported, ttsSupported]);
+  }, [sttSupported, ttsSupported, clearProcessingTimeout]);
 
   // ── Wire STT events ────────────────────────────────
   useEffect(() => {
@@ -176,15 +195,30 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   // ── Auto-send final transcript to HiveMind ─────────
   useEffect(() => {
     if (!finalTranscript || !isConnected) return;
+    const normalizedTranscript = normalizeUtterance(finalTranscript);
+    if (!normalizedTranscript) return;
     metricsRef.current.mark("utterance_sent");
-    void sendUtterance(finalTranscript).then(() =>
-      setVoiceState("processing"),
-    );
-  }, [finalTranscript, isConnected, sendUtterance]);
+    setVoiceState("processing");
+    armProcessingTimeout();
+    void sendUtterance(normalizedTranscript).catch(() => {
+      clearProcessingTimeout();
+      setVoiceState("error");
+    });
+  }, [
+    finalTranscript,
+    isConnected,
+    sendUtterance,
+    armProcessingTimeout,
+    clearProcessingTimeout,
+  ]);
 
   // ── Auto-speak HiveMind responses ──────────────────
   useEffect(() => {
     return on("speak", (msg) => {
+      clearProcessingTimeout();
+      setVoiceState((prev) =>
+        prev === "processing" ? "idle" : prev,
+      );
       metricsRef.current.mark("response_received");
       const text = (msg.data.utterance as string | undefined) ?? "";
       if (text && ttsRef.current) {
@@ -192,7 +226,34 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         void ttsRef.current.speak(text);
       }
     });
-  }, [on]);
+  }, [on, clearProcessingTimeout]);
+
+  useEffect(() => {
+    const unsubComplete = on("mycroft.skill.handler.complete", () => {
+      clearProcessingTimeout();
+      setVoiceState((prev) =>
+        prev === "processing" ? "idle" : prev,
+      );
+    });
+    const unsubError = on("mycroft.skill.handler.error", () => {
+      clearProcessingTimeout();
+      setVoiceState("error");
+    });
+    return () => {
+      unsubComplete();
+      unsubError();
+    };
+  }, [on, clearProcessingTimeout]);
+
+  useEffect(() => {
+    if (isConnected) return;
+    clearProcessingTimeout();
+    setVoiceState((prev) =>
+      prev === "processing" || prev === "listening"
+        ? "idle"
+        : prev,
+    );
+  }, [isConnected, clearProcessingTimeout]);
 
   // ── Actions ────────────────────────────────────────
 
@@ -213,6 +274,22 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const stopListening = useCallback(() => {
     sttRef.current?.stop();
   }, []);
+
+  const clearQuery = useCallback(() => {
+    setInterimTranscript("");
+    setFinalTranscript("");
+    clearLastResponse();
+  }, [clearLastResponse]);
+
+  const cancelCurrentQuery = useCallback(() => {
+    clearProcessingTimeout();
+    sttRef.current?.stop();
+    ttsRef.current?.stop();
+    setInterimTranscript("");
+    setFinalTranscript("");
+    clearLastResponse();
+    setVoiceState("idle");
+  }, [clearLastResponse, clearProcessingTimeout]);
 
   const speakText = useCallback(async (text: string) => {
     if (!ttsRef.current) return;
@@ -245,7 +322,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   const value = useMemo<VoiceContextValue>(() => ({
     voiceState, voiceMode, micPermission, sttSupported, ttsSupported,
-    startListening, stopListening, interimTranscript, finalTranscript,
+    startListening, stopListening, cancelCurrentQuery, clearQuery,
+    interimTranscript, finalTranscript,
     speak: speakText, stopSpeaking, isSpeaking,
     wakeWordState, wakeWordEnabled, wakeWordSensitivity,
     setWakeWordSensitivity, isModelLoading,
@@ -253,7 +331,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     requestMicPermission,
   }), [
     voiceState, voiceMode, micPermission, sttSupported, ttsSupported,
-    startListening, stopListening, interimTranscript, finalTranscript,
+    startListening, stopListening, cancelCurrentQuery, clearQuery,
+    interimTranscript, finalTranscript,
     speakText, stopSpeaking, isSpeaking,
     wakeWordState, wakeWordEnabled, wakeWordSensitivity,
     setWakeWordSensitivity, isModelLoading,

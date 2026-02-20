@@ -26,6 +26,12 @@ from skill.adapters.reneryo._endpoints import (
 )
 from skill.adapters.reneryo._connection_test import ReneryoConnectionTestMixin
 from skill.adapters.reneryo._http import ReneryoHttpMixin
+from skill.adapters.reneryo._metric_mapping import (
+    extract_mapped_value,
+    get_mapping_json_path,
+    get_mapping_unit,
+    resolve_kpi_request,
+)
 from skill.adapters.reneryo._normalizers import (
     is_native_format,
     normalize_meter_to_kpi,
@@ -41,10 +47,11 @@ from skill.adapters.reneryo._parsers import (
 )
 from skill.domain.exceptions import AdapterError
 from skill.domain.models import CanonicalMetric, TimePeriod
+from skill.domain.results import KPIResult
 
 if TYPE_CHECKING:
     from skill.domain.models import DataPoint
-    from skill.domain.results import ComparisonResult, KPIResult, TrendResult
+    from skill.domain.results import ComparisonResult, TrendResult
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +79,9 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
         timeout: int = 30,
         auth_type: str = "bearer",
         api_format: str = "mock",
+        settings_service=None,
+        profile_name: str = "",
+        extra_settings: dict | None = None,
     ) -> None:
         """
         Initialize RENERYO adapter with connection parameters.
@@ -89,6 +99,9 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
         self._timeout = timeout
         self._auth_type = auth_type
         self._api_format = api_format
+        self._settings_service = settings_service
+        self._profile_name = profile_name
+        self._extra_settings = extra_settings or {}
         self._session: aiohttp.ClientSession | None = None
 
     # =========================================================================
@@ -116,6 +129,10 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             AdapterError: On connection, auth, or parse errors.
         """
         self._ensure_initialized()
+        mapped_result = await self._get_kpi_from_mapping(metric, asset_id, period)
+        if mapped_result is not None:
+            return mapped_result
+
         endpoint = self._resolve_endpoint(metric)
         params = self._build_query_params(asset_id=asset_id, period=period)
         data = await self._retry_fetch(endpoint, params)
@@ -341,4 +358,59 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             if granularity:
                 params["granularity"] = granularity
         return params
+
+    async def _get_kpi_from_mapping(
+        self,
+        metric: CanonicalMetric,
+        asset_id: str,
+        period: TimePeriod,
+    ) -> KPIResult | None:
+        """Fetch KPI using profile-scoped metric mapping when present."""
+        mapping = self._lookup_metric_mapping(metric)
+        if mapping is None:
+            return None
+
+        endpoint, params = resolve_kpi_request(
+            mapping=mapping,
+            period=period,
+            asset_id=asset_id,
+            extra_settings=self._string_settings(),
+        )
+        data = await self._retry_fetch(endpoint, params)
+        json_path = get_mapping_json_path(mapping)
+        value = extract_mapped_value(data, json_path)
+        unit = get_mapping_unit(mapping, metric)
+        return KPIResult(
+            metric=metric,
+            value=value,
+            unit=unit,
+            asset_id=asset_id,
+            period=period,
+            timestamp=period.end,
+        )
+
+    def _lookup_metric_mapping(self, metric: CanonicalMetric) -> dict | None:
+        """Return stored mapping for metric on active profile, if available."""
+        if self._settings_service is None:
+            return None
+        try:
+            if not self._profile_name or self._profile_name == "mock":
+                return None
+            return self._settings_service.get_metric_mapping(metric.value)
+        except Exception as exc:
+            logger.warning(
+                "Failed to load mapping for %s: %s",
+                metric.value,
+                exc,
+            )
+            return None
+
+    def _string_settings(self) -> dict[str, str]:
+        """Get profile extra settings as string dictionary."""
+        values: dict[str, str] = {}
+        for key, value in self._extra_settings.items():
+            if value is None:
+                continue
+            values[str(key)] = str(value)
+        return values
 

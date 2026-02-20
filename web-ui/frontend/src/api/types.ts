@@ -74,6 +74,26 @@ export type MetricMapping = {
 
 export type MetricMappingRequest = MetricMapping;
 
+export type NonMetricIntentName =
+  | "control.device.turn_on"
+  | "control.device.turn_off"
+  | "status.system.show"
+  | "status.profile.show"
+  | "help.capabilities.list";
+
+export type IntentBindingMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+export type IntentBinding = {
+  intent_name: NonMetricIntentName;
+  endpoint: string;
+  method: IntentBindingMethod;
+  json_path: string;
+  success_path: string | null;
+  transform: string | null;
+};
+
+export type IntentBindingRequest = IntentBinding;
+
 export type IntentState = {
   intent_name: string;
   active: boolean;

@@ -248,6 +248,7 @@ class ProfileMixin:
         migrated = 0
         for old_prefix, new_prefix in [
             ("metric_mapping:", f"metric_mapping:{active}:"),
+            ("intent_binding:", f"intent_binding:{active}:"),
             ("emission_factor:", f"emission_factor:{active}:"),
             ("intent_active:", f"intent_active:{active}:"),
         ]:

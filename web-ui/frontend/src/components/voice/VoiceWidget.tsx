@@ -48,6 +48,8 @@ export default function VoiceWidget({
     sttSupported,
     startListening,
     stopListening,
+    cancelCurrentQuery,
+    clearQuery,
     interimTranscript,
     finalTranscript,
     speak,
@@ -68,6 +70,7 @@ export default function VoiceWidget({
   const [rippleKey, setRippleKey] = useState(0);
   const [showPermissionPrompt, setShowPermissionPrompt] = useState(false);
   const panelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAutoOpenedResponseRef = useRef<string | null>(null);
   const widgetRef = useRef<HTMLDivElement>(null);
 
   // ── Derived state ────────────────────────────────────
@@ -82,6 +85,16 @@ export default function VoiceWidget({
     derivedState === "processing" ||
     micPermission === "denied" ||
     !sttSupported;
+
+  const canStartNewQuery =
+    derivedState !== "disconnected" &&
+    micPermission !== "denied" &&
+    sttSupported;
+
+  const hasQueryContent =
+    Boolean(interimTranscript) ||
+    Boolean(finalTranscript) ||
+    Boolean(lastResponse);
 
   // ── Expand / collapse with animation ─────────────────
 
@@ -151,9 +164,27 @@ export default function VoiceWidget({
     startListening,
   ]);
 
-  // Auto-expand when a response comes in
+  const handleAskNextQuery = useCallback(async () => {
+    if (!canStartNewQuery) return;
+    cancelCurrentQuery();
+    if (!expanded) openPanel();
+    await startListening();
+  }, [canStartNewQuery, cancelCurrentQuery, expanded, openPanel, startListening]);
+
+  const handleCancelQuery = useCallback(() => {
+    cancelCurrentQuery();
+  }, [cancelCurrentQuery]);
+
+  const handleClearQuery = useCallback(() => {
+    clearQuery();
+  }, [clearQuery]);
+
+  // Auto-expand only for a newly received response
   useEffect(() => {
-    if (lastResponse && !expanded) {
+    if (!lastResponse) return;
+    if (lastAutoOpenedResponseRef.current === lastResponse) return;
+    lastAutoOpenedResponseRef.current = lastResponse;
+    if (!expanded) {
       openPanel();
     }
   }, [lastResponse, expanded, openPanel]);
@@ -239,6 +270,39 @@ export default function VoiceWidget({
               finalTranscript={finalTranscript}
               isListening={derivedState === "listening"}
             />
+          )}
+
+          {derivedState !== "disconnected" && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => void handleAskNextQuery()}
+                disabled={!canStartNewQuery}
+                className="rounded bg-sky-100 px-2 py-1 text-[10px] font-medium text-sky-700 transition-colors hover:bg-sky-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-sky-900/30 dark:text-sky-300 dark:hover:bg-sky-800/40"
+              >
+                Ask next
+              </button>
+
+              {(derivedState === "listening" || derivedState === "processing") && (
+                <button
+                  type="button"
+                  onClick={handleCancelQuery}
+                  className="rounded bg-amber-100 px-2 py-1 text-[10px] font-medium text-amber-700 transition-colors hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-800/40"
+                >
+                  Cancel query
+                </button>
+              )}
+
+              {hasQueryContent && (
+                <button
+                  type="button"
+                  onClick={handleClearQuery}
+                  className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-700 transition-colors hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
           )}
 
           <ResponseDisplay

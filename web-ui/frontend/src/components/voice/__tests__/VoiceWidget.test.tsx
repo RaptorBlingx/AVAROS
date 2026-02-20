@@ -23,6 +23,8 @@ const mockVoice = vi.hoisted(() => ({
   ttsSupported: true,
   startListening: vi.fn().mockResolvedValue(undefined),
   stopListening: vi.fn(),
+  cancelCurrentQuery: vi.fn(),
+  clearQuery: vi.fn(),
   interimTranscript: "",
   finalTranscript: "",
   speak: vi.fn().mockResolvedValue(undefined),
@@ -85,6 +87,8 @@ function resetMocks(): void {
   mockVoice.isSpeaking = false;
   mockVoice.startListening.mockClear().mockResolvedValue(undefined);
   mockVoice.stopListening.mockClear();
+  mockVoice.cancelCurrentQuery.mockClear();
+  mockVoice.clearQuery.mockClear();
   mockVoice.speak.mockClear().mockResolvedValue(undefined);
   mockVoice.stopSpeaking.mockClear();
   mockVoice.requestMicPermission.mockClear().mockResolvedValue("granted");
@@ -307,6 +311,42 @@ describe("VoiceWidget", () => {
       expect(
         screen.getByLabelText(/minimize voice widget/i),
       ).toBeTruthy();
+    });
+
+    it("allows asking next query from panel", () => {
+      mockVoice.finalTranscript = "what is oee";
+      render(<VoiceWidget />);
+
+      const region = screen.getByRole("region");
+      fireEvent.keyDown(region, { key: "Enter" });
+
+      fireEvent.click(screen.getByRole("button", { name: /ask next/i }));
+      expect(mockVoice.cancelCurrentQuery).toHaveBeenCalledOnce();
+      expect(mockVoice.startListening).toHaveBeenCalledOnce();
+    });
+
+    it("shows and executes cancel query action while processing", () => {
+      mockVoice.voiceState = "processing";
+      render(<VoiceWidget />);
+
+      const region = screen.getByRole("region");
+      fireEvent.keyDown(region, { key: "Enter" });
+
+      fireEvent.click(screen.getByRole("button", { name: /cancel query/i }));
+      expect(mockVoice.cancelCurrentQuery).toHaveBeenCalledOnce();
+    });
+
+    it("allows minimizing panel when lastResponse exists", async () => {
+      const responseText = "AVAROS is still initializing. Please try again.";
+      mockHiveMind.lastResponse = responseText;
+      render(<VoiceWidget />);
+
+      expect(screen.getByText(responseText)).toBeTruthy();
+
+      fireEvent.click(screen.getByLabelText(/minimize voice widget/i));
+      await new Promise((resolve) => setTimeout(resolve, 250));
+
+      expect(screen.queryByText(responseText)).toBeNull();
     });
   });
 

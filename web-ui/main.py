@@ -14,6 +14,7 @@ from dependencies import get_settings_service
 from routers.config import router as config_router
 from routers.emission_factors import router as emission_factors_router
 from routers.intents import router as intents_router
+from routers.intent_bindings import router as intent_bindings_router
 from routers.metrics import router as metrics_router
 from routers.kpi_progress import router as kpi_progress_router
 from routers.production_data import router as production_data_router
@@ -78,6 +79,7 @@ app.include_router(config_router)
 app.include_router(profiles_router)
 app.include_router(emission_factors_router)
 app.include_router(intents_router)
+app.include_router(intent_bindings_router)
 app.include_router(metrics_router)
 app.include_router(production_data_router)
 app.include_router(kpi_progress_router)

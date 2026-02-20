@@ -640,9 +640,10 @@ class TestBackwardCompatibility:
         )
 
         assert service.get_active_profile_name() == "mock"
-        # No profile stored for mock
+        # Only built-in mock (and optionally bootstrap demo profile) should exist
         profiles = service.list_profiles()
-        assert len(profiles) == 1
+        assert profiles[0]["name"] == "mock"
+        assert profiles[0]["is_builtin"] is True
 
     def test_backward_compatibility_create_via_old_api_then_read_via_new(
         self, service: SettingsService,
@@ -664,3 +665,32 @@ class TestBackwardCompatibility:
         # Read via old API
         old_config = service.get_platform_config()
         assert old_config.platform_type == "reneryo"
+
+
+class TestDemoProfileBootstrap:
+    """Optional demo profile bootstrap behavior via environment flags."""
+
+    def test_bootstrap_disabled_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Without env flag, service should not auto-create demo profile."""
+        monkeypatch.delenv("AVAROS_BOOTSTRAP_DEMO_PROFILE", raising=False)
+        service = SettingsService(database_url="sqlite:///:memory:")
+        service.initialize()
+
+        names = [item["name"] for item in service.list_profiles()]
+        assert names == ["mock"]
+
+    def test_bootstrap_creates_demo_profile(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """With env flag, service should create a reneryo-mock profile."""
+        monkeypatch.setenv("AVAROS_BOOTSTRAP_DEMO_PROFILE", "true")
+        monkeypatch.setenv("AVAROS_DEMO_PROFILE_NAME", "reneryo-mock")
+        monkeypatch.setenv("AVAROS_DEMO_RENERYO_URL", "http://reneryo-mock:8090")
+        monkeypatch.setenv("AVAROS_DEMO_RENERYO_API_KEY", "demo-token")
+
+        service = SettingsService(database_url="sqlite:///:memory:")
+        service.initialize()
+
+        profile = service.get_profile("reneryo-mock")
+        assert profile is not None
+        assert profile.platform_type == "reneryo"
+        assert profile.api_url == "http://reneryo-mock:8090"
+        assert profile.api_key == "demo-token"
