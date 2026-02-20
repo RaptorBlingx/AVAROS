@@ -1,30 +1,32 @@
-/**
- * RecordingIndicator — animated concentric rings around the mic button.
- *
- * Shown during the "listening" state to provide visual feedback that
- * the microphone is active. CSS-only animation (no canvas).
- */
+import type { CSSProperties } from "react";
 
-import type { VoiceState } from "../../contexts/voice-types";
+type RecordingIndicatorProps = {
+  active: boolean;
+  variant: "listening" | "speaking";
+};
 
-interface RecordingIndicatorProps {
-  /** Current voice interaction state. */
-  voiceState: VoiceState;
-}
-
-/** Animated rings that expand outward from the mic button while listening. */
-export default function RecordingIndicator({
-  voiceState,
-}: RecordingIndicatorProps) {
-  if (voiceState !== "listening") {
+export default function RecordingIndicator({ active, variant }: RecordingIndicatorProps) {
+  if (!active) {
     return null;
   }
 
   return (
-    <>
-      <span className="voice-ring voice-ring--1" aria-hidden="true" />
-      <span className="voice-ring voice-ring--2" aria-hidden="true" />
-      <span className="voice-ring voice-ring--3" aria-hidden="true" />
-    </>
+    <span
+      className={`voice-recording-indicator voice-recording-indicator--${variant}`}
+      aria-hidden="true"
+    >
+      <span className="voice-recording-indicator__ring voice-recording-indicator__ring--one" />
+      <span className="voice-recording-indicator__ring voice-recording-indicator__ring--two" />
+      <span className="voice-recording-indicator__ring voice-recording-indicator__ring--three" />
+      <span className="voice-recording-indicator__bars">
+        {[0, 1, 2, 3, 4].map((bar) => (
+          <span
+            key={bar}
+            className="voice-recording-indicator__bar"
+            style={{ "--voice-bar-delay": `${bar * 90}ms` } as CSSProperties}
+          />
+        ))}
+      </span>
+    </span>
   );
 }

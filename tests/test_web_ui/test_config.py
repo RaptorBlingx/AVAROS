@@ -689,3 +689,20 @@ class TestAdapterFactoryAuthType:
 
         assert response.status_code == 200
         assert response.json()["success"] is True
+
+    def test_create_adapter_with_seu_id_passes_native_seu_id(
+        self,
+    ) -> None:
+        """Factory forwards seu_id to ReneryoAdapter as native_seu_id."""
+        payload = PlatformConfigRequest(
+            platform_type="reneryo",
+            api_url="https://api.reneryo.example.com",
+            api_key="api-key-value",
+            extra_settings={"auth_type": "bearer", "seu_id": "SEU-123"},
+        )
+
+        with patch("skill.adapters.reneryo.ReneryoAdapter") as mock_adapter_class:
+            _create_adapter_from_config(payload)
+
+        assert mock_adapter_class.call_count == 1
+        assert mock_adapter_class.call_args.kwargs["native_seu_id"] == "SEU-123"

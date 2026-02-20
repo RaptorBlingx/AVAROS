@@ -32,13 +32,16 @@ function createPayload(config: {
   apiUrl: string;
   apiKey: string;
   authType: AuthType;
+  seuId: string;
 }): PlatformConfigRequest {
+  const seuId = config.seuId.trim();
   return {
     platform_type: config.platformType,
     api_url: config.platformType === "mock" ? "" : config.apiUrl.trim(),
     api_key: config.platformType === "mock" ? "" : config.apiKey.trim(),
     extra_settings: {
       auth_type: config.authType === "cookie" ? "cookie" : "bearer",
+      ...(seuId ? { seu_id: seuId } : {}),
     },
   };
 }
@@ -48,6 +51,7 @@ function validate(config: {
   apiUrl: string;
   apiKey: string;
   authType: AuthType;
+  seuId: string;
 }): string {
   if (config.platformType === "mock") {
     return "";
@@ -78,6 +82,7 @@ export default function PlatformConfigSection({
   const [config, setConfig] = useState<PlatformConfigResponse | null>(null);
   const [platformType, setPlatformType] = useState<PlatformType>("mock");
   const [authType, setAuthType] = useState<AuthType>("api_key");
+  const [seuId, setSeuId] = useState("");
   const [apiUrl, setApiUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [testResult, setTestResult] = useState<ConnectionTestResponse | null>(null);
@@ -107,6 +112,7 @@ export default function PlatformConfigSection({
           ? "cookie"
           : "api_key",
       );
+      setSeuId(data.extra_settings?.seu_id ?? "");
       setApiUrl(data.api_url);
       setApiKey("");
     } catch (error: unknown) {
@@ -150,6 +156,7 @@ export default function PlatformConfigSection({
       apiUrl,
       apiKey,
       authType,
+      seuId,
     });
     setInlineError(validationError);
     setTestResult(null);
@@ -163,6 +170,7 @@ export default function PlatformConfigSection({
         apiUrl,
         apiKey,
         authType,
+        seuId,
       });
       const saved = await createPlatformConfig(payload);
       setConfig(saved);
@@ -176,7 +184,7 @@ export default function PlatformConfigSection({
     } finally {
       setSaving(false);
     }
-  }, [apiKey, apiUrl, authType, onNotify, platformType]);
+  }, [apiKey, apiUrl, authType, onNotify, platformType, seuId]);
 
   const handleReset = useCallback(async () => {
     setSaving(true);
@@ -202,6 +210,7 @@ export default function PlatformConfigSection({
       apiUrl,
       apiKey: isMock ? "" : apiKey,
       authType,
+      seuId,
     });
     setInlineError(validationError);
     setTestResult(null);
@@ -215,6 +224,7 @@ export default function PlatformConfigSection({
         apiUrl,
         apiKey,
         authType,
+        seuId,
       });
       const result = await testConnection(payload);
       setTestResult(result);
@@ -226,7 +236,7 @@ export default function PlatformConfigSection({
     } finally {
       setTesting(false);
     }
-  }, [apiKey, apiUrl, authType, isMock, onNotify, platformType]);
+  }, [apiKey, apiUrl, authType, isMock, onNotify, platformType, seuId]);
 
   return (
     <section className="space-y-3">
@@ -323,6 +333,20 @@ export default function PlatformConfigSection({
 
             <label className="block md:col-span-2">
               <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
+                SEU ID (Optional)
+              </span>
+              <input
+                type="text"
+                value={seuId}
+                onChange={(event) => setSeuId(event.target.value)}
+                placeholder="Paste SEU ID for direct energy per unit endpoint"
+                disabled={!editing || saving || isMock || platformType !== "reneryo"}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+              />
+            </label>
+
+            <label className="block md:col-span-2">
+              <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
                 {authType === "cookie" ? "Session Cookie Value" : "API Key"}
               </span>
               <input
@@ -332,7 +356,7 @@ export default function PlatformConfigSection({
                 placeholder={
                   editing
                     ? authType === "cookie"
-                      ? "Paste session cookie (S=...)"
+                      ? "Paste session cookie value or full Cookie: S=..."
                       : "Enter API key to update"
                     : config?.api_key ?? "****"
                 }

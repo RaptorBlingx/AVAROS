@@ -35,6 +35,7 @@ export interface VoiceContextValue {
   isSpeaking: boolean;
 
   wakeWordState: WakeWordState;
+  wakeWordFallbackActive: boolean;
   wakeWordEnabled: boolean;
   wakeWordSensitivity: number;
   setWakeWordSensitivity: (value: number) => void;
@@ -44,5 +45,9 @@ export interface VoiceContextValue {
   setLanguage: (lang: string) => void;
   availableVoices: SpeechSynthesisVoice[];
   setTTSVoice: (voiceName: string) => void;
+  ttsRate: number;
+  setTTSRate: (rate: number) => void;
+  ttsVolume: number;
+  setTTSVolume: (volume: number) => void;
   requestMicPermission: () => Promise<PermissionState>;
 }

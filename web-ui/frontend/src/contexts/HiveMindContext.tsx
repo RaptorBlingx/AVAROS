@@ -81,6 +81,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
       latencyMs: null,
       sessionId: null,
     });
+  const [serviceVersion, setServiceVersion] = useState(0);
 
   const serviceRef = useRef<HiveMindService | null>(null);
   const configLoadedRef = useRef(false);
@@ -95,11 +96,19 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
         setVoiceEnabled(config.voice_enabled);
 
         if (config.voice_enabled) {
+          const cryptoKeyCandidate =
+            typeof config.hivemind_secret === "string"
+              ? config.hivemind_secret.slice(0, 16)
+              : "";
           const svc = new HiveMindService({
             url: config.hivemind_url,
             clientName: config.hivemind_name,
             accessKey: config.hivemind_key,
             accessSecret: config.hivemind_secret,
+            encryptionKey:
+              cryptoKeyCandidate.length === 16
+                ? cryptoKeyCandidate
+                : undefined,
           });
           setConnectionDetails(svc.getConnectionDetails());
 
@@ -137,6 +146,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
           });
 
           serviceRef.current = svc;
+          setServiceVersion((prev) => prev + 1);
         }
       })
       .catch(() => {
@@ -174,7 +184,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
       if (!serviceRef.current) return () => {};
       return serviceRef.current.on(eventType, callback);
     },
-    [],
+    [serviceVersion],
   );
 
   const value = useMemo<HiveMindContextValue>(

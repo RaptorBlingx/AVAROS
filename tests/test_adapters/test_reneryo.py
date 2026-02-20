@@ -90,6 +90,61 @@ class TestReneryoAdapterConstruction:
         adapter = ReneryoAdapter(api_url="url", api_key="key")
         assert isinstance(adapter, ManufacturingAdapter)
 
+    def test_native_energy_per_unit_with_seu_id_uses_seu_endpoint(self) -> None:
+        """Native ENERGY_PER_UNIT KPI should route to SEU values endpoint."""
+        adapter = ReneryoAdapter(
+            api_url="https://api.test",
+            api_key="key",
+            api_format="native",
+            native_seu_id="SEU ID 1",
+        )
+        endpoint = adapter._resolve_endpoint(
+            CanonicalMetric.ENERGY_PER_UNIT, purpose="kpi",
+        )
+        assert "/api/u/measurement/seu/item/SEU%20ID%201/values" == endpoint
+
+    def test_native_energy_per_unit_compare_stays_on_meter_endpoint(self) -> None:
+        """Compare flow should keep meter endpoint for compatibility."""
+        adapter = ReneryoAdapter(
+            api_url="https://api.test",
+            api_key="key",
+            api_format="native",
+            native_seu_id="SEU-1",
+        )
+        endpoint = adapter._resolve_endpoint(
+            CanonicalMetric.ENERGY_PER_UNIT, purpose="compare",
+        )
+        assert endpoint == "/api/u/measurement/meter/item"
+
+    def test_should_fallback_from_seu_for_client_error(self) -> None:
+        """SEU 400/404 responses should trigger meter fallback."""
+        endpoint = "/api/u/measurement/seu/item/invalid/values"
+        err_400 = AdapterError(
+            message="Unexpected status 400",
+            code="RENERYO_UNEXPECTED_STATUS",
+            platform="reneryo",
+            status_code=400,
+        )
+        err_404 = AdapterError(
+            message="Endpoint not found",
+            code="RENERYO_ENDPOINT_NOT_FOUND",
+            platform="reneryo",
+            status_code=404,
+        )
+        assert ReneryoAdapter._should_fallback_from_seu(endpoint, err_400)
+        assert ReneryoAdapter._should_fallback_from_seu(endpoint, err_404)
+
+    def test_should_not_fallback_from_seu_for_auth_error(self) -> None:
+        """Auth issues should not silently fall back."""
+        endpoint = "/api/u/measurement/seu/item/invalid/values"
+        err_401 = AdapterError(
+            message="Authentication failed",
+            code="RENERYO_AUTH_FAILED",
+            platform="reneryo",
+            status_code=401,
+        )
+        assert not ReneryoAdapter._should_fallback_from_seu(endpoint, err_401)
+
 
 # ---------------------------------------------------------------------------
 # Query Method Tests — All Must Raise AdapterError
@@ -432,6 +487,24 @@ class TestReneryoAdapterFactoryIntegration:
 
         assert adapter._auth_type == "bearer"
 
+    def test_factory_reneryo_passes_native_seu_id(self) -> None:
+        """Factory passes seu_id from extra_settings to adapter."""
+        from unittest.mock import MagicMock
+
+        settings = MagicMock()
+        config = MagicMock()
+        config.platform_type = "reneryo"
+        config.api_url = "https://api.reneryo.test"
+        config.api_key = "my-key"
+        config.timeout = 30
+        config.extra_settings = {"auth_type": "bearer", "seu_id": "SEU-ABC"}
+        settings.get_platform_config.return_value = config
+
+        factory = AdapterFactory(settings_service=settings)
+        adapter = factory.create()
+
+        assert adapter._native_seu_id == "SEU-ABC"
+
 
 # ===========================================================================
 # HTTP Client Tests (aioresponses-based)
@@ -469,6 +542,34 @@ class TestReneryoAuth:
         )
         headers = adapter._build_auth_headers()
         assert headers == {"Cookie": "S=session-id"}
+
+    def test_cookie_auth_headers_accept_prefixed_cookie(self) -> None:
+        """Cookie auth accepts already-prefixed S cookie values."""
+        adapter = ReneryoAdapter(
+            api_url="https://api.test", api_key="S=session-id", auth_type="cookie",
+        )
+        headers = adapter._build_auth_headers()
+        assert headers == {"Cookie": "S=session-id"}
+
+    def test_cookie_auth_headers_decode_percent_encoding(self) -> None:
+        """Cookie auth decodes percent-encoded cookie token values."""
+        adapter = ReneryoAdapter(
+            api_url="https://api.test",
+            api_key="abc%2Bdef%3D",
+            auth_type="cookie",
+        )
+        headers = adapter._build_auth_headers()
+        assert headers == {"Cookie": "S=abc+def="}
+
+    def test_cookie_auth_headers_accept_full_cookie_header(self) -> None:
+        """Cookie auth accepts full Cookie header input."""
+        adapter = ReneryoAdapter(
+            api_url="https://api.test",
+            api_key="Cookie: S=session-id; Path=/; Secure",
+            auth_type="cookie",
+        )
+        headers = adapter._build_auth_headers()
+        assert headers == {"Cookie": "S=session-id; Path=/; Secure"}
 
     def test_default_auth_type_is_bearer(self) -> None:
         """Default auth_type is 'bearer'."""

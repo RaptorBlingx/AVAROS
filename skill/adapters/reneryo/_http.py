@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from urllib.parse import unquote
 
 import aiohttp
 
@@ -112,6 +113,10 @@ class ReneryoHttpMixin:
                 code="RENERYO_ENDPOINT_NOT_FOUND",
                 platform="reneryo",
                 status_code=404,
+                user_message=(
+                    "This metric is not available in the current RENERYO environment. "
+                    "Try energy KPI or energy trend commands."
+                ),
             )
         if resp.status >= 500:
             raise AdapterError(
@@ -176,7 +181,20 @@ class ReneryoHttpMixin:
             Dict with the appropriate auth header.
         """
         if self._auth_type == "cookie":
-            return {"Cookie": f"S={self._api_key}"}
+            raw_cookie = (self._api_key or "").strip()
+
+            # Accept full cookie header input for advanced setups.
+            if raw_cookie.lower().startswith("cookie:"):
+                return {"Cookie": raw_cookie.split(":", 1)[1].strip()}
+
+            decoded_cookie = unquote(raw_cookie)
+
+            # If operator already pasted a cookie pair or multiple cookies,
+            # forward as-is; otherwise treat input as the value of S cookie.
+            if decoded_cookie.startswith("S=") or ";" in decoded_cookie:
+                return {"Cookie": decoded_cookie}
+
+            return {"Cookie": f"S={decoded_cookie}"}
         return {"Authorization": f"Bearer {self._api_key}"}
 
     def _ensure_initialized(self) -> None:

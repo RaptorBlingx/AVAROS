@@ -134,7 +134,7 @@ def _create_adapter_from_config(
             timeout=payload.extra_settings.get("timeout", 10),
             auth_type=payload.extra_settings.get("auth_type", "bearer"),
             api_format=payload.extra_settings.get("api_format", "native"),
+            native_seu_id=payload.extra_settings.get("seu_id", ""),
         )
 
     raise ValueError(f"Unknown platform type: {payload.platform_type}")
-

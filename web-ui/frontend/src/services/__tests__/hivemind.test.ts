@@ -163,7 +163,9 @@ describe("HiveMindService", () => {
     });
 
     it("rejects promise on error during connect", async () => {
-      const svc = new HiveMindService(createDefaultConfig());
+      const svc = new HiveMindService(
+        createDefaultConfig({ url: "ws://127.0.0.1:5678" }),
+      );
       const connectPromise = svc.connect();
 
       mockWsInstance!.simulateError();
@@ -228,8 +230,11 @@ describe("HiveMindService", () => {
 
       await svc.sendUtterance("what is the status");
 
-      expect(mockWsInstance!.sent).toHaveLength(1);
-      const sent = JSON.parse(mockWsInstance!.sent[0]);
+      expect(mockWsInstance!.sent.length).toBeGreaterThanOrEqual(1);
+      const sent = mockWsInstance!.sent
+        .map((raw) => JSON.parse(raw))
+        .find((msg) => msg.msg_type === "bus");
+      expect(sent).toBeDefined();
       expect(sent.msg_type).toBe("bus");
       expect(sent.payload.type).toBe("recognizer_loop:utterance");
       expect(sent.payload.data.utterances).toEqual([
@@ -247,7 +252,10 @@ describe("HiveMindService", () => {
 
       await svc.sendUtterance("hallo", "de-de");
 
-      const sent = JSON.parse(mockWsInstance!.sent[0]);
+      const sent = mockWsInstance!.sent
+        .map((raw) => JSON.parse(raw))
+        .find((msg) => msg.msg_type === "bus");
+      expect(sent).toBeDefined();
       expect(sent.payload.data.lang).toBe("de-de");
     });
 

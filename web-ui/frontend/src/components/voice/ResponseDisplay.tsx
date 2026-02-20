@@ -1,117 +1,64 @@
-/**
- * ResponseDisplay — shows the AVAROS response in a chat-bubble style.
- *
- * Includes a replay button that re-speaks the last response via TTS
- * and a timestamp for when the response was received.
- */
+function formatTimestamp(value: Date | null): string {
+  if (!value) {
+    return "";
+  }
+  return value.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
-interface ResponseDisplayProps {
-  /** The last AVAROS response text. */
+type ResponseDisplayProps = {
   responseText: string | null;
-  /** Whether TTS is currently playing audio. */
   isSpeaking: boolean;
-  /** Callback to replay the last response via TTS. */
-  onReplay: (text: string) => void;
-  /** Callback to stop ongoing TTS playback. */
-  onStopSpeaking: () => void;
-}
+  receivedAt: Date | null;
+  canReplay: boolean;
+  onReplay: () => void;
+};
 
-/** Formats a Date to a short time string (HH:MM). */
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-/** Response text area in the expanded voice widget panel. */
 export default function ResponseDisplay({
   responseText,
   isSpeaking,
+  receivedAt,
+  canReplay,
   onReplay,
-  onStopSpeaking,
 }: ResponseDisplayProps) {
-  const [timestamp, setTimestamp] = useState<Date | null>(null);
-  const prevResponseRef = useRef<string | null>(null);
-
-  // Update timestamp whenever responseText changes to a new value
-  useEffect(() => {
-    if (responseText && responseText !== prevResponseRef.current) {
-      setTimestamp(new Date());
-    }
-    prevResponseRef.current = responseText;
-  }, [responseText]);
-
-  const handleReplayClick = useCallback(() => {
-    if (!responseText) return;
-    if (isSpeaking) {
-      onStopSpeaking();
-    } else {
-      onReplay(responseText);
-    }
-  }, [responseText, isSpeaking, onReplay, onStopSpeaking]);
-
-  const timeLabel = useMemo(
-    () => (timestamp ? formatTime(timestamp) : null),
-    [timestamp],
-  );
-
-  if (!responseText) {
-    return null;
-  }
+  const hasResponse = Boolean(responseText && responseText.trim().length > 0);
 
   return (
-    <div className="mt-2 rounded-lg bg-sky-50 p-2 dark:bg-sky-900/30">
-      <p className="m-0 text-xs leading-relaxed text-slate-700 dark:text-slate-200">
-        {responseText}
-      </p>
-
-      <div className="mt-1 flex items-center justify-between">
-        {timeLabel && (
-          <span className="text-[10px] text-slate-400 dark:text-slate-500">
-            {timeLabel}
-          </span>
-        )}
-
-        <button
-          type="button"
-          onClick={handleReplayClick}
-          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-sky-600 transition-colors hover:bg-sky-100 dark:text-sky-400 dark:hover:bg-sky-800/40"
-          aria-label={isSpeaking ? "Stop speaking" : "Replay response"}
-          title={isSpeaking ? "Stop speaking" : "Click to replay"}
-        >
-          {isSpeaking ? (
-            <>
-              {/* Speaker animated bars */}
-              <span className="flex items-end gap-px" aria-hidden="true">
-                <span className="voice-bar voice-bar--1 bg-sky-500" />
-                <span className="voice-bar voice-bar--2 bg-sky-500" />
-                <span className="voice-bar voice-bar--3 bg-sky-500" />
-                <span className="voice-bar voice-bar--4 bg-sky-500" />
-              </span>
-              Stop
-            </>
-          ) : (
-            <>
-              {/* Speaker icon */}
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
+    <section className="voice-widget__section" aria-live="polite">
+      <p className="voice-widget__section-title">AVAROS Response</p>
+      <div className="voice-response">
+        {hasResponse ? (
+          <>
+            <p className="voice-response__text">{responseText}</p>
+            <div className="voice-response__meta">
+              <span className="voice-response__timestamp">{formatTimestamp(receivedAt)}</span>
+              <button
+                type="button"
+                className="voice-response__replay"
+                onClick={onReplay}
+                disabled={!canReplay}
+                aria-label="Replay AVAROS response"
               >
-                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-              </svg>
-              Replay
-            </>
-          )}
-        </button>
+                <span
+                  className={`voice-response__speaker ${isSpeaking ? "voice-response__speaker--active" : ""}`}
+                  aria-hidden="true"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M4 10v4h4l5 4V6l-5 4H4z" strokeWidth="1.8" strokeLinejoin="round" />
+                    <path d="M17 9a4 4 0 010 6" strokeWidth="1.8" strokeLinecap="round" />
+                    <path d="M19.8 6.5a7.5 7.5 0 010 11" strokeWidth="1.8" strokeLinecap="round" />
+                  </svg>
+                </span>
+                {isSpeaking ? "Playing..." : "Replay"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <p className="voice-response__placeholder">Waiting for AVAROS response...</p>
+        )}
       </div>
-    </div>
+    </section>
   );
 }

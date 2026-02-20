@@ -31,6 +31,127 @@ export type { VoiceState } from "./voice-types";
 
 const VoiceContext = createContext<VoiceContextValue | null>(null);
 
+function normalizeTranscriptForIntent(raw: string): string {
+  let text = raw.trim();
+  if (!text) return text;
+
+  // Common STT substitutions observed in MVP testing.
+  text = text.replace(/°/g, " degrees");
+  text = text.replace(/\bwhat if (you|u)\b/gi, "what if we");
+  text = text.replace(/\btrain\b/gi, "trend");
+  text = text.replace(/\bv\s*s\b/gi, "vs");
+  text = text.replace(/\bverse us\b/gi, "versus");
+  text = text.replace(/\bverses\b/gi, "versus");
+  text = text.replace(
+    /\bwhich uses more energy\b.+\b(vs|versus|or)\b.+/gi,
+    "which uses more energy",
+  );
+  text = text.replace(
+    /\bwhich is more efficient\b.+\b(vs|versus|or)\b.+/gi,
+    "which is more efficient",
+  );
+  text = text.replace(
+    /\bcompare\b.+\b(energy|power)\b.+\b(vs|versus|and|or)\b.+/gi,
+    "compare energy",
+  );
+  text = text.replace(
+    /\b(show|display)\s+(scrap|waste)\s+trend\b/gi,
+    "$1 $2 rate trend",
+  );
+  text = text.replace(/\b(scrap|waste)\s+trend\b/gi, "$1 rate trend");
+  text = text.replace(
+    /\bcheck production on amalie\b/gi,
+    "check production anomaly",
+  );
+  text = text.replace(
+    /\bcheck production on a money\b/gi,
+    "check production anomaly",
+  );
+  text = text.replace(
+    /\bcheck production on anomaly\b/gi,
+    "check production anomaly",
+  );
+  text = text.replace(
+    /\bcheck production anomaly\b/gi,
+    "check production anomaly",
+  );
+
+  text = text.replace(
+    /\bwhat is temperature (increase|increases|increased|raise|raises|raised)\s+by\s+([0-9]+(?:\.[0-9]+)?)\s*degrees?\b/gi,
+    "what if we increase temperature by $2 degrees",
+  );
+  text = text.replace(
+    /\bwhat is temperature (decrease|decreases|decreased|reduce|reduces|reduced|lower|lowers|lowered)\s+by\s+([0-9]+(?:\.[0-9]+)?)\s*degrees?\b/gi,
+    "what if we decrease temperature by $2 degrees",
+  );
+  text = text.replace(
+    /\bwhat if temperature (increase|increases|increased|raise|raises|raised)\s+by\s+([0-9]+(?:\.[0-9]+)?)\s*degrees?\b/gi,
+    "what if we increase temperature by $2 degrees",
+  );
+  text = text.replace(
+    /\bwhat if we (increase|increases|increased|raise|raises|raised)\s+temperature\s+by\s+([0-9]+(?:\.[0-9]+)?)\b/gi,
+    "what if we increase temperature by $2 degrees",
+  );
+  text = text.replace(
+    /\bwhat if temperature (decrease|decreases|decreased|reduce|reduces|reduced|lower|lowers|lowered)\s+by\s+([0-9]+(?:\.[0-9]+)?)\s*degrees?\b/gi,
+    "what if we decrease temperature by $2 degrees",
+  );
+  text = text.replace(
+    /\bwhat if we (decrease|decreases|decreased|reduce|reduces|reduced|lower|lowers|lowered)\s+temperature\s+by\s+([0-9]+(?:\.[0-9]+)?)\b/gi,
+    "what if we decrease temperature by $2 degrees",
+  );
+
+  return text;
+}
+
+function isIncompleteIntentText(raw: string): boolean {
+  const text = raw.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!text) return true;
+
+  const exactIncomplete = new Set([
+    "what if",
+    "show",
+    "show me",
+    "what is",
+    "what's",
+    "check",
+  ]);
+  if (exactIncomplete.has(text)) return true;
+
+  const hasAmount = /\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/.test(
+    text,
+  );
+  if (text.startsWith("what if") && !hasAmount) return true;
+  return false;
+}
+
+const WAKE_WORD_ARM_MS = 10000;
+const WAKE_WORD_PROMPT = "How can I help you?";
+
+function parseWakeWordUtterance(
+  raw: string,
+): { hasWakeWord: boolean; command: string } {
+  const cleaned = raw.trim();
+  if (!cleaned) return { hasWakeWord: false, command: "" };
+
+  const match = cleaned.match(/^(hey|ok|okay)\b[\s,.:;-]*(.*)$/i);
+  if (!match) return { hasWakeWord: false, command: cleaned };
+  const tail = (match[2] ?? "").trim();
+  if (!tail) return { hasWakeWord: true, command: "" };
+
+  const parts = tail.split(/\s+/).filter(Boolean);
+  const first = (parts[0] ?? "").toLowerCase().replace(/[^a-z]/g, "");
+  const looksLikeAlias = /^(avaros|abaros|alvaros|albertos|alberto)$/.test(
+    first,
+  );
+  if (looksLikeAlias) {
+    parts.shift();
+    return { hasWakeWord: true, command: parts.join(" ").trim() };
+  }
+
+  return { hasWakeWord: false, command: cleaned };
+}
+
 interface VoiceProviderProps {
   children: ReactNode;
 }
@@ -50,23 +171,43 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const [availableVoices, setAvailableVoices] = useState<
     SpeechSynthesisVoice[]
   >([]);
+  const [ttsRate, setTTSRateState] = useState(1.0);
+  const [ttsVolume, setTTSVolumeState] = useState(1.0);
 
   const sttSupported = isSpeechRecognitionSupported();
   const ttsSupported = isSpeechSynthesisSupported();
+  const interimTranscriptRef = useRef("");
+  const finalTranscriptRef = useRef("");
+  const wakeWordArmedUntilRef = useRef(0);
 
   const { sendUtterance, on, isConnected } = useHiveMind();
-
+  const armWakeWordCommandWindow = useCallback(() => {
+    wakeWordArmedUntilRef.current = Date.now() + WAKE_WORD_ARM_MS;
+  }, []);
+  const clearWakeWordCommandWindow = useCallback(() => {
+    wakeWordArmedUntilRef.current = 0;
+  }, []);
+  const isWakeWordCommandWindowOpen = useCallback(() => {
+    return Date.now() < wakeWordArmedUntilRef.current;
+  }, []);
+  const promptWakeWordReady = useCallback(() => {
+    if (!ttsRef.current) return;
+    void ttsRef.current.speak(WAKE_WORD_PROMPT);
+  }, []);
   // ── Wake word detection ────────────────────────────
   const onWakeWordDetected = useCallback(() => {
     metricsRef.current.reset();
     metricsRef.current.mark("wake_word_detected");
+    armWakeWordCommandWindow();
     setInterimTranscript("");
     setFinalTranscript("");
+    promptWakeWordReady();
     void sttRef.current?.start();
-  }, []);
+  }, [armWakeWordCommandWindow, promptWakeWordReady]);
 
   const {
     wakeWordState,
+    wakeWordFallbackActive,
     wakeWordEnabled,
     wakeWordSensitivity,
     setWakeWordSensitivity,
@@ -75,19 +216,56 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     setVoiceMode,
   } = useWakeWord({ sttRef, onDetected: onWakeWordDetected });
 
+  useEffect(() => {
+    interimTranscriptRef.current = interimTranscript;
+  }, [interimTranscript]);
+
+  useEffect(() => {
+    finalTranscriptRef.current = finalTranscript;
+  }, [finalTranscript]);
+
   // ── Initialize STT / TTS ───────────────────────────
   useEffect(() => {
     if (sttSupported && !sttRef.current) {
       sttRef.current = new STTService({
         continuous: false,
         interimResults: true,
+        silenceTimeout: 1200,
       });
     }
 
     if (ttsSupported && !ttsRef.current) {
       ttsRef.current = new TTSService();
+      // Voice UX baseline: keep AVAROS replies in clear English.
+      ttsRef.current.setLanguage("en-US");
       const loadVoices = () => {
-        setAvailableVoices(ttsRef.current?.getAvailableVoices() ?? []);
+        const voices = ttsRef.current?.getAvailableVoices() ?? [];
+        setAvailableVoices(voices);
+
+        // Prefer high-quality English voices when available (macOS/Safari first).
+        const preferredEnglishVoices = [
+          "Samantha",
+          "Alex",
+          "Karen",
+          "Google US English",
+          "Microsoft Zira",
+        ];
+        const normalized = voices.map((voice) => ({
+          voice,
+          name: voice.name.toLowerCase(),
+          lang: voice.lang.toLowerCase(),
+        }));
+        for (const preferredName of preferredEnglishVoices) {
+          const hit = normalized.find(
+            ({ name, lang }) =>
+              name.includes(preferredName.toLowerCase()) &&
+              lang.startsWith("en"),
+          );
+          if (hit) {
+            ttsRef.current?.setVoice(hit.voice.name);
+            break;
+          }
+        }
       };
       loadVoices();
       if (typeof window !== "undefined" && window.speechSynthesis) {
@@ -120,7 +298,32 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     const unsubResult = stt.onResult((result: STTResult) => {
       if (result.isFinal) {
         metricsRef.current.mark("stt_completed");
-        setFinalTranscript(result.transcript);
+        let transcript = result.transcript;
+        if (voiceMode === "wake-word") {
+          const parsed = parseWakeWordUtterance(transcript);
+          if (parsed.hasWakeWord && parsed.command) {
+            clearWakeWordCommandWindow();
+            transcript = parsed.command;
+          } else if (parsed.hasWakeWord && !parsed.command) {
+            armWakeWordCommandWindow();
+            setFinalTranscript("");
+            setInterimTranscript("");
+            setVoiceState("listening");
+            promptWakeWordReady();
+            return;
+          } else if (wakeWordFallbackActive && isWakeWordCommandWindowOpen()) {
+            clearWakeWordCommandWindow();
+          } else if (!wakeWordFallbackActive && isWakeWordCommandWindowOpen()) {
+            clearWakeWordCommandWindow();
+          } else {
+            setFinalTranscript("");
+            setInterimTranscript("");
+            setVoiceState("listening");
+            return;
+          }
+        }
+        if (!transcript.trim()) return;
+        setFinalTranscript(transcript);
         setInterimTranscript("");
       } else {
         setInterimTranscript(result.transcript);
@@ -148,10 +351,43 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     });
 
     const unsubError = stt.onError(() => setVoiceState("error"));
-    const unsubSilence = stt.onSilenceDetected(() => setVoiceState("processing"));
+    const unsubSilence = stt.onSilenceDetected(() => {
+      const interim = interimTranscriptRef.current.trim();
+      const final = finalTranscriptRef.current.trim();
 
-    return () => { unsubResult(); unsubState(); unsubError(); unsubSilence(); };
-  }, [sttSupported]);
+      // If engine emitted only interim text, promote it to final so
+      // the utterance can still be sent to HiveMind.
+      if (!final && interim) {
+        setFinalTranscript(interim);
+        setInterimTranscript("");
+        setVoiceState("processing");
+        return;
+      }
+
+      // Nothing recognized: do not stay stuck in "processing".
+      if (!final) {
+        setVoiceState("idle");
+        return;
+      }
+
+      setVoiceState("processing");
+    });
+
+    return () => {
+      unsubResult();
+      unsubState();
+      unsubError();
+      unsubSilence();
+    };
+  }, [
+    sttSupported,
+    voiceMode,
+    wakeWordFallbackActive,
+    armWakeWordCommandWindow,
+    promptWakeWordReady,
+    isWakeWordCommandWindowOpen,
+    clearWakeWordCommandWindow,
+  ]);
 
   // ── Wire TTS events ────────────────────────────────
   useEffect(() => {
@@ -175,11 +411,31 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   // ── Auto-send final transcript to HiveMind ─────────
   useEffect(() => {
-    if (!finalTranscript || !isConnected) return;
+    const transcript = finalTranscript.trim();
+    if (!transcript || !isConnected) return;
+    const normalizedTranscript = normalizeTranscriptForIntent(transcript);
+    if (isIncompleteIntentText(normalizedTranscript)) {
+      setVoiceState("idle");
+      return;
+    }
+
+    let cancelled = false;
     metricsRef.current.mark("utterance_sent");
-    void sendUtterance(finalTranscript).then(() =>
-      setVoiceState("processing"),
-    );
+
+    void sendUtterance(normalizedTranscript)
+      .then(() => {
+        if (cancelled) return;
+        // Stay in "processing" until OVOS responds
+        setVoiceState("processing");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setVoiceState("error");
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [finalTranscript, isConnected, sendUtterance]);
 
   // ── Auto-speak HiveMind responses ──────────────────
@@ -232,6 +488,18 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     ttsRef.current?.setVoice(voiceName);
   }, []);
 
+  const setTTSRate = useCallback((rate: number) => {
+    const normalized = Math.max(0.5, Math.min(2, rate));
+    setTTSRateState(normalized);
+    ttsRef.current?.setRate(normalized);
+  }, []);
+
+  const setTTSVolume = useCallback((volume: number) => {
+    const normalized = Math.max(0, Math.min(1, volume));
+    setTTSVolumeState(normalized);
+    ttsRef.current?.setVolume(normalized);
+  }, []);
+
   const requestMicPermission = useCallback(
     async (): Promise<PermissionState> => {
       const result = await requestMicrophonePermission();
@@ -248,16 +516,18 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     startListening, stopListening, interimTranscript, finalTranscript,
     speak: speakText, stopSpeaking, isSpeaking,
     wakeWordState, wakeWordEnabled, wakeWordSensitivity,
-    setWakeWordSensitivity, isModelLoading,
+    wakeWordFallbackActive, setWakeWordSensitivity, isModelLoading,
     setVoiceMode, setLanguage, availableVoices, setTTSVoice,
+    ttsRate, setTTSRate, ttsVolume, setTTSVolume,
     requestMicPermission,
   }), [
     voiceState, voiceMode, micPermission, sttSupported, ttsSupported,
     startListening, stopListening, interimTranscript, finalTranscript,
     speakText, stopSpeaking, isSpeaking,
     wakeWordState, wakeWordEnabled, wakeWordSensitivity,
-    setWakeWordSensitivity, isModelLoading,
+    wakeWordFallbackActive, setWakeWordSensitivity, isModelLoading,
     setVoiceMode, setLanguage, availableVoices, setTTSVoice,
+    ttsRate, setTTSRate, ttsVolume, setTTSVolume,
     requestMicPermission,
   ]);
 

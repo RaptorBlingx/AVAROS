@@ -1,65 +1,46 @@
-/**
- * TranscriptDisplay — shows interim and final speech-to-text results.
- *
- * Interim text is shown in grey (updating as user speaks).
- * Final text is shown in full contrast once recognition completes.
- * Auto-scrolls to the bottom as text appears.
- */
-
 import { useEffect, useRef } from "react";
 
-interface TranscriptDisplayProps {
-  /** Interim (partial) transcript that updates while speaking. */
+type TranscriptDisplayProps = {
   interimTranscript: string;
-  /** Final (confirmed) transcript after speech ends. */
   finalTranscript: string;
-  /** Whether the system is currently in listening state. */
-  isListening: boolean;
-}
+  listening: boolean;
+};
 
-/** Live transcript area in the expanded voice widget panel. */
 export default function TranscriptDisplay({
   interimTranscript,
   finalTranscript,
-  isListening,
+  listening,
 }: TranscriptDisplayProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({
-      top: scrollRef.current.scrollHeight,
-      behavior: "smooth",
-    });
-  }, [interimTranscript, finalTranscript]);
+    if (!scrollerRef.current) {
+      return;
+    }
+    scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
+  }, [finalTranscript, interimTranscript]);
 
-  const hasContent = interimTranscript || finalTranscript;
+  const hasTranscript = finalTranscript.trim().length > 0 || interimTranscript.trim().length > 0;
 
   return (
-    <div
-      ref={scrollRef}
-      className="max-h-[3.75rem] overflow-y-auto text-xs leading-relaxed"
-      aria-live="polite"
-      aria-atomic="false"
-    >
-      {hasContent ? (
-        <p className="m-0">
-          {finalTranscript && (
-            <span className="text-slate-800 dark:text-slate-100">
-              {finalTranscript}
-            </span>
-          )}
-          {interimTranscript && (
-            <span className="text-slate-400 dark:text-slate-500">
-              {finalTranscript ? " " : ""}
-              {interimTranscript}
-            </span>
-          )}
-        </p>
-      ) : (
-        <p className="m-0 italic text-slate-400 dark:text-slate-500">
-          {isListening ? "Listening…" : "Click the mic to speak"}
-        </p>
-      )}
-    </div>
+    <section className="voice-widget__section" aria-live="polite">
+      <p className="voice-widget__section-title">Transcript</p>
+      <div ref={scrollerRef} className="voice-transcript" role="log" aria-atomic="false">
+        {!hasTranscript ? (
+          <p className="voice-transcript__placeholder">
+            {listening ? "Listening..." : "Start speaking to see live transcript."}
+          </p>
+        ) : (
+          <>
+            {finalTranscript.trim().length > 0 && (
+              <p className="voice-transcript__final">{finalTranscript}</p>
+            )}
+            {interimTranscript.trim().length > 0 && (
+              <p className="voice-transcript__interim">{interimTranscript}</p>
+            )}
+          </>
+        )}
+      </div>
+    </section>
   );
 }

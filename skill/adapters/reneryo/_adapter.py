@@ -13,6 +13,7 @@ Dependencies:
 from __future__ import annotations
 
 import logging
+from urllib.parse import quote
 from typing import TYPE_CHECKING
 
 import aiohttp
@@ -22,6 +23,7 @@ from skill.adapters.reneryo._endpoints import (
     ENDPOINT_MAP,
     REAL_ENERGY_METRICS,
     REAL_METER_ENDPOINT,
+    REAL_SEU_VALUES_ENDPOINT,
     SUPPORTED_CAPABILITIES,
 )
 from skill.adapters.reneryo._connection_test import ReneryoConnectionTestMixin
@@ -29,6 +31,8 @@ from skill.adapters.reneryo._http import ReneryoHttpMixin
 from skill.adapters.reneryo._normalizers import (
     is_native_format,
     normalize_meter_to_kpi,
+    normalize_seu_values_to_kpi,
+    normalize_seu_values_to_trend,
     normalize_meters_to_comparison,
     normalize_meters_to_raw,
     normalize_meters_to_trend,
@@ -72,6 +76,7 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
         timeout: int = 30,
         auth_type: str = "bearer",
         api_format: str = "mock",
+        native_seu_id: str = "",
     ) -> None:
         """
         Initialize RENERYO adapter with connection parameters.
@@ -83,12 +88,14 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             auth_type: Auth mode — "bearer" or "cookie" (DEC-022).
             api_format: Response format — "mock" (per-metric endpoints)
                 or "native" (real RENERYO API with /api/u/ paths).
+            native_seu_id: Optional SEU UUID for direct per-unit endpoint.
         """
         self._api_url = api_url.rstrip("/") if api_url else ""
         self._api_key = api_key
         self._timeout = timeout
         self._auth_type = auth_type
         self._api_format = api_format
+        self._native_seu_id = native_seu_id.strip()
         self._session: aiohttp.ClientSession | None = None
 
     # =========================================================================
@@ -116,11 +123,34 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             AdapterError: On connection, auth, or parse errors.
         """
         self._ensure_initialized()
-        endpoint = self._resolve_endpoint(metric)
-        params = self._build_query_params(asset_id=asset_id, period=period)
-        data = await self._retry_fetch(endpoint, params)
+        endpoint = self._resolve_endpoint(metric, purpose="kpi")
+        params = self._build_query_params(
+            asset_id=asset_id,
+            period=period,
+            include_native_period=self._is_seu_endpoint(endpoint),
+        )
+        try:
+            data = await self._retry_fetch(endpoint, params)
+        except AdapterError as exc:
+            if self._should_fallback_from_seu(endpoint, exc):
+                logger.warning(
+                    "SEU endpoint failed (%s). Falling back to meter endpoint.",
+                    exc.status_code,
+                )
+                endpoint = REAL_METER_ENDPOINT
+                params = self._build_query_params(
+                    asset_id=asset_id,
+                    period=period,
+                    include_native_period=False,
+                )
+                data = await self._retry_fetch(endpoint, params)
+            else:
+                raise
         if is_native_format(data):
-            data = normalize_meter_to_kpi(data, asset_id)
+            if self._is_seu_endpoint(endpoint):
+                data = normalize_seu_values_to_kpi(data)
+            else:
+                data = normalize_meter_to_kpi(data, asset_id)
         return parse_kpi_response(data, metric, asset_id, period)
 
     async def compare(
@@ -144,7 +174,7 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             AdapterError: On connection, auth, or parse errors.
         """
         self._ensure_initialized()
-        endpoint = self._resolve_endpoint(metric)
+        endpoint = self._resolve_endpoint(metric, purpose="compare")
         params = self._build_query_params(period=period)
         params["asset_ids"] = ",".join(asset_ids)
         data = await self._retry_fetch(endpoint, params)
@@ -177,13 +207,36 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             AdapterError: On connection, auth, or parse errors.
         """
         self._ensure_initialized()
-        endpoint = self._resolve_endpoint(metric)
+        endpoint = self._resolve_endpoint(metric, purpose="trend")
         params = self._build_query_params(
-            asset_id=asset_id, period=period, granularity=granularity,
+            asset_id=asset_id,
+            period=period,
+            granularity=granularity,
+            include_native_period=self._is_seu_endpoint(endpoint),
         )
-        data = await self._retry_fetch(endpoint, params)
+        try:
+            data = await self._retry_fetch(endpoint, params)
+        except AdapterError as exc:
+            if self._should_fallback_from_seu(endpoint, exc):
+                logger.warning(
+                    "SEU trend endpoint failed (%s). Falling back to meter endpoint.",
+                    exc.status_code,
+                )
+                endpoint = REAL_METER_ENDPOINT
+                params = self._build_query_params(
+                    asset_id=asset_id,
+                    period=period,
+                    granularity=granularity,
+                    include_native_period=False,
+                )
+                data = await self._retry_fetch(endpoint, params)
+            else:
+                raise
         if is_native_format(data):
-            data = normalize_meters_to_trend(data)
+            if self._is_seu_endpoint(endpoint):
+                data = normalize_seu_values_to_trend(data)
+            else:
+                data = normalize_meters_to_trend(data)
         if not isinstance(data, list):
             data = [data]
         return parse_trend_response(data, metric, asset_id, period, granularity)
@@ -252,6 +305,9 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
 
     async def initialize(self) -> None:
         """Create aiohttp session with auth headers and timeout."""
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+
         timeout = aiohttp.ClientTimeout(total=self._timeout)
         headers = self._build_auth_headers()
         self._session = aiohttp.ClientSession(
@@ -281,7 +337,12 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
     # Internal Helpers
     # =========================================================================
 
-    def _resolve_endpoint(self, metric: CanonicalMetric) -> str:
+    def _resolve_endpoint(
+        self,
+        metric: CanonicalMetric,
+        *,
+        purpose: str,
+    ) -> str:
         """
         Look up the REST endpoint for a canonical metric.
 
@@ -298,8 +359,16 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
         Raises:
             AdapterError: If metric has no mapped endpoint.
         """
-        if self._api_format == "native" and metric in REAL_ENERGY_METRICS:
-            return REAL_METER_ENDPOINT
+        if self._api_format == "native":
+            if (
+                metric == CanonicalMetric.ENERGY_PER_UNIT
+                and purpose in {"kpi", "trend"}
+                and self._native_seu_id
+            ):
+                encoded_seu_id = quote(self._native_seu_id, safe="")
+                return REAL_SEU_VALUES_ENDPOINT.format(seu_id=encoded_seu_id)
+            if metric in REAL_ENERGY_METRICS:
+                return REAL_METER_ENDPOINT
         endpoint = ENDPOINT_MAP.get(metric)
         if endpoint is None:
             raise AdapterError(
@@ -314,6 +383,7 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
         asset_id: str = "",
         period: TimePeriod | None = None,
         granularity: str = "",
+        include_native_period: bool = False,
     ) -> dict[str, str]:
         """
         Build query parameters for both mock and real API formats.
@@ -340,5 +410,38 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
                 params["asset_id"] = asset_id
             if granularity:
                 params["granularity"] = granularity
+        elif include_native_period:
+            params["period"] = self._native_period_bucket(granularity)
         return params
 
+    @staticmethod
+    def _native_period_bucket(granularity: str) -> str:
+        """
+        Map internal granularity naming to RENERYO SEU period values.
+        """
+        granularity_key = (granularity or "daily").strip().lower()
+        mapping = {
+            "hourly": "HOURLY",
+            "daily": "DAILY",
+            "weekly": "WEEKLY",
+            "monthly": "MONTHLY",
+        }
+        return mapping.get(granularity_key, "DAILY")
+
+    @staticmethod
+    def _is_seu_endpoint(endpoint: str) -> bool:
+        return "/measurement/seu/item/" in endpoint
+
+    @staticmethod
+    def _should_fallback_from_seu(endpoint: str, exc: AdapterError) -> bool:
+        """
+        Fallback trigger for SEU endpoint misconfiguration.
+
+        Invalid/unauthorized SEU IDs often return 400/404 in native API.
+        In that case we gracefully switch to meter endpoint so voice UX
+        still returns a value instead of a hard failure.
+        """
+        return (
+            "/measurement/seu/item/" in endpoint
+            and exc.status_code in {400, 404}
+        )

@@ -54,6 +54,11 @@ services:
     # Join WASABI OVOS network
     networks:
       - ovos
+
+    # Corporate DNS name doesn't always resolve inside Docker Desktop.
+    # Pin the current internal deploy host for stable demo/runtime access.
+    extra_hosts:
+      - "deploys.int.arti.ac:${RENERYO_DEPLOYS_IP:-10.33.10.110}"
     
     # Mount WASABI OVOS shared volumes and skill code
     volumes:
@@ -128,6 +133,9 @@ services:
 
     networks:
       - ovos
+
+    extra_hosts:
+      - "deploys.int.arti.ac:${RENERYO_DEPLOYS_IP:-10.33.10.110}"
 
     # Web UI is only accessible via avaros-proxy (HTTPS)
     # For direct HTTP access in dev, use docker-compose.dev.yml override
@@ -213,10 +221,11 @@ services:
       - HIVEMIND_WS_PORT=${HIVEMIND_WS_PORT:-5678}
       # Client credentials and allowed_types come from env_file (.env).
       # When .env is absent, entrypoint.sh applies dev defaults (DEC-005).
-      - HIVEMIND_CLIENT_ALLOWED_TYPES=${HIVEMIND_CLIENT_ALLOWED_TYPES:-recognizer_loop:utterance,recognizer_loop:record_begin,recognizer_loop:record_end,recognizer_loop:audio_output_start,recognizer_loop:audio_output_end,recognizer_loop:b64_transcribe,speak:b64_audio,ovos.common_play.SEI.get.response}
+      - HIVEMIND_CLIENT_ALLOWED_TYPES=${HIVEMIND_CLIENT_ALLOWED_TYPES:-recognizer_loop:utterance,recognizer_loop:record_begin,recognizer_loop:record_end,recognizer_loop:audio_output_start,recognizer_loop:audio_output_end,recognizer_loop:b64_transcribe,speak,speak:b64_audio,enclosure.mouth.text,mycroft.skill.handler.start,mycroft.skill.handler.complete,mycroft.audio.service.queue,mycroft.audio.service.play,mycroft.audio.service.stop,mycroft.audio.service.pause,mycroft.audio.service.resume,ovos.common_play.SEI.get.response}
 
     volumes:
       - hivemind_data:/home/hivemind/.config/hivemind-core
+      - hivemind_state:/home/hivemind/.local/share
 
     healthcheck:
       test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',5678)); s.close(); print('OK')"]
@@ -274,6 +283,8 @@ volumes:
   avaros_pgdata:
     driver: local
   hivemind_data:
+    driver: local
+  hivemind_state:
     driver: local
   certbot_webroot:
     driver: local

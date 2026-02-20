@@ -105,9 +105,10 @@ def normalize_meters_to_comparison(
     items: list[dict] = []
     for aid in asset_ids:
         record = _find_record(records, aid)
+        raw_consumption = record.get("consumption")
         items.append({
             "asset_id": record.get("name", record.get("id", aid)),
-            "value": float(record["consumption"]),
+            "value": float(raw_consumption) if raw_consumption is not None else 0.0,
             "unit": _resolve_unit(record),
         })
     return items
@@ -158,6 +159,33 @@ def normalize_meters_to_raw(data: dict) -> list[dict]:
     """
     records = data.get("records", [])
     return [_meter_record_to_dict(r) for r in records]
+
+
+def normalize_seu_values_to_kpi(data: dict) -> dict:
+    """
+    Normalize native SEU values response to single KPI dict.
+
+    Expected shape:
+        {"records": [{"value": 12.3, "datetime": "...", "unit": "kWh/unit"}, ...]}
+
+    Uses the first record as current KPI value to match configured JSON path
+    behavior (``$.records[0].value``).
+    """
+    records = data.get("records", [])
+    if not records:
+        raise KeyError("No SEU value record found")
+    return _seu_record_to_dict(records[0])
+
+
+def normalize_seu_values_to_trend(data: dict) -> list[dict]:
+    """
+    Normalize native SEU values response to trend data points.
+
+    Expected shape:
+        {"records": [{"value": 12.3, "datetime": "..."}, ...]}
+    """
+    records = data.get("records", [])
+    return [_seu_record_to_dict(record) for record in records if record.get("value") is not None]
 
 
 def normalize_metric_to_kpi(
@@ -261,7 +289,7 @@ def _meter_record_to_dict(record: dict, *, timestamp: str = "") -> dict:
         Dict with value, unit, timestamp keys.
     """
     return {
-        "value": float(record.get("consumption", 0.0)),
+        "value": float(record.get("consumption") or 0.0),
         "unit": _resolve_unit(record),
         "timestamp": timestamp or datetime.now(tz=timezone.utc).isoformat(),
     }
@@ -280,3 +308,20 @@ def _resolve_unit(record: dict) -> str:
     metric_info = record.get("metric", {})
     unit_group = metric_info.get("unitGroup", "")
     return _UNIT_GROUP_MAP.get(unit_group, unit_group)
+
+
+def _seu_record_to_dict(record: dict) -> dict:
+    """
+    Convert a single SEU values record to parser-expected dict.
+    """
+    timestamp = (
+        record.get("datetime")
+        or record.get("timestamp")
+        or datetime.now(tz=timezone.utc).isoformat()
+    )
+    unit = str(record.get("unit") or record.get("unitName") or "kWh/unit")
+    return {
+        "value": float(record.get("value", 0.0)),
+        "unit": unit,
+        "timestamp": timestamp,
+    }
