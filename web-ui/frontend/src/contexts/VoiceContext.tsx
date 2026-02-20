@@ -128,6 +128,18 @@ function isIncompleteIntentText(raw: string): boolean {
 const WAKE_WORD_ARM_MS = 10000;
 const WAKE_WORD_PROMPT = "How can I help you?";
 
+/** Ignore STT results that are our own TTS prompt (avoids acoustic feedback loop). */
+function isOwnPromptEcho(transcript: string): boolean {
+  const n = transcript.trim().toLowerCase().replace(/\s+/g, " ");
+  const patterns = [
+    "how can i help you",
+    "hey can i help you",
+    "how can i help",
+    "hey can i help",
+  ];
+  return patterns.some((p) => n === p || n.startsWith(p + " ") || n.includes(" " + p));
+}
+
 function parseWakeWordUtterance(
   raw: string,
 ): { hasWakeWord: boolean; command: string } {
@@ -300,6 +312,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         metricsRef.current.mark("stt_completed");
         let transcript = result.transcript;
         if (voiceMode === "wake-word") {
+          if (isOwnPromptEcho(transcript)) return;
           const parsed = parseWakeWordUtterance(transcript);
           if (parsed.hasWakeWord && parsed.command) {
             clearWakeWordCommandWindow();

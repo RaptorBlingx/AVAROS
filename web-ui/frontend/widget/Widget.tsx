@@ -146,6 +146,18 @@ function parseWakeWordUtterance(raw: string): { hasWakeWord: boolean; command: s
   return { hasWakeWord: false, command: cleaned };
 }
 
+/** Ignore STT results that are our own TTS prompt (avoids acoustic feedback loop). */
+function isOwnPromptEcho(transcript: string): boolean {
+  const n = transcript.toLowerCase().trim().replace(/\s+/g, " ");
+  const patterns = [
+    "how can i help you",
+    "hey can i help you",
+    "how can i help",
+    "hey can i help",
+  ];
+  return patterns.some((p) => n === p || n.startsWith(p + " ") || n.includes(" " + p));
+}
+
 function pickPreferredVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
   if (!voices.length) return null;
   const samantha = voices.find((voice) => voice.name.toLowerCase().includes("samantha"));
@@ -397,6 +409,8 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
         if (!transcript) continue;
 
         if (currentMode === "wake-word") {
+          if (window.speechSynthesis.speaking) continue;
+          if (isOwnPromptEcho(transcript)) continue;
           const parsed = parseWakeWordUtterance(transcript);
           if (parsed.hasWakeWord && parsed.command) {
             wakeWordArmedRef.current = false;
