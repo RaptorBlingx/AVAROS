@@ -23,3 +23,9 @@ line one versus line two energy
 which line uses more energy line 1 or line 2
 which line uses more energy line one or line two
 compare power between line 1 and line 2
+compare energy between {asset_a} and {asset_b}
+compare power between {asset_a} and {asset_b}
+energy comparison
+compare energy usage
+compare energy between compressor 1 and compressor 2
+compare energy between compressor-1 and compressor-2

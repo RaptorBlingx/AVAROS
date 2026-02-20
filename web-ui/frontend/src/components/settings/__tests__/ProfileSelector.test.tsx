@@ -1,51 +1,64 @@
 // @vitest-environment jsdom
 
-/**
- * ProfileSelector component tests.
- *
- * Verifies profile listing, switching, deletion (with confirm),
- * creation, and built-in profile protection.
- */
-
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// ── Mock API module (hoisted) ──────────────────────────
+import type { ProfileConfig, ProfileListResponse } from "../../../api/types";
+import type { ProfileSelectorProps } from "../ProfileSelector";
+import ProfileSelector from "../ProfileSelector";
 
-const mockApi = vi.hoisted(() => ({
+vi.mock("../../../api/client", () => ({
   listProfiles: vi.fn(),
   getProfile: vi.fn(),
-  activateProfile: vi.fn(),
-  deleteProfile: vi.fn(),
   createProfile: vi.fn(),
-  toFriendlyErrorMessage: vi.fn((e: unknown) =>
-    e instanceof Error ? e.message : "Unknown error",
-  ),
+  deleteProfile: vi.fn(),
+  activateProfile: vi.fn(),
+  toFriendlyErrorMessage: vi.fn((e: unknown) => String(e)),
 }));
-
-// ── Mock ThemeProvider ─────────────────────────────────
-
-vi.mock("../../../api/client", () => mockApi);
 
 vi.mock("../../common/ThemeProvider", () => ({
   useTheme: () => ({ isDark: false }),
 }));
 
-// ── Import after mocks ────────────────────────────────
+import {
+  activateProfile,
+  createProfile,
+  deleteProfile,
+  getProfile,
+  listProfiles,
+} from "../../../api/client";
 
-import ProfileSelector from "../ProfileSelector";
+const mockListProfiles = vi.mocked(listProfiles);
+const mockGetProfile = vi.mocked(getProfile);
+const mockCreateProfile = vi.mocked(createProfile);
+const mockDeleteProfile = vi.mocked(deleteProfile);
+const mockActivateProfile = vi.mocked(activateProfile);
 
-// ── Fixtures ───────────────────────────────────────────
-
-const MOCK_PROFILE_LIST = {
-  active_profile: "mock",
+const MOCK_PROFILES: ProfileListResponse = {
   profiles: [
-    { name: "mock", platform_type: "mock", is_builtin: true, is_active: true },
-    { name: "staging", platform_type: "reneryo", is_builtin: false, is_active: false },
+    {
+      name: "mock",
+      platform_type: "mock",
+      is_active: true,
+      is_builtin: true,
+    },
+    {
+      name: "my-reneryo",
+      platform_type: "reneryo",
+      is_active: false,
+      is_builtin: false,
+    },
   ],
+  active_profile: "mock",
 };
 
-const MOCK_PROFILE_DETAIL = {
+const MOCK_PROFILE_CONFIG: ProfileConfig = {
   name: "mock",
   platform_type: "mock",
   api_url: "",
@@ -55,342 +68,415 @@ const MOCK_PROFILE_DETAIL = {
   is_active: true,
 };
 
-// ── Helpers ────────────────────────────────────────────
-
-function resetMocks(): void {
-  mockApi.listProfiles.mockReset();
-  mockApi.getProfile.mockReset();
-  mockApi.activateProfile.mockReset();
-  mockApi.deleteProfile.mockReset();
-  mockApi.createProfile.mockReset();
-
-  mockApi.listProfiles.mockResolvedValue(MOCK_PROFILE_LIST);
-  mockApi.getProfile.mockResolvedValue(MOCK_PROFILE_DETAIL);
-}
-
-const noop = vi.fn();
-
-function renderSelector(
-  onNotify = noop,
-  onProfileChange = noop,
-) {
-  return render(
-    <ProfileSelector onNotify={onNotify} onProfileChange={onProfileChange} />,
-  );
-}
-
-// ── Tests ──────────────────────────────────────────────
-
-afterEach(() => {
-  cleanup();
-});
-
-beforeEach(() => {
-  resetMocks();
-});
+const RENERYO_PROFILE_CONFIG: ProfileConfig = {
+  name: "my-reneryo",
+  platform_type: "reneryo",
+  api_url: "https://api.reneryo.com",
+  api_key: "****abcd",
+  extra_settings: { auth_type: "bearer" },
+  is_builtin: false,
+  is_active: false,
+};
 
 describe("ProfileSelector", () => {
-  describe("rendering", () => {
-    it("shows loading state initially", () => {
-      // Never resolve the promise so it stays loading
-      mockApi.listProfiles.mockReturnValue(new Promise(() => {}));
-      renderSelector();
-      expect(screen.getByTestId("profile-loading")).toBeTruthy();
-    });
+  let onProfileChange: ProfileSelectorProps["onProfileChange"] &
+    ReturnType<typeof vi.fn>;
+  let onNotify: ProfileSelectorProps["onNotify"] & ReturnType<typeof vi.fn>;
 
-    it("renders profile dropdown with all profiles", async () => {
-      renderSelector();
-      await waitFor(() => {
-        expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
-      });
-      const dropdown = screen.getByTestId("profile-dropdown") as HTMLSelectElement;
-      expect(dropdown.options).toHaveLength(2);
-      expect(dropdown.options[0].value).toBe("mock");
-      expect(dropdown.options[1].value).toBe("staging");
-    });
+  afterEach(() => {
+    cleanup();
+  });
 
-    it("shows mock profile first with Built-in label", async () => {
-      renderSelector();
-      await waitFor(() => {
-        expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
-      });
-      const dropdown = screen.getByTestId("profile-dropdown") as HTMLSelectElement;
-      expect(dropdown.options[0].textContent).toContain("Built-in");
-    });
-
-    it("shows active badge for active profile", async () => {
-      renderSelector();
-      await waitFor(() => {
-        expect(screen.getByTestId("active-badge")).toBeTruthy();
-      });
-    });
-
-    it("shows builtin badge for mock profile", async () => {
-      renderSelector();
-      await waitFor(() => {
-        expect(screen.getByTestId("builtin-badge")).toBeTruthy();
-      });
-    });
-
-    it("does not show delete button for mock profile", async () => {
-      renderSelector();
-      await waitFor(() => {
-        expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
-      });
-      expect(screen.queryByTestId("delete-button")).toBeNull();
-    });
-
-    it("does not show switch button when active profile selected", async () => {
-      renderSelector();
-      await waitFor(() => {
-        expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
-      });
-      expect(screen.queryByTestId("switch-button")).toBeNull();
+  beforeEach(() => {
+    vi.clearAllMocks();
+    onProfileChange = vi.fn() as typeof onProfileChange;
+    onNotify = vi.fn() as typeof onNotify;
+    mockListProfiles.mockResolvedValue(MOCK_PROFILES);
+    mockGetProfile.mockImplementation(async (name: string) => {
+      if (name === "mock") return MOCK_PROFILE_CONFIG;
+      if (name === "my-reneryo") return RENERYO_PROFILE_CONFIG;
+      throw new Error(`Unknown profile: ${name}`);
     });
   });
 
-  describe("profile switching", () => {
-    it("shows switch button when non-active profile selected", async () => {
-      renderSelector();
-      await waitFor(() => {
-        expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
-      });
+  it("renders profiles after loading", async () => {
+    render(
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
+    );
 
-      const dropdown = screen.getByTestId("profile-dropdown");
-      fireEvent.change(dropdown, { target: { value: "staging" } });
-
-      expect(screen.getByTestId("switch-button")).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
     });
 
-    it("calls activateProfile on switch", async () => {
-      mockApi.activateProfile.mockResolvedValue({
-        status: "activated",
-        active_profile: "staging",
-        adapter_type: "reneryo",
-        message: "Adapter reloaded successfully",
-      });
-      // After activation, list returns staging active
-      const updatedList = {
-        active_profile: "staging",
-        profiles: [
-          { name: "mock", platform_type: "mock", is_builtin: true, is_active: false },
-          { name: "staging", platform_type: "reneryo", is_builtin: false, is_active: true },
-        ],
-      };
+    const dropdown = screen.getByTestId(
+      "profile-dropdown",
+    ) as HTMLSelectElement;
+    expect(dropdown.options.length).toBe(2);
+  });
 
-      const onNotify = vi.fn();
-      renderSelector(onNotify);
-      await waitFor(() => {
-        expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
-      });
+  it("shows mock profile first with built-in label", async () => {
+    render(
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
+    );
 
-      fireEvent.change(screen.getByTestId("profile-dropdown"), {
-        target: { value: "staging" },
-      });
-
-      mockApi.listProfiles.mockResolvedValue(updatedList);
-      fireEvent.click(screen.getByTestId("switch-button"));
-
-      await waitFor(() => {
-        expect(mockApi.activateProfile).toHaveBeenCalledWith("staging");
-      });
-      await waitFor(() => {
-        expect(onNotify).toHaveBeenCalledWith(
-          "success",
-          'Switched to profile "staging"',
-        );
-      });
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
     });
 
-    it("shows error toast when switch fails", async () => {
-      mockApi.activateProfile.mockRejectedValue(new Error("Connection refused"));
+    const dropdown = screen.getByTestId(
+      "profile-dropdown",
+    ) as HTMLSelectElement;
+    const firstOption = dropdown.options[0];
+    expect(firstOption.value).toBe("mock");
+    expect(firstOption.text).toContain("Built-in");
+  });
 
-      const onNotify = vi.fn();
-      renderSelector(onNotify);
-      await waitFor(() => {
-        expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
-      });
+  it("shows active badge for the active profile", async () => {
+    render(
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
+    );
 
-      fireEvent.change(screen.getByTestId("profile-dropdown"), {
-        target: { value: "staging" },
-      });
-      fireEvent.click(screen.getByTestId("switch-button"));
-
-      await waitFor(() => {
-        expect(onNotify).toHaveBeenCalledWith("error", "Connection refused");
-      });
+    await waitFor(() => {
+      expect(screen.getByTestId("badge-active")).toBeTruthy();
     });
   });
 
-  describe("profile deletion", () => {
-    it("shows delete button for custom profiles", async () => {
-      renderSelector();
-      await waitFor(() => {
-        expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
-      });
+  it("shows built-in badge for mock profile", async () => {
+    render(
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
+    );
 
-      fireEvent.change(screen.getByTestId("profile-dropdown"), {
-        target: { value: "staging" },
-      });
-
-      expect(screen.getByTestId("delete-button")).toBeTruthy();
-    });
-
-    it("requires confirmation before deleting", async () => {
-      renderSelector();
-      await waitFor(() => {
-        expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
-      });
-
-      fireEvent.change(screen.getByTestId("profile-dropdown"), {
-        target: { value: "staging" },
-      });
-      fireEvent.click(screen.getByTestId("delete-button"));
-
-      expect(screen.getByTestId("confirm-delete-button")).toBeTruthy();
-      expect(screen.getByTestId("cancel-delete-button")).toBeTruthy();
-    });
-
-    it("cancels deletion when cancel clicked", async () => {
-      renderSelector();
-      await waitFor(() => {
-        expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
-      });
-
-      fireEvent.change(screen.getByTestId("profile-dropdown"), {
-        target: { value: "staging" },
-      });
-      fireEvent.click(screen.getByTestId("delete-button"));
-      fireEvent.click(screen.getByTestId("cancel-delete-button"));
-
-      expect(screen.queryByTestId("confirm-delete-button")).toBeNull();
-      expect(screen.getByTestId("delete-button")).toBeTruthy();
-    });
-
-    it("calls deleteProfile on confirm", async () => {
-      mockApi.deleteProfile.mockResolvedValue({
-        status: "deleted",
-        deleted_profile: "staging",
-        active_profile: "mock",
-        message: "Profile deleted",
-      });
-      const onNotify = vi.fn();
-      renderSelector(onNotify);
-      await waitFor(() => {
-        expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
-      });
-
-      fireEvent.change(screen.getByTestId("profile-dropdown"), {
-        target: { value: "staging" },
-      });
-      fireEvent.click(screen.getByTestId("delete-button"));
-      fireEvent.click(screen.getByTestId("confirm-delete-button"));
-
-      await waitFor(() => {
-        expect(mockApi.deleteProfile).toHaveBeenCalledWith("staging");
-      });
-      await waitFor(() => {
-        expect(onNotify).toHaveBeenCalledWith("success", "Profile deleted");
-      });
+    await waitFor(() => {
+      expect(screen.getByTestId("badge-builtin")).toBeTruthy();
     });
   });
 
-  describe("profile creation", () => {
-    it("shows new profile form when button clicked", async () => {
-      renderSelector();
-      await waitFor(() => {
-        expect(screen.getByTestId("new-profile-button")).toBeTruthy();
-      });
+  it("disables switch button for the currently active profile", async () => {
+    render(
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
+    );
 
-      fireEvent.click(screen.getByTestId("new-profile-button"));
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-switch-btn")).toBeTruthy();
+    });
+
+    const switchBtn = screen.getByTestId(
+      "profile-switch-btn",
+    ) as HTMLButtonElement;
+    expect(switchBtn.disabled).toBe(true);
+  });
+
+  it("calls getProfile and onProfileChange when selecting a different profile", async () => {
+    render(
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
+    });
+
+    const dropdown = screen.getByTestId(
+      "profile-dropdown",
+    ) as HTMLSelectElement;
+    fireEvent.change(dropdown, { target: { value: "my-reneryo" } });
+
+    await waitFor(() => {
+      expect(mockGetProfile).toHaveBeenCalledWith("my-reneryo");
+      expect(onProfileChange).toHaveBeenCalledWith(RENERYO_PROFILE_CONFIG);
+    });
+  });
+
+  it("calls activateProfile on switch and notifies success", async () => {
+    const activatedConfig: ProfileConfig = {
+      ...RENERYO_PROFILE_CONFIG,
+      is_active: true,
+    };
+    mockActivateProfile.mockResolvedValue(activatedConfig);
+
+    render(
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
+    });
+
+    const dropdown = screen.getByTestId(
+      "profile-dropdown",
+    ) as HTMLSelectElement;
+    fireEvent.change(dropdown, { target: { value: "my-reneryo" } });
+
+    await waitFor(() => {
+      expect(onProfileChange).toHaveBeenCalled();
+    });
+
+    const switchBtn = screen.getByTestId(
+      "profile-switch-btn",
+    ) as HTMLButtonElement;
+    expect(switchBtn.disabled).toBe(false);
+
+    fireEvent.click(switchBtn);
+
+    await waitFor(() => {
+      expect(mockActivateProfile).toHaveBeenCalledWith("my-reneryo");
+      expect(onNotify).toHaveBeenCalledWith(
+        "success",
+        expect.stringContaining("my-reneryo"),
+      );
+    });
+  });
+
+  it("does not show delete button for built-in mock profile", async () => {
+    render(
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
+    });
+
+    expect(screen.queryByTestId("profile-delete-btn")).toBeNull();
+  });
+
+  it("shows delete button for custom profile", async () => {
+    render(
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
+    });
+
+    const dropdown = screen.getByTestId(
+      "profile-dropdown",
+    ) as HTMLSelectElement;
+    fireEvent.change(dropdown, { target: { value: "my-reneryo" } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-delete-btn")).toBeTruthy();
+    });
+  });
+
+  it("calls deleteProfile with confirmation on delete", async () => {
+    mockDeleteProfile.mockResolvedValue(undefined);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
+    });
+
+    const dropdown = screen.getByTestId(
+      "profile-dropdown",
+    ) as HTMLSelectElement;
+    fireEvent.change(dropdown, { target: { value: "my-reneryo" } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-delete-btn")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("profile-delete-btn"));
+
+    await waitFor(() => {
+      expect(window.confirm).toHaveBeenCalled();
+      expect(mockDeleteProfile).toHaveBeenCalledWith("my-reneryo");
+      expect(onNotify).toHaveBeenCalledWith(
+        "success",
+        expect.stringContaining("my-reneryo"),
+      );
+    });
+
+    vi.mocked(window.confirm).mockRestore();
+  });
+
+  it("does not delete if user cancels confirmation", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    render(
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByTestId("profile-dropdown"), {
+      target: { value: "my-reneryo" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-delete-btn")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("profile-delete-btn"));
+
+    await waitFor(() => {
+      expect(window.confirm).toHaveBeenCalled();
+    });
+
+    expect(mockDeleteProfile).not.toHaveBeenCalled();
+
+    vi.mocked(window.confirm).mockRestore();
+  });
+
+  it("shows new profile form when clicking New Profile", async () => {
+    render(
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-new-btn")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("profile-new-btn"));
+
+    await waitFor(() => {
       expect(screen.getByTestId("new-profile-form")).toBeTruthy();
     });
+  });
 
-    it("validates profile name format", async () => {
-      renderSelector();
-      await waitFor(() => {
-        expect(screen.getByTestId("new-profile-button")).toBeTruthy();
-      });
+  it("validates profile name on create", async () => {
+    render(
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
+    );
 
-      fireEvent.click(screen.getByTestId("new-profile-button"));
-      const nameInput = screen.getByTestId("new-profile-name");
-      fireEvent.change(nameInput, { target: { value: "A" } });
-      fireEvent.click(screen.getByTestId("create-profile-button"));
-
-      await waitFor(() => {
-        expect(screen.getByTestId("name-error")).toBeTruthy();
-      });
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-new-btn")).toBeTruthy();
     });
 
-    it("calls createProfile with valid name", async () => {
-      mockApi.createProfile.mockResolvedValue({
-        name: "my-profile",
-        platform_type: "reneryo",
-        api_url: "",
-        api_key: "****",
-        extra_settings: {},
-        is_builtin: false,
-        is_active: false,
-      });
-      const onNotify = vi.fn();
-      renderSelector(onNotify);
-      await waitFor(() => {
-        expect(screen.getByTestId("new-profile-button")).toBeTruthy();
-      });
+    fireEvent.click(screen.getByTestId("profile-new-btn"));
 
-      fireEvent.click(screen.getByTestId("new-profile-button"));
-      fireEvent.change(screen.getByTestId("new-profile-name"), {
-        target: { value: "my-profile" },
-      });
-      fireEvent.click(screen.getByTestId("create-profile-button"));
-
-      await waitFor(() => {
-        expect(mockApi.createProfile).toHaveBeenCalledWith({
-          name: "my-profile",
-          platform_type: "reneryo",
-          api_url: "",
-          api_key: "",
-          extra_settings: {},
-        });
-      });
-      await waitFor(() => {
-        expect(onNotify).toHaveBeenCalledWith(
-          "success",
-          'Profile "my-profile" created',
-        );
-      });
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-create-btn")).toBeTruthy();
     });
 
-    it("shows error when creation fails", async () => {
-      mockApi.createProfile.mockRejectedValue(
-        new Error("Profile 'my-profile' already exists"),
+    fireEvent.click(screen.getByTestId("profile-create-btn"));
+
+    await waitFor(() => {
+      expect(onNotify).toHaveBeenCalledWith(
+        "error",
+        expect.stringContaining("2"),
       );
-      const onNotify = vi.fn();
-      renderSelector(onNotify);
-      await waitFor(() => {
-        expect(screen.getByTestId("new-profile-button")).toBeTruthy();
-      });
+    });
 
-      fireEvent.click(screen.getByTestId("new-profile-button"));
-      fireEvent.change(screen.getByTestId("new-profile-name"), {
-        target: { value: "my-profile" },
-      });
-      fireEvent.click(screen.getByTestId("create-profile-button"));
+    expect(mockCreateProfile).not.toHaveBeenCalled();
+  });
 
-      await waitFor(() => {
-        expect(screen.getByTestId("name-error")).toBeTruthy();
+  it("creates profile with valid name", async () => {
+    const newConfig: ProfileConfig = {
+      name: "new-profile",
+      platform_type: "reneryo",
+      api_url: "",
+      api_key: "",
+      extra_settings: {},
+      is_builtin: false,
+      is_active: false,
+    };
+    mockCreateProfile.mockResolvedValue(newConfig);
+    mockGetProfile.mockImplementation(async (name: string) => {
+      if (name === "new-profile") return newConfig;
+      if (name === "mock") return MOCK_PROFILE_CONFIG;
+      return RENERYO_PROFILE_CONFIG;
+    });
+
+    render(
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-new-btn")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("profile-new-btn"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-new-name")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByTestId("profile-new-name"), {
+      target: { value: "new-profile" },
+    });
+
+    fireEvent.click(screen.getByTestId("profile-create-btn"));
+
+    await waitFor(() => {
+      expect(mockCreateProfile).toHaveBeenCalledWith({
+        name: "new-profile",
+        platform_type: "reneryo",
       });
+      expect(onNotify).toHaveBeenCalledWith(
+        "success",
+        expect.stringContaining("new-profile"),
+      );
     });
   });
 
-  describe("mock profile protection", () => {
-    it("cannot delete mock profile", async () => {
-      renderSelector();
-      await waitFor(() => {
-        expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
-      });
-      // Mock is selected by default
-      expect(screen.queryByTestId("delete-button")).toBeNull();
+  it("returns null when no profiles are loaded and not loading", async () => {
+    mockListProfiles.mockResolvedValue({
+      profiles: [],
+      active_profile: "",
     });
+
+    const { container } = render(
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector("[data-testid='profile-selector-loading']"),
+      ).toBeNull();
+    });
+
+    expect(
+      container.querySelector("[data-testid='profile-selector-section']"),
+    ).toBeNull();
+  });
+
+  it("handles API error gracefully on load", async () => {
+    mockListProfiles.mockRejectedValue(new Error("Network error"));
+
+    render(
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
+    );
+
+    await waitFor(() => {
+      expect(onNotify).toHaveBeenCalledWith("error", expect.any(String));
+    });
+  });
+
+  it("handles switch failure without changing UI state", async () => {
+    mockActivateProfile.mockRejectedValue(new Error("Connection error"));
+
+    render(
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByTestId("profile-dropdown"), {
+      target: { value: "my-reneryo" },
+    });
+
+    await waitFor(() => {
+      expect(onProfileChange).toHaveBeenCalledWith(RENERYO_PROFILE_CONFIG);
+    });
+
+    onNotify.mockClear();
+
+    fireEvent.click(screen.getByTestId("profile-switch-btn"));
+
+    await waitFor(() => {
+      expect(onNotify).toHaveBeenCalledWith("error", expect.any(String));
+    });
+
+    const dropdown = screen.getByTestId(
+      "profile-dropdown",
+    ) as HTMLSelectElement;
+    expect(dropdown.value).toBe("my-reneryo");
   });
 });

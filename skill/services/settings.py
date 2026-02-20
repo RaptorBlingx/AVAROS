@@ -732,6 +732,7 @@ class SettingsService(ProfileMixin):
 
     METRIC_MAPPING_PREFIX = "metric_mapping:"
     INTENT_BINDING_PREFIX = "intent_binding:"
+    ASSET_MAPPINGS_KEY = "asset_mappings"
     VOICE_WS_URL_KEY = "voice:hivemind_ws_url"
     VOICE_CLIENT_NAME = "voice:hivemind_client_name"
     VOICE_CLIENT_KEY = "voice:hivemind_client_key"

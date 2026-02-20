@@ -8,6 +8,13 @@ import ErrorMessage from "../components/common/ErrorMessage";
 import KPISummaryCard from "../components/common/KPISummaryCard";
 import LoadingSpinner from "../components/common/LoadingSpinner";
 import OnboardingOverlay from "../components/common/OnboardingOverlay";
+import {
+  dispatchOnboardingVoiceFocus,
+  ONBOARDING_RERUN_EVENT,
+  ONBOARDING_STORAGE_KEY,
+  shouldOpenOnboardingForScope,
+  type OnboardingRerunDetail,
+} from "../components/common/onboarding";
 import StatusCard from "../components/StatusCard";
 import { useTheme } from "../components/common/ThemeProvider";
 import {
@@ -15,8 +22,6 @@ import {
   DASHBOARD_ONBOARDING_STEPS,
   KPI_SUMMARY_ITEMS,
 } from "./dashboard.helpers";
-
-const ONBOARDING_STORAGE_KEY = "avaros_onboarding_complete";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -31,12 +36,21 @@ export default function Dashboard() {
     setLoading(true);
     setError("");
     try {
-      const [healthData, statusData] = await Promise.all([getHealth(), getStatus()]);
+      const [healthData, statusData] = await Promise.all([
+        getHealth(),
+        getStatus(),
+      ]);
       const shouldRedirectToWizard =
-        !import.meta.env.DEV && !statusData.configured && statusData.platform_type === "mock";
+        !import.meta.env.DEV &&
+        !statusData.configured &&
+        statusData.platform_type === "mock";
       if (shouldRedirectToWizard) {
-        const skipRedirectUntilRaw = sessionStorage.getItem("avaros_skip_wizard_until");
-        const skipRedirectUntil = skipRedirectUntilRaw ? Number(skipRedirectUntilRaw) : 0;
+        const skipRedirectUntilRaw = sessionStorage.getItem(
+          "avaros_skip_wizard_until",
+        );
+        const skipRedirectUntil = skipRedirectUntilRaw
+          ? Number(skipRedirectUntilRaw)
+          : 0;
         if (skipRedirectUntil > Date.now()) {
           setHealth(healthData);
           setStatus(statusData);
@@ -67,13 +81,21 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    const onRerun = () => setOnboardingOpen(true);
-    window.addEventListener("avaros:rerun-onboarding", onRerun);
-    return () => window.removeEventListener("avaros:rerun-onboarding", onRerun);
+    const onRerun = (event: Event) => {
+      const detail = (event as CustomEvent<OnboardingRerunDetail>).detail;
+      if (detail && shouldOpenOnboardingForScope(detail.scope, "dashboard")) {
+        setOnboardingOpen(true);
+      }
+    };
+    window.addEventListener(ONBOARDING_RERUN_EVENT, onRerun);
+    return () => window.removeEventListener(ONBOARDING_RERUN_EVENT, onRerun);
   }, []);
 
   const healthy = useMemo(() => health?.status === "ok", [health]);
-  const cards = useMemo(() => (status ? buildDashboardStatusCards(status) : []), [status]);
+  const cards = useMemo(
+    () => (status ? buildDashboardStatusCards(status) : []),
+    [status],
+  );
 
   return (
     <section className="space-y-5">
@@ -88,8 +110,14 @@ export default function Dashboard() {
             <p className="m-0 brand-title-gradient text-xs font-bold uppercase tracking-[0.14em]">
               AVAROS Control Center
             </p>
-            <h2 className="m-0 mt-1 text-2xl font-semibold text-slate-900">Dashboard</h2>
-            <p className={`mb-0 mt-1 text-sm opacity-80 ${isDark ? "text-white" : "text-slate-600"}`}>
+            <h2 className="m-0 mt-1 text-2xl font-semibold text-slate-900">
+              Dashboard
+            </h2>
+            <p
+              className={`mb-0 mt-1 text-sm opacity-80 ${
+                isDark ? "text-white" : "text-slate-600"
+              }`}
+            >
               Live operational summary for configuration and platform readiness.
             </p>
           </div>
@@ -97,14 +125,20 @@ export default function Dashboard() {
             {!loading && healthy && (
               <div
                 className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 ${
-                  isDark ? "border-slate-700 bg-slate-900/85" : "border-slate-200 bg-white/90"
+                  isDark
+                    ? "border-slate-700 bg-slate-900/85"
+                    : "border-slate-200 bg-white/90"
                 }`}
               >
                 <span className="relative inline-flex h-2.5 w-2.5">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70" />
                   <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.45)]" />
                 </span>
-                <p className={`m-0 text-sm font-semibold ${isDark ? "text-slate-100" : "text-slate-700"}`}>
+                <p
+                  className={`m-0 text-sm font-semibold ${
+                    isDark ? "text-slate-100" : "text-slate-700"
+                  }`}
+                >
                   System Healthy
                 </p>
               </div>
@@ -124,7 +158,10 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <section className="brand-panel rounded-2xl p-5" data-onboarding-target="kpi-summary">
+      <section
+        className="brand-panel rounded-2xl p-5"
+        data-onboarding-target="kpi-summary"
+      >
         <div className="mb-4">
           <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-sky-700 dark:text-sky-300">
             KPI Summary
@@ -145,7 +182,10 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <div className="brand-panel rounded-2xl p-5" data-onboarding-target="system-status">
+      <div
+        className="brand-panel rounded-2xl p-5"
+        data-onboarding-target="system-status"
+      >
         {loading && (
           <div className="brand-surface-muted mb-4 rounded-lg px-4 py-3 opacity-50">
             <LoadingSpinner label="Loading system status..." size="sm" />
@@ -153,11 +193,19 @@ export default function Dashboard() {
         )}
         {error && (
           <div className="mb-4">
-            <ErrorMessage title="Unable to load dashboard" message={error} onRetry={() => void loadData()} />
+            <ErrorMessage
+              title="Unable to load dashboard"
+              message={error}
+              onRetry={() => void loadData()}
+            />
           </div>
         )}
         {cards.length > 0 && (
-          <div className={`grid gap-3 sm:grid-cols-2 xl:grid-cols-3 ${!loading ? "dash-cards" : ""}`}>
+          <div
+            className={`grid gap-3 sm:grid-cols-2 xl:grid-cols-3 ${
+              !loading ? "dash-cards" : ""
+            }`}
+          >
             {cards.map((card) => (
               <StatusCard
                 key={card.label}
@@ -183,7 +231,15 @@ export default function Dashboard() {
       <OnboardingOverlay
         open={onboardingOpen}
         steps={DASHBOARD_ONBOARDING_STEPS}
+        onStepChange={(index) => {
+          const selector = DASHBOARD_ONBOARDING_STEPS[index]?.selector ?? "";
+          const shouldExpandVoiceWidget =
+            selector.includes("voice-widget-trigger") ||
+            selector.includes("voice-widget-panel");
+          dispatchOnboardingVoiceFocus(shouldExpandVoiceWidget);
+        }}
         onClose={() => {
+          dispatchOnboardingVoiceFocus(false);
           localStorage.setItem(ONBOARDING_STORAGE_KEY, "1");
           setOnboardingOpen(false);
         }}

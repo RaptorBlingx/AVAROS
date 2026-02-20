@@ -37,10 +37,16 @@ ENDPOINT_MAP: dict[CanonicalMetric, str] = {
     CanonicalMetric.CO2_PER_BATCH: "/api/v1/kpis/carbon/per-batch",
 }
 
-# Real RENERYO API endpoints — energy metrics share one endpoint
+# Real RENERYO API endpoints
 REAL_METER_ENDPOINT = "/api/u/measurement/meter/item"
+REAL_SEU_ITEMS_ENDPOINT = "/api/u/measurement/seu/item"
+REAL_SEU_NAMES_ENDPOINT = "/api/u/measurement/seu/names"
+REAL_SEU_GRAPH_ENDPOINT = "/api/u/measurement/seu/graph"
 REAL_SEU_VALUES_ENDPOINT = "/api/u/measurement/seu/item/{seu_id}/values"
-REAL_METRIC_ENDPOINT = "/api/u/measurement/metric/item"  # reserved for future use
+REAL_METRIC_ENDPOINT = "/api/u/measurement/metric/item"
+REAL_METRIC_NAMES_ENDPOINT = "/api/u/measurement/metric/names"
+REAL_METRIC_RESOURCES_ENDPOINT = "/api/u/measurement/metric/resources"
+REAL_METRIC_RESOURCE_VALUES_ENDPOINT = "/api/u/measurement/metric/resource/{resource_id}/values"
 
 # Metrics available in the real RENERYO API (energy monitoring platform)
 REAL_ENERGY_METRICS: frozenset[CanonicalMetric] = frozenset({
@@ -49,5 +55,17 @@ REAL_ENERGY_METRICS: frozenset[CanonicalMetric] = frozenset({
     CanonicalMetric.PEAK_DEMAND,
     CanonicalMetric.PEAK_TARIFF_EXPOSURE,
 })
+
+REAL_PRODUCTION_METRICS: frozenset[CanonicalMetric] = frozenset({
+    CanonicalMetric.OEE,
+    CanonicalMetric.SCRAP_RATE,
+    CanonicalMetric.THROUGHPUT,
+    CanonicalMetric.CYCLE_TIME,
+    CanonicalMetric.CHANGEOVER_TIME,
+})
+
+REAL_SUPPORTED_METRICS: frozenset[CanonicalMetric] = frozenset(
+    set(REAL_ENERGY_METRICS) | set(REAL_PRODUCTION_METRICS),
+)
 
 SUPPORTED_CAPABILITIES: set[str] = {"carbon", "realtime"}

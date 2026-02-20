@@ -19,6 +19,7 @@ Parser-expected format:
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
@@ -188,6 +189,82 @@ def normalize_seu_values_to_trend(data: dict) -> list[dict]:
     return [_seu_record_to_dict(record) for record in records if record.get("value") is not None]
 
 
+def normalize_seu_graph_to_trend(data: dict, *, seu_id: str = "") -> list[dict]:
+    """
+    Normalize ``/measurement/seu/graph`` response to trend data points.
+
+    Expected shape:
+        {"values": [{"seuId": "...", "value": 12.3, "datetime": "..."}, ...]}
+
+    Args:
+        data: Native graph response.
+        seu_id: Optional SEU UUID filter for a single asset trend.
+    """
+    values = data.get("values", [])
+    result: list[dict] = []
+    for item in values:
+        if seu_id and str(item.get("seuId", "")) != seu_id:
+            continue
+        if item.get("value") is None:
+            continue
+        result.append({
+            "value": float(item.get("value", 0.0)),
+            "unit": "kWh/unit",
+            "timestamp": str(item.get("datetime", "")),
+        })
+    return result
+
+
+def normalize_metric_resource_to_kpi(data: dict) -> dict:
+    """
+    Normalize metric resource values response to a single KPI dict.
+
+    Expected shape:
+        {"records": [{"value": 82.5, "datetime": "..."}, ...]}
+    """
+    records = data.get("records", [])
+    if not records:
+        raise KeyError("No metric resource value record found")
+    first = records[0]
+    return {
+        "value": float(first.get("value", 0.0)),
+        "timestamp": str(first.get("datetime", "")),
+    }
+
+
+def normalize_metric_resource_to_trend(data: dict) -> list[dict]:
+    """
+    Normalize metric resource values response to trend points.
+    """
+    records = data.get("records", [])
+    points: list[dict] = []
+    for record in records:
+        if record.get("value") is None:
+            continue
+        points.append({
+            "value": float(record.get("value", 0.0)),
+            "timestamp": str(record.get("datetime", "")),
+        })
+    return points
+
+
+def normalize_seus_to_comparison(data: dict, requested_ids: list[str]) -> list[dict]:
+    """
+    Normalize native SEU response to comparison item list.
+    """
+    records = data.get("records", [])
+    items: list[dict] = []
+    for requested in requested_ids:
+        record = _find_record(records, requested)
+        raw_consumption = record.get("consumption")
+        items.append({
+            "asset_id": record.get("name", record.get("id", requested)),
+            "value": float(raw_consumption) if raw_consumption is not None else 0.0,
+            "unit": "kWh/unit",
+        })
+    return items
+
+
 def normalize_metric_to_kpi(
     data: dict,
     metric_name: str,
@@ -240,14 +317,44 @@ def _find_record(records: list[dict], asset_id: str) -> dict:
     Raises:
         KeyError: If no record matches.
     """
+    def _norm(value: str) -> str:
+        return "".join(ch for ch in value.lower() if ch.isalnum())
+
+    requested = (asset_id or "").strip()
+    requested_norm = _norm(requested)
+
+    # Exact match first.
     for record in records:
-        if record.get("name") == asset_id or record.get("id") == asset_id:
+        if record.get("name") == requested or record.get("id") == requested:
             return record
-    if records:
-        logger.warning(
-            "Asset '%s' not found in %d records — returning first record",
-            asset_id,
-            len(records),
+
+    # Case/format-insensitive fallback ("compressor 1" ~= "Compressor-1").
+    for record in records:
+        name = str(record.get("name", ""))
+        rec_id = str(record.get("id", ""))
+        if requested_norm and (
+            _norm(name) == requested_norm or _norm(rec_id) == requested_norm
+        ):
+            return record
+
+    # MVP fallback: map ordinal spoken assets to available records
+    # when backend uses different naming conventions.
+    ordinal_match = re.match(r"^(line|compressor)-?(\d+)$", requested.lower())
+    if ordinal_match and records:
+        index = int(ordinal_match.group(2)) - 1
+        if 0 <= index < len(records):
+            logger.warning(
+                "Asset '%s' not found by name; using ordinal fallback index=%d",
+                requested,
+                index,
+            )
+            return records[index]
+
+    # Keep legacy default behavior for generic requests only.
+    if records and requested.lower() in {"", "default", "all", "overall"}:
+        logger.info(
+            "Using first record for generic asset selector '%s'",
+            requested or "<empty>",
         )
         return records[0]
     raise KeyError(f"No meter record found for asset_id={asset_id}")

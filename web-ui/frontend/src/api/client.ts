@@ -1,5 +1,7 @@
 import type {
   ActivateProfileResponse,
+  AssetDiscoveryResponse,
+  AssetMappingsResponse,
   BaselineResponse,
   CSVUploadResponse,
   CanonicalMetricName,
@@ -24,6 +26,7 @@ import type {
   ProductionRecordRequest,
   ProductionRecordResponse,
   ProductionSummaryResponse,
+  ProfileConfig,
   ProfileDetailResponse,
   ProfileListResponse,
   SiteProgressResponse,
@@ -463,4 +466,21 @@ export function activateProfile(
     `/api/v1/config/profiles/${name}/activate`,
     { method: "POST" },
   );
+}
+
+export function discoverAssets(): Promise<AssetDiscoveryResponse> {
+  return request<AssetDiscoveryResponse>("/api/v1/assets/discover");
+}
+
+export function getAssetMappings(): Promise<AssetMappingsResponse> {
+  return request<AssetMappingsResponse>("/api/v1/assets/mappings");
+}
+
+export function setAssetMappings(
+  assetMappings: AssetMappingsResponse["asset_mappings"],
+): Promise<AssetMappingsResponse> {
+  return request<AssetMappingsResponse>("/api/v1/assets/mappings", {
+    method: "PUT",
+    body: { asset_mappings: assetMappings },
+  });
 }

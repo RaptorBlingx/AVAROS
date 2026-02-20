@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   createPlatformConfig,
-  getProfile,
   getPlatformConfig,
   resetPlatformConfig,
   testConnection,
@@ -13,6 +12,7 @@ import type {
   PlatformConfigRequest,
   PlatformConfigResponse,
   PlatformType,
+  ProfileConfig,
 } from "../../api/types";
 import ConnectionTestResult from "../common/ConnectionTestResult";
 import ErrorMessage from "../common/ErrorMessage";
@@ -22,8 +22,6 @@ import ProfileSelector from "./ProfileSelector";
 
 type PlatformConfigSectionProps = {
   onNotify: (type: "success" | "error", message: string) => void;
-  onProfileSwitch?: (profileName: string, voiceReloaded: boolean) => void;
-  onActiveProfileResolved?: (profileName: string) => void;
 };
 
 type AuthType = "api_key" | "cookie";
@@ -73,8 +71,6 @@ function validate(config: {
 
 export default function PlatformConfigSection({
   onNotify,
-  onProfileSwitch,
-  onActiveProfileResolved,
 }: PlatformConfigSectionProps) {
   const { isDark } = useTheme();
   const [loading, setLoading] = useState(true);
@@ -87,9 +83,12 @@ export default function PlatformConfigSection({
   const [seuId, setSeuId] = useState("");
   const [apiUrl, setApiUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [testResult, setTestResult] = useState<ConnectionTestResponse | null>(null);
+  const [testResult, setTestResult] = useState<ConnectionTestResponse | null>(
+    null,
+  );
   const [inlineError, setInlineError] = useState("");
-  const [profileReadOnly, setProfileReadOnly] = useState(false);
+  const [isBuiltinProfile, setIsBuiltinProfile] = useState(false);
+  const [profileRefreshKey, setProfileRefreshKey] = useState(0);
 
   const isMock = useMemo(() => platformType === "mock", [platformType]);
   const adapterTarget = useMemo(
@@ -97,10 +96,36 @@ export default function PlatformConfigSection({
       platformType === "reneryo"
         ? "RENERYO"
         : platformType === "custom_rest"
-          ? "Custom REST"
-          : "Mock",
+        ? "Custom REST"
+        : "Mock",
     [platformType],
   );
+
+  const formLocked = isBuiltinProfile;
+
+  const handleProfileChange = useCallback((profile: ProfileConfig) => {
+    setPlatformType(profile.platform_type);
+    setApiUrl(profile.api_url);
+    setApiKey("");
+    setAuthType(
+      profile.extra_settings?.auth_type === "cookie" ? "cookie" : "api_key",
+    );
+    setSeuId(
+      typeof profile.extra_settings?.seu_id === "string"
+        ? profile.extra_settings.seu_id
+        : "",
+    );
+    setConfig({
+      platform_type: profile.platform_type,
+      api_url: profile.api_url,
+      api_key: profile.api_key,
+      extra_settings: profile.extra_settings,
+    });
+    setIsBuiltinProfile(profile.is_builtin);
+    setEditing(false);
+    setInlineError("");
+    setTestResult(null);
+  }, []);
 
   const loadConfig = useCallback(async () => {
     setLoading(true);
@@ -110,13 +135,16 @@ export default function PlatformConfigSection({
       setConfig(data);
       setPlatformType(data.platform_type);
       setAuthType(
-        data.extra_settings?.auth_type === "cookie"
-          ? "cookie"
-          : "api_key",
+        data.extra_settings?.auth_type === "cookie" ? "cookie" : "api_key",
       );
-      setSeuId(data.extra_settings?.seu_id ?? "");
+      setSeuId(
+        typeof data.extra_settings?.seu_id === "string"
+          ? data.extra_settings.seu_id
+          : "",
+      );
       setApiUrl(data.api_url);
       setApiKey("");
+      setIsBuiltinProfile(data.platform_type === "mock");
     } catch (error: unknown) {
       const message = toFriendlyErrorMessage(error);
       setInlineError(message);
@@ -128,29 +156,6 @@ export default function PlatformConfigSection({
   useEffect(() => {
     void loadConfig();
   }, [loadConfig]);
-
-  const handleProfileChange = useCallback(
-    async (profileName: string) => {
-      setInlineError("");
-      setTestResult(null);
-      try {
-        const detail = await getProfile(profileName);
-        setPlatformType(detail.platform_type as PlatformType);
-        setApiUrl(detail.api_url);
-        setApiKey("");
-        setAuthType(
-          detail.extra_settings?.auth_type === "cookie"
-            ? "cookie"
-            : "api_key",
-        );
-        setProfileReadOnly(detail.is_builtin);
-        setEditing(false);
-      } catch (error: unknown) {
-        onNotify("error", toFriendlyErrorMessage(error));
-      }
-    },
-    [onNotify],
-  );
 
   const handleSave = useCallback(async () => {
     const validationError = validate({
@@ -178,6 +183,7 @@ export default function PlatformConfigSection({
       setConfig(saved);
       setEditing(false);
       setApiKey("");
+      setProfileRefreshKey((k) => k + 1);
       onNotify("success", "Platform config updated.");
     } catch (error: unknown) {
       const message = toFriendlyErrorMessage(error);
@@ -196,6 +202,8 @@ export default function PlatformConfigSection({
       await resetPlatformConfig();
       await loadConfig();
       setEditing(false);
+      setProfileRefreshKey((k) => k + 1);
+      setIsBuiltinProfile(true);
       onNotify("success", "Platform config reset to mock.");
     } catch (error: unknown) {
       const message = toFriendlyErrorMessage(error);
@@ -243,29 +251,26 @@ export default function PlatformConfigSection({
   return (
     <section className="space-y-3">
       <ProfileSelector
+        refreshKey={profileRefreshKey}
+        onProfileChange={handleProfileChange}
         onNotify={onNotify}
-        onProfileChange={(name) => void handleProfileChange(name)}
-        onActiveProfileResolved={(name) => {
-          onActiveProfileResolved?.(name);
-        }}
-        onProfileSwitched={(name, voiceReloaded) => {
-          onProfileSwitch?.(name, voiceReloaded);
-        }}
       />
 
       <header className="flex items-center justify-end gap-2">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
-              isDark
-                ? "border-slate-500 bg-slate-700 text-slate-100 hover:bg-slate-600"
-                : "border-slate-300 bg-white text-slate-700"
-            }`}
-            onClick={() => setEditing((prev) => !prev)}
-          >
-            {editing ? "Cancel" : "Edit"}
-          </button>
+          {!formLocked && (
+            <button
+              type="button"
+              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+                isDark
+                  ? "border-slate-500 bg-slate-700 text-slate-100 hover:bg-slate-600"
+                  : "border-slate-300 bg-white text-slate-700"
+              }`}
+              onClick={() => setEditing((prev) => !prev)}
+            >
+              {editing ? "Cancel" : "Edit"}
+            </button>
+          )}
           <button
             type="button"
             className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
@@ -297,7 +302,7 @@ export default function PlatformConfigSection({
                 onChange={(event) =>
                   setPlatformType(event.target.value as PlatformType)
                 }
-                disabled={!editing || saving || profileReadOnly}
+                disabled={!editing || saving || formLocked}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               >
                 <option value="mock">Mock</option>
@@ -314,7 +319,7 @@ export default function PlatformConfigSection({
                 type="url"
                 value={apiUrl}
                 onChange={(event) => setApiUrl(event.target.value)}
-                disabled={!editing || saving || isMock || profileReadOnly}
+                disabled={!editing || saving || formLocked || isMock}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               />
             </label>
@@ -328,7 +333,7 @@ export default function PlatformConfigSection({
                 onChange={(event) =>
                   setAuthType(event.target.value as AuthType)
                 }
-                disabled={!editing || saving || isMock || profileReadOnly}
+                disabled={!editing || saving || formLocked || isMock}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               >
                 <option value="api_key">API Key</option>
@@ -345,7 +350,13 @@ export default function PlatformConfigSection({
                 value={seuId}
                 onChange={(event) => setSeuId(event.target.value)}
                 placeholder="Paste SEU ID for direct energy per unit endpoint"
-                disabled={!editing || saving || isMock || platformType !== "reneryo"}
+                disabled={
+                  !editing ||
+                  saving ||
+                  formLocked ||
+                  isMock ||
+                  platformType !== "reneryo"
+                }
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               />
             </label>
@@ -365,7 +376,7 @@ export default function PlatformConfigSection({
                       : "Enter API key to update"
                     : config?.api_key ?? "****"
                 }
-                disabled={!editing || saving || isMock || profileReadOnly}
+                disabled={!editing || saving || formLocked || isMock}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               />
             </label>
@@ -385,8 +396,17 @@ export default function PlatformConfigSection({
             >
               {testing ? (
                 <span className="inline-flex items-center gap-2">
-                  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <path d="M21 12a9 9 0 10-9 9" strokeWidth="2" strokeLinecap="round" />
+                  <svg
+                    className="h-4 w-4 animate-spin"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                  >
+                    <path
+                      d="M21 12a9 9 0 10-9 9"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
                   </svg>
                   Testing connection to {adapterTarget}...
                 </span>

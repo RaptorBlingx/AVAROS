@@ -1,78 +1,108 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   activateProfile,
-  createProfile,
-  deleteProfile,
+  createProfile as apiCreateProfile,
+  deleteProfile as apiDeleteProfile,
+  getProfile,
   listProfiles,
   toFriendlyErrorMessage,
 } from "../../api/client";
-import type { ProfileMetadata } from "../../api/types";
+import type {
+  CreateProfileRequest,
+  PlatformType,
+  ProfileConfig,
+  ProfileMetadata,
+} from "../../api/types";
+import LoadingSpinner from "../common/LoadingSpinner";
 import { useTheme } from "../common/ThemeProvider";
 
-const PROFILE_NAME_REGEX = /^[a-z0-9][a-z0-9-]{0,48}[a-z0-9]$/;
-
-type ProfileSelectorProps = {
+export type ProfileSelectorProps = {
+  refreshKey?: number;
+  onProfileChange: (config: ProfileConfig) => void;
   onNotify: (type: "success" | "error", message: string) => void;
-  onProfileChange: (profileName: string) => void;
-  onActiveProfileResolved?: (profileName: string) => void;
-  onProfileSwitched?: (profileName: string, voiceReloaded: boolean) => void;
 };
 
+const PROFILE_NAME_RE = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
+
+function validateProfileName(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed.length < 2 || trimmed.length > 50) {
+    return "Profile name must be 2\u201350 characters.";
+  }
+  if (!PROFILE_NAME_RE.test(trimmed)) {
+    return "Only lowercase letters, numbers, and hyphens. Must start and end with a letter or number.";
+  }
+  return "";
+}
+
 export default function ProfileSelector({
-  onNotify,
+  refreshKey = 0,
   onProfileChange,
-  onActiveProfileResolved,
-  onProfileSwitched,
+  onNotify,
 }: ProfileSelectorProps) {
   const { isDark } = useTheme();
   const [profiles, setProfiles] = useState<ProfileMetadata[]>([]);
-  const [activeProfile, setActiveProfile] = useState("mock");
-  const [selectedProfile, setSelectedProfile] = useState("mock");
-  const [loading, setLoading] = useState(true);
+  const [activeProfileName, setActiveProfileName] = useState("");
+  const [selectedName, setSelectedName] = useState("");
+  const [loadingProfiles, setLoadingProfiles] = useState(true);
   const [switching, setSwitching] = useState(false);
   const [showNewForm, setShowNewForm] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newPlatform, setNewPlatform] = useState("reneryo");
+  const [newPlatformType, setNewPlatformType] =
+    useState<PlatformType>("reneryo");
   const [creating, setCreating] = useState(false);
-  const [nameError, setNameError] = useState("");
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadProfiles = useCallback(async () => {
-    setLoading(true);
+    setLoadingProfiles(true);
     try {
       const data = await listProfiles();
-      setProfiles(data.profiles);
-      setActiveProfile(data.active_profile);
-      setSelectedProfile(data.active_profile);
-      onProfileChange(data.active_profile);
-      onActiveProfileResolved?.(data.active_profile);
+      const sorted = [...data.profiles].sort((a, b) => {
+        if (a.is_builtin && !b.is_builtin) return -1;
+        if (!a.is_builtin && b.is_builtin) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      setProfiles(sorted);
+      setActiveProfileName(data.active_profile);
+      setSelectedName((prev) => {
+        if (!prev || !sorted.some((p) => p.name === prev)) {
+          return data.active_profile;
+        }
+        return prev;
+      });
     } catch (error: unknown) {
       onNotify("error", toFriendlyErrorMessage(error));
     } finally {
-      setLoading(false);
+      setLoadingProfiles(false);
     }
-  }, [onNotify, onProfileChange, onActiveProfileResolved]);
+  }, [onNotify]);
 
   useEffect(() => {
     void loadProfiles();
-  }, [loadProfiles]);
+  }, [loadProfiles, refreshKey]);
+
+  const selectProfile = useCallback(
+    async (name: string) => {
+      setSelectedName(name);
+      try {
+        const config = await getProfile(name);
+        onProfileChange(config);
+      } catch (error: unknown) {
+        onNotify("error", toFriendlyErrorMessage(error));
+      }
+    },
+    [onProfileChange, onNotify],
+  );
 
   const handleSwitch = useCallback(async () => {
-    if (selectedProfile === activeProfile) {
-      return;
-    }
+    if (selectedName === activeProfileName) return;
     setSwitching(true);
     try {
-      const result = await activateProfile(selectedProfile);
-      setActiveProfile(result.active_profile);
-      onNotify("success", `Switched to profile "${result.active_profile}"`);
-      onProfileChange(result.active_profile);
-      onActiveProfileResolved?.(result.active_profile);
-      onProfileSwitched?.(
-        result.active_profile,
-        result.voice_reloaded ?? false,
-      );
+      const config = await activateProfile(selectedName);
+      setActiveProfileName(selectedName);
+      onProfileChange(config);
+      onNotify("success", `Switched to profile \u201c${selectedName}\u201d.`);
       await loadProfiles();
     } catch (error: unknown) {
       onNotify("error", toFriendlyErrorMessage(error));
@@ -80,265 +110,259 @@ export default function ProfileSelector({
       setSwitching(false);
     }
   }, [
-    selectedProfile,
-    activeProfile,
-    onNotify,
+    selectedName,
+    activeProfileName,
     onProfileChange,
-    onActiveProfileResolved,
-    onProfileSwitched,
+    onNotify,
     loadProfiles,
   ]);
 
-  const handleDelete = useCallback(
-    async (name: string) => {
-      try {
-        const result = await deleteProfile(name);
-        onNotify("success", result.message);
-        setConfirmDelete(null);
-        if (result.active_profile !== activeProfile) {
-          setActiveProfile(result.active_profile);
-          onProfileChange(result.active_profile);
-          onActiveProfileResolved?.(result.active_profile);
-        }
-        setSelectedProfile(result.active_profile);
-        await loadProfiles();
-      } catch (error: unknown) {
-        onNotify("error", toFriendlyErrorMessage(error));
-      }
-    },
-    [activeProfile, onNotify, onProfileChange, onActiveProfileResolved, loadProfiles],
-  );
-
   const handleCreate = useCallback(async () => {
-    const trimmed = newName.trim().toLowerCase();
-    if (!PROFILE_NAME_REGEX.test(trimmed)) {
-      setNameError(
-        "2-50 chars, lowercase alphanumeric + hyphens, no leading/trailing hyphen.",
-      );
+    const validationError = validateProfileName(newName);
+    if (validationError) {
+      onNotify("error", validationError);
       return;
     }
     setCreating(true);
-    setNameError("");
     try {
-      await createProfile({
+      const trimmed = newName.trim();
+      const payload: CreateProfileRequest = {
         name: trimmed,
-        platform_type: newPlatform,
-        api_url: "",
-        api_key: "",
-        extra_settings: {},
-      });
-      onNotify("success", `Profile "${trimmed}" created`);
-      setShowNewForm(false);
+        platform_type: newPlatformType,
+      };
+      await apiCreateProfile(payload);
       setNewName("");
-      setNewPlatform("reneryo");
+      setShowNewForm(false);
+      onNotify("success", `Profile \u201c${trimmed}\u201d created.`);
       await loadProfiles();
+      await selectProfile(trimmed);
     } catch (error: unknown) {
-      const message = toFriendlyErrorMessage(error);
-      setNameError(message);
-      onNotify("error", message);
+      onNotify("error", toFriendlyErrorMessage(error));
     } finally {
       setCreating(false);
     }
-  }, [newName, newPlatform, onNotify, loadProfiles]);
+  }, [newName, newPlatformType, onNotify, loadProfiles, selectProfile]);
 
-  const selectedMeta = profiles.find((p) => p.name === selectedProfile);
-  const isSelectedActive = selectedProfile === activeProfile;
-  const isSelectedBuiltin = selectedMeta?.is_builtin ?? false;
+  const handleDelete = useCallback(async () => {
+    const profile = profiles.find((p) => p.name === selectedName);
+    if (!profile || profile.is_builtin) return;
+    if (
+      !window.confirm(
+        `Delete profile \u201c${selectedName}\u201d? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      const deletedName = selectedName;
+      const deletedWasActive = deletedName === activeProfileName;
+      await apiDeleteProfile(deletedName);
+      onNotify("success", `Profile \u201c${deletedName}\u201d deleted.`);
 
-  const badgeClasses = useMemo(
-    () => (isActive: boolean, isBuiltin: boolean) => {
-      if (isActive) {
-        return isDark
-          ? "bg-emerald-900/60 text-emerald-300 border-emerald-600"
-          : "bg-emerald-50 text-emerald-700 border-emerald-200";
+      const refreshed = await listProfiles();
+      const sorted = [...refreshed.profiles].sort((a, b) => {
+        if (a.is_builtin && !b.is_builtin) return -1;
+        if (!a.is_builtin && b.is_builtin) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      setProfiles(sorted);
+      setActiveProfileName(refreshed.active_profile);
+      setSelectedName((prev) => {
+        if (!prev || prev === deletedName || !sorted.some((p) => p.name === prev)) {
+          return refreshed.active_profile || sorted[0]?.name || "";
+        }
+        return prev;
+      });
+
+      if (deletedWasActive) {
+        const fallbackName = refreshed.active_profile || sorted[0]?.name;
+        if (fallbackName) {
+          await selectProfile(fallbackName);
+        }
       }
-      if (isBuiltin) {
-        return isDark
-          ? "bg-slate-700 text-slate-300 border-slate-600"
-          : "bg-slate-100 text-slate-600 border-slate-300";
-      }
-      return "";
-    },
-    [isDark],
-  );
+    } catch (error: unknown) {
+      onNotify("error", toFriendlyErrorMessage(error));
+    } finally {
+      setDeleting(false);
+    }
+  }, [selectedName, activeProfileName, profiles, onNotify, selectProfile]);
 
-  if (loading) {
+  const selectedProfile = profiles.find((p) => p.name === selectedName);
+  const isSelectedActive = selectedName === activeProfileName;
+  const isSelectedBuiltin = selectedProfile?.is_builtin ?? false;
+  const busy = switching || deleting || creating;
+
+  if (loadingProfiles && profiles.length === 0) {
     return (
-      <div
-        data-testid="profile-loading"
-        className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 opacity-50 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200"
-      >
-        Loading profiles…
+      <div className="mb-3" data-testid="profile-selector-loading">
+        <LoadingSpinner label="Loading profiles\u2026" size="sm" />
       </div>
     );
   }
 
+  if (!loadingProfiles && profiles.length === 0) {
+    return null;
+  }
+
   return (
-    <div data-testid="profile-selector" className="mb-4 space-y-3">
-      {/* Profile dropdown + controls */}
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="block flex-1 min-w-[200px]">
-          <span className="mb-1 block text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
-            Active Profile
+    <div className="mb-4 space-y-3" data-testid="profile-selector-section">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="block min-w-[200px] flex-1">
+          <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
+            Profile
           </span>
           <select
+            value={selectedName}
+            onChange={(e) => void selectProfile(e.target.value)}
+            disabled={busy}
+            className={`w-full rounded-lg border px-3 py-2 text-sm ${
+              isDark
+                ? "border-slate-600 bg-slate-800 text-slate-100"
+                : "border-slate-300 bg-white text-slate-900"
+            }`}
             data-testid="profile-dropdown"
-            value={selectedProfile}
-            onChange={(e) => {
-              setSelectedProfile(e.target.value);
-              onProfileChange(e.target.value);
-            }}
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
           >
             {profiles.map((p) => (
               <option key={p.name} value={p.name}>
                 {p.name}
-                {p.is_builtin ? " (Built-in)" : ""}
-                {p.is_active ? " ● Active" : ""}
+                {p.is_builtin ? " \uD83D\uDD12 Built-in" : ""}
+                {p.is_active ? " \u25CF Active" : ""}
               </option>
             ))}
           </select>
         </label>
 
-        <div className="flex items-center gap-2">
-          {/* Badges */}
+        <button
+          type="button"
+          onClick={() => void handleSwitch()}
+          disabled={isSelectedActive || busy}
+          className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
+            isSelectedActive || busy ? "cursor-not-allowed opacity-50" : ""
+          } ${
+            isDark
+              ? "border-emerald-500 bg-emerald-950/60 text-emerald-200 hover:bg-emerald-900/60"
+              : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+          }`}
+          data-testid="profile-switch-btn"
+        >
+          {switching ? "Switching\u2026" : "Switch"}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowNewForm((v) => !v)}
+          disabled={busy}
+          className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
+            isDark
+              ? "border-sky-500 bg-sky-950/60 text-sky-200 hover:bg-sky-900/60"
+              : "border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100"
+          }`}
+          data-testid="profile-new-btn"
+        >
+          New Profile
+        </button>
+
+        {!isSelectedBuiltin && (
+          <button
+            type="button"
+            onClick={() => void handleDelete()}
+            disabled={busy}
+            className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
+              isDark
+                ? "border-rose-400 bg-rose-950/60 text-rose-200 hover:bg-rose-900/60"
+                : "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
+            }`}
+            data-testid="profile-delete-btn"
+          >
+            {deleting ? "Deleting\u2026" : "Delete"}
+          </button>
+        )}
+      </div>
+
+      {selectedProfile && (
+        <div className="flex items-center gap-2" data-testid="profile-badges">
+          {isSelectedActive && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+              data-testid="badge-active"
+            >
+              <span
+                className="h-1.5 w-1.5 rounded-full bg-emerald-500"
+                aria-hidden="true"
+              />
+              Active
+            </span>
+          )}
           {isSelectedBuiltin && (
             <span
-              data-testid="builtin-badge"
-              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${badgeClasses(false, true)}`}
+              className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+              data-testid="badge-builtin"
             >
-              <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path
-                  fillRule="evenodd"
-                  d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
-                  clipRule="evenodd"
-                />
+              <svg
+                viewBox="0 0 24 24"
+                className="h-3 w-3"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
+              >
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0110 0v4" />
               </svg>
               Built-in
             </span>
           )}
-          {isSelectedActive && (
-            <span
-              data-testid="active-badge"
-              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${badgeClasses(true, false)}`}
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              Active
-            </span>
-          )}
-
-          {/* Switch button */}
-          {!isSelectedActive && (
-            <button
-              type="button"
-              data-testid="switch-button"
-              onClick={() => void handleSwitch()}
-              disabled={switching}
-              className="btn-brand-primary rounded-lg px-3 py-1.5 text-xs font-semibold"
-            >
-              {switching ? "Switching…" : "Switch"}
-            </button>
-          )}
-
-          {/* New Profile button */}
-          <button
-            type="button"
-            data-testid="new-profile-button"
-            onClick={() => setShowNewForm((prev) => !prev)}
-            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
-              isDark
-                ? "border-slate-500 bg-slate-700 text-slate-100 hover:bg-slate-600"
-                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-            }`}
-          >
-            New Profile
-          </button>
-
-          {/* Delete button (custom profiles only) */}
-          {!isSelectedBuiltin && (
-            <>
-              {confirmDelete === selectedProfile ? (
-                <span className="inline-flex items-center gap-1">
-                  <button
-                    type="button"
-                    data-testid="confirm-delete-button"
-                    onClick={() => void handleDelete(selectedProfile)}
-                    className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
-                      isDark
-                        ? "border-rose-400 bg-rose-950/60 text-rose-200 hover:bg-rose-900/60"
-                        : "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                    }`}
-                  >
-                    Confirm Delete
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="cancel-delete-button"
-                    onClick={() => setConfirmDelete(null)}
-                    className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
-                      isDark
-                        ? "border-slate-500 bg-slate-700 text-slate-100"
-                        : "border-slate-300 bg-white text-slate-700"
-                    }`}
-                  >
-                    Cancel
-                  </button>
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  data-testid="delete-button"
-                  onClick={() => setConfirmDelete(selectedProfile)}
-                  className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
-                    isDark
-                      ? "border-rose-400 bg-rose-950/60 text-rose-200 hover:bg-rose-900/60"
-                      : "border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                  }`}
-                >
-                  Delete
-                </button>
-              )}
-            </>
-          )}
         </div>
-      </div>
+      )}
 
-      {/* New Profile Form */}
       {showNewForm && (
         <div
-          data-testid="new-profile-form"
-          className={`rounded-lg border p-4 ${
+          className={`rounded-lg border p-3 ${
             isDark
               ? "border-slate-600 bg-slate-800/60"
               : "border-slate-200 bg-slate-50"
           }`}
+          data-testid="new-profile-form"
         >
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="block flex-1 min-w-[160px]">
-              <span className="mb-1 block text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="block min-w-[160px] flex-1">
+              <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
                 Profile Name
               </span>
               <input
                 type="text"
-                data-testid="new-profile-name"
                 value={newName}
-                onChange={(e) => {
-                  setNewName(e.target.value);
-                  setNameError("");
-                }}
-                placeholder="my-reneryo-profile"
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                onChange={(e) =>
+                  setNewName(
+                    e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
+                  )
+                }
+                placeholder="my-custom-profile"
+                maxLength={50}
+                className={`w-full rounded-lg border px-3 py-2 text-sm ${
+                  isDark
+                    ? "border-slate-600 bg-slate-700 text-slate-100"
+                    : "border-slate-300 bg-white text-slate-900"
+                }`}
+                data-testid="profile-new-name"
               />
             </label>
-            <label className="block min-w-[140px]">
-              <span className="mb-1 block text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
                 Platform
               </span>
               <select
-                data-testid="new-profile-platform"
-                value={newPlatform}
-                onChange={(e) => setNewPlatform(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                value={newPlatformType}
+                onChange={(e) =>
+                  setNewPlatformType(e.target.value as PlatformType)
+                }
+                className={`rounded-lg border px-3 py-2 text-sm ${
+                  isDark
+                    ? "border-slate-600 bg-slate-800 text-slate-100"
+                    : "border-slate-300 bg-white text-slate-900"
+                }`}
+                data-testid="profile-new-platform"
               >
                 <option value="reneryo">RENERYO</option>
                 <option value="custom_rest">Custom REST</option>
@@ -346,18 +370,17 @@ export default function ProfileSelector({
             </label>
             <button
               type="button"
-              data-testid="create-profile-button"
               onClick={() => void handleCreate()}
               disabled={creating}
               className="btn-brand-primary rounded-lg px-3 py-2 text-xs font-semibold"
+              data-testid="profile-create-btn"
             >
-              {creating ? "Creating…" : "Create"}
+              {creating ? "Creating\u2026" : "Create"}
             </button>
             <button
               type="button"
               onClick={() => {
                 setShowNewForm(false);
-                setNameError("");
                 setNewName("");
               }}
               className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
@@ -365,15 +388,14 @@ export default function ProfileSelector({
                   ? "border-slate-500 bg-slate-700 text-slate-100"
                   : "border-slate-300 bg-white text-slate-700"
               }`}
+              data-testid="profile-new-cancel"
             >
               Cancel
             </button>
           </div>
-          {nameError && (
-            <p data-testid="name-error" className="mt-2 text-xs text-rose-600 dark:text-rose-400">
-              {nameError}
-            </p>
-          )}
+          <p className="mt-1.5 text-xs text-slate-500">
+            Lowercase letters, numbers, and hyphens only. 2\u201350 characters.
+          </p>
         </div>
       )}
     </div>

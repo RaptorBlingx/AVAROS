@@ -8,3 +8,8 @@ how much scrap are we producing
 what's our (scrap|waste) percentage
 scrap rate {period}
 material waste for {asset}
+scrap rate
+waste rate
+show scrap rate
+show waste rate
+scrap rate today

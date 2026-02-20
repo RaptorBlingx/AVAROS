@@ -225,6 +225,7 @@ class AdapterFactory:
         api_format = "native"
         profile_name = ""
         extra: dict = {}
+        asset_mappings: dict[str, dict[str, object]] = {}
 
         if self._settings_service is not None:
             try:
@@ -251,6 +252,10 @@ class AdapterFactory:
                         if isinstance(extra, dict)
                         else "native"
                     )
+                    if isinstance(extra, dict):
+                        raw_mappings = extra.get("asset_mappings", {})
+                        if isinstance(raw_mappings, dict):
+                            asset_mappings = raw_mappings
             except Exception as exc:
                 logger.warning(
                     "Error reading RENERYO config: %s", exc,
@@ -265,6 +270,7 @@ class AdapterFactory:
             settings_service=self._settings_service,
             profile_name=profile_name,
             extra_settings=extra if isinstance(extra, dict) else {},
+            asset_mappings=asset_mappings,
         )
 
     @classmethod

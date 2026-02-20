@@ -294,3 +294,45 @@ export type DeleteProfileResponse = {
   active_profile: string;
   message: string;
 };
+
+export type MetricResourceMap = Record<string, string>;
+
+export type AssetMappingItem = {
+  seu_id: string;
+  metric_resources: MetricResourceMap;
+};
+
+export type AssetMappingsResponse = {
+  asset_mappings: Record<string, AssetMappingItem>;
+};
+
+export type MetricResourceOption = {
+  id: string;
+  name: string;
+};
+
+export type DiscoveredSeu = {
+  id: string;
+  name: string;
+  energy_resource: string;
+};
+
+export type MetricCandidate = {
+  key: string;
+  id: string;
+  name: string;
+};
+
+export type AssetDiscoveryResponse = {
+  seus: DiscoveredSeu[];
+  metrics: MetricCandidate[];
+  resources: Record<string, MetricResourceOption[]>;
+  existing_mappings: Record<string, AssetMappingItem>;
+};
+
+export type ProfileConfig = {
+  platform_type: string;
+  api_url: string;
+  api_key: string;
+  extra_settings: Record<string, any>;
+};

@@ -370,6 +370,16 @@ class AVAROSSkill(FallbackSkill):
 
         self._safe_dispatch("handle_kpi_energy_total", _execute)
 
+    @intent_handler("greeting.intent")
+    def handle_greeting(self, message):
+        """Handle greetings such as 'hello' or 'hey avaros'."""
+        self.speak_dialog("greeting.response")
+
+    @intent_handler("help.intent")
+    def handle_help(self, message):
+        """Handle generic help requests."""
+        self.speak_dialog("help.response")
+
     @intent_handler("kpi.oee.intent")
     def handle_kpi_oee(self, message):
         """Handle: 'What's the OEE for {asset}?'"""

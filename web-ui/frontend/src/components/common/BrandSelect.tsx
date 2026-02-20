@@ -35,9 +35,19 @@ export default function BrandSelect({
         }
       >
         <Select.Value placeholder={placeholder} />
-        <Select.Icon>
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor">
-            <path d="M6 9l6 6 6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <Select.Icon className="mr-2">
+          <svg
+            viewBox="0 0 24 24"
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+          >
+            <path
+              d="M6 9l6 6 6-6"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
         </Select.Icon>
       </Select.Trigger>
@@ -57,8 +67,17 @@ export default function BrandSelect({
               >
                 <Select.ItemText>{option.label}</Select.ItemText>
                 <Select.ItemIndicator className="absolute left-2 inline-flex items-center">
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor">
-                    <path d="M5 12l5 5L19 8" strokeWidth="2" strokeLinecap="round" />
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                  >
+                    <path
+                      d="M5 12l5 5L19 8"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
                   </svg>
                 </Select.ItemIndicator>
               </Select.Item>

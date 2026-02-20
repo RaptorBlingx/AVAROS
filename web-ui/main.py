@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from config import APP_VERSION, CORS_ORIGINS, DATABASE_URL, WEB_API_KEY
 from dependencies import get_settings_service
+from routers.assets import router as assets_router
 from routers.config import router as config_router
 from routers.emission_factors import router as emission_factors_router
 from routers.intents import router as intents_router
@@ -75,6 +76,7 @@ def health() -> dict[str, str]:
 
 
 app.include_router(status_router)
+app.include_router(assets_router)
 app.include_router(config_router)
 app.include_router(profiles_router)
 app.include_router(emission_factors_router)

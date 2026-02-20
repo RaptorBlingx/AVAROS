@@ -706,3 +706,114 @@ class TestAdapterFactoryAuthType:
 
         assert mock_adapter_class.call_count == 1
         assert mock_adapter_class.call_args.kwargs["native_seu_id"] == "SEU-123"
+
+
+# ══════════════════════════════════════════════════════════
+# Profile endpoints (P5-L08)
+# ══════════════════════════════════════════════════════════
+
+
+class TestProfileEndpoints:
+    """Smoke tests for profile CRUD and activation endpoints."""
+
+    def test_list_profiles_contains_mock_first(self, client: TestClient) -> None:
+        """GET /profiles always includes built-in mock profile first."""
+        response = client.get("/api/v1/config/profiles")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["active_profile"] == "mock"
+        assert len(body["profiles"]) >= 1
+        assert body["profiles"][0]["name"] == "mock"
+        assert body["profiles"][0]["is_builtin"] is True
+
+    def test_create_get_activate_delete_profile_flow(self, client: TestClient) -> None:
+        """Create custom profile, activate it, then delete it."""
+        create_resp = client.post(
+            "/api/v1/config/profiles",
+            json={
+                "name": "site-a",
+                "platform_type": "reneryo",
+                "api_url": "https://api.reneryo.example.com",
+                "api_key": "secret-1234",
+                "extra_settings": {"auth_type": "cookie"},
+            },
+        )
+        assert create_resp.status_code == 201
+        assert create_resp.json()["name"] == "site-a"
+
+        get_resp = client.get("/api/v1/config/profiles/site-a")
+        assert get_resp.status_code == 200
+        assert get_resp.json()["platform_type"] == "reneryo"
+        assert get_resp.json()["is_builtin"] is False
+
+        activate_resp = client.post("/api/v1/config/profiles/site-a/activate")
+        assert activate_resp.status_code == 200
+        assert activate_resp.json()["is_active"] is True
+
+        list_resp = client.get("/api/v1/config/profiles")
+        assert list_resp.status_code == 200
+        assert list_resp.json()["active_profile"] == "site-a"
+
+        platform_resp = client.get("/api/v1/config/platform")
+        assert platform_resp.status_code == 200
+        assert platform_resp.json()["platform_type"] == "reneryo"
+
+        delete_resp = client.delete("/api/v1/config/profiles/site-a")
+        assert delete_resp.status_code == 204
+
+        list_after_delete = client.get("/api/v1/config/profiles").json()
+        assert list_after_delete["active_profile"] == "mock"
+
+    def test_delete_mock_profile_rejected(self, client: TestClient) -> None:
+        """DELETE mock profile is blocked."""
+        response = client.delete("/api/v1/config/profiles/mock")
+        assert response.status_code == 400
+
+    def test_activate_missing_profile_returns_404(self, client: TestClient) -> None:
+        """Activating unknown profile returns 404."""
+        response = client.post("/api/v1/config/profiles/does-not-exist/activate")
+        assert response.status_code == 404
+
+    def test_activate_reneryo_overwrites_cookie(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """Activating reneryo profile forces default cookie auth key."""
+        create_resp = client.post(
+            "/api/v1/config/profiles",
+            json={
+                "name": "reneryo",
+                "platform_type": "reneryo",
+                "api_url": "http://10.33.10.110:30896",
+                "api_key": "old-cookie",
+                "extra_settings": {"auth_type": "bearer"},
+            },
+        )
+        assert create_resp.status_code == 201
+
+        activate_resp = client.post("/api/v1/config/profiles/reneryo/activate")
+        assert activate_resp.status_code == 200
+        assert activate_resp.json()["is_active"] is True
+
+        platform_cfg = settings_service.get_platform_config()
+        assert platform_cfg.platform_type == "reneryo"
+        assert (
+            platform_cfg.api_key
+            == "575e90e9-ac4b-4fa8-a373-1206b67b2ad5."
+            "b4DLZUbCyjECM0mb2C%2Fy9ca%2BekfgWv9tCVc8C5Unq2E%3D"
+        )
+        assert platform_cfg.extra_settings.get("auth_type") == "cookie"
+
+    def test_activate_mock_collects_kpi_data(self, client: TestClient) -> None:
+        """Mock activation triggers baseline seed + historical snapshots."""
+        fake_collector = AsyncMock()
+        fake_collector.seed_baselines = AsyncMock(return_value=3)
+        fake_collector.seed_mock_snapshot_history = AsyncMock(return_value=30)
+
+        with patch("routers.config.KPICollector", return_value=fake_collector):
+            resp = client.post("/api/v1/config/profiles/mock/activate")
+
+        assert resp.status_code == 200
+        fake_collector.seed_baselines.assert_awaited_once_with("pilot-1")
+        fake_collector.seed_mock_snapshot_history.assert_awaited_once_with("pilot-1", points=10)
