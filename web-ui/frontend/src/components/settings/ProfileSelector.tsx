@@ -21,6 +21,8 @@ export type ProfileSelectorProps = {
   refreshKey?: number;
   onProfileChange: (config: ProfileConfig) => void;
   onNotify: (type: "success" | "error", message: string) => void;
+  onProfileSwitch?: (profileName: string, voiceReloaded: boolean) => void;
+  onActiveProfileResolved?: (profileName: string) => void;
 };
 
 const PROFILE_NAME_RE = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
@@ -40,6 +42,8 @@ export default function ProfileSelector({
   refreshKey = 0,
   onProfileChange,
   onNotify,
+  onProfileSwitch,
+  onActiveProfileResolved,
 }: ProfileSelectorProps) {
   const { isDark } = useTheme();
   const [profiles, setProfiles] = useState<ProfileMetadata[]>([]);
@@ -65,6 +69,7 @@ export default function ProfileSelector({
       });
       setProfiles(sorted);
       setActiveProfileName(data.active_profile);
+      onActiveProfileResolved?.(data.active_profile);
       setSelectedName((prev) => {
         if (!prev || !sorted.some((p) => p.name === prev)) {
           return data.active_profile;
@@ -76,7 +81,7 @@ export default function ProfileSelector({
     } finally {
       setLoadingProfiles(false);
     }
-  }, [onNotify]);
+  }, [onActiveProfileResolved, onNotify]);
 
   useEffect(() => {
     void loadProfiles();
@@ -95,14 +100,17 @@ export default function ProfileSelector({
     [onProfileChange, onNotify],
   );
 
-  const handleSwitch = useCallback(async () => {
-    if (selectedName === activeProfileName) return;
+  const switchToProfile = useCallback(async (targetName: string) => {
+    if (!targetName || targetName === activeProfileName) return;
     setSwitching(true);
     try {
-      const config = await activateProfile(selectedName);
-      setActiveProfileName(selectedName);
-      onProfileChange(config);
-      onNotify("success", `Switched to profile \u201c${selectedName}\u201d.`);
+      const activation = await activateProfile(targetName);
+      const profile = await getProfile(targetName);
+      setActiveProfileName(targetName);
+      setSelectedName(targetName);
+      onProfileChange(profile);
+      onProfileSwitch?.(targetName, Boolean(activation.voice_reloaded));
+      onNotify("success", `Switched to profile \u201c${targetName}\u201d.`);
       await loadProfiles();
     } catch (error: unknown) {
       onNotify("error", toFriendlyErrorMessage(error));
@@ -110,11 +118,31 @@ export default function ProfileSelector({
       setSwitching(false);
     }
   }, [
-    selectedName,
     activeProfileName,
     onProfileChange,
+    onProfileSwitch,
     onNotify,
     loadProfiles,
+  ]);
+
+  const handleSwitch = useCallback(async () => {
+    if (selectedName === activeProfileName) return;
+    await switchToProfile(selectedName);
+  }, [
+    selectedName,
+    activeProfileName,
+    switchToProfile,
+  ]);
+
+  const handleSelectAndSwitch = useCallback(async (name: string) => {
+    await selectProfile(name);
+    if (name !== activeProfileName) {
+      await switchToProfile(name);
+    }
+  }, [
+    activeProfileName,
+    selectProfile,
+    switchToProfile,
   ]);
 
   const handleCreate = useCallback(async () => {
@@ -214,7 +242,7 @@ export default function ProfileSelector({
           </span>
           <select
             value={selectedName}
-            onChange={(e) => void selectProfile(e.target.value)}
+            onChange={(e) => void handleSelectAndSwitch(e.target.value)}
             disabled={busy}
             className={`w-full rounded-lg border px-3 py-2 text-sm ${
               isDark

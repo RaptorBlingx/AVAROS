@@ -12,7 +12,7 @@ import type {
   PlatformConfigRequest,
   PlatformConfigResponse,
   PlatformType,
-  ProfileConfig,
+  ProfileDetailResponse,
 } from "../../api/types";
 import ConnectionTestResult from "../common/ConnectionTestResult";
 import ErrorMessage from "../common/ErrorMessage";
@@ -22,6 +22,8 @@ import ProfileSelector from "./ProfileSelector";
 
 type PlatformConfigSectionProps = {
   onNotify: (type: "success" | "error", message: string) => void;
+  onProfileSwitch?: (profileName: string, voiceReloaded: boolean) => void;
+  onActiveProfileResolved?: (profileName: string) => void;
 };
 
 type AuthType = "api_key" | "cookie";
@@ -71,6 +73,8 @@ function validate(config: {
 
 export default function PlatformConfigSection({
   onNotify,
+  onProfileSwitch,
+  onActiveProfileResolved,
 }: PlatformConfigSectionProps) {
   const { isDark } = useTheme();
   const [loading, setLoading] = useState(true);
@@ -103,7 +107,7 @@ export default function PlatformConfigSection({
 
   const formLocked = isBuiltinProfile;
 
-  const handleProfileChange = useCallback((profile: ProfileConfig) => {
+  const handleProfileChange = useCallback((profile: ProfileDetailResponse) => {
     setPlatformType(profile.platform_type);
     setApiUrl(profile.api_url);
     setApiKey("");
@@ -121,7 +125,7 @@ export default function PlatformConfigSection({
       api_key: profile.api_key,
       extra_settings: profile.extra_settings,
     });
-    setIsBuiltinProfile(profile.is_builtin);
+    setIsBuiltinProfile(Boolean(profile.is_builtin));
     setEditing(false);
     setInlineError("");
     setTestResult(null);
@@ -254,6 +258,8 @@ export default function PlatformConfigSection({
         refreshKey={profileRefreshKey}
         onProfileChange={handleProfileChange}
         onNotify={onNotify}
+        onProfileSwitch={onProfileSwitch}
+        onActiveProfileResolved={onActiveProfileResolved}
       />
 
       <header className="flex items-center justify-end gap-2">

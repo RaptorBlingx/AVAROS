@@ -9,7 +9,11 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ProfileConfig, ProfileListResponse } from "../../../api/types";
+import type {
+  ActivateProfileResponse,
+  ProfileDetailResponse,
+  ProfileListResponse,
+} from "../../../api/types";
 import type { ProfileSelectorProps } from "../ProfileSelector";
 import ProfileSelector from "../ProfileSelector";
 
@@ -58,7 +62,7 @@ const MOCK_PROFILES: ProfileListResponse = {
   active_profile: "mock",
 };
 
-const MOCK_PROFILE_CONFIG: ProfileConfig = {
+const MOCK_PROFILE_CONFIG: ProfileDetailResponse = {
   name: "mock",
   platform_type: "mock",
   api_url: "",
@@ -68,7 +72,7 @@ const MOCK_PROFILE_CONFIG: ProfileConfig = {
   is_active: true,
 };
 
-const RENERYO_PROFILE_CONFIG: ProfileConfig = {
+const RENERYO_PROFILE_CONFIG: ProfileDetailResponse = {
   name: "my-reneryo",
   platform_type: "reneryo",
   api_url: "https://api.reneryo.com",
@@ -167,6 +171,15 @@ describe("ProfileSelector", () => {
   });
 
   it("calls getProfile and onProfileChange when selecting a different profile", async () => {
+    const activationResult: ActivateProfileResponse = {
+      status: "activated",
+      active_profile: "my-reneryo",
+      adapter_type: "reneryo",
+      message: "Adapter reloaded successfully",
+      voice_reloaded: true,
+    };
+    mockActivateProfile.mockResolvedValue(activationResult);
+
     render(
       <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
@@ -182,16 +195,20 @@ describe("ProfileSelector", () => {
 
     await waitFor(() => {
       expect(mockGetProfile).toHaveBeenCalledWith("my-reneryo");
+      expect(mockActivateProfile).toHaveBeenCalledWith("my-reneryo");
       expect(onProfileChange).toHaveBeenCalledWith(RENERYO_PROFILE_CONFIG);
     });
   });
 
-  it("calls activateProfile on switch and notifies success", async () => {
-    const activatedConfig: ProfileConfig = {
-      ...RENERYO_PROFILE_CONFIG,
-      is_active: true,
+  it("calls activateProfile when selecting a different profile", async () => {
+    const activationResult: ActivateProfileResponse = {
+      status: "activated",
+      active_profile: "my-reneryo",
+      adapter_type: "reneryo",
+      message: "Adapter reloaded successfully",
+      voice_reloaded: true,
     };
-    mockActivateProfile.mockResolvedValue(activatedConfig);
+    mockActivateProfile.mockResolvedValue(activationResult);
 
     render(
       <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
@@ -205,17 +222,6 @@ describe("ProfileSelector", () => {
       "profile-dropdown",
     ) as HTMLSelectElement;
     fireEvent.change(dropdown, { target: { value: "my-reneryo" } });
-
-    await waitFor(() => {
-      expect(onProfileChange).toHaveBeenCalled();
-    });
-
-    const switchBtn = screen.getByTestId(
-      "profile-switch-btn",
-    ) as HTMLButtonElement;
-    expect(switchBtn.disabled).toBe(false);
-
-    fireEvent.click(switchBtn);
 
     await waitFor(() => {
       expect(mockActivateProfile).toHaveBeenCalledWith("my-reneryo");
