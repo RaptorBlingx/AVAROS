@@ -222,6 +222,9 @@ class AdapterFactory:
         api_key = ""
         timeout = 30
         auth_type = "bearer"
+        api_format = "native"
+        profile_name = ""
+        extra: dict = {}
 
         if self._settings_service is not None:
             try:
@@ -243,6 +246,11 @@ class AdapterFactory:
                         if isinstance(extra, dict)
                         else "bearer"
                     )
+                    api_format = (
+                        extra.get("api_format", "native")
+                        if isinstance(extra, dict)
+                        else "native"
+                    )
             except Exception as exc:
                 logger.warning(
                     "Error reading RENERYO config: %s", exc,
@@ -253,6 +261,10 @@ class AdapterFactory:
             api_key=api_key,
             timeout=timeout,
             auth_type=auth_type,
+            api_format=api_format,
+            settings_service=self._settings_service,
+            profile_name=profile_name,
+            extra_settings=extra if isinstance(extra, dict) else {},
         )
 
     @classmethod

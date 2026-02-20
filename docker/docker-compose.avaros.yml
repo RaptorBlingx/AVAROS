@@ -88,6 +88,13 @@ services:
       
       # Database configuration (PostgreSQL — production-grade)
       - AVAROS_DATABASE_URL=postgresql://avaros:avaros@avaros_db:5432/avaros
+      # Demo profile bootstrap (reneryo-mock)
+      - AVAROS_BOOTSTRAP_DEMO_PROFILE=true
+      - AVAROS_DEMO_PROFILE_NAME=reneryo-mock
+      - AVAROS_DEMO_RENERYO_URL=http://reneryo-mock:8090
+      - AVAROS_DEMO_RENERYO_API_KEY=demo-token
+      - AVAROS_DEMO_RENERYO_AUTH_TYPE=bearer
+      - AVAROS_DEMO_RENERYO_API_FORMAT=mock
       
       # Logging configuration
       - LOG_LEVEL=INFO
@@ -151,6 +158,13 @@ services:
     environment:
       - AVAROS_DATABASE_URL=postgresql://avaros:avaros@avaros_db:5432/avaros
       - AVAROS_WEB_UI_PORT=8080
+      # Demo profile bootstrap (reneryo-mock)
+      - AVAROS_BOOTSTRAP_DEMO_PROFILE=true
+      - AVAROS_DEMO_PROFILE_NAME=reneryo-mock
+      - AVAROS_DEMO_RENERYO_URL=http://reneryo-mock:8090
+      - AVAROS_DEMO_RENERYO_API_KEY=demo-token
+      - AVAROS_DEMO_RENERYO_AUTH_TYPE=bearer
+      - AVAROS_DEMO_RENERYO_API_FORMAT=mock
       # HiveMind voice config: passed via env_file (.env) — do NOT redeclare
       # here or compose defaults will override the .env values.
       # Required .env vars: HIVEMIND_WS_URL, HIVEMIND_CLIENT_KEY,

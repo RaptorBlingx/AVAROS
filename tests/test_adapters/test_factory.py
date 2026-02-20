@@ -268,6 +268,33 @@ class TestInstantiateAdapter:
 
         assert isinstance(adapter, _StubAdapter)
 
+    def test_create_reneryo_adapter_passes_profile_context(self) -> None:
+        """Factory forwards settings/profile metadata to ReneryoAdapter."""
+        service = MagicMock()
+        config = MagicMock()
+        config.platform_type = "reneryo"
+        config.api_url = "https://api.example"
+        config.api_key = "secret"
+        config.timeout = 25
+        config.extra_settings = {
+            "auth_type": "cookie",
+            "api_format": "native",
+            "SEU_ID": "seu-7",
+        }
+        service.get_active_profile_name.return_value = "reneryo"
+        service.get_profile.return_value = config
+
+        factory = AdapterFactory(settings_service=service)
+
+        with patch("skill.adapters.factory.ReneryoAdapter") as adapter_cls:
+            adapter_cls.return_value = MagicMock()
+            factory._create_reneryo_adapter()
+
+            kwargs = adapter_cls.call_args.kwargs
+            assert kwargs["settings_service"] is service
+            assert kwargs["profile_name"] == "reneryo"
+            assert kwargs["extra_settings"]["SEU_ID"] == "seu-7"
+
 
 # ---------------------------------------------------------------------------
 # register_adapter()

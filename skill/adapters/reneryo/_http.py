@@ -59,7 +59,8 @@ class ReneryoHttpMixin:
             AdapterError: On connection, auth, timeout, or parse errors.
         """
         self._ensure_initialized()
-        assert self._session is not None  # guarded by _ensure_initialized
+        await self._refresh_session_if_needed()
+        assert self._session is not None
         url = f"{self._api_url}{endpoint}"
 
         try:
@@ -79,6 +80,28 @@ class ReneryoHttpMixin:
                 code="RENERYO_TIMEOUT",
                 platform="reneryo",
             ) from exc
+
+    async def _refresh_session_if_needed(self) -> None:
+        """Recreate session when bound loop is closed or mismatched."""
+        if self._session is None:
+            return
+
+        current_loop = asyncio.get_running_loop()
+        session_loop = getattr(self._session, "_loop", None)
+        loop_mismatch = session_loop is not None and session_loop is not current_loop
+        loop_closed = bool(session_loop and getattr(session_loop, "is_closed", lambda: False)())
+        if not (self._session.closed or loop_mismatch or loop_closed):
+            return
+
+        try:
+            if not self._session.closed and not loop_closed:
+                await self._session.close()
+        except Exception:
+            logger.debug("Ignoring close failure for stale RENERYO session", exc_info=True)
+
+        timeout = aiohttp.ClientTimeout(total=self._timeout)
+        headers = self._build_auth_headers()
+        self._session = aiohttp.ClientSession(timeout=timeout, headers=headers)
 
     async def _handle_response(
         self,

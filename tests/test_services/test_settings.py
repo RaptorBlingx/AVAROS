@@ -738,6 +738,7 @@ class TestSetIntentActive:
         "intent_name",
         [
             "kpi.energy.per_unit",
+            "kpi.energy.total",
             "kpi.oee",
             "kpi.scrap_rate",
             "compare.energy",
@@ -745,6 +746,11 @@ class TestSetIntentActive:
             "trend.energy",
             "anomaly.production.check",
             "whatif.temperature",
+            "control.device.turn_on",
+            "control.device.turn_off",
+            "status.system.show",
+            "status.profile.show",
+            "help.capabilities.list",
         ],
     )
     def test_set_intent_active_accepts_all_known_intents(
@@ -795,12 +801,14 @@ class TestIsIntentActive:
 class TestListIntentStates:
     """Tests for list_intent_states()."""
 
-    def test_list_intent_states_returns_all_eight(
+    def test_list_intent_states_returns_all_known(
         self, service: SettingsService
     ) -> None:
-        """Returns all 8 known intents."""
+        """Returns all known intents."""
+        from skill.services.settings import KNOWN_INTENTS
+
         states = service.list_intent_states()
-        assert len(states) == 8
+        assert len(states) == len(KNOWN_INTENTS)
 
     def test_list_intent_states_default_all_true(
         self, service: SettingsService
@@ -866,6 +874,11 @@ class TestGetIntentMetricRequirements:
         """Spot-check: kpi.energy.per_unit → [energy_per_unit]."""
         result = SettingsService.get_intent_metric_requirements()
         assert result["kpi.energy.per_unit"] == ["energy_per_unit"]
+
+    def test_status_system_requires_no_metrics(self) -> None:
+        """Spot-check: status.system.show has no metric dependencies."""
+        result = SettingsService.get_intent_metric_requirements()
+        assert result["status.system.show"] == []
 
     def test_anomaly_requires_oee(self) -> None:
         """Spot-check: anomaly.production.check → [oee]."""

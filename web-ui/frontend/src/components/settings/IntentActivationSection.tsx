@@ -31,6 +31,8 @@ export default function IntentActivationSection({
 
   const loadData = useCallback(async () => {
     setLoading(true);
+    setSavingIntent(null);
+    setBulkAction(null);
     try {
       const [intentList, mappings] = await Promise.all([getIntents(), listMetricMappings()]);
       setIntents(intentList);
@@ -44,7 +46,7 @@ export default function IntentActivationSection({
 
   useEffect(() => {
     void loadData();
-  }, [loadData, refreshKey]);
+  }, [loadData, refreshKey, activeProfile]);
 
   const isMockProfile = useMemo(
     () => activeProfile === "mock",

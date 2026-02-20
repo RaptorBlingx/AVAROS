@@ -239,6 +239,39 @@ PY
 create_default_client_if_missing
 sync_default_client_credentials
 
+# --- Ensure configured client exists on every startup ---
+if [ -n "${HIVEMIND_CLIENT_KEY}" ]; then
+  if CLIENT_KEY="${HIVEMIND_CLIENT_KEY}" python - <<'PY'
+import os
+from hivemind_core.database import ClientDatabase
+
+key = os.environ.get("CLIENT_KEY", "")
+db = ClientDatabase()
+client = db.get_client_by_api_key(key) if key else None
+raise SystemExit(0 if client is not None else 1)
+PY
+  then
+    echo "Configured client key already exists in database."
+  else
+    echo "Configured client key not found — recreating client '${HIVEMIND_CLIENT_NAME}'."
+    ADD_CMD=("hivemind-core" "add-client" "--name" "${HIVEMIND_CLIENT_NAME}")
+
+    if [ -n "${HIVEMIND_CLIENT_KEY}" ]; then
+      ADD_CMD+=("--access-key" "${HIVEMIND_CLIENT_KEY}")
+    fi
+
+    if [ -n "${HIVEMIND_CLIENT_SECRET}" ]; then
+      ADD_CMD+=("--password" "${HIVEMIND_CLIENT_SECRET}")
+    fi
+
+    if [ -n "${HIVEMIND_CLIENT_CRYPTO_KEY}" ]; then
+      ADD_CMD+=("--crypto-key" "${HIVEMIND_CLIENT_CRYPTO_KEY}")
+    fi
+
+    "${ADD_CMD[@]}" || echo "WARNING: Failed to recreate configured client"
+  fi
+fi
+
 # --- Ensure client policy is consistent on every startup ---
 if [ -n "${HIVEMIND_CLIENT_KEY}" ] && [ -n "${HIVEMIND_CLIENT_ALLOWED_TYPES}" ]; then
   echo "Applying allowed_types policy for client key '${HIVEMIND_CLIENT_KEY}'..."

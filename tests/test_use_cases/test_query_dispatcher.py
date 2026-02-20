@@ -312,7 +312,7 @@ class TestCheckAnomaly:
 
 
 class TestSimulateWhatIf:
-    """Tests for simulate_whatif() Phase 1 stub."""
+    """Tests for simulate_whatif()."""
 
     def test_simulate_whatif_returns_whatif_result(
         self, dispatcher: QueryDispatcher, scenario: WhatIfScenario
@@ -334,6 +334,44 @@ class TestSimulateWhatIf:
         logs = audit_logger.get_recent_logs(limit=1)
         assert len(logs) == 1
         assert logs[0].query_type == "simulate_whatif"
+
+    def test_simulate_whatif_changes_with_temperature_delta(
+        self, dispatcher: QueryDispatcher
+    ) -> None:
+        """Larger temperature reduction yields larger projected savings."""
+        scenario_three = WhatIfScenario(
+            name="temperature_reduction",
+            asset_id="Line-1",
+            parameters=[
+                ScenarioParameter(
+                    name="temperature",
+                    baseline_value=25.0,
+                    proposed_value=22.0,
+                    unit="°C",
+                ),
+            ],
+            target_metric=CanonicalMetric.ENERGY_PER_UNIT,
+        )
+        scenario_five = WhatIfScenario(
+            name="temperature_reduction",
+            asset_id="Line-1",
+            parameters=[
+                ScenarioParameter(
+                    name="temperature",
+                    baseline_value=25.0,
+                    proposed_value=20.0,
+                    unit="°C",
+                ),
+            ],
+            target_metric=CanonicalMetric.ENERGY_PER_UNIT,
+        )
+
+        result_three = dispatcher.simulate_whatif(scenario_three)
+        result_five = dispatcher.simulate_whatif(scenario_five)
+
+        assert result_three.delta_percent < 0
+        assert result_five.delta_percent < result_three.delta_percent
+        assert abs(result_five.delta_percent) > abs(result_three.delta_percent)
 
 
 # ══════════════════════════════════════════════════════════

@@ -99,11 +99,13 @@ vi.mock("../../services/hivemind", () => {
 });
 
 type Snapshot = {
+  isConnected: boolean;
   isSpeaking: boolean;
   isProcessing: boolean;
 };
 
 let snapshot: Snapshot = {
+  isConnected: false,
   isSpeaking: false,
   isProcessing: false,
 };
@@ -113,17 +115,18 @@ function Probe() {
 
   useEffect(() => {
     snapshot = {
+      isConnected: ctx.isConnected,
       isSpeaking: ctx.isSpeaking,
       isProcessing: ctx.isProcessing,
     };
-  }, [ctx.isSpeaking, ctx.isProcessing]);
+  }, [ctx.isConnected, ctx.isSpeaking, ctx.isProcessing]);
 
   return null;
 }
 
 describe("HiveMindContext event state mapping", () => {
   beforeEach(() => {
-    snapshot = { isSpeaking: false, isProcessing: false };
+    snapshot = { isConnected: false, isSpeaking: false, isProcessing: false };
     mockState.latest = null;
     Object.keys(mockState.listeners).forEach((key) => {
       mockState.listeners[key] = [];
@@ -169,6 +172,18 @@ describe("HiveMindContext event state mapping", () => {
     });
   });
 
+  it("auto-connects on initial load", async () => {
+    render(
+      <HiveMindProvider>
+        <Probe />
+      </HiveMindProvider>,
+    );
+
+    await waitFor(() => {
+      expect(snapshot.isConnected).toBe(true);
+    });
+  });
+
   it("maps handler.start/complete to isProcessing", async () => {
     render(
       <HiveMindProvider>
@@ -196,6 +211,42 @@ describe("HiveMindContext event state mapping", () => {
 
     await waitFor(() => {
       expect(snapshot.isProcessing).toBe(false);
+    });
+  });
+
+  it("delivers events to subscriptions created before service init", async () => {
+    function EarlySubscriber() {
+      const ctx = useHiveMind();
+
+      useEffect(() => {
+        return ctx.on("speak", () => {
+          snapshot = {
+            ...snapshot,
+            isSpeaking: true,
+          };
+        });
+      }, [ctx]);
+
+      return null;
+    }
+
+    render(
+      <HiveMindProvider>
+        <EarlySubscriber />
+      </HiveMindProvider>,
+    );
+
+    await waitFor(() => {
+      expect(mockState.latest).not.toBeNull();
+    });
+
+    mockState.latest?.emit("speak", {
+      type: "speak",
+      data: { utterance: "hello" },
+    });
+
+    await waitFor(() => {
+      expect(snapshot.isSpeaking).toBe(true);
     });
   });
 });

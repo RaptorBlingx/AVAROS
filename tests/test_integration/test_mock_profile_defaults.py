@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from skill.domain.exceptions import ValidationError
-from skill.services.settings import SettingsService
+from skill.services.settings import KNOWN_INTENTS, SettingsService
 
 
 @pytest.fixture
@@ -18,13 +18,20 @@ def svc() -> SettingsService:
 
 
 def test_mock_metric_mappings_empty(svc: SettingsService) -> None:
-    """Mock profile exposes no metric mappings."""
-    assert svc.list_metric_mappings() == {}
+    """Mock profile exposes built-in metric mappings for demo API."""
+    mappings = svc.list_metric_mappings()
+    assert len(mappings) >= 3
+    assert "energy_per_unit" in mappings
+    assert "oee" in mappings
+    assert "scrap_rate" in mappings
 
 
 def test_mock_get_metric_mapping_returns_none(svc: SettingsService) -> None:
-    """Mock profile returns no per-metric mapping entries."""
-    assert svc.get_metric_mapping("energy_per_unit") is None
+    """Mock profile returns virtual mapping entries."""
+    mapping = svc.get_metric_mapping("energy_per_unit")
+    assert mapping is not None
+    assert mapping["endpoint"] == "/api/v1/kpis/energy/per-unit"
+    assert mapping["json_path"] == "$.value"
 
 
 def test_mock_emission_factors_turkey_defaults(svc: SettingsService) -> None:
@@ -37,7 +44,7 @@ def test_mock_emission_factors_turkey_defaults(svc: SettingsService) -> None:
 def test_mock_intent_states_all_true(svc: SettingsService) -> None:
     """Mock profile keeps all known intents enabled."""
     states = svc.list_intent_states()
-    assert len(states) == 8
+    assert len(states) == len(KNOWN_INTENTS)
     assert all(states.values()) is True
 
 

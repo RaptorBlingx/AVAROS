@@ -470,6 +470,20 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     sttRef.current?.stop();
   }, []);
 
+  const cancelCurrentQuery = useCallback(() => {
+    clearProcessingTimeout();
+    sttRef.current?.stop();
+    ttsRef.current?.stop();
+    setInterimTranscript("");
+    setFinalTranscript("");
+    setVoiceState("idle");
+  }, [clearProcessingTimeout]);
+
+  const clearQuery = useCallback(() => {
+    setInterimTranscript("");
+    setFinalTranscript("");
+  }, []);
+
   const speakText = useCallback(async (text: string) => {
     if (!ttsRef.current) return;
     await ttsRef.current.speak(text);
@@ -513,7 +527,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   const value = useMemo<VoiceContextValue>(() => ({
     voiceState, voiceMode, micPermission, sttSupported, ttsSupported,
-    startListening, stopListening, interimTranscript, finalTranscript,
+    startListening, stopListening, cancelCurrentQuery, clearQuery, interimTranscript, finalTranscript,
     speak: speakText, stopSpeaking, isSpeaking,
     wakeWordState, wakeWordEnabled, wakeWordSensitivity,
     wakeWordFallbackActive, setWakeWordSensitivity, isModelLoading,
@@ -522,7 +536,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     requestMicPermission,
   }), [
     voiceState, voiceMode, micPermission, sttSupported, ttsSupported,
-    startListening, stopListening, interimTranscript, finalTranscript,
+    startListening, stopListening, cancelCurrentQuery, clearQuery, interimTranscript, finalTranscript,
     speakText, stopSpeaking, isSpeaking,
     wakeWordState, wakeWordEnabled, wakeWordSensitivity,
     wakeWordFallbackActive, setWakeWordSensitivity, isModelLoading,

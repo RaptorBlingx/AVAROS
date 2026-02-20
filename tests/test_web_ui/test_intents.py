@@ -46,35 +46,37 @@ class TestListIntents:
         resp = client.get("/api/v1/config/intents")
         assert resp.status_code == 200
 
-    def test_list_intents_returns_all_eight(self, client: TestClient) -> None:
-        """Response contains all 8 known intents."""
+    def test_list_intents_returns_all_known(self, client: TestClient) -> None:
+        """Response contains all known intents."""
         data = client.get("/api/v1/config/intents").json()
-        assert data["total"] == 8
-        assert len(data["intents"]) == 8
+        assert data["total"] == len(KNOWN_INTENTS)
+        assert len(data["intents"]) == len(KNOWN_INTENTS)
 
     def test_list_intents_default_all_active(self, client: TestClient) -> None:
         """All intents default to active on fresh database."""
         data = client.get("/api/v1/config/intents").json()
-        assert data["active_count"] == 8
+        assert data["active_count"] == len(KNOWN_INTENTS)
         for intent in data["intents"]:
             assert intent["active"] is True
 
     def test_list_intents_contains_required_metrics(
         self, client: TestClient
     ) -> None:
-        """Each intent has a non-empty required_metrics list."""
+        """Each intent includes required_metrics list (may be empty)."""
         data = client.get("/api/v1/config/intents").json()
         for intent in data["intents"]:
             assert isinstance(intent["required_metrics"], list)
-            assert len(intent["required_metrics"]) > 0
 
     def test_list_intents_metrics_mapped_false_by_default(
         self, client: TestClient
     ) -> None:
-        """metrics_mapped is False when no mappings exist."""
+        """Metric-dependent intents are unmapped by default."""
         data = client.get("/api/v1/config/intents").json()
         for intent in data["intents"]:
-            assert intent["metrics_mapped"] is False
+            if intent["required_metrics"]:
+                assert intent["metrics_mapped"] is False
+            else:
+                assert intent["metrics_mapped"] is True
 
     def test_list_intents_metrics_mapped_true_after_mapping(
         self,
@@ -101,7 +103,7 @@ class TestListIntents:
         """Deactivating an intent is reflected in the list."""
         settings_service.set_intent_active("kpi.oee", False)
         data = client.get("/api/v1/config/intents").json()
-        assert data["active_count"] == 7
+        assert data["active_count"] == len(KNOWN_INTENTS) - 1
         by_name = {i["intent_name"]: i for i in data["intents"]}
         assert by_name["kpi.oee"]["active"] is False
 

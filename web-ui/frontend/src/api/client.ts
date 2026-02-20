@@ -11,6 +11,8 @@ import type {
   EmissionFactorRequest,
   EmissionFactorResponse,
   HealthResponse,
+  IntentBinding,
+  IntentBindingRequest,
   IntentListResponse,
   IntentState,
   MetricMapping,
@@ -201,6 +203,37 @@ export async function deleteMetricMapping(
   metricName: CanonicalMetricName,
 ): Promise<void> {
   await request<unknown>(`/api/v1/config/metrics/${metricName}`, {
+    method: "DELETE",
+  });
+}
+
+export function listIntentBindings(): Promise<IntentBinding[]> {
+  return request<IntentBinding[]>("/api/v1/config/intent-bindings");
+}
+
+export function createIntentBinding(
+  payload: IntentBindingRequest,
+): Promise<IntentBinding> {
+  return request<IntentBinding>("/api/v1/config/intent-bindings", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function updateIntentBinding(
+  intentName: string,
+  payload: IntentBindingRequest,
+): Promise<IntentBinding> {
+  return request<IntentBinding>(`/api/v1/config/intent-bindings/${intentName}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export async function deleteIntentBinding(
+  intentName: string,
+): Promise<void> {
+  await request<unknown>(`/api/v1/config/intent-bindings/${intentName}`, {
     method: "DELETE",
   });
 }

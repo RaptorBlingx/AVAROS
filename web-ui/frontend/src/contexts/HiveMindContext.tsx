@@ -44,6 +44,8 @@ interface HiveMindContextValue {
   sendUtterance: (text: string) => Promise<void>;
   /** Last speak response from OVOS */
   lastResponse: string | null;
+  /** Clear the currently shown speak response */
+  clearLastResponse: () => void;
   /** True while OVOS is producing audio output */
   isSpeaking: boolean;
   /** True while skill handler is running */
@@ -57,6 +59,12 @@ interface HiveMindContextValue {
     eventType: string,
     callback: (msg: OVOSMessage) => void,
   ) => () => void;
+}
+
+interface PendingSubscription {
+  eventType: string;
+  callback: (msg: OVOSMessage) => void;
+  unsubscribe: (() => void) | null;
 }
 
 const HiveMindContext = createContext<HiveMindContextValue | null>(null);
@@ -85,6 +93,24 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
 
   const serviceRef = useRef<HiveMindService | null>(null);
   const configLoadedRef = useRef(false);
+  const pendingSubscriptionsRef = useRef<Map<number, PendingSubscription>>(
+    new Map(),
+  );
+  const pendingSubscriptionIdRef = useRef(0);
+
+  const flushPendingSubscriptions = useCallback(() => {
+    const svc = serviceRef.current;
+    if (!svc) return;
+
+    for (const subscription of pendingSubscriptionsRef.current.values()) {
+      if (!subscription.unsubscribe) {
+        subscription.unsubscribe = svc.on(
+          subscription.eventType,
+          subscription.callback,
+        );
+      }
+    }
+  }, []);
 
   // Load voice config from backend once
   useEffect(() => {
@@ -146,7 +172,13 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
           });
 
           serviceRef.current = svc;
+          serviceRef.current = svc;
           setServiceVersion((prev) => prev + 1);
+          flushPendingSubscriptions();
+
+          void svc.connect().catch(() => {
+            setConnectionState("error");
+          });
         }
       })
       .catch(() => {
@@ -155,10 +187,14 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
       });
 
     return () => {
+      for (const subscription of pendingSubscriptionsRef.current.values()) {
+        subscription.unsubscribe?.();
+      }
+      pendingSubscriptionsRef.current.clear();
       serviceRef.current?.dispose();
       serviceRef.current = null;
     };
-  }, []);
+  }, [flushPendingSubscriptions]);
 
   const connect = useCallback(async () => {
     if (!serviceRef.current) return;
@@ -181,11 +217,32 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
       eventType: string,
       callback: (msg: OVOSMessage) => void,
     ): (() => void) => {
-      if (!serviceRef.current) return () => {};
-      return serviceRef.current.on(eventType, callback);
+      if (serviceRef.current) {
+        return serviceRef.current.on(eventType, callback);
+      }
+
+      const id = pendingSubscriptionIdRef.current;
+      pendingSubscriptionIdRef.current += 1;
+
+      pendingSubscriptionsRef.current.set(id, {
+        eventType,
+        callback,
+        unsubscribe: null,
+      });
+
+      return () => {
+        const subscription = pendingSubscriptionsRef.current.get(id);
+        if (!subscription) return;
+        subscription.unsubscribe?.();
+        pendingSubscriptionsRef.current.delete(id);
+      };
     },
     [serviceVersion],
   );
+
+  const clearLastResponse = useCallback(() => {
+    setLastResponse(null);
+  }, []);
 
   const value = useMemo<HiveMindContextValue>(
     () => ({
@@ -196,6 +253,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
       disconnect,
       sendUtterance,
       lastResponse,
+      clearLastResponse,
       isSpeaking,
       isProcessing,
       mouthText,
@@ -209,6 +267,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
       disconnect,
       sendUtterance,
       lastResponse,
+      clearLastResponse,
       isSpeaking,
       isProcessing,
       mouthText,

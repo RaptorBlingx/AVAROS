@@ -28,6 +28,11 @@ from skill.adapters.reneryo._endpoints import (
 )
 from skill.adapters.reneryo._connection_test import ReneryoConnectionTestMixin
 from skill.adapters.reneryo._http import ReneryoHttpMixin
+from skill.adapters.reneryo._metric_mapping import (
+    MetricMapping,
+    parse_mapped_kpi_response,
+    resolve_kpi_request,
+)
 from skill.adapters.reneryo._normalizers import (
     is_native_format,
     normalize_meter_to_kpi,
@@ -77,6 +82,9 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
         auth_type: str = "bearer",
         api_format: str = "mock",
         native_seu_id: str = "",
+        settings_service=None,
+        profile_name: str = "",
+        extra_settings: dict | None = None,
     ) -> None:
         """
         Initialize RENERYO adapter with connection parameters.
@@ -96,6 +104,9 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
         self._auth_type = auth_type
         self._api_format = api_format
         self._native_seu_id = native_seu_id.strip()
+        self._settings_service = settings_service
+        self._profile_name = profile_name
+        self._extra_settings = extra_settings or {}
         self._session: aiohttp.ClientSession | None = None
 
     # =========================================================================
@@ -123,6 +134,10 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             AdapterError: On connection, auth, or parse errors.
         """
         self._ensure_initialized()
+        mapped_result = await self._get_kpi_from_mapping(metric, asset_id, period)
+        if mapped_result is not None:
+            return mapped_result
+
         endpoint = self._resolve_endpoint(metric, purpose="kpi")
         params = self._build_query_params(
             asset_id=asset_id,
@@ -445,3 +460,31 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             "/measurement/seu/item/" in endpoint
             and exc.status_code in {400, 404}
         )
+
+    async def _get_kpi_from_mapping(
+        self,
+        metric: CanonicalMetric,
+        asset_id: str,
+        period: TimePeriod,
+    ) -> KPIResult | None:
+        """Fetch KPI using profile-scoped metric mapping when present."""
+        mapping = self._lookup_metric_mapping(metric)
+        if mapping is None:
+            return None
+
+        endpoint, params = resolve_kpi_request(
+            mapping=mapping,
+            period=period,
+            asset_id=asset_id,
+            extra_settings=self._string_settings(),
+        )
+        data = await self._retry_fetch(endpoint, params)
+        return parse_mapped_kpi_response(data, mapping, metric, asset_id, period)
+
+    def _lookup_metric_mapping(self, metric: CanonicalMetric) -> MetricMapping | None:
+        if not self._settings_service or not self._profile_name:
+            return None
+        return self._settings_service.get_metric_mapping(self._profile_name, metric)
+
+    def _string_settings(self) -> dict[str, str]:
+        return {k: str(v) for k, v in self._extra_settings.items()}

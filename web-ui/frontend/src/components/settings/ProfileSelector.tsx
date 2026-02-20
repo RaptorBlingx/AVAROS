@@ -15,12 +15,14 @@ const PROFILE_NAME_REGEX = /^[a-z0-9][a-z0-9-]{0,48}[a-z0-9]$/;
 type ProfileSelectorProps = {
   onNotify: (type: "success" | "error", message: string) => void;
   onProfileChange: (profileName: string) => void;
+  onActiveProfileResolved?: (profileName: string) => void;
   onProfileSwitched?: (profileName: string, voiceReloaded: boolean) => void;
 };
 
 export default function ProfileSelector({
   onNotify,
   onProfileChange,
+  onActiveProfileResolved,
   onProfileSwitched,
 }: ProfileSelectorProps) {
   const { isDark } = useTheme();
@@ -43,12 +45,14 @@ export default function ProfileSelector({
       setProfiles(data.profiles);
       setActiveProfile(data.active_profile);
       setSelectedProfile(data.active_profile);
+      onProfileChange(data.active_profile);
+      onActiveProfileResolved?.(data.active_profile);
     } catch (error: unknown) {
       onNotify("error", toFriendlyErrorMessage(error));
     } finally {
       setLoading(false);
     }
-  }, [onNotify]);
+  }, [onNotify, onProfileChange, onActiveProfileResolved]);
 
   useEffect(() => {
     void loadProfiles();
@@ -64,6 +68,7 @@ export default function ProfileSelector({
       setActiveProfile(result.active_profile);
       onNotify("success", `Switched to profile "${result.active_profile}"`);
       onProfileChange(result.active_profile);
+      onActiveProfileResolved?.(result.active_profile);
       onProfileSwitched?.(
         result.active_profile,
         result.voice_reloaded ?? false,
@@ -79,6 +84,7 @@ export default function ProfileSelector({
     activeProfile,
     onNotify,
     onProfileChange,
+    onActiveProfileResolved,
     onProfileSwitched,
     loadProfiles,
   ]);
@@ -92,6 +98,7 @@ export default function ProfileSelector({
         if (result.active_profile !== activeProfile) {
           setActiveProfile(result.active_profile);
           onProfileChange(result.active_profile);
+          onActiveProfileResolved?.(result.active_profile);
         }
         setSelectedProfile(result.active_profile);
         await loadProfiles();
@@ -99,7 +106,7 @@ export default function ProfileSelector({
         onNotify("error", toFriendlyErrorMessage(error));
       }
     },
-    [activeProfile, onNotify, onProfileChange, loadProfiles],
+    [activeProfile, onNotify, onProfileChange, onActiveProfileResolved, loadProfiles],
   );
 
   const handleCreate = useCallback(async () => {

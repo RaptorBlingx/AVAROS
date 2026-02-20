@@ -35,6 +35,7 @@ Usage:
 
 from __future__ import annotations
 
+from copy import deepcopy
 import base64
 import hashlib
 import json
@@ -60,29 +61,171 @@ logger = logging.getLogger(__name__)
 
 # ── Intent-Metric Dependency Map (DEC-021) ──────────────
 
-#: The 8 intents and the canonical metrics each requires.
+#: Supported intents and the canonical metrics each requires.
 #: Used by ``SettingsService.get_intent_metric_requirements()`` and
 #: the Web UI to show which metrics must be mapped for each intent.
 KNOWN_INTENTS: tuple[str, ...] = (
     "kpi.energy.per_unit",
+    "kpi.energy.total",
+    "kpi.peak_demand",
+    "kpi.peak_tariff_exposure",
     "kpi.oee",
     "kpi.scrap_rate",
+    "kpi.rework_rate",
+    "kpi.material_efficiency",
+    "kpi.recycled_content",
+    "kpi.supplier_lead_time",
+    "kpi.supplier_defect_rate",
+    "kpi.supplier_on_time",
+    "kpi.supplier_co2_per_kg",
+    "kpi.throughput",
+    "kpi.cycle_time",
+    "kpi.changeover_time",
+    "kpi.co2.per_unit",
+    "kpi.co2.total",
+    "kpi.co2.per_batch",
     "compare.energy",
     "trend.scrap",
     "trend.energy",
     "anomaly.production.check",
     "whatif.temperature",
+    "control.device.turn_on",
+    "control.device.turn_off",
+    "status.system.show",
+    "status.profile.show",
+    "help.capabilities.list",
 )
 
 INTENT_METRIC_REQUIREMENTS: dict[str, list[CanonicalMetric]] = {
     "kpi.energy.per_unit": [CanonicalMetric.ENERGY_PER_UNIT],
+    "kpi.energy.total": [CanonicalMetric.ENERGY_TOTAL],
+    "kpi.peak_demand": [CanonicalMetric.PEAK_DEMAND],
+    "kpi.peak_tariff_exposure": [CanonicalMetric.PEAK_TARIFF_EXPOSURE],
     "kpi.oee": [CanonicalMetric.OEE],
     "kpi.scrap_rate": [CanonicalMetric.SCRAP_RATE],
+    "kpi.rework_rate": [CanonicalMetric.REWORK_RATE],
+    "kpi.material_efficiency": [CanonicalMetric.MATERIAL_EFFICIENCY],
+    "kpi.recycled_content": [CanonicalMetric.RECYCLED_CONTENT],
+    "kpi.supplier_lead_time": [CanonicalMetric.SUPPLIER_LEAD_TIME],
+    "kpi.supplier_defect_rate": [CanonicalMetric.SUPPLIER_DEFECT_RATE],
+    "kpi.supplier_on_time": [CanonicalMetric.SUPPLIER_ON_TIME],
+    "kpi.supplier_co2_per_kg": [CanonicalMetric.SUPPLIER_CO2_PER_KG],
+    "kpi.throughput": [CanonicalMetric.THROUGHPUT],
+    "kpi.cycle_time": [CanonicalMetric.CYCLE_TIME],
+    "kpi.changeover_time": [CanonicalMetric.CHANGEOVER_TIME],
+    "kpi.co2.per_unit": [CanonicalMetric.CO2_PER_UNIT],
+    "kpi.co2.total": [CanonicalMetric.CO2_TOTAL],
+    "kpi.co2.per_batch": [CanonicalMetric.CO2_PER_BATCH],
     "compare.energy": [CanonicalMetric.ENERGY_PER_UNIT],
     "trend.scrap": [CanonicalMetric.SCRAP_RATE],
     "trend.energy": [CanonicalMetric.ENERGY_PER_UNIT],
     "anomaly.production.check": [CanonicalMetric.OEE],
     "whatif.temperature": [CanonicalMetric.ENERGY_PER_UNIT],
+    "control.device.turn_on": [],
+    "control.device.turn_off": [],
+    "status.system.show": [],
+    "status.profile.show": [],
+    "help.capabilities.list": [],
+}
+
+_MOCK_ENDPOINT_BY_METRIC: dict[str, str] = {
+    "energy_per_unit": "/api/v1/kpis/energy/per-unit",
+    "energy_total": "/api/v1/kpis/energy/total",
+    "peak_demand": "/api/v1/kpis/energy/peak-demand",
+    "peak_tariff_exposure": "/api/v1/kpis/energy/tariff-exposure",
+    "scrap_rate": "/api/v1/kpis/material/scrap-rate",
+    "rework_rate": "/api/v1/kpis/material/rework-rate",
+    "material_efficiency": "/api/v1/kpis/material/efficiency",
+    "recycled_content": "/api/v1/kpis/material/recycled-content",
+    "supplier_lead_time": "/api/v1/kpis/supplier/lead-time",
+    "supplier_defect_rate": "/api/v1/kpis/supplier/defect-rate",
+    "supplier_on_time": "/api/v1/kpis/supplier/on-time",
+    "supplier_co2_per_kg": "/api/v1/kpis/supplier/co2-per-kg",
+    "oee": "/api/v1/kpis/production/oee",
+    "throughput": "/api/v1/kpis/production/throughput",
+    "cycle_time": "/api/v1/kpis/production/cycle-time",
+    "changeover_time": "/api/v1/kpis/production/changeover-time",
+    "co2_per_unit": "/api/v1/kpis/carbon/per-unit",
+    "co2_total": "/api/v1/kpis/carbon/total",
+    "co2_per_batch": "/api/v1/kpis/carbon/per-batch",
+}
+
+_MOCK_UNIT_BY_METRIC: dict[str, str] = {
+    "energy_per_unit": "kWh/unit",
+    "energy_total": "kWh",
+    "peak_demand": "kW",
+    "peak_tariff_exposure": "%",
+    "scrap_rate": "%",
+    "rework_rate": "%",
+    "material_efficiency": "%",
+    "recycled_content": "%",
+    "supplier_lead_time": "days",
+    "supplier_defect_rate": "%",
+    "supplier_on_time": "%",
+    "supplier_co2_per_kg": "kg CO₂/kg",
+    "oee": "%",
+    "throughput": "units/hr",
+    "cycle_time": "sec",
+    "changeover_time": "min",
+    "co2_per_unit": "kg CO₂-eq/unit",
+    "co2_total": "kg CO₂-eq",
+    "co2_per_batch": "kg CO₂-eq/batch",
+}
+
+MOCK_DEFAULT_METRIC_MAPPINGS: dict[str, dict[str, Any]] = {
+    metric: {
+        "endpoint": endpoint,
+        "json_path": "$.value",
+        "unit": _MOCK_UNIT_BY_METRIC.get(metric, ""),
+        "transform": None,
+    }
+    for metric, endpoint in _MOCK_ENDPOINT_BY_METRIC.items()
+}
+
+NON_METRIC_INTENTS: tuple[str, ...] = (
+    "control.device.turn_on",
+    "control.device.turn_off",
+    "status.system.show",
+    "status.profile.show",
+    "help.capabilities.list",
+)
+
+MOCK_DEFAULT_INTENT_BINDINGS: dict[str, dict[str, Any]] = {
+    "control.device.turn_on": {
+        "endpoint": "/mock/control/turn-on",
+        "method": "POST",
+        "json_path": "$.message",
+        "success_path": "$.success",
+        "transform": None,
+    },
+    "control.device.turn_off": {
+        "endpoint": "/mock/control/turn-off",
+        "method": "POST",
+        "json_path": "$.message",
+        "success_path": "$.success",
+        "transform": None,
+    },
+    "status.system.show": {
+        "endpoint": "/mock/status/system",
+        "method": "GET",
+        "json_path": "$.status",
+        "success_path": "$.online",
+        "transform": None,
+    },
+    "status.profile.show": {
+        "endpoint": "/mock/status/profile",
+        "method": "GET",
+        "json_path": "$.profile",
+        "success_path": "$.success",
+        "transform": None,
+    },
+    "help.capabilities.list": {
+        "endpoint": "/mock/help/capabilities",
+        "method": "GET",
+        "json_path": "$.capabilities",
+        "success_path": "$.success",
+        "transform": None,
+    },
 }
 
 
@@ -197,6 +340,8 @@ class SettingsService(ProfileMixin):
         self._migrate_legacy_config()
         # Migrate global settings → profile-scoped keys (DEC-029)
         self._migrate_global_settings_to_profile()
+        # Optional bootstrap profile for reneryo-mock demo API.
+        self._bootstrap_demo_profile_if_enabled()
     
     def is_configured(self) -> bool:
         """
@@ -586,10 +731,12 @@ class SettingsService(ProfileMixin):
     # ── Metric Mapping CRUD ─────────────────────────────
 
     METRIC_MAPPING_PREFIX = "metric_mapping:"
+    INTENT_BINDING_PREFIX = "intent_binding:"
     VOICE_WS_URL_KEY = "voice:hivemind_ws_url"
     VOICE_CLIENT_NAME = "voice:hivemind_client_name"
     VOICE_CLIENT_KEY = "voice:hivemind_client_key"
     VOICE_CLIENT_SECRET = "voice:hivemind_client_secret"
+    VOICE_CLIENT_CRYPTO_KEY = "voice:hivemind_client_crypto_key"
 
     def set_metric_mapping(self, metric_name: str, mapping: dict[str, Any]) -> None:
         """Store a metric mapping (profile-scoped, DEC-029).
@@ -624,6 +771,7 @@ class SettingsService(ProfileMixin):
         env_name = os.environ.get("HIVEMIND_CLIENT_NAME", "avaros-web-client")
         env_key = os.environ.get("HIVEMIND_CLIENT_KEY", "")
         env_secret = os.environ.get("HIVEMIND_CLIENT_SECRET", "")
+        env_crypto_key = os.environ.get("HIVEMIND_CLIENT_CRYPTO_KEY", "")
 
         hivemind_url = self.get_setting(
             self.VOICE_WS_URL_KEY,
@@ -637,7 +785,11 @@ class SettingsService(ProfileMixin):
             self.VOICE_CLIENT_KEY,
             default=env_key,
         )
-        hivemind_secret = self.get_setting(
+        hivemind_crypto_key = self.get_setting(
+            self.VOICE_CLIENT_CRYPTO_KEY,
+            default=env_crypto_key,
+        )
+        legacy_secret = self.get_setting(
             self.VOICE_CLIENT_SECRET,
             default=env_secret,
         )
@@ -647,7 +799,12 @@ class SettingsService(ProfileMixin):
         hivemind_url = str(hivemind_url or env_url)
         hivemind_name = str(hivemind_name or env_name)
         hivemind_key = str(hivemind_key or env_key)
-        hivemind_secret = str(hivemind_secret or env_secret)
+        hivemind_crypto_key = str(hivemind_crypto_key or env_crypto_key)
+        legacy_secret = str(legacy_secret or env_secret)
+
+        # Browser encryption expects HiveMind crypto key. Fall back to legacy
+        # password/secret only when crypto key is unavailable.
+        hivemind_secret = hivemind_crypto_key or legacy_secret
 
         return VoiceConfig(
             hivemind_url=hivemind_url,
@@ -669,7 +826,7 @@ class SettingsService(ProfileMixin):
         # Keep existing secret if UI submits an empty value.
         if config.hivemind_secret:
             self.set_setting(
-                self.VOICE_CLIENT_SECRET,
+                self.VOICE_CLIENT_CRYPTO_KEY,
                 config.hivemind_secret,
                 encrypt=True,
             )
@@ -677,7 +834,7 @@ class SettingsService(ProfileMixin):
     def get_metric_mapping(self, metric_name: str) -> dict[str, Any] | None:
         """Get a metric mapping (profile-scoped, DEC-029).
 
-        Mock profile returns ``None`` (MockAdapter generates data).
+        Mock profile returns virtual built-in demo mappings.
 
         Args:
             metric_name: Canonical metric name
@@ -687,7 +844,7 @@ class SettingsService(ProfileMixin):
         """
         profile = self.get_active_profile_name()
         if profile == self.BUILTIN_MOCK_PROFILE:
-            return None
+            return deepcopy(MOCK_DEFAULT_METRIC_MAPPINGS.get(metric_name))
         key = self._scoped_key_for(
             self.METRIC_MAPPING_PREFIX, profile, metric_name,
         )
@@ -696,7 +853,7 @@ class SettingsService(ProfileMixin):
     def list_metric_mappings(self) -> dict[str, dict[str, Any]]:
         """List metric mappings (profile-scoped, DEC-029).
 
-        Mock returns ``{}``. Custom profiles return only that
+        Mock returns built-in demo mappings. Custom profiles return only that
         profile's stored mappings.
 
         Returns:
@@ -705,7 +862,7 @@ class SettingsService(ProfileMixin):
         self._ensure_initialized()
         profile = self.get_active_profile_name()
         if profile == self.BUILTIN_MOCK_PROFILE:
-            return {}
+            return deepcopy(MOCK_DEFAULT_METRIC_MAPPINGS)
         prefix = self._scoped_key_for(
             self.METRIC_MAPPING_PREFIX, profile, "",
         )
@@ -736,6 +893,53 @@ class SettingsService(ProfileMixin):
         )
         return self.delete_setting(key)
 
+    # ── Intent Binding CRUD ────────────────────────────
+
+    def set_intent_binding(self, intent_name: str, binding: dict[str, Any]) -> None:
+        """Store a non-metric intent binding (profile-scoped)."""
+        self._validate_non_metric_intent_name(intent_name)
+        key = self._scoped_key(self.INTENT_BINDING_PREFIX, intent_name)
+        self.set_setting(key, binding)
+
+    def get_intent_binding(self, intent_name: str) -> dict[str, Any] | None:
+        """Get a non-metric intent binding from active profile."""
+        self._validate_non_metric_intent_name(intent_name)
+        profile = self.get_active_profile_name()
+        if profile == self.BUILTIN_MOCK_PROFILE:
+            return deepcopy(MOCK_DEFAULT_INTENT_BINDINGS.get(intent_name))
+        key = self._scoped_key_for(
+            self.INTENT_BINDING_PREFIX, profile, intent_name,
+        )
+        return self.get_setting(key, default=None)
+
+    def list_intent_bindings(self) -> dict[str, dict[str, Any]]:
+        """List non-metric intent bindings for active profile."""
+        self._ensure_initialized()
+        profile = self.get_active_profile_name()
+        if profile == self.BUILTIN_MOCK_PROFILE:
+            return deepcopy(MOCK_DEFAULT_INTENT_BINDINGS)
+        prefix = self._scoped_key_for(
+            self.INTENT_BINDING_PREFIX, profile, "",
+        )
+        result: dict[str, dict[str, Any]] = {}
+        for key in self.list_settings():
+            if not key.startswith(prefix):
+                continue
+            name = key[len(prefix):]
+            result[name] = self.get_setting(key)
+        return result
+
+    def delete_intent_binding(self, intent_name: str) -> bool:
+        """Delete a non-metric intent binding from active profile."""
+        self._validate_non_metric_intent_name(intent_name)
+        profile = self.get_active_profile_name()
+        if profile == self.BUILTIN_MOCK_PROFILE:
+            return False
+        key = self._scoped_key_for(
+            self.INTENT_BINDING_PREFIX, profile, intent_name,
+        )
+        return self.delete_setting(key)
+
     # ── Private Helpers ─────────────────────────────────
 
     @staticmethod
@@ -758,6 +962,67 @@ class SettingsService(ProfileMixin):
             )
 
     @staticmethod
+    def _validate_non_metric_intent_name(intent_name: str) -> None:
+        """Validate intent binding name against supported non-metric intents."""
+        if intent_name not in NON_METRIC_INTENTS:
+            raise ValidationError(
+                message=f"Invalid non-metric intent name: '{intent_name}'",
+                field="intent_name",
+                value=intent_name,
+            )
+
+    def _bootstrap_demo_profile_if_enabled(self) -> None:
+        """Create optional reneryo-mock demo profile for zero-config demos.
+
+        Controlled via environment:
+            AVAROS_BOOTSTRAP_DEMO_PROFILE=true
+        """
+        if not _is_env_flag_enabled("AVAROS_BOOTSTRAP_DEMO_PROFILE"):
+            return
+
+        demo_name = os.environ.get("AVAROS_DEMO_PROFILE_NAME", "reneryo-mock")
+        if demo_name == self.BUILTIN_MOCK_PROFILE:
+            logger.warning(
+                "Skipping demo profile bootstrap: name '%s' is reserved",
+                demo_name,
+            )
+            return
+
+        if self.get_profile(demo_name) is None:
+            demo_config = PlatformConfig(
+                platform_type="reneryo",
+                api_url=os.environ.get(
+                    "AVAROS_DEMO_RENERYO_URL",
+                    "http://reneryo-mock:8090",
+                ),
+                api_key=os.environ.get(
+                    "AVAROS_DEMO_RENERYO_API_KEY",
+                    "demo-token",
+                ),
+                extra_settings={
+                    "auth_type": os.environ.get(
+                        "AVAROS_DEMO_RENERYO_AUTH_TYPE", "bearer",
+                    ),
+                    "api_format": os.environ.get(
+                        "AVAROS_DEMO_RENERYO_API_FORMAT", "mock",
+                    ),
+                    "timeout": os.environ.get(
+                        "AVAROS_DEMO_RENERYO_TIMEOUT", "10",
+                    ),
+                },
+            )
+            self.create_profile(demo_name, demo_config)
+            logger.info("Bootstrapped demo profile '%s'", demo_name)
+
+        if (
+            _is_env_flag_enabled("AVAROS_AUTO_SELECT_DEMO_PROFILE")
+            and self.get_active_profile_name() == self.BUILTIN_MOCK_PROFILE
+        ):
+            self.set_active_profile(demo_name)
+            logger.info("Auto-selected demo profile '%s'", demo_name)
+
+
+    @staticmethod
     def _validate_intent_name(intent_name: str) -> None:
         """
         Validate that an intent name is in KNOWN_INTENTS.
@@ -778,25 +1043,31 @@ class SettingsService(ProfileMixin):
     def _get_session(self) -> Session:
         """Get a new database session."""
         return self._session_factory()
-    
+
     def _encrypt(self, plaintext: str) -> str:
         """Encrypt a string value."""
         encrypted_bytes = self._cipher.encrypt(plaintext.encode())
         return encrypted_bytes.decode('ascii')
-    
+
     def _decrypt(self, ciphertext: str) -> str:
         """Decrypt a string value."""
         decrypted_bytes = self._cipher.decrypt(ciphertext.encode('ascii'))
         return decrypted_bytes.decode()
-    
+
     def _ensure_initialized(self) -> None:
         """Ensure database is initialized before access."""
         if not self._initialized:
             self.initialize()
-    
+
     def close(self) -> None:
         """Close database connections."""
         if self._engine:
             self._engine.dispose()
             self._initialized = False
             logger.info("SettingsService closed")
+
+
+def _is_env_flag_enabled(name: str) -> bool:
+    """Return True when env flag is one of: 1, true, yes, on."""
+    value = os.environ.get(name, "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}

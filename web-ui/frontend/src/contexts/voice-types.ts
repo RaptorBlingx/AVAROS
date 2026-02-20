@@ -27,6 +27,8 @@ export interface VoiceContextValue {
 
   startListening: () => Promise<void>;
   stopListening: () => void;
+  cancelCurrentQuery: () => void;
+  clearQuery: () => void;
   interimTranscript: string;
   finalTranscript: string;
 
