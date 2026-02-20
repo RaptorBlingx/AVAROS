@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 from urllib.parse import parse_qsl, urlsplit
 
 from skill.domain.exceptions import AdapterError
 from skill.domain.models import CanonicalMetric, TimePeriod
+from skill.domain.results import KPIResult
+
+MetricMapping = dict[str, Any]
 
 
 def resolve_kpi_request(
-    mapping: dict,
+    mapping: MetricMapping,
     period: TimePeriod,
     asset_id: str,
     extra_settings: dict[str, str],
@@ -61,13 +65,13 @@ def extract_mapped_value(data: dict | list, json_path: str) -> float:
         ) from exc
 
 
-def get_mapping_unit(mapping: dict, metric: CanonicalMetric) -> str:
+def get_mapping_unit(mapping: MetricMapping, metric: CanonicalMetric) -> str:
     """Return configured mapping unit or canonical default."""
     unit = str(mapping.get("unit", "") or "").strip()
     return unit or metric.default_unit
 
 
-def get_mapping_json_path(mapping: dict) -> str:
+def get_mapping_json_path(mapping: MetricMapping) -> str:
     """Return configured json_path from mapping."""
     json_path = str(mapping.get("json_path", "") or "").strip()
     if not json_path:
@@ -77,6 +81,26 @@ def get_mapping_json_path(mapping: dict) -> str:
             platform="reneryo",
         )
     return json_path
+
+
+def parse_mapped_kpi_response(
+    data: dict | list,
+    mapping: MetricMapping,
+    metric: CanonicalMetric,
+    asset_id: str,
+    period: TimePeriod,
+) -> KPIResult:
+    """Parse KPI response using configured json_path and unit."""
+    json_path = get_mapping_json_path(mapping)
+    value = extract_mapped_value(data, json_path)
+    unit = get_mapping_unit(mapping, metric)
+    return KPIResult(
+        metric=metric,
+        value=value,
+        unit=unit,
+        asset_id=asset_id,
+        period=period,
+    )
 
 
 def _fill_placeholders(endpoint: str, replacements: dict[str, str]) -> str:
