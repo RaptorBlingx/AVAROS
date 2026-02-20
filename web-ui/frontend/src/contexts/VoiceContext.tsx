@@ -127,6 +127,7 @@ function isIncompleteIntentText(raw: string): boolean {
 
 const WAKE_WORD_ARM_MS = 10000;
 const WAKE_WORD_PROMPT = "How can I help you?";
+const WAKE_WORD_PROMPT_COOLDOWN_MS = 5000;
 
 /** Ignore STT results that are our own TTS prompt (avoids acoustic feedback loop). */
 function isOwnPromptEcho(transcript: string): boolean {
@@ -185,6 +186,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   >([]);
   const [ttsRate, setTTSRateState] = useState(1.0);
   const [ttsVolume, setTTSVolumeState] = useState(1.0);
+  const isSpeakingRef = useRef(false);
+  const wakeWordPromptCooldownUntilRef = useRef(0);
 
   const sttSupported = isSpeechRecognitionSupported();
   const ttsSupported = isSpeechSynthesisSupported();
@@ -204,10 +207,18 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   }, []);
   const promptWakeWordReady = useCallback(() => {
     if (!ttsRef.current) return;
+    wakeWordPromptCooldownUntilRef.current =
+      Date.now() + WAKE_WORD_PROMPT_COOLDOWN_MS;
     void ttsRef.current.speak(WAKE_WORD_PROMPT);
   }, []);
   // ── Wake word detection ────────────────────────────
   const onWakeWordDetected = useCallback(() => {
+    if (isSpeakingRef.current) {
+      return;
+    }
+    if (Date.now() < wakeWordPromptCooldownUntilRef.current) {
+      return;
+    }
     metricsRef.current.reset();
     metricsRef.current.mark("wake_word_detected");
     armWakeWordCommandWindow();
@@ -403,6 +414,10 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   ]);
 
   // ── Wire TTS events ────────────────────────────────
+  useEffect(() => {
+    isSpeakingRef.current = isSpeaking;
+  }, [isSpeaking]);
+
   useEffect(() => {
     const tts = ttsRef.current;
     if (!tts) return;
