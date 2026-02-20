@@ -471,13 +471,12 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   }, []);
 
   const cancelCurrentQuery = useCallback(() => {
-    clearProcessingTimeout();
     sttRef.current?.stop();
     ttsRef.current?.stop();
     setInterimTranscript("");
     setFinalTranscript("");
     setVoiceState("idle");
-  }, [clearProcessingTimeout]);
+  }, []);
 
   const clearQuery = useCallback(() => {
     setInterimTranscript("");
