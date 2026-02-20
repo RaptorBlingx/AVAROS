@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
@@ -171,8 +177,18 @@ describe("PlatformConfigSection with ProfileSelector", () => {
 
     const updatedProfiles: ProfileListResponse = {
       profiles: [
-        { name: "mock", platform_type: "mock", is_active: false, is_builtin: true },
-        { name: "my-reneryo", platform_type: "reneryo", is_active: true, is_builtin: false },
+        {
+          name: "mock",
+          platform_type: "mock",
+          is_active: false,
+          is_builtin: true,
+        },
+        {
+          name: "my-reneryo",
+          platform_type: "reneryo",
+          is_active: true,
+          is_builtin: false,
+        },
       ],
       active_profile: "my-reneryo",
     };

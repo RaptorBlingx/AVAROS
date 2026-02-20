@@ -656,6 +656,7 @@ class SettingsService:
     # ── Metric Mapping CRUD ─────────────────────────────
 
     METRIC_MAPPING_PREFIX = "metric_mapping:"
+    ASSET_MAPPINGS_KEY = "asset_mappings"
     VOICE_WS_URL_KEY = "voice:hivemind_ws_url"
     VOICE_CLIENT_NAME = "voice:hivemind_client_name"
     VOICE_CLIENT_KEY = "voice:hivemind_client_key"
@@ -678,6 +679,53 @@ class SettingsService:
         self._validate_metric_name(metric_name)
         key = f"{self.METRIC_MAPPING_PREFIX}{metric_name}"
         self.set_setting(key, mapping)
+
+    # ── Asset Mapping CRUD ──────────────────────────────
+
+    def get_asset_mappings(self) -> dict[str, dict[str, Any]]:
+        """Return configured asset mappings used for native RENERYO routing."""
+        self._ensure_initialized()
+        raw = self.get_setting(self.ASSET_MAPPINGS_KEY, default={})
+        if isinstance(raw, dict):
+            return {
+                str(asset): value
+                for asset, value in raw.items()
+                if isinstance(value, dict)
+            }
+
+        # Backward-compatible fallback: read from platform extra_settings.
+        config = self.get_platform_config()
+        extra = config.extra_settings if isinstance(config.extra_settings, dict) else {}
+        nested = extra.get("asset_mappings", {})
+        if isinstance(nested, dict):
+            return {
+                str(asset): value
+                for asset, value in nested.items()
+                if isinstance(value, dict)
+            }
+        return {}
+
+    def set_asset_mappings(self, asset_mappings: dict[str, dict[str, Any]]) -> None:
+        """Persist asset mappings and sync them into platform extra_settings."""
+        self._ensure_initialized()
+        normalized = {
+            str(asset).strip(): value
+            for asset, value in (asset_mappings or {}).items()
+            if str(asset).strip() and isinstance(value, dict)
+        }
+        self.set_setting(self.ASSET_MAPPINGS_KEY, normalized)
+
+        config = self.get_platform_config()
+        extra = dict(config.extra_settings) if isinstance(config.extra_settings, dict) else {}
+        extra["asset_mappings"] = normalized
+        self.update_platform_config(
+            PlatformConfig(
+                platform_type=config.platform_type,
+                api_url=config.api_url,
+                api_key=config.api_key,
+                extra_settings=extra,
+            )
+        )
 
     # ── Voice Config CRUD (DEC-006) ─────────────────────
 

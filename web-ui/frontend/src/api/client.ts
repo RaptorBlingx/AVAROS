@@ -1,4 +1,6 @@
 import type {
+  AssetDiscoveryResponse,
+  AssetMappingsResponse,
   BaselineResponse,
   CSVUploadResponse,
   CanonicalMetricName,
@@ -359,23 +361,27 @@ export function listEmissionFactors(): Promise<EmissionFactorListResponse> {
 }
 
 export function createEmissionFactor(
-  payload: EmissionFactorRequest
+  payload: EmissionFactorRequest,
 ): Promise<EmissionFactorResponse> {
   return request<EmissionFactorResponse>("/api/v1/config/emission-factors", {
     method: "POST",
-    body: payload
+    body: payload,
   });
 }
 
-export async function deleteEmissionFactor(energySource: string): Promise<void> {
+export async function deleteEmissionFactor(
+  energySource: string,
+): Promise<void> {
   await request<unknown>(`/api/v1/config/emission-factors/${energySource}`, {
-    method: "DELETE"
+    method: "DELETE",
   });
 }
 
-export function listEmissionFactorPresets(): Promise<EmissionFactorPresetResponse[]> {
+export function listEmissionFactorPresets(): Promise<
+  EmissionFactorPresetResponse[]
+> {
   return request<EmissionFactorPresetResponse[]>(
-    "/api/v1/config/emission-factors/presets"
+    "/api/v1/config/emission-factors/presets",
   );
 }
 
@@ -420,6 +426,23 @@ export function activateProfile(name: string): Promise<ProfileConfig> {
     `/api/v1/config/profiles/${encodeURIComponent(name)}/activate`,
     { method: "POST" },
   );
+}
+
+export function discoverAssets(): Promise<AssetDiscoveryResponse> {
+  return request<AssetDiscoveryResponse>("/api/v1/assets/discover");
+}
+
+export function getAssetMappings(): Promise<AssetMappingsResponse> {
+  return request<AssetMappingsResponse>("/api/v1/assets/mappings");
+}
+
+export function setAssetMappings(
+  assetMappings: AssetMappingsResponse["asset_mappings"],
+): Promise<AssetMappingsResponse> {
+  return request<AssetMappingsResponse>("/api/v1/assets/mappings", {
+    method: "PUT",
+    body: { asset_mappings: assetMappings },
+  });
 }
 
 export function getVoiceConfig(): Promise<VoiceConfigResponse> {

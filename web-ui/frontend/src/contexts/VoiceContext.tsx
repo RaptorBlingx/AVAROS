@@ -24,85 +24,13 @@ import { STTService, type STTResult } from "../services/stt";
 import { TTSService } from "../services/tts";
 import { VoiceMetricsService } from "../services/voice-metrics";
 import { useWakeWord } from "../hooks/useWakeWord";
+import { normalizeUtteranceForIntent } from "../services/intent-normalizer";
 
 // Re-export types for consumer convenience
 export type { VoiceMode } from "../services/voice-mode";
 export type { VoiceState } from "./voice-types";
 
 const VoiceContext = createContext<VoiceContextValue | null>(null);
-
-function normalizeTranscriptForIntent(raw: string): string {
-  let text = raw.trim();
-  if (!text) return text;
-
-  // Common STT substitutions observed in MVP testing.
-  text = text.replace(/°/g, " degrees");
-  text = text.replace(/\bwhat if (you|u)\b/gi, "what if we");
-  text = text.replace(/\btrain\b/gi, "trend");
-  text = text.replace(/\bv\s*s\b/gi, "vs");
-  text = text.replace(/\bverse us\b/gi, "versus");
-  text = text.replace(/\bverses\b/gi, "versus");
-  text = text.replace(
-    /\bwhich uses more energy\b.+\b(vs|versus|or)\b.+/gi,
-    "which uses more energy",
-  );
-  text = text.replace(
-    /\bwhich is more efficient\b.+\b(vs|versus|or)\b.+/gi,
-    "which is more efficient",
-  );
-  text = text.replace(
-    /\bcompare\b.+\b(energy|power)\b.+\b(vs|versus|and|or)\b.+/gi,
-    "compare energy",
-  );
-  text = text.replace(
-    /\b(show|display)\s+(scrap|waste)\s+trend\b/gi,
-    "$1 $2 rate trend",
-  );
-  text = text.replace(/\b(scrap|waste)\s+trend\b/gi, "$1 rate trend");
-  text = text.replace(
-    /\bcheck production on amalie\b/gi,
-    "check production anomaly",
-  );
-  text = text.replace(
-    /\bcheck production on a money\b/gi,
-    "check production anomaly",
-  );
-  text = text.replace(
-    /\bcheck production on anomaly\b/gi,
-    "check production anomaly",
-  );
-  text = text.replace(
-    /\bcheck production anomaly\b/gi,
-    "check production anomaly",
-  );
-
-  text = text.replace(
-    /\bwhat is temperature (increase|increases|increased|raise|raises|raised)\s+by\s+([0-9]+(?:\.[0-9]+)?)\s*degrees?\b/gi,
-    "what if we increase temperature by $2 degrees",
-  );
-  text = text.replace(
-    /\bwhat is temperature (decrease|decreases|decreased|reduce|reduces|reduced|lower|lowers|lowered)\s+by\s+([0-9]+(?:\.[0-9]+)?)\s*degrees?\b/gi,
-    "what if we decrease temperature by $2 degrees",
-  );
-  text = text.replace(
-    /\bwhat if temperature (increase|increases|increased|raise|raises|raised)\s+by\s+([0-9]+(?:\.[0-9]+)?)\s*degrees?\b/gi,
-    "what if we increase temperature by $2 degrees",
-  );
-  text = text.replace(
-    /\bwhat if we (increase|increases|increased|raise|raises|raised)\s+temperature\s+by\s+([0-9]+(?:\.[0-9]+)?)\b/gi,
-    "what if we increase temperature by $2 degrees",
-  );
-  text = text.replace(
-    /\bwhat if temperature (decrease|decreases|decreased|reduce|reduces|reduced|lower|lowers|lowered)\s+by\s+([0-9]+(?:\.[0-9]+)?)\s*degrees?\b/gi,
-    "what if we decrease temperature by $2 degrees",
-  );
-  text = text.replace(
-    /\bwhat if we (decrease|decreases|decreased|reduce|reduces|reduced|lower|lowers|lowered)\s+temperature\s+by\s+([0-9]+(?:\.[0-9]+)?)\b/gi,
-    "what if we decrease temperature by $2 degrees",
-  );
-
-  return text;
-}
 
 function isIncompleteIntentText(raw: string): boolean {
   const text = raw.trim().toLowerCase().replace(/\s+/g, " ");
@@ -118,9 +46,10 @@ function isIncompleteIntentText(raw: string): boolean {
   ]);
   if (exactIncomplete.has(text)) return true;
 
-  const hasAmount = /\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/.test(
-    text,
-  );
+  const hasAmount =
+    /\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/.test(
+      text,
+    );
   if (text.startsWith("what if") && !hasAmount) return true;
   return false;
 }
@@ -128,9 +57,10 @@ function isIncompleteIntentText(raw: string): boolean {
 const WAKE_WORD_ARM_MS = 10000;
 const WAKE_WORD_PROMPT = "How can I help you?";
 
-function parseWakeWordUtterance(
-  raw: string,
-): { hasWakeWord: boolean; command: string } {
+function parseWakeWordUtterance(raw: string): {
+  hasWakeWord: boolean;
+  command: string;
+} {
   const cleaned = raw.trim();
   if (!cleaned) return { hasWakeWord: false, command: "" };
 
@@ -152,6 +82,24 @@ function parseWakeWordUtterance(
   return { hasWakeWord: false, command: cleaned };
 }
 
+function looksLikeDomainCommand(raw: string): boolean {
+  const text = raw.trim().toLowerCase();
+  if (!text) return false;
+  const keywords = [
+    "energy",
+    "oee",
+    "scrap",
+    "anomaly",
+    "trend",
+    "compare",
+    "production",
+    "temperature",
+    "line",
+    "compressor",
+  ];
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
 interface VoiceProviderProps {
   children: ReactNode;
 }
@@ -163,8 +111,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const voicesChangedHandlerRef = useRef<(() => void) | null>(null);
 
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
-  const [micPermission, setMicPermission] =
-    useState<PermissionState>("prompt");
+  const [micPermission, setMicPermission] = useState<PermissionState>("prompt");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [finalTranscript, setFinalTranscript] = useState("");
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -313,6 +260,12 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
             return;
           } else if (wakeWordFallbackActive && isWakeWordCommandWindowOpen()) {
             clearWakeWordCommandWindow();
+          } else if (
+            wakeWordFallbackActive &&
+            looksLikeDomainCommand(transcript)
+          ) {
+            // In fallback mode, accept direct domain commands even if wake-word
+            // phrase was missed by browser STT.
           } else if (!wakeWordFallbackActive && isWakeWordCommandWindowOpen()) {
             clearWakeWordCommandWindow();
           } else {
@@ -343,9 +296,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
           setVoiceState("error");
           break;
         case "idle":
-          setVoiceState((prev) =>
-            prev === "listening" ? "idle" : prev,
-          );
+          setVoiceState((prev) => (prev === "listening" ? "idle" : prev));
           break;
       }
     });
@@ -413,9 +364,10 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   useEffect(() => {
     const transcript = finalTranscript.trim();
     if (!transcript || !isConnected) return;
-    const normalizedTranscript = normalizeTranscriptForIntent(transcript);
+    const normalizedTranscript = normalizeUtteranceForIntent(transcript);
     if (isIncompleteIntentText(normalizedTranscript)) {
       setVoiceState("idle");
+      setFinalTranscript("");
       return;
     }
 
@@ -427,10 +379,12 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         if (cancelled) return;
         // Stay in "processing" until OVOS responds
         setVoiceState("processing");
+        setFinalTranscript("");
       })
       .catch(() => {
         if (cancelled) return;
         setVoiceState("error");
+        setFinalTranscript("");
       });
 
     return () => {
@@ -500,41 +454,78 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     ttsRef.current?.setVolume(normalized);
   }, []);
 
-  const requestMicPermission = useCallback(
-    async (): Promise<PermissionState> => {
+  const requestMicPermission =
+    useCallback(async (): Promise<PermissionState> => {
       const result = await requestMicrophonePermission();
       setMicPermission(result);
       return result;
-    },
-    [],
-  );
+    }, []);
 
   // ── Context value ──────────────────────────────────
 
-  const value = useMemo<VoiceContextValue>(() => ({
-    voiceState, voiceMode, micPermission, sttSupported, ttsSupported,
-    startListening, stopListening, interimTranscript, finalTranscript,
-    speak: speakText, stopSpeaking, isSpeaking,
-    wakeWordState, wakeWordEnabled, wakeWordSensitivity,
-    wakeWordFallbackActive, setWakeWordSensitivity, isModelLoading,
-    setVoiceMode, setLanguage, availableVoices, setTTSVoice,
-    ttsRate, setTTSRate, ttsVolume, setTTSVolume,
-    requestMicPermission,
-  }), [
-    voiceState, voiceMode, micPermission, sttSupported, ttsSupported,
-    startListening, stopListening, interimTranscript, finalTranscript,
-    speakText, stopSpeaking, isSpeaking,
-    wakeWordState, wakeWordEnabled, wakeWordSensitivity,
-    wakeWordFallbackActive, setWakeWordSensitivity, isModelLoading,
-    setVoiceMode, setLanguage, availableVoices, setTTSVoice,
-    ttsRate, setTTSRate, ttsVolume, setTTSVolume,
-    requestMicPermission,
-  ]);
+  const value = useMemo<VoiceContextValue>(
+    () => ({
+      voiceState,
+      voiceMode,
+      micPermission,
+      sttSupported,
+      ttsSupported,
+      startListening,
+      stopListening,
+      interimTranscript,
+      finalTranscript,
+      speak: speakText,
+      stopSpeaking,
+      isSpeaking,
+      wakeWordState,
+      wakeWordEnabled,
+      wakeWordSensitivity,
+      wakeWordFallbackActive,
+      setWakeWordSensitivity,
+      isModelLoading,
+      setVoiceMode,
+      setLanguage,
+      availableVoices,
+      setTTSVoice,
+      ttsRate,
+      setTTSRate,
+      ttsVolume,
+      setTTSVolume,
+      requestMicPermission,
+    }),
+    [
+      voiceState,
+      voiceMode,
+      micPermission,
+      sttSupported,
+      ttsSupported,
+      startListening,
+      stopListening,
+      interimTranscript,
+      finalTranscript,
+      speakText,
+      stopSpeaking,
+      isSpeaking,
+      wakeWordState,
+      wakeWordEnabled,
+      wakeWordSensitivity,
+      wakeWordFallbackActive,
+      setWakeWordSensitivity,
+      isModelLoading,
+      setVoiceMode,
+      setLanguage,
+      availableVoices,
+      setTTSVoice,
+      ttsRate,
+      setTTSRate,
+      ttsVolume,
+      setTTSVolume,
+      requestMicPermission,
+    ],
+  );
 
   return (
-    <VoiceContext.Provider value={value}>
-      {children}
-    </VoiceContext.Provider>
+    <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>
   );
 }
 

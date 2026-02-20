@@ -18,21 +18,25 @@ const STATE_CONFIG = {
   connected: {
     dot: "bg-emerald-400",
     label: "Voice Connected",
+    message: "HiveMind is connected.",
     pulse: false,
   },
   connecting: {
     dot: "bg-amber-400",
     label: "Connecting...",
+    message: "Trying to connect to HiveMind...",
     pulse: true,
   },
   disconnected: {
     dot: "bg-slate-400",
     label: "Voice Offline",
+    message: "Voice unavailable. HiveMind is not connected.",
     pulse: false,
   },
   error: {
     dot: "bg-red-400",
     label: "Connection Error",
+    message: "Voice unavailable. HiveMind connection failed.",
     pulse: false,
   },
 } as const;
@@ -47,8 +51,7 @@ export default function HiveMindStatus() {
     connectionDetails,
     isSpeaking,
     isProcessing,
-  } =
-    useHiveMind();
+  } = useHiveMind();
   const { isDark } = useTheme();
   const [showDetails, setShowDetails] = useState(false);
 
@@ -64,9 +67,8 @@ export default function HiveMindStatus() {
     }
   }, [isConnected, connect, disconnect]);
 
-  if (!voiceEnabled) return null;
-
-  const config = STATE_CONFIG[connectionState];
+  const effectiveState = voiceEnabled ? connectionState : "disconnected";
+  const config = STATE_CONFIG[effectiveState];
 
   return (
     <div className="relative">
@@ -80,7 +82,7 @@ export default function HiveMindStatus() {
         }`}
         aria-label={`Voice status: ${config.label}`}
       >
-        <span className="relative flex h-3 w-3">
+        <span className="relative flex h-3 w-3 shrink-0 self-center">
           {config.pulse && (
             <span
               className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${config.dot}`}
@@ -90,7 +92,16 @@ export default function HiveMindStatus() {
             className={`relative inline-flex h-3 w-3 rounded-full ${config.dot}`}
           />
         </span>
-        <span className="truncate">{config.label}</span>
+        <span className="min-w-0 text-left">
+          <span className="block truncate">{config.label}</span>
+          <span
+            className={`block text-xs ${
+              isDark ? "text-slate-400" : "text-slate-500"
+            }`}
+          >
+            {config.message}
+          </span>
+        </span>
       </button>
 
       {showDetails && (
@@ -104,46 +115,60 @@ export default function HiveMindStatus() {
           <p className="mb-1 font-medium">HiveMind Voice</p>
           <p className="mb-2">
             Status:{" "}
-            <span className="font-mono">{connectionState}</span>
-          </p>
-          <p className="mb-1 truncate">
-            URL:{" "}
-            <span className="font-mono">{connectionDetails.url || "--"}</span>
-          </p>
-          <p className="mb-1">
-            Latency:{" "}
             <span className="font-mono">
-              {connectionDetails.latencyMs === null
-                ? "--"
-                : `${connectionDetails.latencyMs} ms`}
+              {voiceEnabled ? effectiveState : "disabled"}
             </span>
           </p>
-          <p className="mb-2">
-            Session ID:{" "}
-            <span className="font-mono">
-              {connectionDetails.sessionId ?? "--"}
-            </span>
-          </p>
-          <p className="mb-2">
-            {isProcessing ? "Processing" : "Idle"}
-            {" · "}
-            {isSpeaking ? "Speaking" : "Not speaking"}
-          </p>
-          <button
-            type="button"
-            onClick={() => void handleToggle()}
-            className={`w-full rounded px-2 py-1 text-xs font-medium transition ${
-              isConnected
-                ? isDark
-                  ? "bg-red-900/50 text-red-300 hover:bg-red-800/60"
-                  : "bg-red-100 text-red-700 hover:bg-red-200"
-                : isDark
-                  ? "bg-emerald-900/50 text-emerald-300 hover:bg-emerald-800/60"
-                  : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-            }`}
-          >
-            {isConnected ? "Disconnect" : "Connect"}
-          </button>
+          {voiceEnabled ? (
+            <>
+              <p className="mb-1 truncate">
+                URL:{" "}
+                <span className="font-mono">
+                  {connectionDetails.url || "--"}
+                </span>
+              </p>
+              <p className="mb-1">
+                Latency:{" "}
+                <span className="font-mono">
+                  {connectionDetails.latencyMs === null
+                    ? "--"
+                    : `${connectionDetails.latencyMs} ms`}
+                </span>
+              </p>
+              <p className="mb-2">
+                Session ID:{" "}
+                <span className="font-mono">
+                  {connectionDetails.sessionId ?? "--"}
+                </span>
+              </p>
+              <p className="mb-2">
+                {isProcessing ? "Processing" : "Idle"}
+                {" · "}
+                {isSpeaking ? "Speaking" : "Not speaking"}
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleToggle()}
+                className={`w-full rounded px-2 py-1 text-xs font-medium transition ${
+                  isConnected
+                    ? isDark
+                      ? "bg-red-900/50 text-red-300 hover:bg-red-800/60"
+                      : "bg-red-100 text-red-700 hover:bg-red-200"
+                    : isDark
+                    ? "bg-emerald-900/50 text-emerald-300 hover:bg-emerald-800/60"
+                    : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                }`}
+              >
+                {isConnected ? "Disconnect" : "Connect"}
+              </button>
+            </>
+          ) : (
+            <p
+              className={`mb-0 ${isDark ? "text-slate-400" : "text-slate-500"}`}
+            >
+              Voice integration is disabled in configuration.
+            </p>
+          )}
         </div>
       )}
     </div>

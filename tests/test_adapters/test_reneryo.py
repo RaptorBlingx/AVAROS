@@ -501,6 +501,32 @@ class TestReneryoAdapterFactoryIntegration:
         assert adapter._native_seu_id == "SEU-ABC"
 
 
+class TestReneryoApiFormatDetection:
+    """Tests for fallback RENERYO API format detection."""
+
+    def test_detect_format_uses_mock_for_local_hosts(self) -> None:
+        """Local/mock hosts are detected as mock format."""
+        assert (
+            AdapterFactory._detect_reneryo_api_format("http://localhost:8090")
+            == "mock"
+        )
+        assert (
+            AdapterFactory._detect_reneryo_api_format("http://reneryo-mock:8090")
+            == "mock"
+        )
+
+    def test_detect_format_defaults_to_native_for_unknown_domains(self) -> None:
+        """Unknown domains should not silently fall back to mock."""
+        assert (
+            AdapterFactory._detect_reneryo_api_format("https://tenant.example.com/api")
+            == "native"
+        )
+
+    def test_detect_format_empty_url_falls_back_to_mock(self) -> None:
+        """Empty URL keeps mock fallback for zero-config path."""
+        assert AdapterFactory._detect_reneryo_api_format("") == "mock"
+
+
 # ===========================================================================
 # HTTP Client Tests (aioresponses-based)
 # ===========================================================================

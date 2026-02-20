@@ -42,14 +42,14 @@ export default function ConnectionSetupStep({
     platformType === "reneryo"
       ? "RENERYO"
       : platformType === "custom_rest"
-        ? "Custom REST"
-        : "Mock";
+      ? "Custom REST"
+      : "Mock";
 
   return (
     <section className="space-y-4">
       <header className="brand-hero rounded-2xl p-6 backdrop-blur-sm">
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">
-          Step 3 of 6
+          Step 3 of 7
         </p>
         <div className="mt-2 inline-flex items-center gap-2">
           <h2 className="m-0 text-2xl font-semibold text-slate-900 dark:text-slate-100">
@@ -141,8 +141,17 @@ export default function ConnectionSetupStep({
             >
               {isTesting ? (
                 <span className="inline-flex items-center gap-2">
-                  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <path d="M21 12a9 9 0 10-9 9" strokeWidth="2" strokeLinecap="round" />
+                  <svg
+                    className="h-4 w-4 animate-spin"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                  >
+                    <path
+                      d="M21 12a9 9 0 10-9 9"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
                   </svg>
                   Testing connection to {adapterTarget}...
                 </span>
@@ -157,7 +166,7 @@ export default function ConnectionSetupStep({
             onClick={onSave}
             disabled={isSaving || isTesting}
           >
-            {isSaving ? "Saving..." : "Save & Finish"}
+            {isSaving ? "Saving..." : "Save & Continue"}
           </button>
         </div>
       </div>

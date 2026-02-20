@@ -3,11 +3,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHiveMind } from "../../contexts/HiveMindContext";
 import { useVoice } from "../../contexts/VoiceContext";
 import { useConversation } from "../../hooks/useConversation";
+import {
+  ONBOARDING_VOICE_FOCUS_EVENT,
+  type OnboardingVoiceFocusDetail,
+} from "../common/onboarding";
 import ChatPanel from "./ChatPanel";
 import RecordingIndicator from "./RecordingIndicator";
 import ResponseDisplay from "./ResponseDisplay";
 import TranscriptDisplay from "./TranscriptDisplay";
 import {
+  buildImmediateAssistantReply,
   buildGuidanceForUtterance,
   MICROPHONE_HELP_URL,
   POSITION_CLASS,
@@ -18,11 +23,14 @@ import {
   renderStateIcon,
   type WidgetPosition,
 } from "./voiceWidget.helpers";
+import { normalizeUtteranceForIntent } from "../../services/intent-normalizer";
 import "./VoiceWidget.css";
 
 type VoiceWidgetProps = {
   position?: WidgetPosition;
 };
+
+const RESPONSE_FALLBACK_TIMEOUT_MS = 12000;
 
 export default function VoiceWidget({
   position = "bottom-right",
@@ -61,7 +69,10 @@ export default function VoiceWidget({
   const [awaitingResponse, setAwaitingResponse] = useState(false);
   const [responseFallback, setResponseFallback] = useState<string | null>(null);
   const [activeResponse, setActiveResponse] = useState<string | null>(null);
+  const [ignoreStuckProcessing, setIgnoreStuckProcessing] = useState(false);
   const lastUserUtteranceRef = useRef("");
+  const awaitingResponseRef = useRef(false);
+  const lastResponseRef = useRef<string | null>(null);
   const displayedResponse = activeResponse ?? responseFallback;
   const {
     messages: conversationMessages,
@@ -71,29 +82,33 @@ export default function VoiceWidget({
     clearConversation,
   } = useConversation();
 
+  const effectiveVoiceState =
+    ignoreStuckProcessing && voiceState === "processing" ? "idle" : voiceState;
   const visualState = useMemo(
     () =>
       deriveVisualState({
         isConnected,
         voiceEnabled,
-        voiceState,
+        voiceState: effectiveVoiceState,
         isHiveSpeaking: isHiveSpeaking || isVoiceSpeaking,
-        isHiveProcessing: isProcessing,
+        isHiveProcessing: ignoreStuckProcessing ? false : isProcessing,
         localError,
       }),
     [
       isConnected,
       voiceEnabled,
-      voiceState,
+      effectiveVoiceState,
       isHiveSpeaking,
       isVoiceSpeaking,
       isProcessing,
+      ignoreStuckProcessing,
       localError,
     ],
   );
 
   useEffect(() => {
     if (lastResponse) {
+      setIgnoreStuckProcessing(false);
       setActiveResponse(lastResponse);
       setResponseReceivedAt(new Date());
       setAwaitingResponse(false);
@@ -121,8 +136,21 @@ export default function VoiceWidget({
     if (!transcript) return;
     lastUserUtteranceRef.current = transcript;
 
+    const immediateReply = buildImmediateAssistantReply(transcript);
+    if (immediateReply) {
+      setIgnoreStuckProcessing(true);
+      setActiveResponse(null);
+      setResponseReceivedAt(null);
+      setAwaitingResponse(false);
+      setResponseFallback(immediateReply);
+      setLocalError("");
+      addAvarosResponse(immediateReply);
+      return;
+    }
+
     const guidance = buildGuidanceForUtterance(transcript);
     if (guidance || isLikelyIncompleteUtterance(transcript)) {
+      setIgnoreStuckProcessing(true);
       setActiveResponse(null);
       setResponseReceivedAt(null);
       setAwaitingResponse(false);
@@ -135,6 +163,7 @@ export default function VoiceWidget({
       return;
     }
 
+    setIgnoreStuckProcessing(false);
     setActiveResponse(null);
     setResponseReceivedAt(null);
     setAwaitingResponse(true);
@@ -143,11 +172,24 @@ export default function VoiceWidget({
   }, [finalTranscript, addAvarosResponse]);
 
   useEffect(() => {
+    awaitingResponseRef.current = awaitingResponse;
+  }, [awaitingResponse]);
+
+  useEffect(() => {
+    lastResponseRef.current = lastResponse;
+  }, [lastResponse]);
+
+  useEffect(() => {
     if (!awaitingResponse) {
       return;
     }
 
     const timer = window.setTimeout(() => {
+      // Guard against stale timeout callback when response already arrived.
+      if (!awaitingResponseRef.current || lastResponseRef.current) {
+        return;
+      }
+      setIgnoreStuckProcessing(true);
       setAwaitingResponse(false);
       const guidance = buildGuidanceForUtterance(lastUserUtteranceRef.current);
       const fallbackText =
@@ -156,7 +198,7 @@ export default function VoiceWidget({
       setResponseFallback(fallbackText);
       setLocalError("");
       addAvarosResponse(fallbackText);
-    }, 7000);
+    }, RESPONSE_FALLBACK_TIMEOUT_MS);
 
     return () => window.clearTimeout(timer);
   }, [awaitingResponse, addAvarosResponse]);
@@ -176,6 +218,28 @@ export default function VoiceWidget({
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
   }, [expanded, visualState, stopListening, stopSpeaking]);
+
+  useEffect(() => {
+    const onOnboardingVoiceFocus = (event: Event) => {
+      const detail = (event as CustomEvent<OnboardingVoiceFocusDetail>).detail;
+      if (!detail) return;
+      setExpanded(detail.expanded);
+      if (!detail.expanded) {
+        if (visualState === "listening") stopListening();
+        if (visualState === "speaking") stopSpeaking();
+      }
+    };
+    window.addEventListener(
+      ONBOARDING_VOICE_FOCUS_EVENT,
+      onOnboardingVoiceFocus,
+    );
+    return () => {
+      window.removeEventListener(
+        ONBOARDING_VOICE_FOCUS_EVENT,
+        onOnboardingVoiceFocus,
+      );
+    };
+  }, [visualState, stopListening, stopSpeaking]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -199,6 +263,7 @@ export default function VoiceWidget({
   }, [expanded, visualState, stopListening, stopSpeaking]);
 
   const requestListening = useCallback(async () => {
+    setIgnoreStuckProcessing(false);
     setLocalError("");
 
     if (!voiceEnabled || !isConnected || connectionState === "connecting") {
@@ -247,20 +312,13 @@ export default function VoiceWidget({
   const handleMicClick = useCallback(() => {
     if (!expanded) {
       setExpanded(true);
-      if (
-        visualState === "idle" ||
-        visualState === "error" ||
-        visualState === "disconnected"
-      ) {
-        void requestListening();
-      }
       return;
     }
 
     if (visualState === "listening") stopListening();
     if (visualState === "speaking") stopSpeaking();
     setExpanded(false);
-  }, [expanded, visualState, requestListening, stopListening, stopSpeaking]);
+  }, [expanded, visualState, stopListening, stopSpeaking]);
 
   const handlePrimaryAction = useCallback(() => {
     if (visualState === "listening") {
@@ -305,28 +363,44 @@ export default function VoiceWidget({
 
   const handleSendText = useCallback(
     async (text: string) => {
-      const normalized = text.trim();
-      if (!normalized) return;
+      const original = text.trim();
+      if (!original) return;
+      const normalized = normalizeUtteranceForIntent(original);
       lastUserUtteranceRef.current = normalized;
+
+      const immediateReply = buildImmediateAssistantReply(normalized);
+      if (immediateReply) {
+        setIgnoreStuckProcessing(true);
+        setLocalError("");
+        setActiveResponse(null);
+        setResponseReceivedAt(null);
+        setAwaitingResponse(false);
+        setResponseFallback(immediateReply);
+        addUserMessage(original, "text");
+        addAvarosResponse(immediateReply);
+        return;
+      }
 
       const guidance = buildGuidanceForUtterance(normalized);
       if (guidance) {
+        setIgnoreStuckProcessing(true);
         setLocalError("");
         setActiveResponse(null);
         setResponseReceivedAt(null);
         setAwaitingResponse(false);
         setResponseFallback(guidance);
-        addUserMessage(normalized, "text");
+        addUserMessage(original, "text");
         addAvarosResponse(guidance);
         return;
       }
 
+      setIgnoreStuckProcessing(false);
       setLocalError("");
       setActiveResponse(null);
       setResponseReceivedAt(null);
       setAwaitingResponse(true);
       setResponseFallback(null);
-      addUserMessage(normalized, "text");
+      addUserMessage(original, "text");
 
       try {
         await sendUtterance(normalized);
@@ -361,6 +435,7 @@ export default function VoiceWidget({
         onClick={handleMicClick}
         aria-label={expanded ? "Minimize voice widget" : "Open voice widget"}
         title={buttonTitle}
+        data-onboarding-target="voice-widget-trigger"
       >
         <RecordingIndicator
           active={visualState === "listening" || visualState === "speaking"}
@@ -377,6 +452,7 @@ export default function VoiceWidget({
         <section
           className="voice-widget__panel !mr-4"
           aria-label="Voice interaction panel"
+          data-onboarding-target="voice-widget-panel"
         >
           <header className="voice-widget__header">
             <div>

@@ -22,8 +22,12 @@ from skill.adapters.base import ManufacturingAdapter
 from skill.adapters.reneryo._endpoints import (
     ENDPOINT_MAP,
     REAL_ENERGY_METRICS,
+    REAL_METRIC_RESOURCE_VALUES_ENDPOINT,
     REAL_METER_ENDPOINT,
+    REAL_SEU_GRAPH_ENDPOINT,
+    REAL_SEU_ITEMS_ENDPOINT,
     REAL_SEU_VALUES_ENDPOINT,
+    REAL_SUPPORTED_METRICS,
     SUPPORTED_CAPABILITIES,
 )
 from skill.adapters.reneryo._connection_test import ReneryoConnectionTestMixin
@@ -31,6 +35,10 @@ from skill.adapters.reneryo._http import ReneryoHttpMixin
 from skill.adapters.reneryo._normalizers import (
     is_native_format,
     normalize_meter_to_kpi,
+    normalize_metric_resource_to_kpi,
+    normalize_metric_resource_to_trend,
+    normalize_seu_graph_to_trend,
+    normalize_seus_to_comparison,
     normalize_seu_values_to_kpi,
     normalize_seu_values_to_trend,
     normalize_meters_to_comparison,
@@ -76,6 +84,7 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
         timeout: int = 30,
         auth_type: str = "bearer",
         api_format: str = "mock",
+        asset_mappings: dict[str, dict[str, object]] | None = None,
         native_seu_id: str = "",
     ) -> None:
         """
@@ -88,7 +97,14 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             auth_type: Auth mode — "bearer" or "cookie" (DEC-022).
             api_format: Response format — "mock" (per-metric endpoints)
                 or "native" (real RENERYO API with /api/u/ paths).
-            native_seu_id: Optional SEU UUID for direct per-unit endpoint.
+            asset_mappings: Asset-to-resource mapping configuration. Example:
+                {
+                    "Line-1": {
+                        "seu_id": "uuid",
+                        "metric_resources": {"oee": "resource-uuid"}
+                    }
+                }
+            native_seu_id: Legacy fallback SEU UUID for direct per-unit endpoint.
         """
         self._api_url = api_url.rstrip("/") if api_url else ""
         self._api_key = api_key
@@ -96,6 +112,7 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
         self._auth_type = auth_type
         self._api_format = api_format
         self._native_seu_id = native_seu_id.strip()
+        self._asset_mappings = asset_mappings or {}
         self._session: aiohttp.ClientSession | None = None
 
     # =========================================================================
@@ -123,11 +140,11 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             AdapterError: On connection, auth, or parse errors.
         """
         self._ensure_initialized()
-        endpoint = self._resolve_endpoint(metric, purpose="kpi")
+        endpoint = self._resolve_endpoint(metric, purpose="kpi", asset_id=asset_id)
         params = self._build_query_params(
             asset_id=asset_id,
             period=period,
-            include_native_period=self._is_seu_endpoint(endpoint),
+            include_native_period=self._requires_native_period(endpoint),
         )
         try:
             data = await self._retry_fetch(endpoint, params)
@@ -147,10 +164,23 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             else:
                 raise
         if is_native_format(data):
-            if self._is_seu_endpoint(endpoint):
-                data = normalize_seu_values_to_kpi(data)
-            else:
-                data = normalize_meter_to_kpi(data, asset_id)
+            try:
+                if self._is_seu_endpoint(endpoint):
+                    data = normalize_seu_values_to_kpi(data)
+                elif self._is_metric_resource_endpoint(endpoint):
+                    data = normalize_metric_resource_to_kpi(data)
+                else:
+                    data = normalize_meter_to_kpi(data, asset_id)
+            except KeyError as exc:
+                raise AdapterError(
+                    message=f"Requested asset not found for KPI query: {asset_id}",
+                    code="RENERYO_ASSET_NOT_FOUND",
+                    platform="reneryo",
+                    user_message=(
+                        f"I couldn't find data for {asset_id}. "
+                        "Please try another asset name."
+                    ),
+                ) from exc
         return parse_kpi_response(data, metric, asset_id, period)
 
     async def compare(
@@ -174,12 +204,36 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             AdapterError: On connection, auth, or parse errors.
         """
         self._ensure_initialized()
-        endpoint = self._resolve_endpoint(metric, purpose="compare")
-        params = self._build_query_params(period=period)
-        params["asset_ids"] = ",".join(asset_ids)
+        endpoint = self._resolve_endpoint(
+            metric, purpose="compare", asset_ids=asset_ids,
+        )
+        params = self._build_compare_query_params(
+            endpoint=endpoint,
+            asset_ids=asset_ids,
+            period=period,
+        )
         data = await self._retry_fetch(endpoint, params)
         if is_native_format(data):
-            data = normalize_meters_to_comparison(data, asset_ids)
+            try:
+                if self._is_seu_collection_endpoint(endpoint):
+                    resolved_ids = [
+                        self._resolve_seu_id(asset) or asset
+                        for asset in asset_ids
+                    ]
+                    data = normalize_seus_to_comparison(data, resolved_ids)
+                else:
+                    data = normalize_meters_to_comparison(data, asset_ids)
+            except KeyError as exc:
+                requested = ", ".join(asset_ids)
+                raise AdapterError(
+                    message=f"Requested comparison assets not found: {requested}",
+                    code="RENERYO_ASSET_NOT_FOUND",
+                    platform="reneryo",
+                    user_message=(
+                        "I couldn't find one of those assets. "
+                        "Please use exact asset names, for example: Compressor-1 and Compressor-2."
+                    ),
+                ) from exc
         if not isinstance(data, list):
             data = [data]
         return parse_comparison_response(data, metric, period)
@@ -207,12 +261,12 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             AdapterError: On connection, auth, or parse errors.
         """
         self._ensure_initialized()
-        endpoint = self._resolve_endpoint(metric, purpose="trend")
+        endpoint = self._resolve_endpoint(metric, purpose="trend", asset_id=asset_id)
         params = self._build_query_params(
             asset_id=asset_id,
             period=period,
             granularity=granularity,
-            include_native_period=self._is_seu_endpoint(endpoint),
+            include_native_period=self._requires_native_period(endpoint),
         )
         try:
             data = await self._retry_fetch(endpoint, params)
@@ -235,6 +289,13 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
         if is_native_format(data):
             if self._is_seu_endpoint(endpoint):
                 data = normalize_seu_values_to_trend(data)
+            elif self._is_seu_graph_endpoint(endpoint):
+                data = normalize_seu_graph_to_trend(
+                    data,
+                    seu_id=self._resolve_seu_id(asset_id),
+                )
+            elif self._is_metric_resource_endpoint(endpoint):
+                data = normalize_metric_resource_to_trend(data)
             else:
                 data = normalize_meters_to_trend(data)
         if not isinstance(data, list):
@@ -342,6 +403,8 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
         metric: CanonicalMetric,
         *,
         purpose: str,
+        asset_id: str = "",
+        asset_ids: list[str] | None = None,
     ) -> str:
         """
         Look up the REST endpoint for a canonical metric.
@@ -360,15 +423,30 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             AdapterError: If metric has no mapped endpoint.
         """
         if self._api_format == "native":
-            if (
-                metric == CanonicalMetric.ENERGY_PER_UNIT
-                and purpose in {"kpi", "trend"}
-                and self._native_seu_id
-            ):
-                encoded_seu_id = quote(self._native_seu_id, safe="")
-                return REAL_SEU_VALUES_ENDPOINT.format(seu_id=encoded_seu_id)
+            if metric == CanonicalMetric.ENERGY_PER_UNIT:
+                if purpose in {"kpi", "trend"}:
+                    seu_id = self._resolve_seu_id(asset_id)
+                    if seu_id:
+                        encoded_seu_id = quote(seu_id, safe="")
+                        return REAL_SEU_VALUES_ENDPOINT.format(seu_id=encoded_seu_id)
+                    if purpose == "trend":
+                        return REAL_SEU_GRAPH_ENDPOINT
+                    return REAL_METER_ENDPOINT
+                if purpose == "compare":
+                    if asset_ids and all(self._resolve_seu_id(aid) for aid in asset_ids):
+                        return REAL_SEU_ITEMS_ENDPOINT
+                    return REAL_METER_ENDPOINT
+
             if metric in REAL_ENERGY_METRICS:
                 return REAL_METER_ENDPOINT
+
+            if metric in REAL_SUPPORTED_METRICS and purpose in {"kpi", "trend"}:
+                resource_id = self._resolve_metric_resource_id(metric, asset_id)
+                if resource_id:
+                    encoded_resource_id = quote(resource_id, safe="")
+                    return REAL_METRIC_RESOURCE_VALUES_ENDPOINT.format(
+                        resource_id=encoded_resource_id,
+                    )
         endpoint = ENDPOINT_MAP.get(metric)
         if endpoint is None:
             raise AdapterError(
@@ -414,6 +492,34 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             params["period"] = self._native_period_bucket(granularity)
         return params
 
+    def _build_compare_query_params(
+        self,
+        *,
+        endpoint: str,
+        asset_ids: list[str],
+        period: TimePeriod,
+    ) -> dict[str, str]:
+        """Build compare-query params based on endpoint type."""
+        params = self._build_query_params(period=period)
+        if self._api_format != "native":
+            params["asset_ids"] = ",".join(asset_ids)
+            return params
+
+        if self._is_seu_collection_endpoint(endpoint):
+            seu_ids = [
+                self._resolve_seu_id(asset_id)
+                for asset_id in asset_ids
+            ]
+            params["seuIds"] = ",".join(seu_id for seu_id in seu_ids if seu_id)
+            return params
+
+        params["asset_ids"] = ",".join(asset_ids)
+        return params
+
+    def _requires_native_period(self, endpoint: str) -> bool:
+        """Return whether endpoint requires ``period`` query parameter."""
+        return self._is_seu_endpoint(endpoint) or self._is_metric_resource_endpoint(endpoint)
+
     @staticmethod
     def _native_period_bucket(granularity: str) -> str:
         """
@@ -433,6 +539,18 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
         return "/measurement/seu/item/" in endpoint
 
     @staticmethod
+    def _is_seu_graph_endpoint(endpoint: str) -> bool:
+        return endpoint.endswith("/measurement/seu/graph")
+
+    @staticmethod
+    def _is_seu_collection_endpoint(endpoint: str) -> bool:
+        return endpoint.endswith("/measurement/seu/item")
+
+    @staticmethod
+    def _is_metric_resource_endpoint(endpoint: str) -> bool:
+        return "/measurement/metric/resource/" in endpoint and endpoint.endswith("/values")
+
+    @staticmethod
     def _should_fallback_from_seu(endpoint: str, exc: AdapterError) -> bool:
         """
         Fallback trigger for SEU endpoint misconfiguration.
@@ -445,3 +563,60 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             "/measurement/seu/item/" in endpoint
             and exc.status_code in {400, 404}
         )
+
+    def _resolve_seu_id(self, asset_id: str) -> str:
+        """
+        Resolve SEU UUID for a requested asset using mapping config.
+        """
+        if self._asset_mappings:
+            mapping = self._resolve_asset_mapping(asset_id)
+            if mapping is not None:
+                seu_id = str(mapping.get("seu_id", "")).strip()
+                if seu_id:
+                    return seu_id
+        return self._native_seu_id
+
+    def _resolve_metric_resource_id(
+        self,
+        metric: CanonicalMetric,
+        asset_id: str,
+    ) -> str:
+        """Resolve metric-resource UUID for an asset + metric pair."""
+        if not self._asset_mappings:
+            return ""
+        mapping = self._resolve_asset_mapping(asset_id)
+        if mapping is None:
+            return ""
+        resource_map = mapping.get("metric_resources")
+        if not isinstance(resource_map, dict):
+            return ""
+        resource_id = resource_map.get(metric.value)
+        if not resource_id and metric == CanonicalMetric.SCRAP_RATE:
+            resource_id = resource_map.get("scrap_rate")
+        if not resource_id and metric == CanonicalMetric.OEE:
+            resource_id = resource_map.get("oee")
+        return str(resource_id or "").strip()
+
+    def _resolve_asset_mapping(self, asset_id: str) -> dict[str, object] | None:
+        """Resolve mapping entry by exact key, normalized key, or generic fallback."""
+        if not self._asset_mappings:
+            return None
+        requested = (asset_id or "").strip()
+        if requested in self._asset_mappings:
+            entry = self._asset_mappings[requested]
+            return entry if isinstance(entry, dict) else None
+
+        requested_norm = self._normalize_asset_key(requested)
+        for key, value in self._asset_mappings.items():
+            if self._normalize_asset_key(key) == requested_norm and isinstance(value, dict):
+                return value
+
+        if requested.lower() in {"", "default", "all", "overall"}:
+            first_value = next(iter(self._asset_mappings.values()), None)
+            if isinstance(first_value, dict):
+                return first_value
+        return None
+
+    @staticmethod
+    def _normalize_asset_key(value: str) -> str:
+        return "".join(ch for ch in (value or "").lower() if ch.isalnum())

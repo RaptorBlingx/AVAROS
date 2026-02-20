@@ -7,7 +7,11 @@ import {
   toFriendlyErrorMessage,
   updateMetricMapping,
 } from "../../api/client";
-import type { CanonicalMetricName, MetricMapping, MetricMappingRequest } from "../../api/types";
+import type {
+  CanonicalMetricName,
+  MetricMapping,
+  MetricMappingRequest,
+} from "../../api/types";
 import Tooltip from "../common/Tooltip";
 import ErrorMessage from "../common/ErrorMessage";
 import LoadingSpinner from "../common/LoadingSpinner";
@@ -48,12 +52,17 @@ function toRequestPayload(row: MetricMappingRow): MetricMappingRequest {
   };
 }
 
-export default function MetricMappingStep({ onComplete, onSkip }: MetricMappingStepProps) {
+export default function MetricMappingStep({
+  onComplete,
+  onSkip,
+}: MetricMappingStepProps) {
   const [rows, setRows] = useState<MetricMappingRow[]>([]);
   const [existingByMetric, setExistingByMetric] = useState<
     Partial<Record<CanonicalMetricName, MetricMapping>>
   >({});
-  const [errorsByRow, setErrorsByRow] = useState<Record<string, MetricRowError>>({});
+  const [errorsByRow, setErrorsByRow] = useState<
+    Record<string, MetricRowError>
+  >({});
   const [formError, setFormError] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -74,7 +83,9 @@ export default function MetricMappingStep({ onComplete, onSkip }: MetricMappingS
     try {
       const mappings = await listMetricMappings();
       const nextRows = mappings.map(createRow);
-      const nextExistingByMetric: Partial<Record<CanonicalMetricName, MetricMapping>> = {};
+      const nextExistingByMetric: Partial<
+        Record<CanonicalMetricName, MetricMapping>
+      > = {};
       for (const mapping of mappings) {
         nextExistingByMetric[mapping.canonical_metric] = mapping;
       }
@@ -91,34 +102,38 @@ export default function MetricMappingStep({ onComplete, onSkip }: MetricMappingS
     void loadMappings();
   }, [loadMappings]);
 
-  const validateRows = useCallback((targetRows: MetricMappingRow[]): boolean => {
-    const nextErrors: Record<string, MetricRowError> = {};
-    const metricSet = new Set<CanonicalMetricName>();
+  const validateRows = useCallback(
+    (targetRows: MetricMappingRow[]): boolean => {
+      const nextErrors: Record<string, MetricRowError> = {};
+      const metricSet = new Set<CanonicalMetricName>();
 
-    for (const row of targetRows) {
-      const rowError: MetricRowError = {};
-      if (metricSet.has(row.canonical_metric)) {
-        rowError.canonical_metric = "Duplicate metric mapping is not allowed.";
-      } else {
-        metricSet.add(row.canonical_metric);
+      for (const row of targetRows) {
+        const rowError: MetricRowError = {};
+        if (metricSet.has(row.canonical_metric)) {
+          rowError.canonical_metric =
+            "Duplicate metric mapping is not allowed.";
+        } else {
+          metricSet.add(row.canonical_metric);
+        }
+        if (!row.endpoint.trim()) {
+          rowError.endpoint = "Endpoint is required.";
+        }
+        if (!row.json_path.trim()) {
+          rowError.json_path = "JSON path is required.";
+        }
+        if (!row.unit.trim()) {
+          rowError.unit = "Unit is required.";
+        }
+        if (Object.keys(rowError).length > 0) {
+          nextErrors[row.id] = rowError;
+        }
       }
-      if (!row.endpoint.trim()) {
-        rowError.endpoint = "Endpoint is required.";
-      }
-      if (!row.json_path.trim()) {
-        rowError.json_path = "JSON path is required.";
-      }
-      if (!row.unit.trim()) {
-        rowError.unit = "Unit is required.";
-      }
-      if (Object.keys(rowError).length > 0) {
-        nextErrors[row.id] = rowError;
-      }
-    }
 
-    setErrorsByRow(nextErrors);
-    return Object.keys(nextErrors).length === 0;
-  }, []);
+      setErrorsByRow(nextErrors);
+      return Object.keys(nextErrors).length === 0;
+    },
+    [],
+  );
 
   const addRow = useCallback(() => {
     setFormError("");
@@ -147,8 +162,14 @@ export default function MetricMappingStep({ onComplete, onSkip }: MetricMappingS
   }, []);
 
   const updateRow = useCallback(
-    <K extends keyof MetricMappingRow>(id: string, key: K, value: MetricMappingRow[K]) => {
-      setRows((prev) => prev.map((row) => (row.id === id ? { ...row, [key]: value } : row)));
+    <K extends keyof MetricMappingRow>(
+      id: string,
+      key: K,
+      value: MetricMappingRow[K],
+    ) => {
+      setRows((prev) =>
+        prev.map((row) => (row.id === id ? { ...row, [key]: value } : row)),
+      );
       setErrorsByRow((prev) => {
         if (!prev[id]) return prev;
         const rowErrors = { ...prev[id] };
@@ -174,7 +195,9 @@ export default function MetricMappingStep({ onComplete, onSkip }: MetricMappingS
     setSaving(true);
     try {
       const targetMetrics = new Set(rows.map((row) => row.canonical_metric));
-      const existingMetrics = new Set(Object.keys(existingByMetric) as CanonicalMetricName[]);
+      const existingMetrics = new Set(
+        Object.keys(existingByMetric) as CanonicalMetricName[],
+      );
 
       for (const row of rows) {
         const payload = toRequestPayload(row);
@@ -203,7 +226,7 @@ export default function MetricMappingStep({ onComplete, onSkip }: MetricMappingS
     <section className="space-y-4">
       <header className="brand-hero rounded-2xl p-6 backdrop-blur-sm">
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">
-          Step 4 of 6
+          Step 5 of 7
         </p>
         <div className="mt-2 inline-flex items-center gap-2">
           <h2 className="m-0 text-2xl font-semibold text-slate-900 dark:text-slate-100">
@@ -228,7 +251,10 @@ export default function MetricMappingStep({ onComplete, onSkip }: MetricMappingS
           <>
             {formError && (
               <div className="mb-4">
-                <ErrorMessage title="Metric mappings error" message={formError} />
+                <ErrorMessage
+                  title="Metric mappings error"
+                  message={formError}
+                />
               </div>
             )}
 

@@ -626,7 +626,6 @@
   color: #bae6fd;
 }
 
-
 @media (prefers-reduced-motion: reduce) {
   .toast-item,
   .toast-item--closing,

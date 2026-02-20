@@ -11,3 +11,10 @@ what's the scrap rate trend
 waste trend {period}
 show scrap train {period}
 show waste train {period}
+scrap trend
+scrap trends
+waste trend
+waste trends
+show scrap trend
+show scrap rate trend
+show waste rate trend

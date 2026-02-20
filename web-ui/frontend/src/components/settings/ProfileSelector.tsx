@@ -49,7 +49,8 @@ export default function ProfileSelector({
   const [switching, setSwitching] = useState(false);
   const [showNewForm, setShowNewForm] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newPlatformType, setNewPlatformType] = useState<PlatformType>("reneryo");
+  const [newPlatformType, setNewPlatformType] =
+    useState<PlatformType>("reneryo");
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -108,7 +109,13 @@ export default function ProfileSelector({
     } finally {
       setSwitching(false);
     }
-  }, [selectedName, activeProfileName, onProfileChange, onNotify, loadProfiles]);
+  }, [
+    selectedName,
+    activeProfileName,
+    onProfileChange,
+    onNotify,
+    loadProfiles,
+  ]);
 
   const handleCreate = useCallback(async () => {
     const validationError = validateProfileName(newName);
@@ -148,16 +155,38 @@ export default function ProfileSelector({
     }
     setDeleting(true);
     try {
-      await apiDeleteProfile(selectedName);
-      onNotify("success", `Profile \u201c${selectedName}\u201d deleted.`);
-      await loadProfiles();
-      await selectProfile("mock");
+      const deletedName = selectedName;
+      const deletedWasActive = deletedName === activeProfileName;
+      await apiDeleteProfile(deletedName);
+      onNotify("success", `Profile \u201c${deletedName}\u201d deleted.`);
+
+      const refreshed = await listProfiles();
+      const sorted = [...refreshed.profiles].sort((a, b) => {
+        if (a.is_builtin && !b.is_builtin) return -1;
+        if (!a.is_builtin && b.is_builtin) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      setProfiles(sorted);
+      setActiveProfileName(refreshed.active_profile);
+      setSelectedName((prev) => {
+        if (!prev || prev === deletedName || !sorted.some((p) => p.name === prev)) {
+          return refreshed.active_profile || sorted[0]?.name || "";
+        }
+        return prev;
+      });
+
+      if (deletedWasActive) {
+        const fallbackName = refreshed.active_profile || sorted[0]?.name;
+        if (fallbackName) {
+          await selectProfile(fallbackName);
+        }
+      }
     } catch (error: unknown) {
       onNotify("error", toFriendlyErrorMessage(error));
     } finally {
       setDeleting(false);
     }
-  }, [selectedName, profiles, onNotify, loadProfiles, selectProfile]);
+  }, [selectedName, activeProfileName, profiles, onNotify, selectProfile]);
 
   const selectedProfile = profiles.find((p) => p.name === selectedName);
   const isSelectedActive = selectedName === activeProfileName;

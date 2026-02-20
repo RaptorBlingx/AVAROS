@@ -131,6 +131,33 @@ class KPIMeasurementService:
                 session, metric, site_id, start_date, end_date,
             )
 
+    def clear_site_data(self, site_id: str) -> tuple[int, int]:
+        """Delete all KPI baselines and snapshots for a site.
+
+        Returns:
+            Tuple ``(deleted_baselines, deleted_snapshots)``.
+        """
+        self._ensure_initialized()
+        with self._get_session() as session:
+            deleted_baselines = (
+                session.query(KPIBaselineModel)
+                .filter(KPIBaselineModel.site_id == site_id)
+                .delete(synchronize_session=False)
+            )
+            deleted_snapshots = (
+                session.query(KPISnapshotModel)
+                .filter(KPISnapshotModel.site_id == site_id)
+                .delete(synchronize_session=False)
+            )
+            session.commit()
+            logger.info(
+                "Cleared KPI data for site=%s (baselines=%d, snapshots=%d)",
+                site_id,
+                deleted_baselines,
+                deleted_snapshots,
+            )
+            return int(deleted_baselines), int(deleted_snapshots)
+
     # ── Progress computation ─────────────────────────────
 
     def compute_progress(

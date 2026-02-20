@@ -14,7 +14,33 @@ export type WidgetVisualState =
   | "error"
   | "disconnected";
 
-export const MICROPHONE_HELP_URL = "https://support.google.com/chrome/answer/2693767";
+export const MICROPHONE_HELP_URL =
+  "https://support.google.com/chrome/answer/2693767";
+const GREETING_WORDS = new Set([
+  "hello",
+  "hi",
+  "hey",
+  "hello avaros",
+  "hi avaros",
+  "hey avaros",
+]);
+const HELP_WORDS = new Set([
+  "help",
+  "what can you do",
+  "what do you know",
+  "what can i ask",
+  "show me what you can do",
+  "what commands do you understand",
+  "what queries can i make",
+]);
+
+function normalizeUtterance(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[!?.,;:]+/g, " ")
+    .replace(/\s+/g, " ");
+}
 
 export const POSITION_CLASS: Record<WidgetPosition, string> = {
   "bottom-right": "voice-widget--bottom-right",
@@ -23,7 +49,10 @@ export const POSITION_CLASS: Record<WidgetPosition, string> = {
   "top-left": "voice-widget--top-left",
 };
 
-export const STATE_META: Record<WidgetVisualState, { label: string; hint: string }> = {
+export const STATE_META: Record<
+  WidgetVisualState,
+  { label: string; hint: string }
+> = {
   idle: {
     label: "Ready",
     hint: "Click microphone to start voice interaction.",
@@ -91,9 +120,17 @@ export function renderStateIcon(state: WidgetVisualState): ReactNode {
     return (
       <span className="voice-widget__icon" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path d="M4 10v4h4l5 4V6l-5 4H4z" strokeWidth="1.8" strokeLinejoin="round" />
+          <path
+            d="M4 10v4h4l5 4V6l-5 4H4z"
+            strokeWidth="1.8"
+            strokeLinejoin="round"
+          />
           <path d="M17 9a4 4 0 010 6" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M20 7a7 7 0 010 10" strokeWidth="1.8" strokeLinecap="round" />
+          <path
+            d="M20 7a7 7 0 010 10"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+          />
         </svg>
       </span>
     );
@@ -104,15 +141,21 @@ export function renderStateIcon(state: WidgetVisualState): ReactNode {
     <span className="voice-widget__icon" aria-hidden="true">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
         <rect x="9" y="3" width="6" height="11" rx="3" strokeWidth="1.8" />
-        <path d="M6 11a6 6 0 0012 0M12 17v4M8.5 21h7" strokeWidth="1.8" strokeLinecap="round" />
-        {withSlash && <path d="M4 4l16 16" strokeWidth="2" strokeLinecap="round" />}
+        <path
+          d="M6 11a6 6 0 0012 0M12 17v4M8.5 21h7"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+        {withSlash && (
+          <path d="M4 4l16 16" strokeWidth="2" strokeLinecap="round" />
+        )}
       </svg>
     </span>
   );
 }
 
 export function isLikelyIncompleteUtterance(raw: string): boolean {
-  const text = raw.trim().toLowerCase().replace(/\s+/g, " ");
+  const text = normalizeUtterance(raw);
   if (!text) return true;
 
   const exactIncomplete = new Set([
@@ -126,9 +169,10 @@ export function isLikelyIncompleteUtterance(raw: string): boolean {
   if (exactIncomplete.has(text)) return true;
 
   // What-if scenarios require a change amount (digit or number-word).
-  const hasAmount = /\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/.test(
-    text,
-  );
+  const hasAmount =
+    /\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/.test(
+      text,
+    );
   if (text.startsWith("what if") && !hasAmount) {
     return true;
   }
@@ -137,12 +181,25 @@ export function isLikelyIncompleteUtterance(raw: string): boolean {
 }
 
 export function buildGuidanceForUtterance(raw: string): string | null {
-  const text = raw.trim().toLowerCase().replace(/\s+/g, " ");
+  const text = normalizeUtterance(raw);
   if (!text) {
     return "Try a full request, for example: 'show energy trend today'.";
   }
+  // Let OVOS handle direct greeting/help utterances.
+  if (GREETING_WORDS.has(text) || HELP_WORDS.has(text)) return null;
   if (isLikelyIncompleteUtterance(text)) {
     return "I need a bit more detail. Try: 'show energy trend today' or 'check production anomaly'.";
+  }
+  return null;
+}
+
+export function buildImmediateAssistantReply(raw: string): string | null {
+  const text = normalizeUtterance(raw);
+  if (GREETING_WORDS.has(text)) {
+    return "Hello! I'm AVAROS, your manufacturing assistant. Ask me about energy, scrap rate, OEE, or production anomalies.";
+  }
+  if (HELP_WORDS.has(text)) {
+    return "I can answer questions about energy per unit, OEE, scrap rate, energy trends, production anomalies, and what-if simulations.";
   }
   return null;
 }

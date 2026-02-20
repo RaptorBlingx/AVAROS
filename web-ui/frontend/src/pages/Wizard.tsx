@@ -13,15 +13,22 @@ import type {
   PlatformType,
   SystemStatusResponse,
 } from "../api/types";
+import AssetMappingStep from "../components/wizard/AssetMappingStep";
 import ConnectionSetupStep from "../components/wizard/ConnectionSetupStep";
 import IntentActivationStep from "../components/wizard/IntentActivationStep";
 import MetricMappingStep from "../components/wizard/MetricMappingStep";
 import PlatformSelectStep from "../components/wizard/PlatformSelectStep";
 import SuccessScreen from "../components/wizard/SuccessScreen";
 import WelcomeStep from "../components/wizard/WelcomeStep";
+import OnboardingOverlay from "../components/common/OnboardingOverlay";
 import Tooltip from "../components/common/Tooltip";
+import {
+  ONBOARDING_RERUN_EVENT,
+  shouldOpenOnboardingForScope,
+  type OnboardingRerunDetail,
+} from "../components/common/onboarding";
 
-type StepNumber = 1 | 2 | 3 | 4 | 5 | 6;
+type StepNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 type WizardState = {
   currentStep: StepNumber;
@@ -44,7 +51,10 @@ function buildPayload(state: WizardState): PlatformConfigRequest {
 }
 
 function enableDashboardBypass(): void {
-  sessionStorage.setItem("avaros_skip_wizard_until", String(Date.now() + 15000));
+  sessionStorage.setItem(
+    "avaros_skip_wizard_until",
+    String(Date.now() + 15000),
+  );
 }
 
 function validateConnection(state: WizardState): string {
@@ -86,12 +96,18 @@ export default function Wizard() {
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [statusError, setStatusError] = useState("");
   const [formError, setFormError] = useState("");
-  const [testResult, setTestResult] = useState<ConnectionTestResponse | null>(null);
+  const [testResult, setTestResult] = useState<ConnectionTestResponse | null>(
+    null,
+  );
   const [testError, setTestError] = useState("");
   const [isTesting, setIsTesting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [successStatus, setSuccessStatus] = useState<SystemStatusResponse | null>(null);
-  const [completedSteps, setCompletedSteps] = useState<Set<StepNumber>>(new Set());
+  const [successStatus, setSuccessStatus] =
+    useState<SystemStatusResponse | null>(null);
+  const [completedSteps, setCompletedSteps] = useState<Set<StepNumber>>(
+    new Set(),
+  );
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
 
   const [headerError, setHeaderError] = useState("");
   const [nextBlocked, setNextBlocked] = useState(false);
@@ -151,12 +167,24 @@ export default function Wizard() {
     setHeaderError("");
   }, [state.currentStep]);
 
+  useEffect(() => {
+    const onRerun = (event: Event) => {
+      const detail = (event as CustomEvent<OnboardingRerunDetail>).detail;
+      if (detail && shouldOpenOnboardingForScope(detail.scope, "wizard")) {
+        setOnboardingOpen(true);
+      }
+    };
+    window.addEventListener(ONBOARDING_RERUN_EVENT, onRerun);
+    return () => window.removeEventListener(ONBOARDING_RERUN_EVENT, onRerun);
+  }, []);
+
   const stepLabel = useMemo(() => {
     if (state.currentStep === 1) return "Setup";
     if (state.currentStep === 2) return "Platform Selection";
     if (state.currentStep === 3) return "Connection Setup";
-    if (state.currentStep === 4) return "Metric Mapping";
-    if (state.currentStep === 5) return "Intent Activation";
+    if (state.currentStep === 4) return "Asset Mapping";
+    if (state.currentStep === 5) return "Metric Mapping";
+    if (state.currentStep === 6) return "Intent Activation";
     return "Complete";
   }, [state.currentStep]);
 
@@ -165,6 +193,7 @@ export default function Wizard() {
       "Get Started",
       "Platform",
       "Connection",
+      "Asset Mapping",
       "Metric Mapping",
       "Intent Activation",
       "Success",
@@ -183,7 +212,7 @@ export default function Wizard() {
   const goForwardStep = useCallback(() => {
     setHeaderError("");
 
-    if (state.currentStep === 6) {
+    if (state.currentStep === 7) {
       return;
     }
 
@@ -209,15 +238,26 @@ export default function Wizard() {
     }
 
     if (state.currentStep === 4) {
-      triggerBlockedNext("Complete or skip metric mapping to continue.");
+      triggerBlockedNext("Complete or skip asset mapping to continue.");
       return;
     }
 
     if (state.currentStep === 5) {
+      triggerBlockedNext("Complete or skip metric mapping to continue.");
+      return;
+    }
+
+    if (state.currentStep === 6) {
       triggerBlockedNext("Complete or skip intent activation to continue.");
       return;
     }
-  }, [goToStep, markStepComplete, state.currentStep, state.platformType, triggerBlockedNext]);
+  }, [
+    goToStep,
+    markStepComplete,
+    state.currentStep,
+    state.platformType,
+    triggerBlockedNext,
+  ]);
 
   const handlePlatformChange = useCallback((platformType: PlatformType) => {
     setState((prev) => ({ ...prev, platformType }));
@@ -276,9 +316,14 @@ export default function Wizard() {
     }
   }, [goToStep, markStepComplete, state]);
 
-  const handleMetricStepComplete = useCallback(() => {
+  const handleAssetStepComplete = useCallback(() => {
     markStepComplete(4);
     goToStep(5);
+  }, [goToStep, markStepComplete]);
+
+  const handleMetricStepComplete = useCallback(() => {
+    markStepComplete(5);
+    goToStep(6);
   }, [goToStep, markStepComplete]);
 
   const finalizeWizard = useCallback(async () => {
@@ -289,8 +334,8 @@ export default function Wizard() {
         enableDashboardBypass();
       }
       setSuccessStatus(latestStatus);
-      markStepComplete(5);
-      goToStep(6);
+      markStepComplete(6);
+      goToStep(7);
     } catch (error: unknown) {
       setFormError(toFriendlyErrorMessage(error));
     }
@@ -330,9 +375,15 @@ export default function Wizard() {
           testError={testError}
           isTesting={isTesting}
           isSaving={isSaving}
-          onAuthTypeChange={(value) => setState((prev) => ({ ...prev, authType: value }))}
-          onApiUrlChange={(value) => setState((prev) => ({ ...prev, apiUrl: value }))}
-          onApiKeyChange={(value) => setState((prev) => ({ ...prev, apiKey: value }))}
+          onAuthTypeChange={(value) =>
+            setState((prev) => ({ ...prev, authType: value }))
+          }
+          onApiUrlChange={(value) =>
+            setState((prev) => ({ ...prev, apiUrl: value }))
+          }
+          onApiKeyChange={(value) =>
+            setState((prev) => ({ ...prev, apiKey: value }))
+          }
           onTestConnection={handleTestConnection}
           onSave={handleSaveConnection}
         />
@@ -340,18 +391,40 @@ export default function Wizard() {
     }
 
     if (state.currentStep === 4) {
-      return <MetricMappingStep onComplete={handleMetricStepComplete} onSkip={handleMetricStepComplete} />;
+      return (
+        <AssetMappingStep
+          onComplete={handleAssetStepComplete}
+          onSkip={handleAssetStepComplete}
+        />
+      );
     }
 
     if (state.currentStep === 5) {
-      return <IntentActivationStep onComplete={() => void finalizeWizard()} onSkip={() => void finalizeWizard()} />;
+      return (
+        <MetricMappingStep
+          onComplete={handleMetricStepComplete}
+          onSkip={handleMetricStepComplete}
+        />
+      );
+    }
+
+    if (state.currentStep === 6) {
+      return (
+        <IntentActivationStep
+          onComplete={() => void finalizeWizard()}
+          onSkip={() => void finalizeWizard()}
+        />
+      );
     }
 
     return (
       <SuccessScreen
         status={successStatus}
         onGoToDashboard={() => {
-          if (state.platformType === "mock" || (successStatus && !successStatus.configured)) {
+          if (
+            state.platformType === "mock" ||
+            (successStatus && !successStatus.configured)
+          ) {
             enableDashboardBypass();
           }
           navigate("/", { replace: true });
@@ -362,6 +435,7 @@ export default function Wizard() {
     finalizeWizard,
     formError,
     goForwardStep,
+    handleAssetStepComplete,
     handleMetricStepComplete,
     handlePlatformChange,
     handlePlatformConfirm,
@@ -385,7 +459,10 @@ export default function Wizard() {
 
   return (
     <section className="mx-auto w-full max-w-4xl space-y-4">
-      <div className="brand-hero rounded-xl px-4 py-3 text-sm text-slate-600 backdrop-blur-sm dark:text-slate-300">
+      <div
+        className="brand-hero rounded-xl px-4 py-3 text-sm text-slate-600 backdrop-blur-sm dark:text-slate-300"
+        data-onboarding-target="wizard-header"
+      >
         <div className="flex items-center justify-between gap-3">
           <p className="m-0 inline-flex items-center gap-2">
             <span className="font-semibold text-slate-900 dark:text-slate-100">
@@ -399,7 +476,7 @@ export default function Wizard() {
           </p>
           <div className="flex items-center gap-2">
             <p className="m-0 text-xs font-medium text-slate-500 dark:text-slate-400">
-              {state.currentStep} / 6
+              {state.currentStep} / 7
             </p>
             <button
               type="button"
@@ -413,7 +490,7 @@ export default function Wizard() {
               ref={nextButtonRef}
               type="button"
               onClick={goForwardStep}
-              disabled={state.currentStep === 6}
+              disabled={state.currentStep === 7}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
                 nextBlocked
                   ? "border border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-500 dark:bg-rose-900/40 dark:text-rose-200"
@@ -431,36 +508,68 @@ export default function Wizard() {
           </p>
         )}
 
-        <div className="mt-3 overflow-x-auto">
+        <div
+          className="mt-3 overflow-x-auto"
+          data-onboarding-target="wizard-stepper"
+        >
           <div className="flex min-w-[640px] gap-2 sm:min-w-0 sm:grid sm:grid-cols-3 lg:grid-cols-6">
-          {stepItems.map((item, index) => {
-            const stepNumber = (index + 1) as StepNumber;
-            const isActive = state.currentStep === stepNumber;
-            const isDone = completedSteps.has(stepNumber);
-            return (
-              <div key={item} className="space-y-1 text-left">
-                <div className="wizard-step-track h-1.5 w-full overflow-hidden rounded-full">
-                  <div
-                    className={`h-full ${isDone || isActive ? "wizard-step-fill w-full" : "w-0 bg-transparent"} transition-all duration-500 ease-out`}
-                  />
+            {stepItems.map((item, index) => {
+              const stepNumber = (index + 1) as StepNumber;
+              const isActive = state.currentStep === stepNumber;
+              const isDone = completedSteps.has(stepNumber);
+              return (
+                <div key={item} className="space-y-1 text-left">
+                  <div className="wizard-step-track h-1.5 w-full overflow-hidden rounded-full">
+                    <div
+                      className={`h-full ${
+                        isDone || isActive
+                          ? "wizard-step-fill w-full"
+                          : "w-0 bg-transparent"
+                      } transition-all duration-500 ease-out`}
+                    />
+                  </div>
+                  <p
+                    className={`m-0 text-[10px] ${
+                      isActive
+                        ? "font-semibold text-sky-700 dark:text-sky-300"
+                        : "text-slate-500 dark:text-slate-400"
+                    }`}
+                  >
+                    {item}
+                  </p>
                 </div>
-                <p
-                  className={`m-0 text-[10px] ${
-                    isActive
-                      ? "font-semibold text-sky-700 dark:text-sky-300"
-                      : "text-slate-500 dark:text-slate-400"
-                  }`}
-                >
-                  {item}
-                </p>
-              </div>
-            );
-          })}
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {content}
+      <div data-onboarding-target="wizard-content">{content}</div>
+
+      <OnboardingOverlay
+        open={onboardingOpen}
+        steps={[
+          {
+            title: "Wizard Overview",
+            description:
+              "Use this guided flow to configure AVAROS end-to-end in a safe order.",
+            selector: '[data-onboarding-target="wizard-header"]',
+          },
+          {
+            title: "Progress Stepper",
+            description:
+              "Track your position and navigate between setup steps with Back and Next controls.",
+            selector: '[data-onboarding-target="wizard-stepper"]',
+          },
+          {
+            title: "Step Content",
+            description:
+              "Each panel collects one required configuration area before activation.",
+            selector: '[data-onboarding-target="wizard-content"]',
+          },
+        ]}
+        onClose={() => setOnboardingOpen(false)}
+      />
     </section>
   );
 }

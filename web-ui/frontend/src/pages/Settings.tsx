@@ -3,6 +3,11 @@ import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
 import OnboardingOverlay from "../components/common/OnboardingOverlay";
+import {
+  ONBOARDING_RERUN_EVENT,
+  shouldOpenOnboardingForScope,
+  type OnboardingRerunDetail,
+} from "../components/common/onboarding";
 import Toast from "../components/common/Toast";
 import type { ToastItem } from "../components/common/Toast";
 import Tooltip from "../components/common/Tooltip";
@@ -52,7 +57,9 @@ function Section({
           />
         </svg>
       </summary>
-      <div className="border-t border-slate-100 px-5 pb-5 pt-4 dark:border-slate-700">{children}</div>
+      <div className="border-t border-slate-100 px-5 pb-5 pt-4 dark:border-slate-700">
+        {children}
+      </div>
     </details>
   );
 }
@@ -79,52 +86,66 @@ export default function Settings() {
   );
 
   const onboardingSteps = useMemo(
-    () => [
-      {
-        title: "Settings Overview",
-        description: "This page controls platform connection, mappings, intents, and runtime status.",
-        selector: '[data-onboarding-target="settings-header"]',
-      },
-      {
-        title: "Platform Configuration",
-        description: "Connect AVAROS to your platform and test credentials safely.",
-        selector: '[data-onboarding-target="settings-platform-config"]',
-      },
-      {
-        title: "Voice & Audio",
-        description: "Set interaction mode, wake-word behavior, and microphone/audio preferences.",
-        selector: '[data-onboarding-target="settings-voice-audio"]',
-      },
-      {
-        title: "Metric Mappings",
-        description: "Map canonical AVAROS metrics to your API fields.",
-        selector: '[data-onboarding-target="settings-metric-mappings"]',
-      },
-      {
-        title: "Intent Activation",
-        description: "Enable operational intents once required metrics are available.",
-        selector: '[data-onboarding-target="settings-intent-activation"]',
-      },
-      {
-        title: "System Information",
-        description: "Monitor live backend status and runtime details from this section.",
-        selector: '[data-onboarding-target="settings-system-information"]',
-      },
-    ] as const,
+    () =>
+      [
+        {
+          title: "Settings Overview",
+          description:
+            "This page controls platform connection, mappings, intents, and runtime status.",
+          selector: '[data-onboarding-target="settings-header"]',
+        },
+        {
+          title: "Platform Configuration",
+          description:
+            "Connect AVAROS to your platform and test credentials safely.",
+          selector: '[data-onboarding-target="settings-platform-config"]',
+        },
+        {
+          title: "Voice & Audio",
+          description:
+            "Set interaction mode, wake-word behavior, and microphone/audio preferences.",
+          selector: '[data-onboarding-target="settings-voice-audio"]',
+        },
+        {
+          title: "Metric Mappings",
+          description: "Map canonical AVAROS metrics to your API fields.",
+          selector: '[data-onboarding-target="settings-metric-mappings"]',
+        },
+        {
+          title: "Intent Activation",
+          description:
+            "Enable operational intents once required metrics are available.",
+          selector: '[data-onboarding-target="settings-intent-activation"]',
+        },
+        {
+          title: "System Information",
+          description:
+            "Monitor live backend status and runtime details from this section.",
+          selector: '[data-onboarding-target="settings-system-information"]',
+        },
+      ] as const,
     [],
   );
 
   useEffect(() => {
-    const onRerun = () => setOnboardingOpen(true);
-    window.addEventListener("avaros:rerun-onboarding", onRerun);
-    return () => window.removeEventListener("avaros:rerun-onboarding", onRerun);
+    const onRerun = (event: Event) => {
+      const detail = (event as CustomEvent<OnboardingRerunDetail>).detail;
+      if (detail && shouldOpenOnboardingForScope(detail.scope, "settings")) {
+        setOnboardingOpen(true);
+      }
+    };
+    window.addEventListener(ONBOARDING_RERUN_EVENT, onRerun);
+    return () => window.removeEventListener(ONBOARDING_RERUN_EVENT, onRerun);
   }, []);
 
   return (
     <section className="space-y-4">
       <Toast toasts={toasts} onDismiss={dismissToast} />
 
-      <header className="brand-hero rounded-2xl p-6" data-onboarding-target="settings-header">
+      <header
+        className="brand-hero rounded-2xl p-6"
+        data-onboarding-target="settings-header"
+      >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="m-0 brand-title-gradient text-xs font-semibold uppercase tracking-[0.14em]">

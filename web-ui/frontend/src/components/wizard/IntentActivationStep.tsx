@@ -19,21 +19,33 @@ type IntentActivationStepProps = {
   onSkip: () => void;
 };
 
-export default function IntentActivationStep({ onComplete, onSkip }: IntentActivationStepProps) {
+export default function IntentActivationStep({
+  onComplete,
+  onSkip,
+}: IntentActivationStepProps) {
   const [intents, setIntents] = useState<IntentState[]>([]);
   const [mappedMetrics, setMappedMetrics] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [savingIntent, setSavingIntent] = useState<string | null>(null);
-  const [bulkAction, setBulkAction] = useState<"enable" | "disable" | null>(null);
+  const [bulkAction, setBulkAction] = useState<"enable" | "disable" | null>(
+    null,
+  );
   const [error, setError] = useState("");
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const [intentList, mappings] = await Promise.all([getIntents(), listMetricMappings()]);
+      const [intentList, mappings] = await Promise.all([
+        getIntents(),
+        listMetricMappings(),
+      ]);
       setIntents(intentList);
-      setMappedMetrics(new Set(mappings.map((mapping: MetricMapping) => mapping.canonical_metric)));
+      setMappedMetrics(
+        new Set(
+          mappings.map((mapping: MetricMapping) => mapping.canonical_metric),
+        ),
+      );
     } catch (err: unknown) {
       setError(toFriendlyErrorMessage(err));
     } finally {
@@ -56,22 +68,27 @@ export default function IntentActivationStep({ onComplete, onSkip }: IntentActiv
     [intents, mappedMetrics],
   );
 
-  const toggleIntent = useCallback(async (intentName: string, nextValue: boolean) => {
-    setSavingIntent(intentName);
-    setError("");
-    try {
-      const updated = await setIntentActive(intentName, nextValue);
-      setIntents((prev) =>
-        prev.map((intent) =>
-          intent.intent_name === intentName ? { ...intent, active: updated.active } : intent,
-        ),
-      );
-    } catch (err: unknown) {
-      setError(toFriendlyErrorMessage(err));
-    } finally {
-      setSavingIntent(null);
-    }
-  }, []);
+  const toggleIntent = useCallback(
+    async (intentName: string, nextValue: boolean) => {
+      setSavingIntent(intentName);
+      setError("");
+      try {
+        const updated = await setIntentActive(intentName, nextValue);
+        setIntents((prev) =>
+          prev.map((intent) =>
+            intent.intent_name === intentName
+              ? { ...intent, active: updated.active }
+              : intent,
+          ),
+        );
+      } catch (err: unknown) {
+        setError(toFriendlyErrorMessage(err));
+      } finally {
+        setSavingIntent(null);
+      }
+    },
+    [],
+  );
 
   const setAll = useCallback(
     async (active: boolean) => {
@@ -100,7 +117,7 @@ export default function IntentActivationStep({ onComplete, onSkip }: IntentActiv
     <section className="space-y-4">
       <header className="brand-hero rounded-2xl p-6 backdrop-blur-sm">
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">
-          Step 5 of 6
+          Step 6 of 7
         </p>
         <div className="mt-2 inline-flex items-center gap-2">
           <h2 className="m-0 text-2xl font-semibold text-slate-900 dark:text-slate-100">
@@ -125,7 +142,11 @@ export default function IntentActivationStep({ onComplete, onSkip }: IntentActiv
           <>
             {error && (
               <div className="mb-4">
-                <ErrorMessage title="Intent activation error" message={error} onRetry={() => void loadData()} />
+                <ErrorMessage
+                  title="Intent activation error"
+                  message={error}
+                  onRetry={() => void loadData()}
+                />
               </div>
             )}
 
@@ -143,7 +164,9 @@ export default function IntentActivationStep({ onComplete, onSkip }: IntentActiv
                 bulkAction={bulkAction}
                 onEnableAll={() => void setAll(true)}
                 onDisableAll={() => void setAll(false)}
-                onToggle={(intentName, active) => void toggleIntent(intentName, active)}
+                onToggle={(intentName, active) =>
+                  void toggleIntent(intentName, active)
+                }
               />
             )}
 

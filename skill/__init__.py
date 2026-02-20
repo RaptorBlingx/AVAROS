@@ -16,6 +16,7 @@ Golden Rule:
 """
 
 import asyncio
+import re
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Any, List
 from ovos_workshop.skills import OVOSSkill
@@ -162,6 +163,143 @@ class AVAROSSkill(OVOSSkill):
             self.speak("Sorry, I encountered an error. Please try again.")
             return None
 
+    @staticmethod
+    def _message_utterance(message) -> str:
+        """Return best-effort utterance text from OVOS message."""
+        utterance = str(message.data.get("utterance", "")).strip()
+        if utterance:
+            return utterance
+        utterances = message.data.get("utterances") or []
+        if utterances:
+            return str(utterances[0]).strip()
+        return ""
+
+    @staticmethod
+    def _normalize_asset_utterance(raw: str) -> str:
+        """Normalize common STT variations for asset extraction."""
+        text = (raw or "").lower()
+        text = re.sub(r"\b(composer|composter|compressor|compulsory|compressor's)\b", "compressor", text)
+        number_words = {
+            "one": "1",
+            "two": "2",
+            "three": "3",
+            "four": "4",
+            "five": "5",
+            "six": "6",
+            "seven": "7",
+            "eight": "8",
+            "nine": "9",
+            "ten": "10",
+        }
+        for word, digit in number_words.items():
+            text = re.sub(rf"\b{word}\b", digit, text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
+    @staticmethod
+    def _normalize_asset_name(raw: str) -> str:
+        """Normalize common spoken asset forms to canonical style."""
+        text = AVAROSSkill._normalize_asset_utterance(raw).replace("_", " ")
+        text = re.sub(r"\s+", " ", text)
+        # "line 1" -> "Line-1", "compressor-2" -> "Compressor-2"
+        m = re.match(r"^(line|compressor)\s*-?\s*(\d+)$", text)
+        if m:
+            return f"{m.group(1).title()}-{m.group(2)}"
+        return raw
+
+    def _extract_asset_from_message(self, message, fallback: str = "default") -> str:
+        """Extract single asset id from slots or utterance."""
+        asset = str(message.data.get("asset", "")).strip()
+        if asset:
+            return self._normalize_asset_name(asset)
+        utterance = self._normalize_asset_utterance(self._message_utterance(message))
+        m = re.search(r"\b(line|compressor)\s*-?\s*(\d+)\b", utterance)
+        if m:
+            return f"{m.group(1).title()}-{m.group(2)}"
+        return fallback
+
+    def _extract_compare_assets(self, message) -> tuple[str | None, str | None]:
+        """Extract two assets for comparison intent from slots/utterance."""
+        asset_a = str(message.data.get("asset_a", "")).strip()
+        asset_b = str(message.data.get("asset_b", "")).strip()
+
+        found: list[str] = []
+        if asset_a:
+            found.append(self._normalize_asset_name(asset_a))
+        if asset_b:
+            normalized = self._normalize_asset_name(asset_b)
+            if normalized not in found:
+                found.append(normalized)
+
+        utterance = self._normalize_asset_utterance(self._message_utterance(message))
+        parsed_mentions: list[tuple[str, str]] = []
+        for match in re.finditer(r"\b(line|compressor)\s*-?\s*(\d+)?\b", utterance):
+            asset_type = match.group(1).title()
+            asset_num = (match.group(2) or "").strip()
+            parsed_mentions.append((asset_type, asset_num))
+            if not asset_num:
+                continue
+            candidate = f"{asset_type}-{asset_num}"
+            if candidate not in found:
+                found.append(candidate)
+            if len(found) >= 2:
+                break
+
+        if len(found) == 1:
+            # Heuristic for STT outputs like "compressor 1 and compulsory":
+            # second mention may lose its numeric suffix.
+            numbered = [item for item in parsed_mentions if item[1]]
+            unnumbered = [item for item in parsed_mentions if not item[1]]
+            if numbered and unnumbered:
+                first_type, first_num = numbered[0]
+                second_type, _ = unnumbered[0]
+                if first_type == second_type:
+                    inferred = str(int(first_num) + 1)
+                    candidate = f"{second_type}-{inferred}"
+                    if candidate not in found:
+                        found.append(candidate)
+
+        if len(found) >= 2:
+            return found[0], found[1]
+        return None, None
+
+    # =========================================================================
+    # Conversational Helpers
+    # =========================================================================
+
+    @intent_handler("greeting.intent")
+    def handle_greeting(self, message):
+        """Handle greetings such as 'hello' or 'hey avaros'."""
+        self.speak_dialog("greeting.response")
+
+    @intent_handler("help.intent")
+    def handle_help(self, message):
+        """Handle generic help requests."""
+        self.speak_dialog("help.response")
+
+    def converse(self, message) -> bool:
+        """Provide a short fallback for brief domain-out utterances."""
+        utterance = (message.data.get("utterances") or [""])[0].lower().strip()
+        domain_keywords = [
+            "energy",
+            "scrap",
+            "oee",
+            "anomaly",
+            "trend",
+            "temperature",
+            "compare",
+            "production",
+            "kpi",
+        ]
+        if utterance and len(utterance.split()) <= 2 and not any(
+            keyword in utterance for keyword in domain_keywords
+        ):
+            self.speak(
+                "I'm a manufacturing assistant. Try: 'show energy trend today' or 'check production anomaly'."
+            )
+            return True
+        return False
+
     # =========================================================================
     # KPI Query Handlers
     # =========================================================================
@@ -207,17 +345,33 @@ class AVAROSSkill(OVOSSkill):
     def handle_kpi_oee(self, message):
         """Handle: 'What's the OEE for {asset}?'"""
         def _execute():
-            asset_id = message.data.get("asset", "default")
+            asset_id = self._extract_asset_from_message(message, fallback="default")
             period = self._parse_period(message.data.get("period", "today"))
-            
-            result: KPIResult = self.dispatcher.get_kpi(
-                metric=CanonicalMetric.OEE,
-                asset_id=asset_id,
-                period=period
-            )
-            
-            response = self.response_builder.format_kpi_result(result)
-            self.speak(response)
+
+            try:
+                result: KPIResult = self.dispatcher.get_kpi(
+                    metric=CanonicalMetric.OEE,
+                    asset_id=asset_id,
+                    period=period
+                )
+                response = self.response_builder.format_kpi_result(result)
+                self.speak(response)
+            except AVAROSError as exc:
+                msg = str(getattr(exc, "user_message", "") or "").lower()
+                code = str(getattr(exc, "code", "") or "")
+                if "not available" in msg or code in {"RENERYO_ENDPOINT_NOT_FOUND", "METRIC_NOT_SUPPORTED"}:
+                    fallback_result: KPIResult = self.dispatcher.get_kpi(
+                        metric=CanonicalMetric.ENERGY_PER_UNIT,
+                        asset_id=asset_id,
+                        period=period
+                    )
+                    fallback_response = self.response_builder.format_kpi_result(fallback_result)
+                    self.speak(
+                        "OEE is not available in this RENERYO environment yet. "
+                        + fallback_response
+                    )
+                    return
+                raise
         
         self._safe_dispatch("handle_kpi_oee", _execute)
 
@@ -247,18 +401,33 @@ class AVAROSSkill(OVOSSkill):
     def handle_compare_energy(self, message):
         """Handle: 'Compare energy between {asset_a} and {asset_b}'"""
         def _execute():
-            asset_a = message.data.get("asset_a", "Asset-1")
-            asset_b = message.data.get("asset_b", "Asset-2")
+            asset_a, asset_b = self._extract_compare_assets(message)
+            if not asset_a or not asset_b:
+                self.speak(
+                    "Please name two assets. For example: compare energy between Compressor-1 and Compressor-2."
+                )
+                return
             period = self._parse_period(message.data.get("period", "today"))
-            
-            result: ComparisonResult = self.dispatcher.compare(
-                metric=CanonicalMetric.ENERGY_PER_UNIT,
-                asset_ids=[asset_a, asset_b],
-                period=period
-            )
-            
-            response = self.response_builder.format_comparison_result(result)
-            self.speak(response)
+
+            try:
+                result: ComparisonResult = self.dispatcher.compare(
+                    metric=CanonicalMetric.ENERGY_PER_UNIT,
+                    asset_ids=[asset_a, asset_b],
+                    period=period
+                )
+                response = self.response_builder.format_comparison_result(result)
+                self.speak(response)
+            except Exception:
+                self.log.warning(
+                    "Compare failed for assets: %s, %s",
+                    asset_a,
+                    asset_b,
+                    exc_info=True,
+                )
+                self.speak(
+                    "I couldn't compare those assets right now. "
+                    "Please try exact names, for example: Compressor-1 and Compressor-2."
+                )
         
         self._safe_dispatch("handle_compare_energy", _execute)
 

@@ -1,5 +1,5 @@
 # AVAROS Skill Docker Compose Configuration
-# 
+#
 # This compose file deploys AVAROS as a separate container that joins the
 # WASABI OVOS network (per DEC-010). The skill connects to the OVOS message
 # bus and uses MockAdapter by default (DEC-005: zero-config).
@@ -36,7 +36,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 256M
 
   avaros_skill:
@@ -50,33 +50,33 @@ services:
     depends_on:
       avaros_db:
         condition: service_healthy
-    
+
     # Join WASABI OVOS network
     networks:
       - ovos
 
     # Corporate DNS name doesn't always resolve inside Docker Desktop.
-    # Pin the current internal deploy host for stable demo/runtime access.
+    # Use host-gateway by default; override RENERYO_DEPLOYS_IP when needed.
     extra_hosts:
-      - "deploys.int.arti.ac:${RENERYO_DEPLOYS_IP:-10.33.10.110}"
-    
+      - "deploys.int.arti.ac:${RENERYO_DEPLOYS_IP:-host-gateway}"
+
     # Mount WASABI OVOS shared volumes and skill code
     volumes:
       # WASABI OVOS config (read-write for skill settings)
       - ../../wasabi-ovos/ovos/config:/home/ovos/.config/mycroft:rw
-      
+
       # WASABI OVOS tmp directory (read-write)
       - ../../wasabi-ovos/ovos/tmp:/tmp/mycroft:rw
-      
+
       # Mount skill code for hot-reload during development
       - ../skill:/opt/avaros/skill:ro
-      
+
       # Mount locale files (intents & dialogs)
       - ../skill/locale:/opt/avaros/skill/locale:ro
-      
+
       # Logs directory (persistent)
       - ./logs:/opt/avaros/logs:rw
-    
+
     # Environment configuration
     environment:
       # Adapter configuration (DEC-005: MockAdapter default)
@@ -85,38 +85,39 @@ services:
       # OVOS messagebus endpoint (used by launch_skill.py)
       - MESSAGEBUS_HOST=${MESSAGEBUS_HOST:-ovos_messagebus}
       - MESSAGEBUS_PORT=${MESSAGEBUS_PORT:-8181}
-      
+
       # Database configuration (PostgreSQL — production-grade)
       - AVAROS_DATABASE_URL=postgresql://avaros:avaros@avaros_db:5432/avaros
-      
+
       # Logging configuration
       - LOG_LEVEL=INFO
       - AVAROS_LOG_LEVEL=INFO
-      
+
       # OVOS configuration
       - OVOS_CONFIG_BASE_FOLDER=mycroft
       - OVOS_CONFIG_FILENAME=mycroft.conf
-      
+
       # Python environment
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
-    
+
     # Health check: verify skill is running
     healthcheck:
-      test: ["CMD", "python", "-c", "from skill import AVAROSSkill; print('OK')"]
+      test:
+        ["CMD", "python", "-c", "from skill import AVAROSSkill; print('OK')"]
       interval: 30s
       timeout: 10s
       start_period: 10s
       retries: 3
-    
+
     # Resource limits (optional, adjust as needed)
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          cpus: "1.0"
           memory: 512M
         reservations:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 256M
 
   avaros-web-ui:
@@ -135,7 +136,7 @@ services:
       - ovos
 
     extra_hosts:
-      - "deploys.int.arti.ac:${RENERYO_DEPLOYS_IP:-10.33.10.110}"
+      - "deploys.int.arti.ac:${RENERYO_DEPLOYS_IP:-host-gateway}"
 
     # Web UI is only accessible via avaros-proxy (HTTPS)
     # For direct HTTP access in dev, use docker-compose.dev.yml override
@@ -151,10 +152,6 @@ services:
     environment:
       - AVAROS_DATABASE_URL=postgresql://avaros:avaros@avaros_db:5432/avaros
       - AVAROS_WEB_UI_PORT=8080
-      # HiveMind voice config: passed via env_file (.env) — do NOT redeclare
-      # here or compose defaults will override the .env values.
-      # Required .env vars: HIVEMIND_WS_URL, HIVEMIND_CLIENT_KEY,
-      # HIVEMIND_CLIENT_SECRET (see .env for details).
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
 
@@ -228,7 +225,13 @@ services:
       - hivemind_state:/home/hivemind/.local/share
 
     healthcheck:
-      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',5678)); s.close(); print('OK')"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',5678)); s.close(); print('OK')",
+        ]
       interval: 30s
       timeout: 10s
       start_period: 15s
@@ -237,7 +240,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
+          cpus: "0.5"
           memory: 128M
 
   avaros-proxy:
@@ -262,7 +265,15 @@ services:
       - certbot_webroot:/var/www/certbot:ro
 
     healthcheck:
-      test: ["CMD", "wget", "--spider", "--no-check-certificate", "-q", "https://127.0.0.1"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--spider",
+          "--no-check-certificate",
+          "-q",
+          "https://127.0.0.1",
+        ]
       interval: 30s
       timeout: 10s
       start_period: 10s
@@ -271,7 +282,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.25'
+          cpus: "0.25"
           memory: 64M
 
 # External network created by WASABI OVOS stack

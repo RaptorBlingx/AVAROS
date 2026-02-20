@@ -14,3 +14,9 @@ compare power usage
 show energy comparison
 which uses more energy
 which is more efficient
+compare energy between {asset_a} and {asset_b}
+compare power between {asset_a} and {asset_b}
+energy comparison
+compare energy usage
+compare energy between compressor 1 and compressor 2
+compare energy between compressor-1 and compressor-2

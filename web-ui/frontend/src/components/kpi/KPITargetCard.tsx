@@ -7,7 +7,10 @@ type KPITargetCardProps = {
   progress: KPIProgressItem | null;
 };
 
-function getTone(progress: KPIProgressItem | null, targetPercent: number): {
+function getTone(
+  progress: KPIProgressItem | null,
+  targetPercent: number,
+): {
   text: string;
   ring: string;
   surface: string;
@@ -20,7 +23,8 @@ function getTone(progress: KPIProgressItem | null, targetPercent: number): {
       text: "text-slate-600 dark:text-slate-300",
       ring: "#64748b",
       surface: "brand-surface",
-      panel: "border-slate-200 bg-white/85 dark:border-slate-700 dark:bg-slate-900/55",
+      panel:
+        "border-slate-200 bg-white/85 dark:border-slate-700 dark:bg-slate-900/55",
       badge:
         "border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300",
       label: "No data yet",
@@ -45,7 +49,8 @@ function getTone(progress: KPIProgressItem | null, targetPercent: number): {
       text: "text-amber-700 dark:text-amber-300",
       ring: "#f59e0b",
       surface: "brand-surface",
-      panel: "border-amber-200 bg-amber-50/70 dark:border-amber-700/55 dark:bg-amber-950/25",
+      panel:
+        "border-amber-200 bg-amber-50/70 dark:border-amber-700/55 dark:bg-amber-950/25",
       badge:
         "border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
       label: "At risk",
@@ -56,7 +61,8 @@ function getTone(progress: KPIProgressItem | null, targetPercent: number): {
     text: "text-rose-700 dark:text-rose-300",
     ring: "#f43f5e",
     surface: "brand-surface",
-    panel: "border-rose-200 bg-rose-50/70 dark:border-rose-700/55 dark:bg-rose-950/25",
+    panel:
+      "border-rose-200 bg-rose-50/70 dark:border-rose-700/55 dark:bg-rose-950/25",
     badge:
       "border-rose-200 bg-rose-100 text-rose-700 dark:border-rose-700 dark:bg-rose-900/40 dark:text-rose-300",
     label: "Off track",
@@ -77,31 +83,44 @@ export default function KPITargetCard({
   progress,
 }: KPITargetCardProps) {
   const tone = getTone(progress, targetPercent);
-  const targetAttainment = progress
+  const targetAttainmentRaw = progress
     ? (progress.improvement_percent / targetPercent) * 100
     : 0;
 
-  const safeProgressPercent = Math.max(0, Math.min(100, targetAttainment));
+  const targetAttainmentCapped = Math.max(
+    -100,
+    Math.min(199.99, targetAttainmentRaw),
+  );
+  const safeProgressPercent = Math.max(
+    0,
+    Math.min(100, targetAttainmentCapped),
+  );
   const attainmentText = progress
-    ? `${Math.round(targetAttainment)}%`
+    ? `${Math.round(targetAttainmentCapped)}%`
     : "--";
 
   return (
     <article className={`${tone.surface} h-full rounded-2xl p-5 shadow-sm`}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+        <div className="min-w-0">
           <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
             {metricLabel}
           </p>
-          <p className="m-0 mt-1 text-sm text-slate-500 dark:text-slate-400">{metricHint}</p>
+          <p className="m-0 mt-1 text-sm text-slate-500 dark:text-slate-400">
+            {metricHint}
+          </p>
         </div>
-        <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${tone.badge}`}>
+        <span
+          className={`inline-flex shrink-0 self-start whitespace-nowrap rounded-full border px-2 py-1 text-xs font-semibold leading-none ${tone.badge}`}
+        >
           {tone.label}
         </span>
       </div>
 
-      <div className="mt-4 grid grid-cols-[88px_1fr] gap-4">
-        <div className={`relative flex h-[88px] w-[88px] items-center justify-center rounded-full border ${tone.panel}`}>
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[88px_1fr]">
+        <div
+          className={`relative mx-auto flex h-[88px] w-[88px] items-center justify-center rounded-full border lg:mx-0 ${tone.panel}`}
+        >
           <div
             className="absolute inset-1 rounded-full"
             style={{
@@ -113,42 +132,71 @@ export default function KPITargetCard({
             className="absolute inset-3 rounded-full bg-white dark:bg-slate-900"
             aria-hidden="true"
           />
-          <span className={`relative text-sm font-semibold ${tone.text}`} title="Target attainment">
+          <span
+            className={`relative text-sm font-semibold ${tone.text}`}
+            title="Target attainment"
+          >
             {attainmentText}
           </span>
         </div>
 
-        <dl className="m-0 grid grid-cols-2 gap-2 text-sm">
+        <dl className="m-0 grid grid-cols-1 gap-2 text-sm md:grid-cols-2">
           <div className={`rounded-lg border px-3 py-2 ${tone.panel}`}>
-            <dt className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Baseline</dt>
-            <dd className="m-0 font-semibold text-slate-900 dark:text-slate-100">
-              {progress ? `${progress.baseline_value.toFixed(2)} ${progress.unit}` : "No data yet"}
+            <dt className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Baseline
+            </dt>
+            <dd className="m-0 break-words font-semibold text-slate-900 dark:text-slate-100">
+              {progress
+                ? `${progress.baseline_value.toFixed(2)} ${progress.unit}`
+                : "No data yet"}
             </dd>
           </div>
           <div className={`rounded-lg border px-3 py-2 ${tone.panel}`}>
-            <dt className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Current</dt>
-            <dd className="m-0 font-semibold text-slate-900 dark:text-slate-100">
-              {progress ? `${progress.current_value.toFixed(2)} ${progress.unit}` : "No data yet"}
+            <dt className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Current
+            </dt>
+            <dd className="m-0 break-words font-semibold text-slate-900 dark:text-slate-100">
+              {progress
+                ? `${progress.current_value.toFixed(2)} ${progress.unit}`
+                : "No data yet"}
             </dd>
           </div>
           <div className={`rounded-lg border px-3 py-2 ${tone.panel}`}>
-            <dt className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Improvement</dt>
+            <dt className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Improvement
+            </dt>
             <dd className={`m-0 font-semibold ${tone.text}`}>
-              {progress ? `${progress.improvement_percent.toFixed(2)}%` : "No data yet"}
+              {progress
+                ? `${progress.improvement_percent.toFixed(2)}%`
+                : "No data yet"}
             </dd>
           </div>
           <div className={`rounded-lg border px-3 py-2 ${tone.panel}`}>
-            <dt className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Target</dt>
-            <dd className="m-0 font-semibold text-slate-900 dark:text-slate-100">{targetPercent}%</dd>
-          </div>
-          <div className={`col-span-2 rounded-lg border px-3 py-2 ${tone.panel}`}>
-            <dt className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Target attainment</dt>
-            <dd className={`m-0 font-semibold ${tone.text}`}>
-              {progress ? `${targetAttainment.toFixed(2)}%` : "No data yet"}
+            <dt className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Target
+            </dt>
+            <dd className="m-0 font-semibold text-slate-900 dark:text-slate-100">
+              {targetPercent}%
             </dd>
           </div>
-          <div className={`col-span-2 rounded-lg border px-3 py-2 ${tone.panel}`}>
-            <dt className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Direction</dt>
+          <div
+            className={`rounded-lg border px-3 py-2 sm:col-span-2 ${tone.panel}`}
+          >
+            <dt className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Target attainment
+            </dt>
+            <dd className={`m-0 font-semibold ${tone.text}`}>
+              {progress
+                ? `${targetAttainmentCapped.toFixed(2)}%`
+                : "No data yet"}
+            </dd>
+          </div>
+          <div
+            className={`rounded-lg border px-3 py-2 sm:col-span-2 ${tone.panel}`}
+          >
+            <dt className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Direction
+            </dt>
             <dd className="m-0 font-semibold text-slate-900 dark:text-slate-100">
               {progress ? getDirectionLabel(progress.direction) : "No data yet"}
             </dd>

@@ -20,7 +20,6 @@ Usage:
 from __future__ import annotations
 
 import logging
-import os
 from urllib.parse import urlparse
 from typing import TYPE_CHECKING
 
@@ -209,6 +208,7 @@ class AdapterFactory:
         timeout = 30
         auth_type = "bearer"
         api_format = ""
+        asset_mappings: dict[str, dict[str, object]] = {}
         native_seu_id = ""
 
         if self._settings_service is not None:
@@ -221,23 +221,26 @@ class AdapterFactory:
                     extra = getattr(config, "extra_settings", {}) or {}
                     auth_type = extra.get("auth_type", "bearer") if isinstance(extra, dict) else "bearer"
                     api_format = extra.get("api_format", "") if isinstance(extra, dict) else ""
-                    native_seu_id = extra.get("seu_id", "") if isinstance(extra, dict) else ""
+                    if isinstance(extra, dict):
+                        native_seu_id = (
+                            extra.get("seu_id", "") if isinstance(extra.get("seu_id", ""), str) else ""
+                        )
+                        raw_mappings = extra.get("asset_mappings", {})
+                        if isinstance(raw_mappings, dict):
+                            asset_mappings = raw_mappings
             except Exception as exc:
                 logger.warning("Error reading RENERYO config: %s", exc)
-
-        if not native_seu_id:
-            native_seu_id = os.getenv("RENERYO_SEU_ID", "")
 
         if not api_format:
             api_format = self._detect_reneryo_api_format(api_url)
         api_url = self._normalize_reneryo_api_url(api_url, api_format)
 
         logger.info(
-            "RENERYO adapter config resolved: format=%s auth_type=%s url=%s seu_id=%s",
+            "RENERYO adapter config resolved: format=%s auth_type=%s url=%s mapped_assets=%d",
             api_format,
             auth_type,
             api_url,
-            "set" if native_seu_id else "empty",
+            len(asset_mappings),
         )
 
         return ReneryoAdapter(
@@ -246,26 +249,34 @@ class AdapterFactory:
             timeout=timeout,
             auth_type=auth_type,
             api_format=api_format,
+            asset_mappings=asset_mappings,
             native_seu_id=native_seu_id,
         )
 
     @staticmethod
     def _detect_reneryo_api_format(api_url: str) -> str:
-        """Infer API format from URL when extra_settings doesn't provide it."""
+        """Infer API format when extra_settings doesn't provide it.
+
+        Policy:
+            - Explicit local/mock hosts => mock format
+            - Everything else => native format
+
+        This avoids brittle domain sniffing where unknown real domains were
+        incorrectly forced into mock behavior.
+        """
         lowered = (api_url or "").strip().lower()
         if not lowered:
             return "mock"
 
-        if any(token in lowered for token in ("localhost", "127.0.0.1", "reneryo-mock", "mockserver")):
+        parsed = urlparse(lowered)
+        host = (parsed.hostname or "").lower()
+
+        if host in {"localhost", "127.0.0.1", "0.0.0.0", "reneryo-mock", "mockserver"}:
+            return "mock"
+        if any(token in lowered for token in ("reneryo-mock", "mockserver")):
             return "mock"
 
-        if any(token in lowered for token in ("preview.reneryo.com", "deploys.int.arti.ac", "reneryo.com")):
-            return "native"
-
-        if "/api/u" in lowered or "/api/ui" in lowered:
-            return "native"
-
-        return "mock"
+        return "native"
 
     @staticmethod
     def _normalize_reneryo_api_url(api_url: str, api_format: str) -> str:

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
-from dependencies import get_settings_service
+from dependencies import get_kpi_measurement_service, get_settings_service
 from schemas.config import (
     ConnectionTestResponse,
     PlatformConfigRequest,
@@ -17,13 +19,18 @@ from schemas.config import (
     ResetResponse,
 )
 from skill.adapters.base import ManufacturingAdapter
+from skill.services.kpi_measurement import KPIMeasurementService
 from skill.services.settings import PlatformConfig, SettingsService
+from services.kpi_collector import KPICollector
 
 
 router = APIRouter(prefix="/api/v1/config", tags=["config"])
+logger = logging.getLogger(__name__)
 MOCK_PROFILE_NAME = "mock"
 PROFILE_KEY_PREFIX = "platform_profile:"
 ACTIVE_PROFILE_KEY = "platform_profile_active"
+KPI_DEFAULT_SITE_ID = "pilot-1"
+RENERYO_PROFILE_NAME = "reneryo"
 
 
 def _mask_api_key(api_key: str) -> str:
@@ -314,15 +321,27 @@ def delete_profile(
 
 
 @router.post("/profiles/{name}/activate", response_model=ProfileConfigResponse)
-def activate_profile(
+async def activate_profile(
     name: str,
     settings_service: SettingsService = Depends(get_settings_service),
+    kpi_service: KPIMeasurementService = Depends(get_kpi_measurement_service),
 ) -> ProfileConfigResponse:
     """Activate profile and hot-swap active adapter configuration."""
+    collector = KPICollector(settings_service=settings_service, kpi_service=kpi_service)
+
     if name == MOCK_PROFILE_NAME:
         config = PlatformConfig()
         settings_service.update_platform_config(config)
         settings_service.set_setting(ACTIVE_PROFILE_KEY, MOCK_PROFILE_NAME)
+        try:
+            kpi_service.clear_site_data(KPI_DEFAULT_SITE_ID)
+            await collector.seed_baselines(KPI_DEFAULT_SITE_ID)
+            await collector.seed_mock_snapshot_history(KPI_DEFAULT_SITE_ID, points=10)
+        except Exception:
+            logger.warning(
+                "KPI seed failed after mock profile activation; data may be stale",
+                exc_info=True,
+            )
         return _to_profile_response(
             name=MOCK_PROFILE_NAME,
             config=config,
@@ -336,6 +355,18 @@ def activate_profile(
 
     settings_service.update_platform_config(config)
     settings_service.set_setting(ACTIVE_PROFILE_KEY, name)
+
+    if name == RENERYO_PROFILE_NAME:
+        try:
+            # Ensure dashboard has fresh data immediately after switching back from mock.
+            await collector.seed_baselines(KPI_DEFAULT_SITE_ID)
+            await collector.collect_snapshots(KPI_DEFAULT_SITE_ID)
+        except Exception:
+            logger.warning(
+                "KPI refresh failed after reneryo profile activation; data may be stale",
+                exc_info=True,
+            )
+
     return _to_profile_response(
         name=name,
         config=config,
@@ -408,7 +439,7 @@ def _create_adapter_from_config(
             timeout=payload.extra_settings.get("timeout", 10),
             auth_type=payload.extra_settings.get("auth_type", "bearer"),
             api_format=payload.extra_settings.get("api_format", "native"),
-            native_seu_id=payload.extra_settings.get("seu_id", ""),
+            asset_mappings=payload.extra_settings.get("asset_mappings", {}),
         )
 
     raise ValueError(f"Unknown platform type: {payload.platform_type}")

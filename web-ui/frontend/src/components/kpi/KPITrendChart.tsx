@@ -23,7 +23,7 @@ ChartJS.register(
   LineElement,
   Tooltip,
   Legend,
-  Filler
+  Filler,
 );
 
 type KPITrendChartProps = {
@@ -143,7 +143,7 @@ export default function KPITrendChart({
         },
       },
     }),
-    [isDark]
+    [isDark],
   );
 
   if (snapshots.length === 0) {
@@ -155,7 +155,7 @@ export default function KPITrendChart({
   }
 
   return (
-    <div className="h-[260px] min-w-[320px] rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900/40">
+    <div className="h-[230px] rounded-xl border border-slate-200 bg-white p-3 sm:h-[260px] dark:border-slate-700 dark:bg-slate-900/40">
       <Line data={chartData} options={options} />
     </div>
   );

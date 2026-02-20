@@ -83,10 +83,11 @@ export default function PlatformConfigSection({
   const [seuId, setSeuId] = useState("");
   const [apiUrl, setApiUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [testResult, setTestResult] = useState<ConnectionTestResponse | null>(null);
+  const [testResult, setTestResult] = useState<ConnectionTestResponse | null>(
+    null,
+  );
   const [inlineError, setInlineError] = useState("");
   const [isBuiltinProfile, setIsBuiltinProfile] = useState(false);
-  const [isSelectedActive, setIsSelectedActive] = useState(true);
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
 
   const isMock = useMemo(() => platformType === "mock", [platformType]);
@@ -95,12 +96,12 @@ export default function PlatformConfigSection({
       platformType === "reneryo"
         ? "RENERYO"
         : platformType === "custom_rest"
-          ? "Custom REST"
-          : "Mock",
+        ? "Custom REST"
+        : "Mock",
     [platformType],
   );
 
-  const formLocked = isBuiltinProfile || !isSelectedActive;
+  const formLocked = isBuiltinProfile;
 
   const handleProfileChange = useCallback((profile: ProfileConfig) => {
     setPlatformType(profile.platform_type);
@@ -109,7 +110,11 @@ export default function PlatformConfigSection({
     setAuthType(
       profile.extra_settings?.auth_type === "cookie" ? "cookie" : "api_key",
     );
-    setSeuId(profile.extra_settings?.seu_id ?? "");
+    setSeuId(
+      typeof profile.extra_settings?.seu_id === "string"
+        ? profile.extra_settings.seu_id
+        : "",
+    );
     setConfig({
       platform_type: profile.platform_type,
       api_url: profile.api_url,
@@ -117,7 +122,6 @@ export default function PlatformConfigSection({
       extra_settings: profile.extra_settings,
     });
     setIsBuiltinProfile(profile.is_builtin);
-    setIsSelectedActive(profile.is_active);
     setEditing(false);
     setInlineError("");
     setTestResult(null);
@@ -131,15 +135,16 @@ export default function PlatformConfigSection({
       setConfig(data);
       setPlatformType(data.platform_type);
       setAuthType(
-        data.extra_settings?.auth_type === "cookie"
-          ? "cookie"
-          : "api_key",
+        data.extra_settings?.auth_type === "cookie" ? "cookie" : "api_key",
       );
-      setSeuId(data.extra_settings?.seu_id ?? "");
+      setSeuId(
+        typeof data.extra_settings?.seu_id === "string"
+          ? data.extra_settings.seu_id
+          : "",
+      );
       setApiUrl(data.api_url);
       setApiKey("");
       setIsBuiltinProfile(data.platform_type === "mock");
-      setIsSelectedActive(true);
     } catch (error: unknown) {
       const message = toFriendlyErrorMessage(error);
       setInlineError(message);
@@ -199,7 +204,6 @@ export default function PlatformConfigSection({
       setEditing(false);
       setProfileRefreshKey((k) => k + 1);
       setIsBuiltinProfile(true);
-      setIsSelectedActive(true);
       onNotify("success", "Platform config reset to mock.");
     } catch (error: unknown) {
       const message = toFriendlyErrorMessage(error);
@@ -346,7 +350,13 @@ export default function PlatformConfigSection({
                 value={seuId}
                 onChange={(event) => setSeuId(event.target.value)}
                 placeholder="Paste SEU ID for direct energy per unit endpoint"
-                disabled={!editing || saving || formLocked || isMock || platformType !== "reneryo"}
+                disabled={
+                  !editing ||
+                  saving ||
+                  formLocked ||
+                  isMock ||
+                  platformType !== "reneryo"
+                }
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               />
             </label>
@@ -386,8 +396,17 @@ export default function PlatformConfigSection({
             >
               {testing ? (
                 <span className="inline-flex items-center gap-2">
-                  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <path d="M21 12a9 9 0 10-9 9" strokeWidth="2" strokeLinecap="round" />
+                  <svg
+                    className="h-4 w-4 animate-spin"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                  >
+                    <path
+                      d="M21 12a9 9 0 10-9 9"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
                   </svg>
                   Testing connection to {adapterTarget}...
                 </span>

@@ -18,14 +18,14 @@ export type PlatformConfigRequest = {
   platform_type: PlatformType;
   api_url: string;
   api_key: string;
-  extra_settings: Record<string, string>;
+  extra_settings: Record<string, unknown>;
 };
 
 export type PlatformConfigResponse = {
   platform_type: PlatformType;
   api_url: string;
   api_key: string;
-  extra_settings: Record<string, string>;
+  extra_settings: Record<string, unknown>;
 };
 
 export type PlatformResetResponse = {
@@ -239,7 +239,7 @@ export type ProfileConfig = {
   platform_type: PlatformType;
   api_url: string;
   api_key: string;
-  extra_settings: Record<string, string>;
+  extra_settings: Record<string, unknown>;
   is_builtin: boolean;
   is_active: boolean;
 };
@@ -249,5 +249,40 @@ export type CreateProfileRequest = {
   platform_type: PlatformType;
   api_url?: string;
   api_key?: string;
-  extra_settings?: Record<string, string>;
+  extra_settings?: Record<string, unknown>;
+};
+
+export type MetricResourceMap = Record<string, string>;
+
+export type AssetMappingItem = {
+  seu_id: string;
+  metric_resources: MetricResourceMap;
+};
+
+export type AssetMappingsResponse = {
+  asset_mappings: Record<string, AssetMappingItem>;
+};
+
+export type MetricResourceOption = {
+  id: string;
+  name: string;
+};
+
+export type DiscoveredSeu = {
+  id: string;
+  name: string;
+  energy_resource: string;
+};
+
+export type MetricCandidate = {
+  key: string;
+  id: string;
+  name: string;
+};
+
+export type AssetDiscoveryResponse = {
+  seus: DiscoveredSeu[];
+  metrics: MetricCandidate[];
+  resources: Record<string, MetricResourceOption[]>;
+  existing_mappings: Record<string, AssetMappingItem>;
 };

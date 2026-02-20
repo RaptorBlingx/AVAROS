@@ -15,6 +15,7 @@ Covers all REST endpoints:
 from __future__ import annotations
 
 import sys
+from datetime import date, datetime
 from pathlib import Path
 from typing import Generator
 
@@ -37,6 +38,7 @@ from dependencies import (  # noqa: E402
     get_settings_service,
 )
 from skill.services.database import Base  # noqa: E402
+from skill.domain.kpi_baseline import KPIBaseline, KPISnapshot  # noqa: E402
 from skill.services.kpi_measurement import KPIMeasurementService  # noqa: E402
 from skill.services.settings import SettingsService  # noqa: E402
 
@@ -332,3 +334,41 @@ class TestExport:
         resp = client.get("/api/v1/kpi/export/nonexistent")
         assert resp.status_code == 200
         assert resp.json() == []
+
+
+class TestKpiServiceClearSiteData:
+    """Service helper used by profile activation flow."""
+
+    def test_clear_site_data_removes_baselines_and_snapshots(
+        self,
+        kpi_service: KPIMeasurementService,
+    ) -> None:
+        """clear_site_data deletes all KPI rows for a site."""
+        kpi_service.record_baseline(
+            KPIBaseline(
+                metric="energy_per_unit",
+                site_id="pilot-1",
+                baseline_value=2.5,
+                unit="kWh/unit",
+                recorded_at=datetime.utcnow(),
+                period_start=date(2026, 1, 1),
+                period_end=date(2026, 1, 31),
+            )
+        )
+        kpi_service.record_snapshot(
+            KPISnapshot(
+                metric="energy_per_unit",
+                site_id="pilot-1",
+                value=2.2,
+                unit="kWh/unit",
+                measured_at=datetime.utcnow(),
+                period_start=date(2026, 2, 1),
+                period_end=date(2026, 2, 28),
+            )
+        )
+
+        deleted_baselines, deleted_snapshots = kpi_service.clear_site_data("pilot-1")
+        assert deleted_baselines == 1
+        assert deleted_snapshots == 1
+        assert kpi_service.get_all_baselines("pilot-1") == []
+        assert kpi_service.get_snapshots("energy_per_unit", "pilot-1") == []

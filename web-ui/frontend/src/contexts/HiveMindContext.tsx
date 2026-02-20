@@ -53,10 +53,7 @@ interface HiveMindContextValue {
   /** Current connection details for status popup */
   connectionDetails: HiveMindConnectionDetails;
   /** Subscribe to a specific OVOS bus event */
-  on: (
-    eventType: string,
-    callback: (msg: OVOSMessage) => void,
-  ) => () => void;
+  on: (eventType: string, callback: (msg: OVOSMessage) => void) => () => void;
 }
 
 const HiveMindContext = createContext<HiveMindContextValue | null>(null);
@@ -85,6 +82,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
 
   const serviceRef = useRef<HiveMindService | null>(null);
   const configLoadedRef = useRef(false);
+  const autoConnectRetryRef = useRef<number | null>(null);
 
   // Load voice config from backend once
   useEffect(() => {
@@ -106,9 +104,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
             accessKey: config.hivemind_key,
             accessSecret: config.hivemind_secret,
             encryptionKey:
-              cryptoKeyCandidate.length === 16
-                ? cryptoKeyCandidate
-                : undefined,
+              cryptoKeyCandidate.length === 16 ? cryptoKeyCandidate : undefined,
           });
           setConnectionDetails(svc.getConnectionDetails());
 
@@ -128,9 +124,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
           svc.on("recognizer_loop:audio_output_end", () =>
             setIsSpeaking(false),
           );
-          svc.on("mycroft.skill.handler.start", () =>
-            setIsProcessing(true),
-          );
+          svc.on("mycroft.skill.handler.start", () => setIsProcessing(true));
           svc.on("mycroft.skill.handler.complete", () =>
             setIsProcessing(false),
           );
@@ -147,6 +141,14 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
 
           serviceRef.current = svc;
           setServiceVersion((prev) => prev + 1);
+
+          // Auto-connect on app load so users don't need to click Connect manually.
+          void svc.connect().catch(() => {
+            // One lightweight retry for transient startup timing/network issues.
+            autoConnectRetryRef.current = window.setTimeout(() => {
+              void svc.connect().catch(() => undefined);
+            }, 2000);
+          });
         }
       })
       .catch(() => {
@@ -155,6 +157,9 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
       });
 
     return () => {
+      if (autoConnectRetryRef.current !== null) {
+        window.clearTimeout(autoConnectRetryRef.current);
+      }
       serviceRef.current?.dispose();
       serviceRef.current = null;
     };
@@ -177,10 +182,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
   }, []);
 
   const on = useCallback(
-    (
-      eventType: string,
-      callback: (msg: OVOSMessage) => void,
-    ): (() => void) => {
+    (eventType: string, callback: (msg: OVOSMessage) => void): (() => void) => {
       if (!serviceRef.current) return () => {};
       return serviceRef.current.on(eventType, callback);
     },

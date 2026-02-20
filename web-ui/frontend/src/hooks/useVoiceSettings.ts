@@ -66,8 +66,8 @@ function safeNumber(value: unknown, fallback: number): number {
     typeof value === "number"
       ? value
       : typeof value === "string"
-        ? Number(value)
-        : Number.NaN;
+      ? Number(value)
+      : Number.NaN;
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
@@ -77,7 +77,7 @@ function readInitialSettings(): VoiceSettingsState {
   }
 
   const storedMode = localStorage.getItem(STORAGE_KEYS.voiceMode) ?? "";
-  const voiceMode = isVoiceMode(storedMode)
+  const voiceMode: VoiceMode = isVoiceMode(storedMode)
     ? storedMode
     : DEFAULT_VOICE_SETTINGS.voiceMode;
 
@@ -204,11 +204,11 @@ export function useVoiceSettings(): {
         next.voiceMode = "push-to-talk";
       }
 
-      (
-        Object.keys(STORAGE_KEYS) as Array<keyof typeof STORAGE_KEYS>
-      ).forEach((storageField) => {
-        persistSetting(storageField, next[storageField]);
-      });
+      (Object.keys(STORAGE_KEYS) as Array<keyof typeof STORAGE_KEYS>).forEach(
+        (storageField) => {
+          persistSetting(storageField, next[storageField]);
+        },
+      );
 
       return next;
     });

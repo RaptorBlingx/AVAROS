@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type {
-  ProfileConfig,
-  ProfileListResponse,
-} from "../../../api/types";
+import type { ProfileConfig, ProfileListResponse } from "../../../api/types";
 import type { ProfileSelectorProps } from "../ProfileSelector";
 import ProfileSelector from "../ProfileSelector";
 
@@ -76,7 +79,8 @@ const RENERYO_PROFILE_CONFIG: ProfileConfig = {
 };
 
 describe("ProfileSelector", () => {
-  let onProfileChange: ProfileSelectorProps["onProfileChange"] & ReturnType<typeof vi.fn>;
+  let onProfileChange: ProfileSelectorProps["onProfileChange"] &
+    ReturnType<typeof vi.fn>;
   let onNotify: ProfileSelectorProps["onNotify"] & ReturnType<typeof vi.fn>;
 
   afterEach(() => {
@@ -97,33 +101,31 @@ describe("ProfileSelector", () => {
 
   it("renders profiles after loading", async () => {
     render(
-      <ProfileSelector
-        onProfileChange={onProfileChange}
-        onNotify={onNotify}
-      />,
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
 
     await waitFor(() => {
       expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
     });
 
-    const dropdown = screen.getByTestId("profile-dropdown") as HTMLSelectElement;
+    const dropdown = screen.getByTestId(
+      "profile-dropdown",
+    ) as HTMLSelectElement;
     expect(dropdown.options.length).toBe(2);
   });
 
   it("shows mock profile first with built-in label", async () => {
     render(
-      <ProfileSelector
-        onProfileChange={onProfileChange}
-        onNotify={onNotify}
-      />,
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
 
     await waitFor(() => {
       expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
     });
 
-    const dropdown = screen.getByTestId("profile-dropdown") as HTMLSelectElement;
+    const dropdown = screen.getByTestId(
+      "profile-dropdown",
+    ) as HTMLSelectElement;
     const firstOption = dropdown.options[0];
     expect(firstOption.value).toBe("mock");
     expect(firstOption.text).toContain("Built-in");
@@ -131,10 +133,7 @@ describe("ProfileSelector", () => {
 
   it("shows active badge for the active profile", async () => {
     render(
-      <ProfileSelector
-        onProfileChange={onProfileChange}
-        onNotify={onNotify}
-      />,
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
 
     await waitFor(() => {
@@ -144,10 +143,7 @@ describe("ProfileSelector", () => {
 
   it("shows built-in badge for mock profile", async () => {
     render(
-      <ProfileSelector
-        onProfileChange={onProfileChange}
-        onNotify={onNotify}
-      />,
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
 
     await waitFor(() => {
@@ -157,33 +153,31 @@ describe("ProfileSelector", () => {
 
   it("disables switch button for the currently active profile", async () => {
     render(
-      <ProfileSelector
-        onProfileChange={onProfileChange}
-        onNotify={onNotify}
-      />,
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
 
     await waitFor(() => {
       expect(screen.getByTestId("profile-switch-btn")).toBeTruthy();
     });
 
-    const switchBtn = screen.getByTestId("profile-switch-btn") as HTMLButtonElement;
+    const switchBtn = screen.getByTestId(
+      "profile-switch-btn",
+    ) as HTMLButtonElement;
     expect(switchBtn.disabled).toBe(true);
   });
 
   it("calls getProfile and onProfileChange when selecting a different profile", async () => {
     render(
-      <ProfileSelector
-        onProfileChange={onProfileChange}
-        onNotify={onNotify}
-      />,
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
 
     await waitFor(() => {
       expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
     });
 
-    const dropdown = screen.getByTestId("profile-dropdown") as HTMLSelectElement;
+    const dropdown = screen.getByTestId(
+      "profile-dropdown",
+    ) as HTMLSelectElement;
     fireEvent.change(dropdown, { target: { value: "my-reneryo" } });
 
     await waitFor(() => {
@@ -200,24 +194,25 @@ describe("ProfileSelector", () => {
     mockActivateProfile.mockResolvedValue(activatedConfig);
 
     render(
-      <ProfileSelector
-        onProfileChange={onProfileChange}
-        onNotify={onNotify}
-      />,
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
 
     await waitFor(() => {
       expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
     });
 
-    const dropdown = screen.getByTestId("profile-dropdown") as HTMLSelectElement;
+    const dropdown = screen.getByTestId(
+      "profile-dropdown",
+    ) as HTMLSelectElement;
     fireEvent.change(dropdown, { target: { value: "my-reneryo" } });
 
     await waitFor(() => {
       expect(onProfileChange).toHaveBeenCalled();
     });
 
-    const switchBtn = screen.getByTestId("profile-switch-btn") as HTMLButtonElement;
+    const switchBtn = screen.getByTestId(
+      "profile-switch-btn",
+    ) as HTMLButtonElement;
     expect(switchBtn.disabled).toBe(false);
 
     fireEvent.click(switchBtn);
@@ -233,10 +228,7 @@ describe("ProfileSelector", () => {
 
   it("does not show delete button for built-in mock profile", async () => {
     render(
-      <ProfileSelector
-        onProfileChange={onProfileChange}
-        onNotify={onNotify}
-      />,
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
 
     await waitFor(() => {
@@ -248,17 +240,16 @@ describe("ProfileSelector", () => {
 
   it("shows delete button for custom profile", async () => {
     render(
-      <ProfileSelector
-        onProfileChange={onProfileChange}
-        onNotify={onNotify}
-      />,
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
 
     await waitFor(() => {
       expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
     });
 
-    const dropdown = screen.getByTestId("profile-dropdown") as HTMLSelectElement;
+    const dropdown = screen.getByTestId(
+      "profile-dropdown",
+    ) as HTMLSelectElement;
     fireEvent.change(dropdown, { target: { value: "my-reneryo" } });
 
     await waitFor(() => {
@@ -271,17 +262,16 @@ describe("ProfileSelector", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
 
     render(
-      <ProfileSelector
-        onProfileChange={onProfileChange}
-        onNotify={onNotify}
-      />,
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
 
     await waitFor(() => {
       expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
     });
 
-    const dropdown = screen.getByTestId("profile-dropdown") as HTMLSelectElement;
+    const dropdown = screen.getByTestId(
+      "profile-dropdown",
+    ) as HTMLSelectElement;
     fireEvent.change(dropdown, { target: { value: "my-reneryo" } });
 
     await waitFor(() => {
@@ -306,10 +296,7 @@ describe("ProfileSelector", () => {
     vi.spyOn(window, "confirm").mockReturnValue(false);
 
     render(
-      <ProfileSelector
-        onProfileChange={onProfileChange}
-        onNotify={onNotify}
-      />,
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
 
     await waitFor(() => {
@@ -337,10 +324,7 @@ describe("ProfileSelector", () => {
 
   it("shows new profile form when clicking New Profile", async () => {
     render(
-      <ProfileSelector
-        onProfileChange={onProfileChange}
-        onNotify={onNotify}
-      />,
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
 
     await waitFor(() => {
@@ -356,10 +340,7 @@ describe("ProfileSelector", () => {
 
   it("validates profile name on create", async () => {
     render(
-      <ProfileSelector
-        onProfileChange={onProfileChange}
-        onNotify={onNotify}
-      />,
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
 
     await waitFor(() => {
@@ -375,7 +356,10 @@ describe("ProfileSelector", () => {
     fireEvent.click(screen.getByTestId("profile-create-btn"));
 
     await waitFor(() => {
-      expect(onNotify).toHaveBeenCalledWith("error", expect.stringContaining("2"));
+      expect(onNotify).toHaveBeenCalledWith(
+        "error",
+        expect.stringContaining("2"),
+      );
     });
 
     expect(mockCreateProfile).not.toHaveBeenCalled();
@@ -399,10 +383,7 @@ describe("ProfileSelector", () => {
     });
 
     render(
-      <ProfileSelector
-        onProfileChange={onProfileChange}
-        onNotify={onNotify}
-      />,
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
 
     await waitFor(() => {
@@ -440,27 +421,25 @@ describe("ProfileSelector", () => {
     });
 
     const { container } = render(
-      <ProfileSelector
-        onProfileChange={onProfileChange}
-        onNotify={onNotify}
-      />,
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
 
     await waitFor(() => {
-      expect(container.querySelector("[data-testid='profile-selector-loading']")).toBeNull();
+      expect(
+        container.querySelector("[data-testid='profile-selector-loading']"),
+      ).toBeNull();
     });
 
-    expect(container.querySelector("[data-testid='profile-selector-section']")).toBeNull();
+    expect(
+      container.querySelector("[data-testid='profile-selector-section']"),
+    ).toBeNull();
   });
 
   it("handles API error gracefully on load", async () => {
     mockListProfiles.mockRejectedValue(new Error("Network error"));
 
     render(
-      <ProfileSelector
-        onProfileChange={onProfileChange}
-        onNotify={onNotify}
-      />,
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
 
     await waitFor(() => {
@@ -472,10 +451,7 @@ describe("ProfileSelector", () => {
     mockActivateProfile.mockRejectedValue(new Error("Connection error"));
 
     render(
-      <ProfileSelector
-        onProfileChange={onProfileChange}
-        onNotify={onNotify}
-      />,
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
 
     await waitFor(() => {
@@ -498,7 +474,9 @@ describe("ProfileSelector", () => {
       expect(onNotify).toHaveBeenCalledWith("error", expect.any(String));
     });
 
-    const dropdown = screen.getByTestId("profile-dropdown") as HTMLSelectElement;
+    const dropdown = screen.getByTestId(
+      "profile-dropdown",
+    ) as HTMLSelectElement;
     expect(dropdown.value).toBe("my-reneryo");
   });
 });

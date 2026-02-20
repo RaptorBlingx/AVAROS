@@ -10,7 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 from config import APP_VERSION, CORS_ORIGINS, DATABASE_URL, WEB_API_KEY
-from dependencies import get_settings_service
+from dependencies import get_kpi_measurement_service, get_settings_service
+from services.kpi_collector import KPICollector
+from services.kpi_scheduler import KPIScheduler
+from routers.assets import router as assets_router
 from routers.config import router as config_router
 from routers.emission_factors import router as emission_factors_router
 from routers.intents import router as intents_router
@@ -54,9 +57,16 @@ async def api_key_auth_middleware(request: Request, call_next):  # type: ignore[
     return await call_next(request)
 
 
+_kpi_scheduler: KPIScheduler | None = None
+
+_KPI_SITE_ID = "pilot-1"
+
+
 @app.on_event("startup")
-def startup_check() -> None:
-    """Validate shared skill imports and DB-backed settings init path."""
+async def startup() -> None:
+    """Initialize services and start background KPI collection."""
+    global _kpi_scheduler  # noqa: PLW0603
+
     settings_service = get_settings_service()
     settings_service.initialize()
     logger.info(
@@ -64,6 +74,29 @@ def startup_check() -> None:
         settings_service.__class__.__name__,
         bool(DATABASE_URL),
     )
+
+    kpi_service = get_kpi_measurement_service()
+    collector = KPICollector(settings_service, kpi_service)
+
+    try:
+        seeded = await collector.seed_baselines(_KPI_SITE_ID)
+        if seeded:
+            logger.info("Seeded %d KPI baselines for %s", seeded, _KPI_SITE_ID)
+        snapshots = await collector.collect_snapshots(_KPI_SITE_ID)
+        if snapshots:
+            logger.info("Collected %d initial KPI snapshots for %s", snapshots, _KPI_SITE_ID)
+    except Exception:
+        logger.exception("KPI initial data collection failed — will retry on next cycle")
+
+    _kpi_scheduler = KPIScheduler(collector, site_id=_KPI_SITE_ID)
+    await _kpi_scheduler.start()
+
+
+@app.on_event("shutdown")
+def shutdown() -> None:
+    """Stop background tasks."""
+    if _kpi_scheduler is not None:
+        _kpi_scheduler.stop()
 
 
 @app.get("/health")
@@ -74,6 +107,7 @@ def health() -> dict[str, str]:
 
 app.include_router(status_router)
 app.include_router(config_router)
+app.include_router(assets_router)
 app.include_router(emission_factors_router)
 app.include_router(intents_router)
 app.include_router(metrics_router)

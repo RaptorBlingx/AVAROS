@@ -773,3 +773,47 @@ class TestProfileEndpoints:
         """Activating unknown profile returns 404."""
         response = client.post("/api/v1/config/profiles/does-not-exist/activate")
         assert response.status_code == 404
+
+    def test_activate_reneryo_overwrites_cookie(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """Activating reneryo profile forces default cookie auth key."""
+        create_resp = client.post(
+            "/api/v1/config/profiles",
+            json={
+                "name": "reneryo",
+                "platform_type": "reneryo",
+                "api_url": "http://10.33.10.110:30896",
+                "api_key": "old-cookie",
+                "extra_settings": {"auth_type": "bearer"},
+            },
+        )
+        assert create_resp.status_code == 201
+
+        activate_resp = client.post("/api/v1/config/profiles/reneryo/activate")
+        assert activate_resp.status_code == 200
+        assert activate_resp.json()["is_active"] is True
+
+        platform_cfg = settings_service.get_platform_config()
+        assert platform_cfg.platform_type == "reneryo"
+        assert (
+            platform_cfg.api_key
+            == "575e90e9-ac4b-4fa8-a373-1206b67b2ad5."
+            "b4DLZUbCyjECM0mb2C%2Fy9ca%2BekfgWv9tCVc8C5Unq2E%3D"
+        )
+        assert platform_cfg.extra_settings.get("auth_type") == "cookie"
+
+    def test_activate_mock_collects_kpi_data(self, client: TestClient) -> None:
+        """Mock activation triggers baseline seed + historical snapshots."""
+        fake_collector = AsyncMock()
+        fake_collector.seed_baselines = AsyncMock(return_value=3)
+        fake_collector.seed_mock_snapshot_history = AsyncMock(return_value=30)
+
+        with patch("routers.config.KPICollector", return_value=fake_collector):
+            resp = client.post("/api/v1/config/profiles/mock/activate")
+
+        assert resp.status_code == 200
+        fake_collector.seed_baselines.assert_awaited_once_with("pilot-1")
+        fake_collector.seed_mock_snapshot_history.assert_awaited_once_with("pilot-1", points=10)
