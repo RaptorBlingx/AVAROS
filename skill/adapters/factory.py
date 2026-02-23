@@ -223,6 +223,7 @@ class AdapterFactory:
         timeout = 30
         auth_type = "bearer"
         api_format = "native"
+        native_seu_id = ""
         profile_name = ""
         extra: dict = {}
         asset_mappings: dict[str, dict[str, object]] = {}
@@ -252,6 +253,11 @@ class AdapterFactory:
                         if isinstance(extra, dict)
                         else "native"
                     )
+                    native_seu_id = (
+                        str(extra.get("seu_id", "")).strip()
+                        if isinstance(extra, dict)
+                        else ""
+                    )
                     if isinstance(extra, dict):
                         raw_mappings = extra.get("asset_mappings", {})
                         if isinstance(raw_mappings, dict):
@@ -267,11 +273,19 @@ class AdapterFactory:
             timeout=timeout,
             auth_type=auth_type,
             api_format=api_format,
+            native_seu_id=native_seu_id,
             settings_service=self._settings_service,
             profile_name=profile_name,
-            extra_settings=extra if isinstance(extra, dict) else {},
+            extra_settings=self._sanitize_extra_settings(extra),
             asset_mappings=asset_mappings,
         )
+
+    @staticmethod
+    def _sanitize_extra_settings(extra_settings: dict | None) -> dict:
+        """Strip deprecated keys before passing settings to adapter runtime."""
+        sanitized = dict(extra_settings or {})
+        sanitized.pop("seu_id", None)
+        return sanitized
 
     @classmethod
     def register_adapter(

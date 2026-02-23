@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "avaros-skill"
+version = "0.1.0"
+description = "AVAROS OVOS Skill - Voice-Driven Manufacturing KPI Assistant"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["skill*"]

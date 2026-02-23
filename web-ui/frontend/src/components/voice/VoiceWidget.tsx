@@ -9,8 +9,7 @@ import {
 } from "../common/onboarding";
 import ChatPanel from "./ChatPanel";
 import RecordingIndicator from "./RecordingIndicator";
-import ResponseDisplay from "./ResponseDisplay";
-import TranscriptDisplay from "./TranscriptDisplay";
+import brandLogoSrc from "../../assets/logov.svg";
 import {
   buildImmediateAssistantReply,
   buildGuidanceForUtterance,
@@ -38,10 +37,11 @@ export default function VoiceWidget({
   const widgetRef = useRef<HTMLElement | null>(null);
   const {
     voiceState,
+    voiceMode,
     micPermission,
     startListening,
     stopListening,
-    interimTranscript,
+    cancelCurrentQuery,
     finalTranscript,
     speak,
     stopSpeaking,
@@ -58,6 +58,7 @@ export default function VoiceWidget({
     isSpeaking: isHiveSpeaking,
     isProcessing,
     voiceEnabled,
+    cancelProcessing,
   } = useHiveMind();
 
   const [expanded, setExpanded] = useState(false);
@@ -194,7 +195,7 @@ export default function VoiceWidget({
       const guidance = buildGuidanceForUtterance(lastUserUtteranceRef.current);
       const fallbackText =
         guidance ??
-        "I couldn't match that request yet. Try: 'show energy trend today', 'check production anomaly', or 'compare energy'.";
+        "I couldn't match that request yet. Try: 'show energy trend today', 'check production anomalies', or 'compare energy'.";
       setResponseFallback(fallbackText);
       setLocalError("");
       addAvarosResponse(fallbackText);
@@ -202,6 +203,19 @@ export default function VoiceWidget({
 
     return () => window.clearTimeout(timer);
   }, [awaitingResponse, addAvarosResponse]);
+
+  const handleCancelRequest = useCallback(() => {
+    cancelCurrentQuery();
+    cancelProcessing();
+    setAwaitingResponse(false);
+    setIgnoreStuckProcessing(true);
+    setActiveResponse(null);
+    setResponseReceivedAt(null);
+    setLocalError("");
+    const fallbackText = "Request cancelled.";
+    setResponseFallback(fallbackText);
+    addAvarosResponse(fallbackText);
+  }, [cancelCurrentQuery, cancelProcessing, addAvarosResponse]);
 
   useEffect(() => {
     if (!expanded) {
@@ -212,12 +226,13 @@ export default function VoiceWidget({
       if (event.key !== "Escape") return;
       if (visualState === "listening") stopListening();
       if (visualState === "speaking") stopSpeaking();
+      if (visualState === "processing") handleCancelRequest();
       setExpanded(false);
     };
 
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
-  }, [expanded, visualState, stopListening, stopSpeaking]);
+  }, [expanded, visualState, stopListening, stopSpeaking, handleCancelRequest]);
 
   useEffect(() => {
     const onOnboardingVoiceFocus = (event: Event) => {
@@ -332,11 +347,18 @@ export default function VoiceWidget({
     }
 
     if (visualState === "processing") {
+      handleCancelRequest();
       return;
     }
 
     void requestListening();
-  }, [requestListening, stopListening, stopSpeaking, visualState]);
+  }, [
+    requestListening,
+    stopListening,
+    stopSpeaking,
+    handleCancelRequest,
+    visualState,
+  ]);
 
   const handleReplay = useCallback(() => {
     if (!displayedResponse || !ttsSupported) {
@@ -455,12 +477,40 @@ export default function VoiceWidget({
           data-onboarding-target="voice-widget-panel"
         >
           <header className="voice-widget__header">
-            <div>
-              <p className="voice-widget__title">Voice Assistant</p>
-              <p className="voice-widget__state">
-                {STATE_META[visualState].label}
-              </p>
+            <div className="flex flex-row gap-4">
+              <img src={brandLogoSrc} alt="AVAROS" className="w-10 h-10" />
+
+              <div className="voice-widget__header-left">
+                <p className="voice-widget__title">Voice Assistant</p>
+                <p className="voice-widget__state" aria-live="polite">
+                  {STATE_META[visualState].label}
+                </p>
+              </div>
             </div>
+            {voiceMode !== "text" && (
+              <button
+                type="button"
+                className={`voice-widget__header-action voice-widget__header-action--${visualState}`}
+                onClick={handlePrimaryAction}
+                disabled={visualState === "disconnected"}
+                title={
+                  visualState === "processing"
+                    ? "Cancel current request"
+                    : buttonTitle
+                }
+                aria-label={getActionLabel(visualState)}
+              >
+                <span
+                  className="voice-widget__header-action__icon"
+                  aria-hidden="true"
+                >
+                  {renderStateIcon(visualState)}
+                </span>
+                <span className="voice-widget__header-action__label">
+                  {getActionLabel(visualState)}
+                </span>
+              </button>
+            )}
           </header>
 
           {permissionMessage && (
@@ -477,33 +527,6 @@ export default function VoiceWidget({
               )}
             </p>
           )}
-
-          <TranscriptDisplay
-            interimTranscript={interimTranscript}
-            finalTranscript={finalTranscript}
-            listening={visualState === "listening"}
-          />
-
-          <ResponseDisplay
-            responseText={displayedResponse}
-            isSpeaking={visualState === "speaking"}
-            receivedAt={responseReceivedAt}
-            canReplay={Boolean(displayedResponse && ttsSupported)}
-            onReplay={handleReplay}
-          />
-
-          <div className="voice-widget__actions">
-            <button
-              type="button"
-              className="voice-widget__action"
-              onClick={handlePrimaryAction}
-              disabled={
-                visualState === "processing" || visualState === "disconnected"
-              }
-            >
-              {getActionLabel(visualState)}
-            </button>
-          </div>
 
           <ChatPanel
             messages={conversationMessages}

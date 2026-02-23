@@ -6,7 +6,7 @@ COPY web-ui/frontend/package.json ./
 RUN npm install
 
 COPY web-ui/frontend/ ./
-RUN npm run build
+RUN npm run build && npm run build:widget
 
 FROM python:3.11-slim
 

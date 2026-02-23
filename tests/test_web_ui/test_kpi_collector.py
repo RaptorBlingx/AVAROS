@@ -52,7 +52,7 @@ def _make_settings(platform_type: str = "reneryo") -> SettingsService:
                 platform_type=platform_type,
                 api_url="http://10.33.10.110:30896",
                 api_key="test-key",
-                extra_settings={"auth_type": "cookie", "seu_id": "test-seu"},
+                extra_settings={"auth_type": "cookie"},
             )
         )
     return svc

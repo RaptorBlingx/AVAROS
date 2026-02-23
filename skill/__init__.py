@@ -60,15 +60,18 @@ class AVAROSSkill(FallbackSkill):
         # Use the directory containing this __init__.py file
         from pathlib import Path
         self._dir = str(Path(__file__).parent)
-        
-        super().__init__(*args, **kwargs)
-        
+
+        # OVOS may call initialize() during super().__init__(), so define
+        # runtime attributes before calling into base class startup.
         self.settings_service = None
         self.adapter_factory: AdapterFactory | None = None
         self.dispatcher: QueryDispatcher | None = None
         self.response_builder: ResponseBuilder | None = None
         self._loaded_profile: str = "mock"
         self._loaded_platform: str = "mock"
+        self._is_initialized: bool = False
+
+        super().__init__(*args, **kwargs)
 
     @property
     def native_langs(self) -> List[str]:
@@ -92,6 +95,10 @@ class AVAROSSkill(FallbackSkill):
         configuration from SettingsService (DB-backed) if available, otherwise
         uses MockAdapter for zero-config demo deployment (DEC-005).
         """
+        if self._is_initialized:
+            self.log.info("AVAROS skill already initialized; skipping duplicate initialize()")
+            return
+
         # Import SettingsService lazily to avoid circular imports
         from skill.services.settings import SettingsService
         
@@ -110,6 +117,14 @@ class AVAROSSkill(FallbackSkill):
         self.adapter_factory = AdapterFactory(settings_service=self.settings_service)
         adapter = self.adapter_factory.create()
         self.dispatcher = QueryDispatcher(adapter=adapter)
+        try:
+            # Initialize adapter in the dispatcher's runtime loop to avoid
+            # cross-loop aiohttp session ownership and leaked sessions.
+            self.dispatcher._run_async(adapter.initialize())
+        except Exception as exc:
+            self.log.warning(
+                "Adapter initialize failed at startup: %s", exc,
+            )
         self.response_builder = ResponseBuilder(verbosity="normal")
 
         # Track active profile for lazy-reload (DEC-029)
@@ -125,6 +140,7 @@ class AVAROSSkill(FallbackSkill):
             type(adapter).__name__,
             self._loaded_profile,
         )
+        self._is_initialized = True
 
     # =================================================================
     # Profile Reload (DEC-029)
@@ -739,6 +755,8 @@ class AVAROSSkill(FallbackSkill):
             asset_id = self._resolve_asset_id(message)
             period = self._parse_period(message.data.get("period", "last week"))
             granularity = message.data.get("granularity", "daily")
+            if period.duration_days < 2 and granularity == "daily":
+                granularity = "hourly"
             
             result: TrendResult = self.dispatcher.get_trend(
                 metric=CanonicalMetric.ENERGY_PER_UNIT,
@@ -1257,8 +1275,24 @@ class AVAROSSkill(FallbackSkill):
         return asset_a or "Asset-1", asset_b or "Asset-2"
 
     def stop(self):
-        """Optional cleanup when skill is stopped."""
-        pass
+        """Cleanup runtime resources when skill is stopped."""
+        try:
+            if self.dispatcher is not None:
+                import asyncio
+                shutdown_coro = self.dispatcher.adapter.shutdown()
+                try:
+                    running_loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    running_loop = None
+
+                if running_loop and running_loop.is_running():
+                    running_loop.create_task(shutdown_coro)
+                else:
+                    asyncio.run(shutdown_coro)
+        except Exception as exc:
+            self.log.warning("Adapter shutdown during stop() failed: %s", exc)
+        finally:
+            self._is_initialized = False
 
 
 def create_skill():

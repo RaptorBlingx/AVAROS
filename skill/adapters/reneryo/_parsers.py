@@ -91,6 +91,10 @@ def parse_trend_response(
             message=f"Empty trend response for {metric.value}",
             code="RENERYO_INVALID_RESPONSE",
             platform="reneryo",
+            user_message=(
+                "I could not find trend data for that period. "
+                "Try a wider range like this week or this month."
+            ),
         )
 
     data_points = _parse_data_points(data, metric)

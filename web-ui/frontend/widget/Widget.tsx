@@ -7,6 +7,7 @@ import {
   type CSSProperties,
 } from "react";
 
+import { normalizeUtteranceForIntent } from "../src/services/intent-normalizer";
 import { ConnectionManager } from "./ConnectionManager";
 import { WidgetButton } from "./WidgetButton";
 import { WidgetPanel } from "./WidgetPanel";
@@ -187,7 +188,9 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   const [connectionState, setConnectionState] = useState<WidgetConnectionState>("disconnected");
   const [mode, setMode] = useState<WidgetMode>(pickInitialMode(config.disabledModes));
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">(deriveTheme(config.theme));
-  const [speakingPulse, setSpeakingPulse] = useState(false);
+  const [isTtsSpeaking, setIsTtsSpeaking] = useState(false);
+  const setTtsSpeakingRef = useRef<(v: boolean) => void>(() => {});
+  setTtsSpeakingRef.current = setIsTtsSpeaking;
   const [micActive, setMicActive] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
   const [wakeWordArmed, setWakeWordArmed] = useState(false);
@@ -229,6 +232,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
 
       const onTtsDone = () => {
         clearTtsWatcher();
+        setTtsSpeakingRef.current?.(false);
         if (modeRef.current === "wake-word") {
           setTimeout(() => {
             restartRecognitionRef.current?.();
@@ -240,6 +244,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
 
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
+      setTtsSpeakingRef.current?.(true);
 
       ttsWatcherRef.current = setInterval(() => {
         if (!window.speechSynthesis.speaking) {
@@ -298,6 +303,14 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     [appendMessage, clearCompletionTimer, clearFallbackTimer, speakAssistantText],
   );
 
+  const handleCancelRequest = useCallback(() => {
+    responseResolvedRef.current = true;
+    clearFallbackTimer();
+    clearCompletionTimer();
+    setProcessing(false);
+    appendMessage(makeMessage("avaros", "Request cancelled."));
+  }, [appendMessage, clearCompletionTimer, clearFallbackTimer]);
+
   const stopListening = useCallback(() => {
     const recognition = recognitionRef.current;
     if (!recognition) {
@@ -329,6 +342,8 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       const manager = managerRef.current;
       if (!manager) return;
 
+      const toSend = normalizeUtteranceForIntent(cleaned);
+
       appendMessage(makeMessage("user", cleaned));
       setProcessing(true);
       responseResolvedRef.current = false;
@@ -346,7 +361,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       }, 8000);
 
       try {
-        await manager.sendUtterance(cleaned);
+        await manager.sendUtterance(toSend);
       } catch {
         clearFallbackTimer();
         clearCompletionTimer();
@@ -539,8 +554,6 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     });
     const offSpeak = manager.onSpeak((text) => {
       resolveAssistantMessage(text);
-      setSpeakingPulse(true);
-      window.setTimeout(() => setSpeakingPulse(false), 1600);
     });
     const offMouthText = manager.on("enclosure.mouth.text", (message) => {
       const maybeText =
@@ -625,6 +638,10 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
 
     const onEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (processing) {
+          handleCancelRequest();
+          return;
+        }
         setPanelOpen(false);
       }
     };
@@ -642,7 +659,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       window.removeEventListener("keydown", onEscape);
       document.removeEventListener("mousedown", onOutsideClick);
     };
-  }, [panelOpen, stopListening]);
+  }, [panelOpen, stopListening, processing, handleCancelRequest]);
 
   useEffect(() => {
     if (!panelOpen) return;
@@ -673,11 +690,11 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     if (configError) return "disabled";
     if (connectionState === "error") return "error";
     if (processing) return "processing";
-    if (speakingPulse) return "speaking";
+    if (isTtsSpeaking) return "speaking";
     if (micActive || (mode === "wake-word" && panelOpen)) return "listening";
     if (connectionState === "disconnected") return "error";
     return "idle";
-  }, [configError, connectionState, micActive, mode, panelOpen, processing, speakingPulse]);
+  }, [configError, connectionState, micActive, mode, panelOpen, processing, isTtsSpeaking]);
 
   const connectionTooltip =
     configError ??
@@ -716,6 +733,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
             inputValue={inputValue}
             processing={processing}
             sendDisabled={sendDisabled}
+            visualState={visualState}
             onListenToggle={() => {
               if (micActive) {
                 stopListening();
@@ -723,17 +741,16 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
               }
               startListening();
             }}
+            onCancelRequest={handleCancelRequest}
             onInputChange={setInputValue}
-          onSend={() => {
-            const toSend = inputValue;
-            setInputValue("");
-            void sendText(toSend);
-          }}
-            brandLogoSrc={
-              resolvedTheme === "dark"
-                ? "/src/assets/logodark.svg"
-                : "/src/assets/logo.svg"
-            }
+            onSend={() => {
+              const toSend = inputValue;
+              setInputValue("");
+              void sendText(toSend);
+            }}
+            onClear={() => setMessages([])}
+            onStopSpeaking={() => setIsTtsSpeaking(false)}
+            brandLogoSrc="/widget-logo.svg"
             onModeChange={(nextMode) => {
               if (config.disabledModes.includes(nextMode)) return;
               setMode(nextMode);

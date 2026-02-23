@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Message } from "../../hooks/useConversation";
 import ChatInput from "./ChatInput";
 import MessageHistory from "./MessageHistory";
@@ -8,6 +9,7 @@ type ChatPanelProps = {
   isProcessing: boolean;
   isConnected: boolean;
   canReplay: boolean;
+  primaryAction?: ReactNode;
   onSendText: (text: string) => Promise<void>;
   onReplayResponse: (text: string) => void;
   onClearConversation: () => void;
@@ -18,13 +20,19 @@ export default function ChatPanel({
   isProcessing,
   isConnected,
   canReplay,
+  primaryAction,
   onSendText,
   onReplayResponse,
   onClearConversation,
 }: ChatPanelProps) {
   return (
     <section className="voice-chat-panel" aria-label="Chat panel">
-      <ModeToggle />
+      <div className={`voice-chat-controls${primaryAction ? " voice-chat-controls--with-action" : ""}`}>
+        <ModeToggle />
+        {primaryAction ? (
+          <div className="voice-chat-primary-action-wrap">{primaryAction}</div>
+        ) : null}
+      </div>
       <MessageHistory
         messages={messages}
         isProcessing={isProcessing}

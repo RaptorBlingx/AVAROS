@@ -1,4 +1,8 @@
-import type { WidgetConnectionState, WidgetSize, WidgetVisualState } from "./types";
+import type {
+  WidgetConnectionState,
+  WidgetSize,
+  WidgetVisualState,
+} from "./types";
 
 type WidgetButtonProps = {
   visualState: WidgetVisualState;
@@ -12,16 +16,40 @@ type WidgetButtonProps = {
 
 const SIZE_TO_PX: Record<WidgetSize, number> = {
   small: 40,
-  medium: 56,
+  medium: 58,
   large: 72,
 };
 
-const CONNECTION_CLASS: Record<WidgetConnectionState, string> = {
-  connected: "aw-connection-dot--connected",
-  connecting: "aw-connection-dot--connecting",
-  disconnected: "aw-connection-dot--disconnected",
-  error: "aw-connection-dot--disconnected",
-};
+function RecordingIndicator({
+  active,
+  variant,
+}: {
+  active: boolean;
+  variant: "listening" | "speaking";
+}) {
+  if (!active) return null;
+  return (
+    <span
+      className={`voice-recording-indicator voice-recording-indicator--${variant}`}
+      aria-hidden="true"
+    >
+      <span className="voice-recording-indicator__ring voice-recording-indicator__ring--one" />
+      <span className="voice-recording-indicator__ring voice-recording-indicator__ring--two" />
+      <span className="voice-recording-indicator__ring voice-recording-indicator__ring--three" />
+      <span className="voice-recording-indicator__bars">
+        {[0, 1, 2, 3, 4].map((bar) => (
+          <span
+            key={bar}
+            className="voice-recording-indicator__bar"
+            style={
+              { "--voice-bar-delay": `${bar * 90}ms` } as React.CSSProperties
+            }
+          />
+        ))}
+      </span>
+    </span>
+  );
+}
 
 function renderIcon(state: WidgetVisualState) {
   if (state === "processing") {
@@ -49,7 +77,15 @@ function renderIcon(state: WidgetVisualState) {
 
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" strokeWidth="1.8" />
+      <rect
+        x="9"
+        y="3"
+        width="6"
+        height="11"
+        rx="3"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
       <path
         d="M6 11a6 6 0 0012 0M12 17v4M8.5 21h7"
         stroke="currentColor"
@@ -57,7 +93,12 @@ function renderIcon(state: WidgetVisualState) {
         strokeLinecap="round"
       />
       {state === "disabled" ? (
-        <path d="M4 4l16 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <path
+          d="M4 4l16 16"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
       ) : null}
     </svg>
   );
@@ -79,6 +120,19 @@ export function WidgetButton({
   onClick,
   tooltip,
 }: WidgetButtonProps) {
+  const showRecordingIndicator =
+    visualState === "listening" || visualState === "speaking";
+  const recordingVariant =
+    visualState === "speaking" ? "speaking" : "listening";
+  const dotState =
+    visualState === "disabled"
+      ? "disconnected"
+      : connectionState === "connected"
+      ? "connected"
+      : connectionState === "error"
+      ? "error"
+      : "disconnected";
+
   return (
     <button
       type="button"
@@ -88,10 +142,17 @@ export function WidgetButton({
       title={tooltip}
       aria-label={open ? "Close AVAROS widget" : "Open AVAROS widget"}
     >
+      <RecordingIndicator
+        active={showRecordingIndicator}
+        variant={recordingVariant}
+      />
       <span className="voice-widget__icon" aria-hidden="true">
         {renderIcon(visualState)}
       </span>
-      <span className={`aw-connection-dot ${CONNECTION_CLASS[connectionState]}`} />
+      <span
+        className={`voice-widget__dot voice-widget__dot--${dotState}`}
+        aria-hidden="true"
+      />
       {label ? <span className="aw-widget-label">{label}</span> : null}
     </button>
   );

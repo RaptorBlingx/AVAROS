@@ -10,6 +10,7 @@ from schemas.config import (
     PlatformConfigRequest,
     PlatformConfigResponse,
     ResetResponse,
+    sanitize_extra_settings,
 )
 from skill.adapters.base import ManufacturingAdapter
 from skill.services.settings import PlatformConfig, SettingsService
@@ -31,7 +32,7 @@ def _to_response(config: PlatformConfig) -> PlatformConfigResponse:
         platform_type=config.platform_type,
         api_url=config.api_url,
         api_key=_mask_api_key(config.api_key),
-        extra_settings=config.extra_settings,
+        extra_settings=sanitize_extra_settings(config.extra_settings),
     )
 
 
@@ -45,7 +46,7 @@ def upsert_platform_config(
         platform_type=payload.platform_type,
         api_url=payload.api_url,
         api_key=payload.api_key,
-        extra_settings=payload.extra_settings,
+        extra_settings=sanitize_extra_settings(payload.extra_settings),
     )
     settings_service.update_platform_config(config)
     return _to_response(settings_service.get_platform_config())
@@ -134,7 +135,8 @@ def _create_adapter_from_config(
             timeout=payload.extra_settings.get("timeout", 10),
             auth_type=payload.extra_settings.get("auth_type", "bearer"),
             api_format=payload.extra_settings.get("api_format", "native"),
-            native_seu_id=payload.extra_settings.get("seu_id", ""),
+            native_seu_id=str(payload.extra_settings.get("seu_id", "")).strip(),
+            extra_settings=sanitize_extra_settings(payload.extra_settings),
         )
 
     raise ValueError(f"Unknown platform type: {payload.platform_type}")

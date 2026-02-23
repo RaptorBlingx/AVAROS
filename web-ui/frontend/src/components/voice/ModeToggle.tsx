@@ -6,7 +6,6 @@ import { useVoice } from "../../contexts/VoiceContext";
 type ModeMeta = {
   mode: VoiceMode;
   label: string;
-  icon: string;
   tooltip: string;
 };
 
@@ -14,19 +13,16 @@ const MODES: ModeMeta[] = [
   {
     mode: "wake-word",
     label: "Wake Word",
-    icon: "🎤",
-    tooltip: "Hands-free mode. Say 'Hey AVAROS' to start.",
+    tooltip: "Hands-free. Say 'Hey AVAROS' to start.",
   },
   {
     mode: "push-to-talk",
-    label: "Push-to-Talk",
-    icon: "🔘",
-    tooltip: "Manual mode. Press mic button when speaking.",
+    label: "PTT",
+    tooltip: "Press mic button when speaking.",
   },
   {
     mode: "text",
     label: "Text",
-    icon: "⌨️",
     tooltip: "Keyboard mode. Audio capture is stopped.",
   },
 ];
@@ -115,8 +111,7 @@ export default function ModeToggle() {
               void handleSelect(item.mode);
             }}
           >
-            <span aria-hidden="true">{item.icon}</span>
-            <span>{item.label}</span>
+            {item.label}
           </button>
         ))}
       </div>
