@@ -50,4 +50,5 @@ export type WidgetPublicApi = {
   destroy: () => void;
   send: (text: string) => void;
   isConnected: () => boolean;
+  activateVoice: () => void;
 };

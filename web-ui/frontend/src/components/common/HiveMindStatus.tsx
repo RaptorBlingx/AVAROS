@@ -12,6 +12,7 @@
 import { useCallback, useState } from "react";
 
 import { useHiveMind } from "../../contexts/HiveMindContext";
+import { useVoice } from "../../contexts/VoiceContext";
 import { useTheme } from "./ThemeProvider";
 
 const STATE_CONFIG = {
@@ -53,19 +54,26 @@ export default function HiveMindStatus() {
     isProcessing,
   } = useHiveMind();
   const { isDark } = useTheme();
-  const [showDetails, setShowDetails] = useState(false);
+  const { requestMicPermission, setVoiceMode } = useVoice();
+  const [showDetails, setShowDetails] = useState(true);
 
   const handleToggle = useCallback(async () => {
     if (isConnected) {
       disconnect();
     } else {
       try {
+        // Use explicit user click on "Connect" to satisfy browser gesture
+        // requirements for microphone activation in wake-word mode.
+        const mic = await requestMicPermission();
+        if (mic === "granted") {
+          await setVoiceMode("wake-word");
+        }
         await connect();
       } catch {
         // state change handled by context
       }
     }
-  }, [isConnected, connect, disconnect]);
+  }, [isConnected, connect, disconnect, requestMicPermission, setVoiceMode]);
 
   const effectiveState = voiceEnabled ? connectionState : "disconnected";
   const config = STATE_CONFIG[effectiveState];

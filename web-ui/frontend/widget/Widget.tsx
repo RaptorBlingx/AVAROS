@@ -40,7 +40,7 @@ function getSpeechRecognitionCtor(): BrowserSpeechRecognitionCtor | null {
 }
 
 function pickInitialMode(disabledModes: WidgetMode[]): WidgetMode {
-  const preferredOrder: WidgetMode[] = ["push-to-talk", "text", "wake-word"];
+  const preferredOrder: WidgetMode[] = ["wake-word", "push-to-talk", "text"];
   const nextMode = preferredOrder.find((mode) => !disabledModes.includes(mode));
   return nextMode ?? "text";
 }
@@ -192,6 +192,9 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   const setTtsSpeakingRef = useRef<(v: boolean) => void>(() => {});
   setTtsSpeakingRef.current = setIsTtsSpeaking;
   const [micActive, setMicActive] = useState(false);
+  const [micPermission, setMicPermission] = useState<
+    "prompt" | "granted" | "denied" | "unsupported"
+  >("prompt");
   const [micError, setMicError] = useState<string | null>(null);
   const [wakeWordArmed, setWakeWordArmed] = useState(false);
   const [ttsVoice, setTtsVoice] = useState<SpeechSynthesisVoice | null>(null);
@@ -260,6 +263,34 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     if (!managerRef.current) return;
     managerRef.current.connect();
   }, [configError]);
+
+  const requestMicPermission = useCallback(async (): Promise<boolean> => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setMicPermission("unsupported");
+      setMicError("Microphone API is unavailable in this browser.");
+      return false;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      setMicPermission("granted");
+      setMicError(null);
+      return true;
+    } catch (error) {
+      if (
+        error instanceof DOMException &&
+        (error.name === "NotAllowedError" || error.name === "PermissionDeniedError")
+      ) {
+        setMicPermission("denied");
+        setMicError("Microphone permission blocked. Allow access and retry.");
+        return false;
+      }
+      setMicPermission("denied");
+      setMicError("Could not access microphone.");
+      return false;
+    }
+  }, []);
 
   const clearFallbackTimer = useCallback(() => {
     if (fallbackTimerRef.current !== null) {
@@ -379,7 +410,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     ],
   );
 
-  const startListening = useCallback(() => {
+  const startListening = useCallback(async () => {
     if (configError) return;
 
     if (!window.isSecureContext && window.location.hostname !== "localhost") {
@@ -391,6 +422,13 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     if (activeMode === "text") {
       setMicError("Text mode active. Switch to voice mode.");
       return;
+    }
+    if (micPermission !== "granted") {
+      const granted = await requestMicPermission();
+      if (!granted) {
+        setMicError("Allow microphone first.");
+        return;
+      }
     }
 
     const RecognitionCtor = getSpeechRecognitionCtor();
@@ -428,6 +466,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
           if (isOwnPromptEcho(transcript)) continue;
           const parsed = parseWakeWordUtterance(transcript);
           if (parsed.hasWakeWord && parsed.command) {
+            setPanelOpen(true);
             wakeWordArmedRef.current = false;
             setWakeWordArmed(false);
             void sendText(parsed.command);
@@ -435,6 +474,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
           }
 
           if (parsed.hasWakeWord && !parsed.command) {
+            setPanelOpen(true);
             wakeWordArmedRef.current = true;
             setWakeWordArmed(true);
             appendMessage(makeMessage("avaros", "How can I help you?"));
@@ -446,6 +486,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
             const lower = transcript.toLowerCase().trim();
             const isRetrigger = /^(hey|hi|ok|okay|hei|hay)\b/i.test(lower);
             if (isRetrigger) {
+              setPanelOpen(true);
               wakeWordArmedRef.current = true;
               setWakeWordArmed(true);
               appendMessage(makeMessage("avaros", "How can I help you?"));
@@ -507,7 +548,14 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       setMicActive(false);
       setMicError("Could not start microphone.");
     }
-  }, [appendMessage, configError, sendText, stopListening]);
+  }, [
+    appendMessage,
+    configError,
+    micPermission,
+    requestMicPermission,
+    sendText,
+    stopListening,
+  ]);
 
   useEffect(() => {
     restartRecognitionRef.current = startListening;
@@ -533,6 +581,27 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     syncVoices();
     synth.addEventListener("voiceschanged", syncVoices);
     return () => synth.removeEventListener("voiceschanged", syncVoices);
+  }, []);
+
+  useEffect(() => {
+    if (!navigator.permissions) return;
+    void navigator.permissions
+      .query({ name: "microphone" as PermissionName })
+      .then((result) => {
+        if (result.state === "granted") {
+          setMicPermission("granted");
+        } else if (result.state === "denied") {
+          setMicPermission("denied");
+        } else {
+          setMicPermission("prompt");
+        }
+        result.onchange = () => {
+          if (result.state === "granted") setMicPermission("granted");
+          else if (result.state === "denied") setMicPermission("denied");
+          else setMicPermission("prompt");
+        };
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -585,8 +654,6 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       }, 700);
     });
 
-    manager.connect();
-
     return () => {
       offState();
       offSpeak();
@@ -631,7 +698,9 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
 
   useEffect(() => {
     if (!panelOpen) {
-      stopListening();
+      if (mode !== "wake-word") {
+        stopListening();
+      }
       setWakeWordArmed(false);
       return;
     }
@@ -659,17 +728,22 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       window.removeEventListener("keydown", onEscape);
       document.removeEventListener("mousedown", onOutsideClick);
     };
-  }, [panelOpen, stopListening, processing, handleCancelRequest]);
+  }, [panelOpen, stopListening, mode, processing, handleCancelRequest]);
 
   useEffect(() => {
-    if (!panelOpen) return;
-    if (mode === "wake-word" && !micActive && !recognitionRef.current) {
-      startListening();
+    if (
+      mode === "wake-word" &&
+      connectionState === "connected" &&
+      micPermission === "granted" &&
+      !micActive &&
+      !recognitionRef.current
+    ) {
+      void startListening();
     }
     if (mode !== "wake-word") {
       setWakeWordArmed(false);
     }
-  }, [micActive, mode, panelOpen, startListening]);
+  }, [connectionState, micActive, micPermission, mode, startListening]);
 
   useEffect(() => {
     onReady({
@@ -678,23 +752,54 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
         setPanelOpen(true);
       },
       close: () => setPanelOpen(false),
+      activateVoice: () => {
+        ensureConnected();
+        if (!config.disabledModes.includes("wake-word")) {
+          setMode("wake-word");
+        }
+        void requestMicPermission()
+          .then((granted) => {
+            if (!granted) return;
+            void startListening();
+          })
+          .catch(() => undefined);
+      },
       send: (text: string) => {
         setPanelOpen(true);
         void sendText(text);
       },
       isConnected: () => managerRef.current?.isConnected() ?? false,
     });
-  }, [ensureConnected, onReady, sendText]);
+  }, [
+    config.disabledModes,
+    ensureConnected,
+    onReady,
+    requestMicPermission,
+    sendText,
+    startListening,
+  ]);
 
   const visualState: WidgetVisualState = useMemo(() => {
     if (configError) return "disabled";
     if (connectionState === "error") return "error";
     if (processing) return "processing";
     if (isTtsSpeaking) return "speaking";
+    const isPassiveWakeWordListening =
+      mode === "wake-word" && micActive && !wakeWordArmed && !panelOpen;
+    if (isPassiveWakeWordListening) return "idle";
     if (micActive || (mode === "wake-word" && panelOpen)) return "listening";
     if (connectionState === "disconnected") return "error";
     return "idle";
-  }, [configError, connectionState, micActive, mode, panelOpen, processing, isTtsSpeaking]);
+  }, [
+    configError,
+    connectionState,
+    micActive,
+    mode,
+    panelOpen,
+    processing,
+    isTtsSpeaking,
+    wakeWordArmed,
+  ]);
 
   const connectionTooltip =
     configError ??
@@ -739,7 +844,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
                 stopListening();
                 return;
               }
-              startListening();
+              void startListening();
             }}
             onCancelRequest={handleCancelRequest}
             onInputChange={setInputValue}

@@ -69,7 +69,9 @@ function resolveScriptElement(): HTMLScriptElement | null {
   }
 
   const scripts = Array.from(
-    document.querySelectorAll('script[src*="avaros-widget.js"]'),
+    document.querySelectorAll(
+      'script[src*="avaros-widget.js"], script[src*="/widget/index.tsx"], script[data-widget-loader="true"]',
+    ),
   );
   const last = scripts[scripts.length - 1];
   return last instanceof HTMLScriptElement ? last : null;
@@ -134,6 +136,7 @@ function bootstrap(): void {
     close: () => undefined,
     send: () => undefined,
     isConnected: () => false,
+    activateVoice: () => undefined,
   };
 
   const destroy = () => {
@@ -149,6 +152,7 @@ function bootstrap(): void {
     close: () => runtimeApi.close(),
     send: (text: string) => runtimeApi.send(text),
     isConnected: () => runtimeApi.isConnected(),
+    activateVoice: () => runtimeApi.activateVoice(),
     destroy,
   };
 
@@ -161,6 +165,7 @@ function bootstrap(): void {
         runtimeApi.close = api.close;
         runtimeApi.send = api.send;
         runtimeApi.isConnected = api.isConnected;
+        runtimeApi.activateVoice = api.activateVoice;
       }}
     />,
   );

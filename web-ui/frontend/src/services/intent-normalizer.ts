@@ -43,19 +43,19 @@ export function normalizeUtteranceForIntent(raw: string): string {
   text = text.replace(/\b(scrap|waste)\s+trend\b/gi, "$1 rate trend");
   text = text.replace(
     /\bcheck production on amalie\b/gi,
-    "check production anomaly",
+    "check production anomalies",
   );
   text = text.replace(
     /\bcheck production on a money\b/gi,
-    "check production anomaly",
+    "check production anomalies",
   );
   text = text.replace(
     /\bcheck production on anomaly\b/gi,
-    "check production anomaly",
+    "check production anomalies",
   );
   text = text.replace(
     /\bcheck production anomal(y|ies)\b/gi,
-    "check production anomaly",
+    "check production anomalies",
   );
   text = text.replace(
     /\bwhat is temperature (increase|increases|increased|raise|raises|raised)\s+by\s+([0-9]+(?:\.[0-9]+)?)\s*degrees?\b/gi,
@@ -92,7 +92,7 @@ export function normalizeUtteranceForIntent(raw: string): string {
     compact === "show production anomalies" ||
     compact === "show production anomaly"
   ) {
-    return "check production anomaly";
+    return "check production anomalies";
   }
   if (compact === "energy trend" || compact === "energy trends") {
     return "show energy trend";

@@ -18,6 +18,17 @@ import type { WakeWordState } from "../services/wake-word-types";
 import { VoiceModeService, type VoiceMode } from "../services/voice-mode";
 import type { STTService } from "../services/stt";
 
+const VOICE_MODE_STORAGE_KEY = "avaros-voice-mode";
+
+function getInitialVoiceMode(): VoiceMode {
+  if (typeof window === "undefined") return "text";
+  const raw = window.localStorage.getItem(VOICE_MODE_STORAGE_KEY);
+  if (raw === "wake-word" || raw === "push-to-talk" || raw === "text") {
+    return raw;
+  }
+  return "text";
+}
+
 // ── Types ──────────────────────────────────────────────
 
 export interface UseWakeWordResult {
@@ -56,7 +67,7 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
   const [wakeWordFallbackActive, setWakeWordFallbackActive] = useState(false);
   const [wakeWordSensitivity, setWakeWordSensitivityState] = useState(0.75);
   const [isModelLoading, setIsModelLoading] = useState(false);
-  const [voiceMode, setVoiceModeState] = useState<VoiceMode>("text");
+  const [voiceMode, setVoiceModeState] = useState<VoiceMode>(getInitialVoiceMode);
 
   const wakeWordEnabled = voiceMode === "wake-word";
 
@@ -124,6 +135,9 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
         setWakeWordState("listening");
         setIsModelLoading(false);
         setVoiceModeState("wake-word");
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(VOICE_MODE_STORAGE_KEY, "wake-word");
+        }
       };
 
       const service = ensureVoiceModeService();
@@ -143,6 +157,9 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
         }
         setVoiceModeState(mode);
         sttRef.current?.setContinuous(mode === "wake-word");
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(VOICE_MODE_STORAGE_KEY, mode);
+        }
       } catch (error) {
         if (mode === "wake-word") {
           try {

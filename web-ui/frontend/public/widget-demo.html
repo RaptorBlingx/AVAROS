@@ -3,7 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
     <title>AVAROS Widget Demo</title>
+    <script type="module">
+      // Vite React preamble is required when a page in /public directly imports
+      // TSX modules in dev server mode.
+      if (window.location.port === "5173") {
+        import("/@vite/client");
+        import("/@react-refresh").then(({ default: RefreshRuntime }) => {
+          RefreshRuntime.injectIntoGlobalHook(window);
+          window.$RefreshReg$ = () => {};
+          window.$RefreshSig$ = () => (type) => type;
+          window.__vite_plugin_react_preamble_installed__ = true;
+        });
+      }
+    </script>
     <style>
       :root {
         color-scheme: light;
@@ -155,6 +169,13 @@
 
         <div class="config-grid">
           <label>
+            API Profile
+            <select id="api-profile">
+              <option value="mock">Mock</option>
+              <option value="reneryo">RENERYO</option>
+            </select>
+          </label>
+          <label>
             HiveMind Host
             <input id="host" value="ws://127.0.0.1:5678" />
           </label>
@@ -177,22 +198,15 @@
         </div>
 
         <div class="controls">
-          <button type="button" onclick="applyConfig()">Apply Config</button>
+          <button type="button" onclick="applyConfig()">Load Widget</button>
+          <button type="button" onclick="connectWidget()">Connect + Allow Mic</button>
           <button type="button" onclick="setTheme('light')">Theme: Light</button>
           <button type="button" onclick="setTheme('dark')">Theme: Dark</button>
-          <button type="button" onclick="openWidget()">Open Widget</button>
-          <button type="button" onclick="closeWidget()">Close Widget</button>
-          <button type="button" onclick="sendWidgetMessage('show energy trend today')">
-            Send Test Message
-          </button>
-          <button type="button" onclick="destroyWidget()">Destroy Widget</button>
         </div>
 
         <p id="widget-status" class="status">Widget API status: waiting...</p>
         <p id="widget-connection" class="status">Widget connection: unknown</p>
-        <p class="tips">
-          If widget is not visible, run <code>npm run build:widget</code>, then refresh.
-        </p>
+        <p class="tips">Use <strong>Connect + Allow Mic</strong> once, then say: <code>Hey AVAROS</code>.</p>
       </section>
     </div>
 
@@ -200,6 +214,7 @@
       const statusEl = document.getElementById("widget-status");
       const connectionEl = document.getElementById("widget-connection");
       const hostInput = document.getElementById("host");
+      const apiProfileInput = document.getElementById("api-profile");
       const clientNameInput = document.getElementById("client-name");
       const accessKeyInput = document.getElementById("access-key");
       const accessSecretInput = document.getElementById("access-secret");
@@ -207,6 +222,22 @@
 
       const SCRIPT_ID = "avaros-widget-loader";
       let currentTheme = "light";
+      const PRESETS = {
+        mock: {
+          host: "ws://127.0.0.1:5678",
+          clientName: "avaros-web-client",
+          accessKey: "avaros-web-client",
+          accessSecret: "avaros-web-secret-change-in-production",
+          encryptionKey: "",
+        },
+        reneryo: {
+          host: "ws://127.0.0.1:5678",
+          clientName: "reneryo-web-client",
+          accessKey: "reneryo-web-client",
+          accessSecret: "reneryo-web-secret-change-in-production",
+          encryptionKey: "",
+        },
+      };
 
       function setStatus(text) {
         statusEl.textContent = "Widget API status: " + text;
@@ -234,7 +265,12 @@
 
         const script = document.createElement("script");
         script.id = SCRIPT_ID;
-        script.src = "/avaros-widget.js?v=" + Date.now();
+        script.type = "module";
+        script.dataset.widgetLoader = "true";
+        const isViteDev = window.location.port === "5173";
+        script.src = isViteDev
+          ? "/widget/index.tsx?t=" + Date.now()
+          : "/avaros-widget.js?v=" + Date.now();
         script.dataset.host = String(hostInput.value || "").trim();
         script.dataset.clientName = String(clientNameInput.value || "").trim();
         script.dataset.accessKey = String(accessKeyInput.value || "").trim();
@@ -249,7 +285,7 @@
         script.dataset.disabledModes = "";
 
         script.onload = () => {
-          setStatus("widget script loaded (" + currentTheme + " mode)");
+          setStatus("widget script loaded (" + currentTheme + ", " + apiProfileInput.value + ")");
           window.setTimeout(() => {
             if (window.AvarosWidget) {
               setStatus("ready");
@@ -257,7 +293,7 @@
           }, 120);
         };
         script.onerror = () => {
-          setStatus("failed to load /avaros-widget.js");
+          setStatus("failed to load widget script");
         };
 
         document.body.appendChild(script);
@@ -266,6 +302,15 @@
       function applyConfig() {
         injectWidget();
         setConnection("reinitializing...");
+      }
+
+      function applyPreset(profile) {
+        const preset = PRESETS[profile] || PRESETS.mock;
+        hostInput.value = preset.host;
+        clientNameInput.value = preset.clientName;
+        accessKeyInput.value = preset.accessKey;
+        accessSecretInput.value = preset.accessSecret;
+        encryptionKeyInput.value = preset.encryptionKey;
       }
 
       function setTheme(theme) {
@@ -280,26 +325,16 @@
         setStatus("open() called");
       }
 
-      function closeWidget() {
+      function connectWidget() {
         const widget = api();
         if (!widget) return;
-        widget.close();
-        setStatus("close() called");
-      }
-
-      function sendWidgetMessage(text) {
-        const widget = api();
-        if (!widget) return;
-        widget.send(text);
-        setStatus('send("' + text + '") called');
-      }
-
-      function destroyWidget() {
-        const widget = api();
-        if (!widget) return;
-        widget.destroy();
-        setStatus("destroy() called");
-        setConnection("destroyed");
+        if (typeof widget.activateVoice === "function") {
+          widget.activateVoice();
+          setStatus("voice activated (connected + microphone requested)");
+          return;
+        }
+        widget.open();
+        setStatus("open() fallback called");
       }
 
       window.setInterval(() => {
@@ -311,6 +346,10 @@
       }, 1200);
 
       window.addEventListener("load", () => {
+        applyPreset(apiProfileInput.value);
+        apiProfileInput.addEventListener("change", () => {
+          applyPreset(apiProfileInput.value);
+        });
         injectWidget();
       });
     </script>

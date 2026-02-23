@@ -14,6 +14,7 @@ export interface Message {
 }
 
 const MAX_MESSAGES = 50;
+const PROCESSING_GUARD_TIMEOUT_MS = 15000;
 
 function createMessageId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -89,6 +90,16 @@ export function useConversation(): {
       }
     });
   }, [on, addAvarosResponse]);
+
+  // Safety net: never keep UI typing indicator forever if a response event
+  // is dropped by the browser/bus in flaky network conditions.
+  useEffect(() => {
+    if (!isProcessing) return;
+    const timer = window.setTimeout(() => {
+      setIsProcessing(false);
+    }, PROCESSING_GUARD_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [isProcessing]);
 
   useEffect(() => {
     const transcript = finalTranscript.trim();

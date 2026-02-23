@@ -30,6 +30,7 @@ type VoiceWidgetProps = {
 };
 
 const RESPONSE_FALLBACK_TIMEOUT_MS = 12000;
+const VOICE_MODE_STORAGE_KEY = "avaros-voice-mode";
 
 export default function VoiceWidget({
   position = "bottom-right",
@@ -38,6 +39,10 @@ export default function VoiceWidget({
   const {
     voiceState,
     voiceMode,
+    isWakeWordArmed,
+    wakeWordDetectedAt,
+    wakeWordState,
+    isModelLoading,
     micPermission,
     startListening,
     stopListening,
@@ -46,6 +51,7 @@ export default function VoiceWidget({
     speak,
     stopSpeaking,
     requestMicPermission,
+    setVoiceMode,
     sttSupported,
     ttsSupported,
     isSpeaking: isVoiceSpeaking,
@@ -83,6 +89,15 @@ export default function VoiceWidget({
     clearConversation,
   } = useConversation();
 
+  const speakAssistantFallback = useCallback(
+    (text: string) => {
+      if (!ttsSupported || !text.trim()) return;
+      stopSpeaking();
+      void speak(text).catch(() => undefined);
+    },
+    [ttsSupported, stopSpeaking, speak],
+  );
+
   const effectiveVoiceState =
     ignoreStuckProcessing && voiceState === "processing" ? "idle" : voiceState;
   const visualState = useMemo(
@@ -106,9 +121,31 @@ export default function VoiceWidget({
       localError,
     ],
   );
+  const isWakeWordPassiveListening =
+    voiceMode === "wake-word" &&
+    visualState === "listening" &&
+    !isWakeWordArmed;
+  const showRecordingIndicator =
+    voiceMode === "wake-word"
+      ? isWakeWordArmed &&
+        (visualState === "listening" || visualState === "speaking")
+      : visualState === "listening" || visualState === "speaking";
+  const showHeaderAction =
+    voiceMode !== "text" &&
+    !(voiceMode === "wake-word" && visualState === "idle") &&
+    !isWakeWordPassiveListening;
+
+  useEffect(() => {
+    if (wakeWordDetectedAt > 0) {
+      setExpanded(true);
+    }
+  }, [wakeWordDetectedAt]);
 
   useEffect(() => {
     if (lastResponse) {
+      if (voiceMode === "wake-word") {
+        setExpanded(true);
+      }
       setIgnoreStuckProcessing(false);
       setActiveResponse(lastResponse);
       setResponseReceivedAt(new Date());
@@ -116,7 +153,7 @@ export default function VoiceWidget({
       setResponseFallback(null);
       setLocalError("");
     }
-  }, [lastResponse]);
+  }, [lastResponse, voiceMode]);
 
   // If a response is being spoken but text did not change (same reply as previous),
   // keep the widget out of timeout by reusing the latest known response.
@@ -135,6 +172,9 @@ export default function VoiceWidget({
   useEffect(() => {
     const transcript = finalTranscript.trim();
     if (!transcript) return;
+    if (voiceMode === "wake-word") {
+      setExpanded(true);
+    }
     lastUserUtteranceRef.current = transcript;
 
     const immediateReply = buildImmediateAssistantReply(transcript);
@@ -146,6 +186,7 @@ export default function VoiceWidget({
       setResponseFallback(immediateReply);
       setLocalError("");
       addAvarosResponse(immediateReply);
+      speakAssistantFallback(immediateReply);
       return;
     }
 
@@ -161,6 +202,7 @@ export default function VoiceWidget({
       setResponseFallback(fallbackText);
       setLocalError("");
       addAvarosResponse(fallbackText);
+      speakAssistantFallback(fallbackText);
       return;
     }
 
@@ -170,7 +212,7 @@ export default function VoiceWidget({
     setAwaitingResponse(true);
     setResponseFallback(null);
     setLocalError("");
-  }, [finalTranscript, addAvarosResponse]);
+  }, [finalTranscript, addAvarosResponse, voiceMode, speakAssistantFallback]);
 
   useEffect(() => {
     awaitingResponseRef.current = awaitingResponse;
@@ -191,6 +233,7 @@ export default function VoiceWidget({
         return;
       }
       setIgnoreStuckProcessing(true);
+      cancelCurrentQuery();
       setAwaitingResponse(false);
       const guidance = buildGuidanceForUtterance(lastUserUtteranceRef.current);
       const fallbackText =
@@ -199,10 +242,29 @@ export default function VoiceWidget({
       setResponseFallback(fallbackText);
       setLocalError("");
       addAvarosResponse(fallbackText);
+      speakAssistantFallback(fallbackText);
     }, RESPONSE_FALLBACK_TIMEOUT_MS);
 
     return () => window.clearTimeout(timer);
-  }, [awaitingResponse, addAvarosResponse]);
+  }, [
+    awaitingResponse,
+    addAvarosResponse,
+    cancelCurrentQuery,
+    speakAssistantFallback,
+  ]);
+
+  useEffect(() => {
+    if (awaitingResponse || effectiveVoiceState !== "processing") {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      if (awaitingResponseRef.current) return;
+      cancelCurrentQuery();
+      setIgnoreStuckProcessing(true);
+      setAwaitingResponse(false);
+    }, RESPONSE_FALLBACK_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [awaitingResponse, effectiveVoiceState, cancelCurrentQuery]);
 
   const handleCancelRequest = useCallback(() => {
     cancelCurrentQuery();
@@ -215,7 +277,13 @@ export default function VoiceWidget({
     const fallbackText = "Request cancelled.";
     setResponseFallback(fallbackText);
     addAvarosResponse(fallbackText);
-  }, [cancelCurrentQuery, cancelProcessing, addAvarosResponse]);
+    speakAssistantFallback(fallbackText);
+  }, [
+    cancelCurrentQuery,
+    cancelProcessing,
+    addAvarosResponse,
+    speakAssistantFallback,
+  ]);
 
   useEffect(() => {
     if (!expanded) {
@@ -224,15 +292,29 @@ export default function VoiceWidget({
 
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      if (visualState === "listening") stopListening();
+      if (visualState === "listening" && voiceMode !== "wake-word") {
+        stopListening();
+      }
       if (visualState === "speaking") stopSpeaking();
       if (visualState === "processing") handleCancelRequest();
+      if (voiceMode === "wake-word") {
+        cancelCurrentQuery();
+        void setVoiceMode("wake-word").catch(() => undefined);
+      }
       setExpanded(false);
     };
 
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
-  }, [expanded, visualState, stopListening, stopSpeaking, handleCancelRequest]);
+  }, [
+    expanded,
+    visualState,
+    stopListening,
+    stopSpeaking,
+    handleCancelRequest,
+    voiceMode,
+    cancelCurrentQuery,
+  ]);
 
   useEffect(() => {
     const onOnboardingVoiceFocus = (event: Event) => {
@@ -240,8 +322,14 @@ export default function VoiceWidget({
       if (!detail) return;
       setExpanded(detail.expanded);
       if (!detail.expanded) {
-        if (visualState === "listening") stopListening();
+        if (visualState === "listening" && voiceMode !== "wake-word") {
+          stopListening();
+        }
         if (visualState === "speaking") stopSpeaking();
+        if (voiceMode === "wake-word") {
+          cancelCurrentQuery();
+          void setVoiceMode("wake-word").catch(() => undefined);
+        }
       }
     };
     window.addEventListener(
@@ -254,7 +342,14 @@ export default function VoiceWidget({
         onOnboardingVoiceFocus,
       );
     };
-  }, [visualState, stopListening, stopSpeaking]);
+  }, [
+    visualState,
+    stopListening,
+    stopSpeaking,
+    voiceMode,
+    cancelCurrentQuery,
+    setVoiceMode,
+  ]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -264,8 +359,14 @@ export default function VoiceWidget({
       if (!target) return;
       if (widgetRef.current?.contains(target)) return;
 
-      if (visualState === "listening") stopListening();
+      if (visualState === "listening" && voiceMode !== "wake-word") {
+        stopListening();
+      }
       if (visualState === "speaking") stopSpeaking();
+      if (voiceMode === "wake-word") {
+        cancelCurrentQuery();
+        void setVoiceMode("wake-word").catch(() => undefined);
+      }
       setExpanded(false);
     };
 
@@ -275,7 +376,15 @@ export default function VoiceWidget({
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("touchstart", onPointerDown);
     };
-  }, [expanded, visualState, stopListening, stopSpeaking]);
+  }, [
+    expanded,
+    visualState,
+    stopListening,
+    stopSpeaking,
+    voiceMode,
+    cancelCurrentQuery,
+    setVoiceMode,
+  ]);
 
   const requestListening = useCallback(async () => {
     setIgnoreStuckProcessing(false);
@@ -330,10 +439,24 @@ export default function VoiceWidget({
       return;
     }
 
-    if (visualState === "listening") stopListening();
+    if (visualState === "listening" && voiceMode !== "wake-word") {
+      stopListening();
+    }
     if (visualState === "speaking") stopSpeaking();
+    if (voiceMode === "wake-word") {
+      cancelCurrentQuery();
+      void setVoiceMode("wake-word").catch(() => undefined);
+    }
     setExpanded(false);
-  }, [expanded, visualState, stopListening, stopSpeaking]);
+  }, [
+    expanded,
+    visualState,
+    stopListening,
+    stopSpeaking,
+    voiceMode,
+    cancelCurrentQuery,
+    setVoiceMode,
+  ]);
 
   const handlePrimaryAction = useCallback(() => {
     if (visualState === "listening") {
@@ -400,6 +523,7 @@ export default function VoiceWidget({
         setResponseFallback(immediateReply);
         addUserMessage(original, "text");
         addAvarosResponse(immediateReply);
+        speakAssistantFallback(immediateReply);
         return;
       }
 
@@ -413,6 +537,7 @@ export default function VoiceWidget({
         setResponseFallback(guidance);
         addUserMessage(original, "text");
         addAvarosResponse(guidance);
+        speakAssistantFallback(guidance);
         return;
       }
 
@@ -433,9 +558,10 @@ export default function VoiceWidget({
           "I can't send this right now. Check HiveMind connection and try again.";
         setResponseFallback(fallbackText);
         addAvarosResponse(fallbackText);
+        speakAssistantFallback(fallbackText);
       }
     },
-    [addUserMessage, addAvarosResponse, sendUtterance],
+    [addUserMessage, addAvarosResponse, sendUtterance, speakAssistantFallback],
   );
 
   const buttonTitle =
@@ -460,7 +586,7 @@ export default function VoiceWidget({
         data-onboarding-target="voice-widget-trigger"
       >
         <RecordingIndicator
-          active={visualState === "listening" || visualState === "speaking"}
+          active={showRecordingIndicator}
           variant={visualState === "speaking" ? "speaking" : "listening"}
         />
         {renderStateIcon(visualState)}
@@ -487,7 +613,7 @@ export default function VoiceWidget({
                 </p>
               </div>
             </div>
-            {voiceMode !== "text" && (
+            {showHeaderAction && (
               <button
                 type="button"
                 className={`voice-widget__header-action voice-widget__header-action--${visualState}`}
