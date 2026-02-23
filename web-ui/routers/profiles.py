@@ -47,6 +47,13 @@ MESSAGEBUS_URL = os.environ.get(
 )
 
 
+def _sanitize_extra_settings(extra_settings: dict) -> dict:
+    """Drop deprecated platform-level settings before save/response."""
+    sanitized = dict(extra_settings or {})
+    sanitized.pop("seu_id", None)
+    return sanitized
+
+
 # ── Helpers ─────────────────────────────────────────────
 
 
@@ -159,7 +166,7 @@ def _profile_detail(
         platform_type=config.platform_type,
         api_url=config.api_url,
         api_key=_mask_api_key(config.api_key),
-        extra_settings=config.extra_settings,
+        extra_settings=_sanitize_extra_settings(config.extra_settings),
         is_builtin=name == "mock",
         is_active=name == active,
     )
@@ -224,7 +231,7 @@ def create_profile(
         platform_type=payload.platform_type,
         api_url=payload.api_url,
         api_key=payload.api_key,
-        extra_settings=payload.extra_settings,
+        extra_settings=_sanitize_extra_settings(payload.extra_settings),
     )
     try:
         svc.create_profile(payload.name, config)
@@ -249,7 +256,7 @@ def update_profile(
         platform_type=payload.platform_type,
         api_url=payload.api_url,
         api_key=payload.api_key,
-        extra_settings=payload.extra_settings,
+        extra_settings=_sanitize_extra_settings(payload.extra_settings),
     )
     try:
         svc.update_profile(name, config)

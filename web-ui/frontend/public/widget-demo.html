@@ -234,7 +234,7 @@
 
         const script = document.createElement("script");
         script.id = SCRIPT_ID;
-        script.src = "/dist/avaros-widget.js?v=" + Date.now();
+        script.src = "/avaros-widget.js?v=" + Date.now();
         script.dataset.host = String(hostInput.value || "").trim();
         script.dataset.clientName = String(clientNameInput.value || "").trim();
         script.dataset.accessKey = String(accessKeyInput.value || "").trim();
@@ -257,7 +257,7 @@
           }, 120);
         };
         script.onerror = () => {
-          setStatus("failed to load /dist/avaros-widget.js");
+          setStatus("failed to load /avaros-widget.js");
         };
 
         document.body.appendChild(script);

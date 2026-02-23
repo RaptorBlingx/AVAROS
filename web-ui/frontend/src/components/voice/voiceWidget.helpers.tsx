@@ -107,13 +107,19 @@ export function deriveVisualState(params: {
 export function getActionLabel(state: WidgetVisualState): string {
   if (state === "listening") return "Stop Listening";
   if (state === "speaking") return "Stop Speaking";
-  if (state === "processing") return "Processing...";
+  if (state === "processing") return "Cancel";
   return "Start Listening";
 }
 
 export function renderStateIcon(state: WidgetVisualState): ReactNode {
   if (state === "processing") {
-    return <span className="voice-widget__spinner" aria-hidden="true" />;
+    return (
+      <span className="voice-widget__icon voice-widget__icon--cancel" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 6L6 18M6 6l12 12" />
+        </svg>
+      </span>
+    );
   }
 
   if (state === "speaking") {
@@ -188,7 +194,7 @@ export function buildGuidanceForUtterance(raw: string): string | null {
   // Let OVOS handle direct greeting/help utterances.
   if (GREETING_WORDS.has(text) || HELP_WORDS.has(text)) return null;
   if (isLikelyIncompleteUtterance(text)) {
-    return "I need a bit more detail. Try: 'show energy trend today' or 'check production anomaly'.";
+    return "I need a bit more detail. Try: 'show energy trend today' or 'check production anomalies'.";
   }
   return null;
 }

@@ -3,7 +3,7 @@ function sanitize(raw: string): string {
 }
 
 export function normalizeUtteranceForIntent(raw: string): string {
-  let text = raw.trim();
+  let text = raw.trim().replace(/[.!?;:]+$/g, "").trim();
   if (!text) return text;
   text = text.replace(/[!?;:]+/g, " ");
 
@@ -54,6 +54,10 @@ export function normalizeUtteranceForIntent(raw: string): string {
     "check production anomaly",
   );
   text = text.replace(
+    /\bcheck production anomal(y|ies)\b/gi,
+    "check production anomaly",
+  );
+  text = text.replace(
     /\bwhat is temperature (increase|increases|increased|raise|raises|raised)\s+by\s+([0-9]+(?:\.[0-9]+)?)\s*degrees?\b/gi,
     "what if we increase temperature by $2 degrees",
   );
@@ -80,7 +84,14 @@ export function normalizeUtteranceForIntent(raw: string): string {
 
   // Canonicalize very short MVP commands to routable phrases.
   const compact = sanitize(text);
-  if (compact === "production anomalies" || compact === "production anomaly") {
+  if (
+    compact === "production anomalies" ||
+    compact === "production anomaly" ||
+    compact === "check production anomalies" ||
+    compact === "check production anomaly" ||
+    compact === "show production anomalies" ||
+    compact === "show production anomaly"
+  ) {
     return "check production anomaly";
   }
   if (compact === "energy trend" || compact === "energy trends") {
@@ -134,6 +145,9 @@ export function normalizeUtteranceForIntent(raw: string): string {
   ) {
     return "compare energy";
   }
+  if (compact === "compare energy" || compact === "compare power") {
+    return "compare energy";
+  }
 
-  return text.replace(/\s+/g, " ").trim();
+  return text.replace(/\s+/g, " ").trim().replace(/[.!?]+$/g, "").trim();
 }

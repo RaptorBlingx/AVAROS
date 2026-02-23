@@ -129,6 +129,10 @@ class ReneryoHttpMixin:
                 code="RENERYO_AUTH_FAILED",
                 platform="reneryo",
                 status_code=401,
+                user_message=(
+                    "RENERYO authentication failed. Your session cookie may be expired. "
+                    "Please update the RENERYO cookie in Settings and try again."
+                ),
             )
         if resp.status == 404:
             raise AdapterError(

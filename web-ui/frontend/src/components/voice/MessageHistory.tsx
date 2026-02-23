@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { Message } from "../../hooks/useConversation";
 
@@ -27,6 +27,7 @@ export default function MessageHistory({
   onClear,
 }: MessageHistoryProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const isEmptyState = messages.length === 0 && !isProcessing;
 
   useEffect(() => {
@@ -38,21 +39,82 @@ export default function MessageHistory({
     scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
   }, [messages, isProcessing, isEmptyState]);
 
-  const handleClear = () => {
+  const handleClearClick = () => {
     if (!messages.length) return;
-    if (window.confirm("Clear conversation?")) {
-      onClear();
-    }
+    setShowClearConfirm(true);
   };
+
+  const handleConfirmClear = () => {
+    onClear();
+    setShowClearConfirm(false);
+  };
+
+  const handleCancelClear = () => {
+    setShowClearConfirm(false);
+  };
+
+  useEffect(() => {
+    if (!showClearConfirm) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowClearConfirm(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showClearConfirm]);
 
   return (
     <section className="voice-chat-history">
+      {showClearConfirm && (
+        <div
+          className="voice-chat-confirm-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="voice-clear-confirm-title"
+          aria-describedby="voice-clear-confirm-desc"
+        >
+          <div
+            className="voice-chat-confirm-backdrop"
+            onClick={handleCancelClear}
+            aria-hidden="true"
+          />
+          <div className="voice-chat-confirm-dialog">
+            <h3
+              id="voice-clear-confirm-title"
+              className="voice-chat-confirm-title"
+            >
+              Clear conversation?
+            </h3>
+            <p
+              id="voice-clear-confirm-desc"
+              className="voice-chat-confirm-desc"
+            >
+              All messages in this chat will be removed. This cannot be undone.
+            </p>
+            <div className="voice-chat-confirm-actions">
+              <button
+                type="button"
+                className="voice-chat-confirm-btn voice-chat-confirm-btn--cancel"
+                onClick={handleCancelClear}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="voice-chat-confirm-btn voice-chat-confirm-btn--clear"
+                onClick={handleConfirmClear}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <header className="voice-chat-history__header">
         <p className="voice-chat-history__title">Conversation</p>
         <button
           type="button"
           className="voice-chat-history__clear"
-          onClick={handleClear}
+          onClick={handleClearClick}
           disabled={!messages.length}
           title="Clear conversation"
           aria-label="Clear conversation"
@@ -71,7 +133,9 @@ export default function MessageHistory({
       >
         {!messages.length ? (
           <div className="voice-chat-history__empty">
-            <p className="voice-chat-history__empty-icon" aria-hidden="true">💬</p>
+            <p className="voice-chat-history__empty-icon" aria-hidden="true">
+              💬
+            </p>
             <p>Say &quot;Hey AVAROS&quot; or type a question below.</p>
           </div>
         ) : (

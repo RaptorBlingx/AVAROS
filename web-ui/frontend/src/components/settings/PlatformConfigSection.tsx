@@ -33,16 +33,13 @@ function createPayload(config: {
   apiUrl: string;
   apiKey: string;
   authType: AuthType;
-  seuId: string;
 }): PlatformConfigRequest {
-  const seuId = config.seuId.trim();
   return {
     platform_type: config.platformType,
     api_url: config.platformType === "mock" ? "" : config.apiUrl.trim(),
     api_key: config.platformType === "mock" ? "" : config.apiKey.trim(),
     extra_settings: {
       auth_type: config.authType === "cookie" ? "cookie" : "bearer",
-      ...(seuId ? { seu_id: seuId } : {}),
     },
   };
 }
@@ -52,7 +49,6 @@ function validate(config: {
   apiUrl: string;
   apiKey: string;
   authType: AuthType;
-  seuId: string;
 }): string {
   if (config.platformType === "mock") {
     return "";
@@ -84,7 +80,6 @@ export default function PlatformConfigSection({
   const [config, setConfig] = useState<PlatformConfigResponse | null>(null);
   const [platformType, setPlatformType] = useState<PlatformType>("mock");
   const [authType, setAuthType] = useState<AuthType>("api_key");
-  const [seuId, setSeuId] = useState("");
   const [apiUrl, setApiUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [testResult, setTestResult] = useState<ConnectionTestResponse | null>(
@@ -114,11 +109,6 @@ export default function PlatformConfigSection({
     setAuthType(
       profile.extra_settings?.auth_type === "cookie" ? "cookie" : "api_key",
     );
-    setSeuId(
-      typeof profile.extra_settings?.seu_id === "string"
-        ? profile.extra_settings.seu_id
-        : "",
-    );
     setConfig({
       platform_type: profile.platform_type,
       api_url: profile.api_url,
@@ -141,11 +131,6 @@ export default function PlatformConfigSection({
       setAuthType(
         data.extra_settings?.auth_type === "cookie" ? "cookie" : "api_key",
       );
-      setSeuId(
-        typeof data.extra_settings?.seu_id === "string"
-          ? data.extra_settings.seu_id
-          : "",
-      );
       setApiUrl(data.api_url);
       setApiKey("");
       setIsBuiltinProfile(data.platform_type === "mock");
@@ -167,7 +152,6 @@ export default function PlatformConfigSection({
       apiUrl,
       apiKey,
       authType,
-      seuId,
     });
     setInlineError(validationError);
     setTestResult(null);
@@ -181,7 +165,6 @@ export default function PlatformConfigSection({
         apiUrl,
         apiKey,
         authType,
-        seuId,
       });
       const saved = await createPlatformConfig(payload);
       setConfig(saved);
@@ -196,7 +179,7 @@ export default function PlatformConfigSection({
     } finally {
       setSaving(false);
     }
-  }, [apiKey, apiUrl, authType, onNotify, platformType, seuId]);
+  }, [apiKey, apiUrl, authType, onNotify, platformType]);
 
   const handleReset = useCallback(async () => {
     setSaving(true);
@@ -224,7 +207,6 @@ export default function PlatformConfigSection({
       apiUrl,
       apiKey: isMock ? "" : apiKey,
       authType,
-      seuId,
     });
     setInlineError(validationError);
     setTestResult(null);
@@ -238,7 +220,6 @@ export default function PlatformConfigSection({
         apiUrl,
         apiKey,
         authType,
-        seuId,
       });
       const result = await testConnection(payload);
       setTestResult(result);
@@ -250,7 +231,7 @@ export default function PlatformConfigSection({
     } finally {
       setTesting(false);
     }
-  }, [apiKey, apiUrl, authType, isMock, onNotify, platformType, seuId]);
+  }, [apiKey, apiUrl, authType, isMock, onNotify, platformType]);
 
   return (
     <section className="space-y-3">
@@ -345,26 +326,6 @@ export default function PlatformConfigSection({
                 <option value="api_key">API Key</option>
                 <option value="cookie">Session Cookie</option>
               </select>
-            </label>
-
-            <label className="block md:col-span-2">
-              <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
-                SEU ID (Optional)
-              </span>
-              <input
-                type="text"
-                value={seuId}
-                onChange={(event) => setSeuId(event.target.value)}
-                placeholder="Paste SEU ID for direct energy per unit endpoint"
-                disabled={
-                  !editing ||
-                  saving ||
-                  formLocked ||
-                  isMock ||
-                  platformType !== "reneryo"
-                }
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-              />
             </label>
 
             <label className="block md:col-span-2">

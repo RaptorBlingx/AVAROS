@@ -18,6 +18,13 @@ from skill.services.settings import PlatformConfig, SettingsService
 router = APIRouter(prefix="/api/v1/config", tags=["config"])
 
 
+def _sanitize_extra_settings(extra_settings: dict) -> dict:
+    """Drop deprecated platform-level settings before save/response."""
+    sanitized = dict(extra_settings or {})
+    sanitized.pop("seu_id", None)
+    return sanitized
+
+
 def _mask_api_key(api_key: str) -> str:
     """Mask key as ****XXXX; for short keys return ****."""
     if len(api_key) <= 4:
@@ -31,7 +38,7 @@ def _to_response(config: PlatformConfig) -> PlatformConfigResponse:
         platform_type=config.platform_type,
         api_url=config.api_url,
         api_key=_mask_api_key(config.api_key),
-        extra_settings=config.extra_settings,
+        extra_settings=_sanitize_extra_settings(config.extra_settings),
     )
 
 
@@ -45,7 +52,7 @@ def upsert_platform_config(
         platform_type=payload.platform_type,
         api_url=payload.api_url,
         api_key=payload.api_key,
-        extra_settings=payload.extra_settings,
+        extra_settings=_sanitize_extra_settings(payload.extra_settings),
     )
     settings_service.update_platform_config(config)
     return _to_response(settings_service.get_platform_config())
@@ -134,7 +141,6 @@ def _create_adapter_from_config(
             timeout=payload.extra_settings.get("timeout", 10),
             auth_type=payload.extra_settings.get("auth_type", "bearer"),
             api_format=payload.extra_settings.get("api_format", "native"),
-            native_seu_id=payload.extra_settings.get("seu_id", ""),
         )
 
     raise ValueError(f"Unknown platform type: {payload.platform_type}")

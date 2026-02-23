@@ -72,7 +72,15 @@ function normalizeTranscriptForIntent(raw: string): string {
     "check production anomaly",
   );
   text = text.replace(
-    /\bcheck production anomaly\b/gi,
+    /\bcheck production anomal(y|ies)\b/gi,
+    "check production anomaly",
+  );
+  text = text.replace(
+    /\b(show|display)\s+production\s+anomal(y|ies)\b/gi,
+    "check production anomaly",
+  );
+  text = text.replace(
+    /\bproduction\s+anomal(y|ies)\b/gi,
     "check production anomaly",
   );
 
@@ -101,7 +109,7 @@ function normalizeTranscriptForIntent(raw: string): string {
     "what if we decrease temperature by $2 degrees",
   );
 
-  return text;
+  return text.replace(/[.!?]+$/g, "").trim();
 }
 
 function isIncompleteIntentText(raw: string): boolean {
@@ -118,9 +126,10 @@ function isIncompleteIntentText(raw: string): boolean {
   ]);
   if (exactIncomplete.has(text)) return true;
 
-  const hasAmount = /\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/.test(
-    text,
-  );
+  const hasAmount =
+    /\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/.test(
+      text,
+    );
   if (text.startsWith("what if") && !hasAmount) return true;
   return false;
 }
@@ -138,12 +147,15 @@ function isOwnPromptEcho(transcript: string): boolean {
     "how can i help",
     "hey can i help",
   ];
-  return patterns.some((p) => n === p || n.startsWith(p + " ") || n.includes(" " + p));
+  return patterns.some(
+    (p) => n === p || n.startsWith(p + " ") || n.includes(" " + p),
+  );
 }
 
-function parseWakeWordUtterance(
-  raw: string,
-): { hasWakeWord: boolean; command: string } {
+function parseWakeWordUtterance(raw: string): {
+  hasWakeWord: boolean;
+  command: string;
+} {
   const cleaned = raw.trim();
   if (!cleaned) return { hasWakeWord: false, command: "" };
 
@@ -176,8 +188,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const voicesChangedHandlerRef = useRef<(() => void) | null>(null);
 
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
-  const [micPermission, setMicPermission] =
-    useState<PermissionState>("prompt");
+  const [micPermission, setMicPermission] = useState<PermissionState>("prompt");
   const [interimTranscript, setInterimTranscript] = useState("");
   const [finalTranscript, setFinalTranscript] = useState("");
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -205,11 +216,11 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const isWakeWordCommandWindowOpen = useCallback(() => {
     return Date.now() < wakeWordArmedUntilRef.current;
   }, []);
-  const promptWakeWordReady = useCallback(() => {
+  const promptWakeWordReady = useCallback(async () => {
     if (!ttsRef.current) return;
     wakeWordPromptCooldownUntilRef.current =
       Date.now() + WAKE_WORD_PROMPT_COOLDOWN_MS;
-    void ttsRef.current.speak(WAKE_WORD_PROMPT);
+    await ttsRef.current.speak(WAKE_WORD_PROMPT);
   }, []);
   // ── Wake word detection ────────────────────────────
   const onWakeWordDetected = useCallback(() => {
@@ -224,8 +235,11 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     armWakeWordCommandWindow();
     setInterimTranscript("");
     setFinalTranscript("");
-    promptWakeWordReady();
-    void sttRef.current?.start();
+    void promptWakeWordReady()
+      .catch(() => undefined)
+      .finally(() => {
+        void sttRef.current?.start();
+      });
   }, [armWakeWordCommandWindow, promptWakeWordReady]);
 
   const {
@@ -320,6 +334,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
     const unsubResult = stt.onResult((result: STTResult) => {
       if (result.isFinal) {
+        if (isSpeakingRef.current) return;
         metricsRef.current.mark("stt_completed");
         let transcript = result.transcript;
         if (voiceMode === "wake-word") {
@@ -367,9 +382,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
           setVoiceState("error");
           break;
         case "idle":
-          setVoiceState((prev) =>
-            prev === "listening" ? "idle" : prev,
-          );
+          setVoiceState((prev) => (prev === "listening" ? "idle" : prev));
           break;
       }
     });
@@ -541,41 +554,82 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     ttsRef.current?.setVolume(normalized);
   }, []);
 
-  const requestMicPermission = useCallback(
-    async (): Promise<PermissionState> => {
+  const requestMicPermission =
+    useCallback(async (): Promise<PermissionState> => {
       const result = await requestMicrophonePermission();
       setMicPermission(result);
       return result;
-    },
-    [],
-  );
+    }, []);
 
   // ── Context value ──────────────────────────────────
 
-  const value = useMemo<VoiceContextValue>(() => ({
-    voiceState, voiceMode, micPermission, sttSupported, ttsSupported,
-    startListening, stopListening, cancelCurrentQuery, clearQuery, interimTranscript, finalTranscript,
-    speak: speakText, stopSpeaking, isSpeaking,
-    wakeWordState, wakeWordEnabled, wakeWordSensitivity,
-    wakeWordFallbackActive, setWakeWordSensitivity, isModelLoading,
-    setVoiceMode, setLanguage, availableVoices, setTTSVoice,
-    ttsRate, setTTSRate, ttsVolume, setTTSVolume,
-    requestMicPermission,
-  }), [
-    voiceState, voiceMode, micPermission, sttSupported, ttsSupported,
-    startListening, stopListening, cancelCurrentQuery, clearQuery, interimTranscript, finalTranscript,
-    speakText, stopSpeaking, isSpeaking,
-    wakeWordState, wakeWordEnabled, wakeWordSensitivity,
-    wakeWordFallbackActive, setWakeWordSensitivity, isModelLoading,
-    setVoiceMode, setLanguage, availableVoices, setTTSVoice,
-    ttsRate, setTTSRate, ttsVolume, setTTSVolume,
-    requestMicPermission,
-  ]);
+  const value = useMemo<VoiceContextValue>(
+    () => ({
+      voiceState,
+      voiceMode,
+      micPermission,
+      sttSupported,
+      ttsSupported,
+      startListening,
+      stopListening,
+      cancelCurrentQuery,
+      clearQuery,
+      interimTranscript,
+      finalTranscript,
+      speak: speakText,
+      stopSpeaking,
+      isSpeaking,
+      wakeWordState,
+      wakeWordEnabled,
+      wakeWordSensitivity,
+      wakeWordFallbackActive,
+      setWakeWordSensitivity,
+      isModelLoading,
+      setVoiceMode,
+      setLanguage,
+      availableVoices,
+      setTTSVoice,
+      ttsRate,
+      setTTSRate,
+      ttsVolume,
+      setTTSVolume,
+      requestMicPermission,
+    }),
+    [
+      voiceState,
+      voiceMode,
+      micPermission,
+      sttSupported,
+      ttsSupported,
+      startListening,
+      stopListening,
+      cancelCurrentQuery,
+      clearQuery,
+      interimTranscript,
+      finalTranscript,
+      speakText,
+      stopSpeaking,
+      isSpeaking,
+      wakeWordState,
+      wakeWordEnabled,
+      wakeWordSensitivity,
+      wakeWordFallbackActive,
+      setWakeWordSensitivity,
+      isModelLoading,
+      setVoiceMode,
+      setLanguage,
+      availableVoices,
+      setTTSVoice,
+      ttsRate,
+      setTTSRate,
+      ttsVolume,
+      setTTSVolume,
+      requestMicPermission,
+    ],
+  );
 
   return (
-    <VoiceContext.Provider value={value}>
-      {children}
-    </VoiceContext.Provider>
+    <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>
   );
 }
 

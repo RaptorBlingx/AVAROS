@@ -487,8 +487,8 @@ class TestReneryoAdapterFactoryIntegration:
 
         assert adapter._auth_type == "bearer"
 
-    def test_factory_reneryo_passes_native_seu_id(self) -> None:
-        """Factory passes seu_id from extra_settings to adapter."""
+    def test_factory_reneryo_does_not_set_native_seu_id_from_profile(self) -> None:
+        """Factory no longer forwards legacy seu_id config fallback."""
         from unittest.mock import MagicMock
 
         settings = MagicMock()
@@ -503,7 +503,8 @@ class TestReneryoAdapterFactoryIntegration:
         factory = AdapterFactory(settings_service=settings)
         adapter = factory.create()
 
-        assert adapter._native_seu_id == "SEU-ABC"
+        assert adapter._native_seu_id == ""
+        assert adapter._resolve_seu_id("Line-1") == ""
 
 
 class TestReneryoApiFormatDetection:

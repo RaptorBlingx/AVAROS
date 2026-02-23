@@ -50,15 +50,14 @@ interface HiveMindContextValue {
   isSpeaking: boolean;
   /** True while skill handler is running */
   isProcessing: boolean;
+  /** Clear processing state (e.g. user cancelled); UI-only, does not abort backend */
+  cancelProcessing: () => void;
   /** Optional text from enclosure.mouth.text */
   mouthText: string | null;
   /** Current connection details for status popup */
   connectionDetails: HiveMindConnectionDetails;
   /** Subscribe to a specific OVOS bus event */
-  on: (
-    eventType: string,
-    callback: (msg: OVOSMessage) => void,
-  ) => () => void;
+  on: (eventType: string, callback: (msg: OVOSMessage) => void) => () => void;
 }
 
 interface PendingSubscription {
@@ -132,9 +131,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
             accessKey: config.hivemind_key,
             accessSecret: config.hivemind_secret,
             encryptionKey:
-              cryptoKeyCandidate.length === 16
-                ? cryptoKeyCandidate
-                : undefined,
+              cryptoKeyCandidate.length === 16 ? cryptoKeyCandidate : undefined,
           });
           setConnectionDetails(svc.getConnectionDetails());
 
@@ -154,9 +151,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
           svc.on("recognizer_loop:audio_output_end", () =>
             setIsSpeaking(false),
           );
-          svc.on("mycroft.skill.handler.start", () =>
-            setIsProcessing(true),
-          );
+          svc.on("mycroft.skill.handler.start", () => setIsProcessing(true));
           svc.on("mycroft.skill.handler.complete", () =>
             setIsProcessing(false),
           );
@@ -213,10 +208,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
   }, []);
 
   const on = useCallback(
-    (
-      eventType: string,
-      callback: (msg: OVOSMessage) => void,
-    ): (() => void) => {
+    (eventType: string, callback: (msg: OVOSMessage) => void): (() => void) => {
       if (serviceRef.current) {
         return serviceRef.current.on(eventType, callback);
       }
@@ -244,6 +236,10 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
     setLastResponse(null);
   }, []);
 
+  const cancelProcessing = useCallback(() => {
+    setIsProcessing(false);
+  }, []);
+
   const value = useMemo<HiveMindContextValue>(
     () => ({
       connectionState,
@@ -256,6 +252,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
       clearLastResponse,
       isSpeaking,
       isProcessing,
+      cancelProcessing,
       mouthText,
       connectionDetails,
       on,
@@ -270,6 +267,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
       clearLastResponse,
       isSpeaking,
       isProcessing,
+      cancelProcessing,
       mouthText,
       connectionDetails,
       on,

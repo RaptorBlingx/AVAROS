@@ -100,6 +100,28 @@ class TestCreatePlatformConfig:
 
         assert response.json()["extra_settings"] == {"tenant_id": "wasabi-01"}
 
+    def test_create_config_drops_legacy_seu_id_setting(
+        self,
+        client: TestClient,
+        valid_reneryo_payload: dict[str, Any],
+    ) -> None:
+        """Platform config must not persist deprecated top-level seu_id."""
+        payload = {
+            **valid_reneryo_payload,
+            "extra_settings": {
+                "auth_type": "cookie",
+                "seu_id": "SEU-123",
+                "tenant_id": "wasabi-01",
+            },
+        }
+        response = client.post("/api/v1/config/platform", json=payload)
+
+        assert response.status_code == 200
+        assert response.json()["extra_settings"] == {
+            "auth_type": "cookie",
+            "tenant_id": "wasabi-01",
+        }
+
     def test_create_mock_config_succeeds(
         self,
         client: TestClient,
@@ -690,10 +712,10 @@ class TestAdapterFactoryAuthType:
         assert response.status_code == 200
         assert response.json()["success"] is True
 
-    def test_create_adapter_with_seu_id_passes_native_seu_id(
+    def test_create_adapter_ignores_seu_id_in_payload(
         self,
     ) -> None:
-        """Factory forwards seu_id to ReneryoAdapter as native_seu_id."""
+        """Connection-test adapter no longer forwards legacy seu_id fallback."""
         payload = PlatformConfigRequest(
             platform_type="reneryo",
             api_url="https://api.reneryo.example.com",
@@ -705,7 +727,7 @@ class TestAdapterFactoryAuthType:
             _create_adapter_from_config(payload)
 
         assert mock_adapter_class.call_count == 1
-        assert mock_adapter_class.call_args.kwargs["native_seu_id"] == "SEU-123"
+        assert "native_seu_id" not in mock_adapter_class.call_args.kwargs
 
 
 # ══════════════════════════════════════════════════════════

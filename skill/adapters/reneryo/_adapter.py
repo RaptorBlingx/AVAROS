@@ -307,6 +307,25 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
                 data = normalize_metric_resource_to_trend(data)
             else:
                 data = normalize_meters_to_trend(data)
+        if self._is_seu_endpoint(endpoint) and not data:
+            logger.warning(
+                "SEU values trend returned no points. Falling back to SEU graph endpoint."
+            )
+            endpoint = REAL_SEU_GRAPH_ENDPOINT
+            params = self._build_query_params(
+                asset_id=asset_id,
+                period=period,
+                granularity=granularity,
+                include_native_period=False,
+            )
+            graph_data = await self._retry_fetch(endpoint, params)
+            if is_native_format(graph_data):
+                data = normalize_seu_graph_to_trend(
+                    graph_data,
+                    seu_id=self._resolve_seu_id(asset_id),
+                )
+            else:
+                data = graph_data
         if not isinstance(data, list):
             data = [data]
         return parse_trend_response(data, metric, asset_id, period, granularity)
@@ -596,7 +615,7 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
     def _lookup_metric_mapping(self, metric: CanonicalMetric) -> MetricMapping | None:
         if not self._settings_service or not self._profile_name:
             return None
-        return self._settings_service.get_metric_mapping(self._profile_name, metric)
+        return self._settings_service.get_metric_mapping(metric.value)
 
     def _string_settings(self) -> dict[str, str]:
         return {k: str(v) for k, v in self._extra_settings.items()}
