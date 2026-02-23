@@ -895,7 +895,7 @@ class AVAROSSkill(FallbackSkill):
 
         self._safe_dispatch("handle_help_capabilities_list", _execute)
 
-    @fallback_handler(1)
+    @fallback_handler(95)
     def handle_metric_query_fallback(self, message):
         """Fallback: resolve metric KPI queries missed by strict intent parsing."""
         utterance = self._extract_utterance_text(message).lower()
@@ -1040,6 +1040,14 @@ class AVAROSSkill(FallbackSkill):
             return CanonicalMetric.CO2_TOTAL
 
         phrase_map: list[tuple[CanonicalMetric, tuple[str, ...]]] = [
+            (CanonicalMetric.ENERGY_PER_UNIT, (
+                "energy per unit", "power per unit", "electricity per unit",
+                "energy consumption per unit", "specific energy", "specific power",
+            )),
+            (CanonicalMetric.ENERGY_TOTAL, (
+                "total energy", "energy total", "total power", "total electricity",
+                "energy consumption", "power consumption",
+            )),
             (CanonicalMetric.PEAK_DEMAND, (
                 "peak demand", "maximum demand", "max demand", "peak power demand",
             )),

@@ -466,6 +466,22 @@ class TestNonMetricIntentBindings:
 class TestMetricFallback:
     """Tests for metric fallback handler and utterance metric resolution."""
 
+    def test_resolve_metric_from_utterance_energy_total(self):
+        """Resolves energy total from common phrasing."""
+        skill = _make_skill()
+
+        metric = skill._resolve_metric_from_utterance("what is the total energy")
+
+        assert metric == CanonicalMetric.ENERGY_TOTAL
+
+    def test_resolve_metric_from_utterance_energy_per_unit(self):
+        """Resolves energy per unit from common phrasing."""
+        skill = _make_skill()
+
+        metric = skill._resolve_metric_from_utterance("what is the energy per unit")
+
+        assert metric == CanonicalMetric.ENERGY_PER_UNIT
+
     def test_resolve_metric_from_utterance_co2_total(self):
         """Resolves CO2 total from common phrasing."""
         skill = _make_skill()
@@ -567,6 +583,22 @@ class TestIntentFailureRecovery:
 
 class TestFallbackEligibility:
     """Tests for FallbackSkill can_answer implementation."""
+
+    def test_can_answer_true_for_total_energy_utterance(self):
+        """Fallback ping should report True for total energy phrasing."""
+        skill = _make_skill()
+        msg = Mock()
+        msg.data = {"utterances": ["what is the total energy"]}
+
+        assert skill.can_answer(msg) is True
+
+    def test_can_answer_true_for_energy_per_unit_utterance(self):
+        """Fallback ping should report True for energy per unit phrasing."""
+        skill = _make_skill()
+        msg = Mock()
+        msg.data = {"utterances": ["what is the energy per unit"]}
+
+        assert skill.can_answer(msg) is True
 
     def test_can_answer_true_for_co2_total_utterance(self):
         """Fallback ping should report True for known metric phrasing."""
