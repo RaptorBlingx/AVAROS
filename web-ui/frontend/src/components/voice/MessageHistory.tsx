@@ -64,51 +64,6 @@ export default function MessageHistory({
 
   return (
     <section className="voice-chat-history">
-      {showClearConfirm && (
-        <div
-          className="voice-chat-confirm-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="voice-clear-confirm-title"
-          aria-describedby="voice-clear-confirm-desc"
-        >
-          <div
-            className="voice-chat-confirm-backdrop"
-            onClick={handleCancelClear}
-            aria-hidden="true"
-          />
-          <div className="voice-chat-confirm-dialog">
-            <h3
-              id="voice-clear-confirm-title"
-              className="voice-chat-confirm-title"
-            >
-              Clear conversation?
-            </h3>
-            <p
-              id="voice-clear-confirm-desc"
-              className="voice-chat-confirm-desc"
-            >
-              All messages in this chat will be removed. This cannot be undone.
-            </p>
-            <div className="voice-chat-confirm-actions">
-              <button
-                type="button"
-                className="voice-chat-confirm-btn voice-chat-confirm-btn--cancel"
-                onClick={handleCancelClear}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="voice-chat-confirm-btn voice-chat-confirm-btn--clear"
-                onClick={handleConfirmClear}
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       <header className="voice-chat-history__header">
         <p className="voice-chat-history__title">Conversation</p>
         <button
@@ -131,6 +86,51 @@ export default function MessageHistory({
         role="log"
         aria-live="polite"
       >
+        {showClearConfirm && (
+          <div
+            className="voice-chat-confirm-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="voice-clear-confirm-title"
+            aria-describedby="voice-clear-confirm-desc"
+          >
+            <div
+              className="voice-chat-confirm-backdrop"
+              onClick={handleCancelClear}
+              aria-hidden="true"
+            />
+            <div className="voice-chat-confirm-dialog">
+              <h3
+                id="voice-clear-confirm-title"
+                className="voice-chat-confirm-title"
+              >
+                Clear conversation?
+              </h3>
+              <p
+                id="voice-clear-confirm-desc"
+                className="voice-chat-confirm-desc"
+              >
+                All messages in this chat will be removed. This cannot be undone.
+              </p>
+              <div className="voice-chat-confirm-actions">
+                <button
+                  type="button"
+                  className="voice-chat-confirm-btn voice-chat-confirm-btn--cancel"
+                  onClick={handleCancelClear}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="voice-chat-confirm-btn voice-chat-confirm-btn--clear"
+                  onClick={handleConfirmClear}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {!messages.length ? (
           <div className="voice-chat-history__empty">
             <p className="voice-chat-history__empty-icon" aria-hidden="true">

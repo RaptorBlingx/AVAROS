@@ -623,6 +623,7 @@
 }
 
 .voice-chat-history__scroller {
+  position: relative;
   border: 1px solid rgba(148, 163, 184, 0.35);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.8);

@@ -165,7 +165,7 @@ export function WidgetPanel({
     : isConnecting
     ? "Connecting to HiveMind..."
     : isDisconnected
-    ? "Connection lost. Retrying..."
+    ? "Disconnected. Reopen widget or retry shortly."
     : "Ask AVAROS something...";
   const showCounter = inputValue.length > 400;
   const remaining = Math.max(0, 500 - inputValue.length);
@@ -302,52 +302,6 @@ export function WidgetPanel({
         </div>
 
         <div className="voice-chat-history">
-          {showClearConfirm && (
-            <div
-              className="voice-chat-confirm-overlay"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="widget-clear-confirm-title"
-              aria-describedby="widget-clear-confirm-desc"
-            >
-              <div
-                className="voice-chat-confirm-backdrop"
-                onClick={() => setShowClearConfirm(false)}
-                aria-hidden="true"
-              />
-              <div className="voice-chat-confirm-dialog">
-                <h3
-                  id="widget-clear-confirm-title"
-                  className="voice-chat-confirm-title"
-                >
-                  Clear conversation?
-                </h3>
-                <p
-                  id="widget-clear-confirm-desc"
-                  className="voice-chat-confirm-desc"
-                >
-                  All messages in this chat will be removed. This cannot be
-                  undone.
-                </p>
-                <div className="voice-chat-confirm-actions">
-                  <button
-                    type="button"
-                    className="voice-chat-confirm-btn voice-chat-confirm-btn--cancel"
-                    onClick={() => setShowClearConfirm(false)}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="voice-chat-confirm-btn voice-chat-confirm-btn--clear"
-                    onClick={handleConfirmClear}
-                  >
-                    Clear
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
           <header className="voice-chat-history__header">
             <p className="voice-chat-history__title">Conversation</p>
             <button
@@ -370,6 +324,52 @@ export function WidgetPanel({
             role="log"
             aria-live="polite"
           >
+            {showClearConfirm && (
+              <div
+                className="voice-chat-confirm-overlay"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="widget-clear-confirm-title"
+                aria-describedby="widget-clear-confirm-desc"
+              >
+                <div
+                  className="voice-chat-confirm-backdrop"
+                  onClick={() => setShowClearConfirm(false)}
+                  aria-hidden="true"
+                />
+                <div className="voice-chat-confirm-dialog">
+                  <h3
+                    id="widget-clear-confirm-title"
+                    className="voice-chat-confirm-title"
+                  >
+                    Clear conversation?
+                  </h3>
+                  <p
+                    id="widget-clear-confirm-desc"
+                    className="voice-chat-confirm-desc"
+                  >
+                    All messages in this chat will be removed. This cannot be
+                    undone.
+                  </p>
+                  <div className="voice-chat-confirm-actions">
+                    <button
+                      type="button"
+                      className="voice-chat-confirm-btn voice-chat-confirm-btn--cancel"
+                      onClick={() => setShowClearConfirm(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="voice-chat-confirm-btn voice-chat-confirm-btn--clear"
+                      onClick={handleConfirmClear}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             {messages.length === 0 ? (
               <div className="voice-chat-history__empty">
                 <p

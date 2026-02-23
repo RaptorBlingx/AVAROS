@@ -21,6 +21,8 @@ export type VoiceState =
 export interface VoiceContextValue {
   voiceState: VoiceState;
   voiceMode: VoiceMode;
+  isWakeWordArmed: boolean;
+  wakeWordDetectedAt: number;
   micPermission: PermissionState;
   sttSupported: boolean;
   ttsSupported: boolean;

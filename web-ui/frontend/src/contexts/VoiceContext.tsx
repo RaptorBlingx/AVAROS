@@ -61,27 +61,27 @@ function normalizeTranscriptForIntent(raw: string): string {
   text = text.replace(/\b(scrap|waste)\s+trend\b/gi, "$1 rate trend");
   text = text.replace(
     /\bcheck production on amalie\b/gi,
-    "check production anomaly",
+    "check production anomalies",
   );
   text = text.replace(
     /\bcheck production on a money\b/gi,
-    "check production anomaly",
+    "check production anomalies",
   );
   text = text.replace(
     /\bcheck production on anomaly\b/gi,
-    "check production anomaly",
+    "check production anomalies",
   );
   text = text.replace(
     /\bcheck production anomal(y|ies)\b/gi,
-    "check production anomaly",
+    "check production anomalies",
   );
   text = text.replace(
     /\b(show|display)\s+production\s+anomal(y|ies)\b/gi,
-    "check production anomaly",
+    "check production anomalies",
   );
   text = text.replace(
     /\bproduction\s+anomal(y|ies)\b/gi,
-    "check production anomaly",
+    "check production anomalies",
   );
 
   text = text.replace(
@@ -146,10 +146,28 @@ function isOwnPromptEcho(transcript: string): boolean {
     "hey can i help you",
     "how can i help",
     "hey can i help",
+    "how can help you",
+    "how can help",
+    "hey can help you",
+    "hey can help",
   ];
   return patterns.some(
     (p) => n === p || n.startsWith(p + " ") || n.includes(" " + p),
   );
+}
+
+function isLikelyNoiseUtterance(raw: string): boolean {
+  const text = raw.trim().toLowerCase();
+  if (!text) return true;
+  if (text.length <= 2) return true;
+  if (!/[a-z]/.test(text)) return true;
+
+  // Low-signal gibberish guard (e.g. "asdasd", "qweqwe").
+  const compact = text.replace(/\s+/g, "");
+  const uniqueChars = new Set(compact).size;
+  if (compact.length >= 6 && uniqueChars <= 3) return true;
+
+  return false;
 }
 
 function parseWakeWordUtterance(raw: string): {
@@ -159,22 +177,57 @@ function parseWakeWordUtterance(raw: string): {
   const cleaned = raw.trim();
   if (!cleaned) return { hasWakeWord: false, command: "" };
 
-  const match = cleaned.match(/^(hey|ok|okay)\b[\s,.:;-]*(.*)$/i);
-  if (!match) return { hasWakeWord: false, command: cleaned };
-  const tail = (match[2] ?? "").trim();
-  if (!tail) return { hasWakeWord: true, command: "" };
+  const normalizeToken = (value: string): string => {
+    return value
+      .toLowerCase()
+      .replace(/\u0131/g, "i")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z]/g, "");
+  };
 
-  const parts = tail.split(/\s+/).filter(Boolean);
-  const first = (parts[0] ?? "").toLowerCase().replace(/[^a-z]/g, "");
-  const looksLikeAlias = /^(avaros|abaros|alvaros|albertos|alberto)$/.test(
-    first,
-  );
-  if (looksLikeAlias) {
-    parts.shift();
-    return { hasWakeWord: true, command: parts.join(" ").trim() };
+  const looksLikeWakeAlias = (token: string): boolean => {
+    const t = normalizeToken(token);
+    if (!t) return false;
+    if (
+      /^(avaros|abaros|alvaros|albertos|alberto|avarose|avarus|avaross|avarois|avaroz)$/.test(
+        t,
+      )
+    ) {
+      return true;
+    }
+    // Accept near-matches frequently produced by fallback STT.
+    return t.startsWith("avar") && t.length >= 5;
+  };
+
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  const wakeIndex = words.findIndex((word, index) => {
+    if (looksLikeWakeAlias(word)) return true;
+    // Handle split phrase variants like "a varos"
+    if (
+      normalizeToken(word) === "a" &&
+      index + 1 < words.length &&
+      looksLikeWakeAlias(words[index + 1])
+    ) {
+      return true;
+    }
+    return false;
+  });
+
+  if (wakeIndex === -1) {
+    return { hasWakeWord: false, command: "" };
   }
 
-  return { hasWakeWord: false, command: cleaned };
+  let commandStart = wakeIndex + 1;
+  if (
+    normalizeToken(words[wakeIndex] ?? "") === "a" &&
+    looksLikeWakeAlias(words[wakeIndex + 1] ?? "")
+  ) {
+    commandStart = wakeIndex + 2;
+  }
+
+  const command = words.slice(commandStart).join(" ").trim();
+  return { hasWakeWord: true, command };
 }
 
 interface VoiceProviderProps {
@@ -192,6 +245,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const [interimTranscript, setInterimTranscript] = useState("");
   const [finalTranscript, setFinalTranscript] = useState("");
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isWakeWordArmed, setIsWakeWordArmed] = useState(false);
+  const [wakeWordDetectedAt, setWakeWordDetectedAt] = useState(0);
   const [availableVoices, setAvailableVoices] = useState<
     SpeechSynthesisVoice[]
   >([]);
@@ -207,21 +262,75 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const wakeWordArmedUntilRef = useRef(0);
 
   const { sendUtterance, on, isConnected } = useHiveMind();
+
+  // Keep STT service ready as early as possible so wake-word auto-start
+  // does not miss the first page-load window.
+  if (sttSupported && !sttRef.current) {
+    sttRef.current = new STTService({
+      continuous: false,
+      interimResults: true,
+      silenceTimeout: 1200,
+    });
+  }
+
   const armWakeWordCommandWindow = useCallback(() => {
     wakeWordArmedUntilRef.current = Date.now() + WAKE_WORD_ARM_MS;
+    setIsWakeWordArmed(true);
   }, []);
   const clearWakeWordCommandWindow = useCallback(() => {
     wakeWordArmedUntilRef.current = 0;
+    setIsWakeWordArmed(false);
   }, []);
   const isWakeWordCommandWindowOpen = useCallback(() => {
     return Date.now() < wakeWordArmedUntilRef.current;
+  }, []);
+  const startWakeWordCommandCapture = useCallback(async () => {
+    const stt = sttRef.current;
+    if (!stt) return;
+
+    // Avoid InvalidStateError when recognition is already active.
+    if (stt.getState() === "listening") {
+      setVoiceState("listening");
+      return;
+    }
+
+    try {
+      await stt.start();
+      setVoiceState("listening");
+    } catch {
+      // Web Speech start can race after stop/speak; retry once shortly.
+      window.setTimeout(() => {
+        void stt.start().catch(() => undefined);
+        setVoiceState("listening");
+      }, 220);
+    }
   }, []);
   const promptWakeWordReady = useCallback(async () => {
     if (!ttsRef.current) return;
     wakeWordPromptCooldownUntilRef.current =
       Date.now() + WAKE_WORD_PROMPT_COOLDOWN_MS;
-    await ttsRef.current.speak(WAKE_WORD_PROMPT);
+    try {
+      await ttsRef.current.speak(WAKE_WORD_PROMPT);
+    } catch {
+      // Some browsers intermittently drop the first utterance; retry once.
+      ttsRef.current.stop();
+      await new Promise<void>((resolve) => {
+        window.setTimeout(() => resolve(), 120);
+      });
+      await ttsRef.current.speak(WAKE_WORD_PROMPT);
+    }
   }, []);
+  const triggerWakeWordPrompt = useCallback(() => {
+    if (Date.now() < wakeWordPromptCooldownUntilRef.current) return;
+    if (isSpeakingRef.current) return;
+
+    setWakeWordDetectedAt(Date.now());
+    armWakeWordCommandWindow();
+    setFinalTranscript("");
+    setInterimTranscript("");
+    setVoiceState("listening");
+    void promptWakeWordReady().catch(() => undefined);
+  }, [armWakeWordCommandWindow, promptWakeWordReady]);
   // ── Wake word detection ────────────────────────────
   const onWakeWordDetected = useCallback(() => {
     if (isSpeakingRef.current) {
@@ -232,15 +341,21 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     }
     metricsRef.current.reset();
     metricsRef.current.mark("wake_word_detected");
+    setWakeWordDetectedAt(Date.now());
     armWakeWordCommandWindow();
     setInterimTranscript("");
     setFinalTranscript("");
+    sttRef.current?.stop();
     void promptWakeWordReady()
       .catch(() => undefined)
       .finally(() => {
-        void sttRef.current?.start();
+        void startWakeWordCommandCapture();
       });
-  }, [armWakeWordCommandWindow, promptWakeWordReady]);
+  }, [
+    armWakeWordCommandWindow,
+    promptWakeWordReady,
+    startWakeWordCommandCapture,
+  ]);
 
   const {
     wakeWordState,
@@ -253,6 +368,21 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     setVoiceMode,
   } = useWakeWord({ sttRef, onDetected: onWakeWordDetected });
 
+  const ensureWakeWordFallbackListening = useCallback(async () => {
+    if (voiceMode !== "wake-word" || !wakeWordFallbackActive) return;
+    const stt = sttRef.current;
+    if (!stt) return;
+    if (stt.getState() === "listening") return;
+
+    stt.setContinuous(true);
+    try {
+      await stt.start();
+      setVoiceState("listening");
+    } catch {
+      // Best-effort self-heal for fallback mode.
+    }
+  }, [voiceMode, wakeWordFallbackActive]);
+
   useEffect(() => {
     interimTranscriptRef.current = interimTranscript;
   }, [interimTranscript]);
@@ -261,16 +391,36 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     finalTranscriptRef.current = finalTranscript;
   }, [finalTranscript]);
 
+  useEffect(() => {
+    if (!isWakeWordArmed) return;
+    const timer = window.setTimeout(() => {
+      clearWakeWordCommandWindow();
+    }, WAKE_WORD_ARM_MS);
+    return () => window.clearTimeout(timer);
+  }, [isWakeWordArmed, clearWakeWordCommandWindow]);
+
+  useEffect(() => {
+    if (voiceMode !== "wake-word") {
+      clearWakeWordCommandWindow();
+    }
+  }, [voiceMode, clearWakeWordCommandWindow]);
+
+  // Keep fallback wake-word listening alive even after long sessions
+  // or browser recognition interruptions.
+  useEffect(() => {
+    if (voiceMode !== "wake-word" || !wakeWordFallbackActive) return;
+    if (isSpeakingRef.current) return;
+    void ensureWakeWordFallbackListening();
+
+    const timer = window.setInterval(() => {
+      if (isSpeakingRef.current) return;
+      void ensureWakeWordFallbackListening();
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [voiceMode, wakeWordFallbackActive, ensureWakeWordFallbackListening]);
+
   // ── Initialize STT / TTS ───────────────────────────
   useEffect(() => {
-    if (sttSupported && !sttRef.current) {
-      sttRef.current = new STTService({
-        continuous: false,
-        interimResults: true,
-        silenceTimeout: 1200,
-      });
-    }
-
     if (ttsSupported && !ttsRef.current) {
       ttsRef.current = new TTSService();
       // Voice UX baseline: keep AVAROS replies in clear English.
@@ -344,11 +494,10 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
             clearWakeWordCommandWindow();
             transcript = parsed.command;
           } else if (parsed.hasWakeWord && !parsed.command) {
-            armWakeWordCommandWindow();
-            setFinalTranscript("");
-            setInterimTranscript("");
-            setVoiceState("listening");
-            promptWakeWordReady();
+            triggerWakeWordPrompt();
+            if (!wakeWordFallbackActive) {
+              void startWakeWordCommandCapture();
+            }
             return;
           } else if (wakeWordFallbackActive && isWakeWordCommandWindowOpen()) {
             clearWakeWordCommandWindow();
@@ -357,14 +506,32 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
           } else {
             setFinalTranscript("");
             setInterimTranscript("");
-            setVoiceState("listening");
+            setVoiceState("idle");
+            clearWakeWordCommandWindow();
             return;
           }
         }
-        if (!transcript.trim()) return;
+        if (!transcript.trim() || isLikelyNoiseUtterance(transcript)) {
+          setFinalTranscript("");
+          setInterimTranscript("");
+          setVoiceState("idle");
+          return;
+        }
         setFinalTranscript(transcript);
         setInterimTranscript("");
       } else {
+        if (
+          voiceMode === "wake-word" &&
+          wakeWordFallbackActive &&
+          !isWakeWordCommandWindowOpen() &&
+          !isOwnPromptEcho(result.transcript)
+        ) {
+          const parsed = parseWakeWordUtterance(result.transcript);
+          if (parsed.hasWakeWord && !parsed.command) {
+            triggerWakeWordPrompt();
+            return;
+          }
+        }
         setInterimTranscript(result.transcript);
       }
     });
@@ -422,6 +589,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     wakeWordFallbackActive,
     armWakeWordCommandWindow,
     promptWakeWordReady,
+    triggerWakeWordPrompt,
     isWakeWordCommandWindowOpen,
     clearWakeWordCommandWindow,
   ]);
@@ -444,11 +612,21 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         if (state === "idle") {
           metricsRef.current.mark("tts_completed");
           metricsRef.current.toConsoleLog();
-          setVoiceState("idle");
+          if (voiceMode === "wake-word" && wakeWordFallbackActive) {
+            setVoiceState("listening");
+            void ensureWakeWordFallbackListening();
+          } else {
+            setVoiceState("idle");
+          }
         }
       }
     });
-  }, [ttsSupported]);
+  }, [
+    ttsSupported,
+    voiceMode,
+    wakeWordFallbackActive,
+    ensureWakeWordFallbackListening,
+  ]);
 
   // ── Auto-send final transcript to HiveMind ─────────
   useEffect(() => {
@@ -514,10 +692,11 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const cancelCurrentQuery = useCallback(() => {
     sttRef.current?.stop();
     ttsRef.current?.stop();
+    clearWakeWordCommandWindow();
     setInterimTranscript("");
     setFinalTranscript("");
     setVoiceState("idle");
-  }, []);
+  }, [clearWakeWordCommandWindow]);
 
   const clearQuery = useCallback(() => {
     setInterimTranscript("");
@@ -567,6 +746,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     () => ({
       voiceState,
       voiceMode,
+      isWakeWordArmed,
+      wakeWordDetectedAt,
       micPermission,
       sttSupported,
       ttsSupported,
@@ -598,6 +779,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     [
       voiceState,
       voiceMode,
+      isWakeWordArmed,
+      wakeWordDetectedAt,
       micPermission,
       sttSupported,
       ttsSupported,
