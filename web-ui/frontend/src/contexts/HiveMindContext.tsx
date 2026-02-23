@@ -170,6 +170,10 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
           serviceRef.current = svc;
           setServiceVersion((prev) => prev + 1);
           flushPendingSubscriptions();
+
+          void svc.connect().catch(() => {
+            setConnectionState("error");
+          });
         }
       })
       .catch(() => {
