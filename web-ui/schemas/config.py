@@ -16,6 +16,13 @@ _PROFILE_NAME_PATTERN = re.compile(
 )
 
 
+def sanitize_extra_settings(extra_settings: dict[str, Any] | None) -> dict[str, Any]:
+    """Drop deprecated platform-level settings before save/response."""
+    sanitized = dict(extra_settings or {})
+    sanitized.pop("seu_id", None)
+    return sanitized
+
+
 class PlatformConfigRequest(BaseModel):
     """Create/update platform configuration payload."""
 

@@ -712,10 +712,10 @@ class TestAdapterFactoryAuthType:
         assert response.status_code == 200
         assert response.json()["success"] is True
 
-    def test_create_adapter_ignores_seu_id_in_payload(
+    def test_create_adapter_supports_legacy_seu_id_fallback(
         self,
     ) -> None:
-        """Connection-test adapter no longer forwards legacy seu_id fallback."""
+        """Connection-test adapter keeps legacy seu_id fallback for compatibility."""
         payload = PlatformConfigRequest(
             platform_type="reneryo",
             api_url="https://api.reneryo.example.com",
@@ -727,7 +727,8 @@ class TestAdapterFactoryAuthType:
             _create_adapter_from_config(payload)
 
         assert mock_adapter_class.call_count == 1
-        assert "native_seu_id" not in mock_adapter_class.call_args.kwargs
+        assert mock_adapter_class.call_args.kwargs["native_seu_id"] == "SEU-123"
+        assert "seu_id" not in mock_adapter_class.call_args.kwargs["extra_settings"]
 
 
 # ══════════════════════════════════════════════════════════

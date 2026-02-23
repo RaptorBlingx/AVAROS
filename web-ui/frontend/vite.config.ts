@@ -4,8 +4,9 @@ import react from "@vitejs/plugin-react";
 export default defineConfig(({ mode }) => {
   const envDir = new URL(".", import.meta.url).pathname;
   const env = loadEnv(mode, envDir, "");
-  // Backend (FastAPI): same as main — default 8080. Override with VITE_API_PROXY_TARGET if needed.
-  const target = env.VITE_API_PROXY_TARGET || "http://localhost:8080";
+  // Backend (FastAPI): local docker stack defaults to 8081.
+  // Override with VITE_API_PROXY_TARGET for custom environments.
+  const target = env.VITE_API_PROXY_TARGET || "http://localhost:8081";
 
   return {
     plugins: [react()],

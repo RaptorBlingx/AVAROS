@@ -124,6 +124,14 @@ export function WidgetButton({
     visualState === "listening" || visualState === "speaking";
   const recordingVariant =
     visualState === "speaking" ? "speaking" : "listening";
+  const dotState =
+    visualState === "disabled"
+      ? "disconnected"
+      : connectionState === "connected"
+      ? "connected"
+      : connectionState === "error"
+      ? "error"
+      : "disconnected";
 
   return (
     <button
@@ -142,9 +150,7 @@ export function WidgetButton({
         {renderIcon(visualState)}
       </span>
       <span
-        className={`voice-widget__dot voice-widget__dot--${
-          visualState === "disabled" ? "disconnected" : visualState
-        }`}
+        className={`voice-widget__dot voice-widget__dot--${dotState}`}
         aria-hidden="true"
       />
       {label ? <span className="aw-widget-label">{label}</span> : null}

@@ -1271,12 +1271,16 @@ class AVAROSSkill(FallbackSkill):
         try:
             if self.dispatcher is not None:
                 import asyncio
-
-                loop = asyncio.new_event_loop()
+                shutdown_coro = self.dispatcher.adapter.shutdown()
                 try:
-                    loop.run_until_complete(self.dispatcher.adapter.shutdown())
-                finally:
-                    loop.close()
+                    running_loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    running_loop = None
+
+                if running_loop and running_loop.is_running():
+                    running_loop.create_task(shutdown_coro)
+                else:
+                    asyncio.run(shutdown_coro)
         except Exception as exc:
             self.log.warning("Adapter shutdown during stop() failed: %s", exc)
         finally:

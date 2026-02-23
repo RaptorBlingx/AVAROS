@@ -64,6 +64,10 @@
   --voice-accent: #10b981;
 }
 
+.voice-widget__dot--connected {
+  --voice-accent: #10b981;
+}
+
 .voice-widget__button--error,
 .voice-widget__dot--error {
   --voice-accent: #ef4444;
