@@ -74,6 +74,21 @@ export type MetricMapping = {
 
 export type MetricMappingRequest = MetricMapping;
 
+export type MetricMappingTestRequest = {
+  base_url: string;
+  endpoint: string;
+  json_path: string;
+  auth_type: "bearer" | "cookie";
+  auth_token: string;
+};
+
+export type MetricMappingTestResponse = {
+  success: boolean;
+  value: number | null;
+  raw_response_preview: string;
+  error: string | null;
+};
+
 export type NonMetricIntentName =
   | "control.device.turn_on"
   | "control.device.turn_off"

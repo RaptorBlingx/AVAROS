@@ -10,9 +10,12 @@ from schemas.metrics import (
     MetricMappingListResponse,
     MetricMappingRequest,
     MetricMappingResponse,
+    MetricMappingTestRequest,
+    MetricMappingTestResponse,
 )
 from skill.domain.exceptions import ValidationError
 from skill.services.settings import SettingsService
+from services.metric_test_service import run_metric_mapping_test
 
 
 router = APIRouter(prefix="/api/v1/config", tags=["metrics"])
@@ -35,6 +38,12 @@ def _mapping_data(payload: MetricMappingRequest) -> dict[str, str | None]:
         "unit": payload.unit,
         "transform": payload.transform,
     }
+
+
+def _requires_secret_resolution(token: str) -> bool:
+    """Return True when frontend token is empty or masked."""
+    trimmed = token.strip()
+    return not trimmed or trimmed.startswith("****")
 
 
 def _to_response(metric_name: str, mapping: dict) -> MetricMappingResponse:
@@ -133,3 +142,14 @@ def delete_metric_mapping(
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
+
+@router.post("/metrics/test", response_model=MetricMappingTestResponse)
+async def test_metric_mapping(
+    payload: MetricMappingTestRequest,
+    settings_service: SettingsService = Depends(get_settings_service),
+) -> MetricMappingTestResponse:
+    """Test metric endpoint + JSON path resolution with one sample request."""
+    if _requires_secret_resolution(payload.auth_token):
+        active_config = settings_service.get_platform_config()
+        payload = payload.model_copy(update={"auth_token": active_config.api_key})
+    return await run_metric_mapping_test(payload)

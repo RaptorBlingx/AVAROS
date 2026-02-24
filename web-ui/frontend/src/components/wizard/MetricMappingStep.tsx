@@ -3,7 +3,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createMetricMapping,
   deleteMetricMapping,
+  getPlatformConfig,
   listMetricMappings,
+  testMetricMapping,
   toFriendlyErrorMessage,
   updateMetricMapping,
 } from "../../api/client";
@@ -23,6 +25,11 @@ type MetricMappingStepProps = {
   onComplete: () => void;
   onSkip: () => void;
 };
+
+type MetricTestState =
+  | { status: "loading" }
+  | { status: "success"; value: number }
+  | { status: "error"; error: string };
 
 const EMPTY_ROW_DEFAULTS: Omit<MetricMappingRow, "id" | "canonical_metric"> = {
   endpoint: "",
@@ -66,6 +73,9 @@ export default function MetricMappingStep({
   const [formError, setFormError] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [testStateByRow, setTestStateByRow] = useState<
+    Record<string, MetricTestState>
+  >({});
 
   const usedMetrics = useMemo(
     () => new Set(rows.map((row) => row.canonical_metric)),
@@ -91,6 +101,7 @@ export default function MetricMappingStep({
       }
       setRows(nextRows);
       setExistingByMetric(nextExistingByMetric);
+      setTestStateByRow({});
     } catch (error: unknown) {
       setFormError(toFriendlyErrorMessage(error));
     } finally {
@@ -159,6 +170,12 @@ export default function MetricMappingStep({
       delete copy[id];
       return copy;
     });
+    setTestStateByRow((prev) => {
+      if (!prev[id]) return prev;
+      const copy = { ...prev };
+      delete copy[id];
+      return copy;
+    });
   }, []);
 
   const updateRow = useCallback(
@@ -170,6 +187,18 @@ export default function MetricMappingStep({
       setRows((prev) =>
         prev.map((row) => (row.id === id ? { ...row, [key]: value } : row)),
       );
+      if (
+        key === "endpoint" ||
+        key === "json_path" ||
+        key === "canonical_metric"
+      ) {
+        setTestStateByRow((prev) => {
+          if (!prev[id]) return prev;
+          const copy = { ...prev };
+          delete copy[id];
+          return copy;
+        });
+      }
       setErrorsByRow((prev) => {
         if (!prev[id]) return prev;
         const rowErrors = { ...prev[id] };
@@ -183,6 +212,75 @@ export default function MetricMappingStep({
       });
     },
     [],
+  );
+
+  const testRowMapping = useCallback(
+    async (rowId: string) => {
+      const row = rows.find((item) => item.id === rowId);
+      if (!row) {
+        return;
+      }
+      if (!row.endpoint.trim() || !row.json_path.trim()) {
+        setTestStateByRow((prev) => ({
+          ...prev,
+          [rowId]: {
+            status: "error",
+            error: "Endpoint and JSON path are required before testing.",
+          },
+        }));
+        return;
+      }
+
+      setTestStateByRow((prev) => ({ ...prev, [rowId]: { status: "loading" } }));
+
+      try {
+        const config = await getPlatformConfig();
+        if (!config.api_url.trim()) {
+          setTestStateByRow((prev) => ({
+            ...prev,
+            [rowId]: {
+              status: "error",
+              error: "Platform base URL is not configured yet.",
+            },
+          }));
+          return;
+        }
+
+        const response = await testMetricMapping({
+          base_url: config.api_url,
+          endpoint: row.endpoint.trim(),
+          json_path: row.json_path.trim(),
+          auth_type: config.extra_settings.auth_type === "cookie" ? "cookie" : "bearer",
+          auth_token: config.api_key,
+        });
+
+        if (response.success && typeof response.value === "number") {
+          const resolvedValue = response.value;
+          setTestStateByRow((prev) => ({
+            ...prev,
+            [rowId]: { status: "success", value: resolvedValue },
+          }));
+          return;
+        }
+
+        setTestStateByRow((prev) => ({
+          ...prev,
+          [rowId]: {
+            status: "error",
+            error: response.error ?? "Mapping test failed.",
+          },
+        }));
+      } catch (error: unknown) {
+        setTestStateByRow((prev) => ({
+          ...prev,
+          [rowId]: {
+            status: "error",
+            error: toFriendlyErrorMessage(error),
+          },
+        }));
+      }
+    },
+    [rows],
   );
 
   const saveMappings = useCallback(async () => {
@@ -263,15 +361,43 @@ export default function MetricMappingStep({
               errorsByRow={errorsByRow}
               usedMetrics={usedMetrics}
               onChange={updateRow}
-              renderActions={(row) => (
-                <button
-                  type="button"
-                  className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800 transition hover:bg-red-100 dark:border-red-500/40 dark:bg-red-900/40 dark:text-red-200 dark:hover:bg-red-900/60"
-                  onClick={() => removeRow(row.id)}
-                >
-                  Remove
-                </button>
-              )}
+              renderActions={(row) => {
+                const rowTestState = testStateByRow[row.id];
+                const isTesting = rowTestState?.status === "loading";
+                let testLabel = "Test";
+                let testTitle = "Test this mapping";
+                if (rowTestState?.status === "loading") {
+                  testLabel = "Testing...";
+                } else if (rowTestState?.status === "success") {
+                  testLabel = "✓";
+                  testTitle = `Value: ${rowTestState.value}`;
+                } else if (rowTestState?.status === "error") {
+                  testLabel = "✕";
+                  testTitle = rowTestState.error;
+                }
+
+                return (
+                  <>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-sky-300 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-500 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
+                      onClick={() => void testRowMapping(row.id)}
+                      title={testTitle}
+                      aria-label={`Test mapping for ${row.canonical_metric}`}
+                      disabled={isTesting}
+                    >
+                      {testLabel}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800 transition hover:bg-red-100 dark:border-red-500/40 dark:bg-red-900/40 dark:text-red-200 dark:hover:bg-red-900/60"
+                      onClick={() => removeRow(row.id)}
+                    >
+                      Remove
+                    </button>
+                  </>
+                );
+              }}
             />
 
             <div className="mt-4 flex flex-wrap gap-3">
