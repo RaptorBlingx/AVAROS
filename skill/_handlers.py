@@ -11,6 +11,33 @@ if TYPE_CHECKING:
     from skill import AVAROSSkill
 
 
+def _is_metric_mapped_for_active_adapter(
+    skill: "AVAROSSkill",
+    metric: CanonicalMetric,
+) -> bool:
+    """Return True when current adapter reports support for the metric."""
+    dispatcher = getattr(skill, "dispatcher", None)
+    if dispatcher is None:
+        return False
+
+    adapter = getattr(dispatcher, "adapter", None)
+    if adapter is None:
+        return False
+
+    try:
+        supported_metrics = adapter.get_supported_metrics()
+    except Exception:
+        supported_metrics = None
+
+    if isinstance(supported_metrics, (list, tuple, set, frozenset)):
+        return metric in supported_metrics or metric.value in supported_metrics
+
+    try:
+        return bool(adapter.supports_capability(metric.value))
+    except Exception:
+        return True
+
+
 def dispatch_kpi_for_metric(
     skill: "AVAROSSkill",
     *,
@@ -65,6 +92,35 @@ def handle_compare_energy(skill: "AVAROSSkill", message) -> None:
     skill._safe_dispatch("handle_compare_energy", _execute)
 
 
+def handle_compare_metric(skill: "AVAROSSkill", message) -> None:
+    """Handle generic compare requests for any canonical metric."""
+    data = getattr(message, "data", {}) or {}
+    metric_text = str(data.get("metric", "")).strip()
+    source_text = metric_text or skill._extract_utterance_text(message)
+    metric = skill._resolve_metric_from_utterance(source_text)
+
+    if metric is None:
+        skill.speak("I didn't recognize that metric. Try saying the full metric name.")
+        return
+
+    if not _is_metric_mapped_for_active_adapter(skill, metric):
+        skill.speak("That metric is not configured for this platform")
+        return
+
+    def _execute() -> None:
+        asset_a, asset_b = skill._resolve_compare_assets(message)
+        period = skill._parse_period(data.get("period", "today"))
+        result: ComparisonResult = skill.dispatcher.compare(
+            metric=metric,
+            asset_ids=[asset_a, asset_b],
+            period=period,
+        )
+        response = skill.response_builder.format_comparison_result(result)
+        skill.speak(response)
+
+    skill._safe_dispatch("handle_compare_metric", _execute)
+
+
 def handle_trend_scrap(skill: "AVAROSSkill", message) -> None:
     """Handle: 'Show scrap rate trend for {period}'."""
 
@@ -84,6 +140,39 @@ def handle_trend_scrap(skill: "AVAROSSkill", message) -> None:
         skill.speak(response)
 
     skill._safe_dispatch("handle_trend_scrap", _execute)
+
+
+def handle_trend_metric(skill: "AVAROSSkill", message) -> None:
+    """Handle generic trend requests for any canonical metric."""
+    data = getattr(message, "data", {}) or {}
+    metric_text = str(data.get("metric", "")).strip()
+    source_text = metric_text or skill._extract_utterance_text(message)
+    metric = skill._resolve_metric_from_utterance(source_text)
+
+    if metric is None:
+        skill.speak("I didn't recognize that metric. Try saying the full metric name.")
+        return
+
+    if not _is_metric_mapped_for_active_adapter(skill, metric):
+        skill.speak("That metric is not configured for this platform")
+        return
+
+    def _execute() -> None:
+        asset_id = skill._resolve_asset_id(message)
+        period = skill._parse_period(data.get("period", "last week"))
+        granularity = data.get("granularity", "daily")
+
+        result: TrendResult = skill.dispatcher.get_trend(
+            metric=metric,
+            asset_id=asset_id,
+            period=period,
+            granularity=granularity,
+        )
+
+        response = skill.response_builder.format_trend_result(result)
+        skill.speak(response)
+
+    skill._safe_dispatch("handle_trend_metric", _execute)
 
 
 def handle_trend_energy(skill: "AVAROSSkill", message) -> None:

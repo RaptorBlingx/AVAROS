@@ -21,7 +21,8 @@ def resolve_metric_from_utterance(
     if not utterance:
         return None
 
-    normalized = re.sub(r"[^a-z0-9\s]", " ", utterance.lower())
+    normalized_input = utterance.lower().replace("₂", "2")
+    normalized = re.sub(r"[^a-z0-9\s]", " ", normalized_input)
     normalized = re.sub(r"\s+", " ", normalized).strip()
 
     co2_like = bool(
@@ -40,6 +41,23 @@ def resolve_metric_from_utterance(
         return CanonicalMetric.CO2_TOTAL
 
     phrase_map: list[tuple[CanonicalMetric, tuple[str, ...]]] = [
+        (
+            CanonicalMetric.OEE,
+            (
+                "oee",
+                "overall equipment effectiveness",
+                "equipment effectiveness",
+            ),
+        ),
+        (
+            CanonicalMetric.SCRAP_RATE,
+            (
+                "scrap rate",
+                "scrap",
+                "waste rate",
+                "waste",
+            ),
+        ),
         (
             CanonicalMetric.ENERGY_PER_UNIT,
             (
@@ -63,6 +81,13 @@ def resolve_metric_from_utterance(
             ),
         ),
         (
+            CanonicalMetric.PEAK_TARIFF_EXPOSURE,
+            (
+                "peak tariff exposure",
+                "tariff exposure",
+            ),
+        ),
+        (
             CanonicalMetric.PEAK_DEMAND,
             (
                 "peak demand",
@@ -71,7 +96,6 @@ def resolve_metric_from_utterance(
                 "peak power demand",
             ),
         ),
-        (CanonicalMetric.PEAK_TARIFF_EXPOSURE, ("peak tariff exposure", "tariff exposure")),
         (CanonicalMetric.REWORK_RATE, ("rework rate", "rework")),
         (CanonicalMetric.MATERIAL_EFFICIENCY, ("material efficiency",)),
         (CanonicalMetric.RECYCLED_CONTENT, ("recycled content",)),
@@ -129,6 +153,11 @@ def resolve_metric_from_utterance(
 
     for metric, phrases in phrase_map:
         if any(phrase in normalized for phrase in phrases):
+            return metric
+
+    for metric in CanonicalMetric:
+        canonical_phrase = metric.value.replace("_", " ")
+        if canonical_phrase in normalized:
             return metric
 
     return None

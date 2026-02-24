@@ -14,6 +14,7 @@ from skill._handlers import (
     dispatch_kpi_for_metric,
     handle_anomaly_check as _handle_anomaly_check_impl,
     handle_compare_energy as _handle_compare_energy_impl,
+    handle_compare_metric as _handle_compare_metric_impl,
     handle_control_turn_off as _handle_control_turn_off_impl,
     handle_control_turn_on as _handle_control_turn_on_impl,
     handle_greeting as _handle_greeting_impl,
@@ -24,6 +25,7 @@ from skill._handlers import (
     handle_status_profile_show as _handle_status_profile_show_impl,
     handle_status_system_show as _handle_status_system_show_impl,
     handle_trend_energy as _handle_trend_energy_impl,
+    handle_trend_metric as _handle_trend_metric_impl,
     handle_trend_scrap as _handle_trend_scrap_impl,
     handle_whatif_temperature as _handle_whatif_temperature_impl,
 )
@@ -67,28 +69,24 @@ INTENT_METRIC_MAP: dict[str, CanonicalMetric] = {
     "kpi.supplier_on_time": CanonicalMetric.SUPPLIER_ON_TIME,
     "kpi.supplier_co2_per_kg": CanonicalMetric.SUPPLIER_CO2_PER_KG,
     "kpi.throughput": CanonicalMetric.THROUGHPUT,
-    "kpi.cycle_time": CanonicalMetric.CYCLE_TIME,
-    "kpi.changeover_time": CanonicalMetric.CHANGEOVER_TIME,
+    "kpi.cycle_time": CanonicalMetric.CYCLE_TIME, "kpi.changeover_time": CanonicalMetric.CHANGEOVER_TIME,
     "kpi.co2.per_unit": CanonicalMetric.CO2_PER_UNIT,
     "kpi.co2.total": CanonicalMetric.CO2_TOTAL,
     "kpi.co2.per_batch": CanonicalMetric.CO2_PER_BATCH,
 }
 
 NON_KPI_INTENT_MAP: tuple[tuple[str, str], ...] = (
-    ("greeting.intent", "handle_greeting"),
-    ("help.intent", "handle_help"),
-    ("compare.energy.intent", "handle_compare_energy"),
-    ("trend.scrap.intent", "handle_trend_scrap"),
-    ("trend.energy.intent", "handle_trend_energy"),
+    ("greeting.intent", "handle_greeting"), ("help.intent", "handle_help"),
+    ("compare.metric.intent", "handle_compare_metric"), ("compare.energy.intent", "handle_compare_energy"),
+    ("trend.metric.intent", "handle_trend_metric"),
+    ("trend.scrap.intent", "handle_trend_scrap"), ("trend.energy.intent", "handle_trend_energy"),
     ("anomaly.production.check.intent", "handle_anomaly_check"),
     ("whatif.temperature.intent", "handle_whatif_temperature"),
     ("control.device.turn_on.intent", "handle_control_turn_on"),
     ("control.device.turn_off.intent", "handle_control_turn_off"),
-    ("status.system.show.intent", "handle_status_system_show"),
-    ("status.profile.show.intent", "handle_status_profile_show"),
+    ("status.system.show.intent", "handle_status_system_show"), ("status.profile.show.intent", "handle_status_profile_show"),
     ("help.capabilities.list.intent", "handle_help_capabilities_list"),
 )
-
 
 class AVAROSSkill(FallbackSkill):
     """Voice-driven manufacturing KPI assistant."""
@@ -113,7 +111,9 @@ class AVAROSSkill(FallbackSkill):
 
     handle_greeting = _handle_greeting_impl
     handle_help = _handle_help_impl
+    handle_compare_metric = _handle_compare_metric_impl
     handle_compare_energy = _handle_compare_energy_impl
+    handle_trend_metric = _handle_trend_metric_impl
     handle_trend_scrap = _handle_trend_scrap_impl
     handle_trend_energy = _handle_trend_energy_impl
     handle_anomaly_check = _handle_anomaly_check_impl

@@ -1,0 +1,8 @@
+compare {metric} for {asset_a} and {asset_b}
+compare {metric} between {asset_a} and {asset_b}
+{metric} comparison between {asset_a} and {asset_b}
+compare {metric} {asset_a} versus {asset_b}
+compare {metric} {asset_a} vs {asset_b}
+which has (better|higher|lower|more|less) {metric} {asset_a} or {asset_b}
+compare {metric}
+show {metric} comparison
