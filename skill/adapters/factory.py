@@ -23,6 +23,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from skill.adapters.base import ManufacturingAdapter
+from skill.adapters.generic_rest import GenericRestAdapter
 from skill.adapters.mock import MockAdapter
 from skill.adapters.reneryo import ReneryoAdapter
 
@@ -64,6 +65,7 @@ class AdapterFactory:
         "mock": MockAdapter,
         "demo": MockAdapter,
         "reneryo": ReneryoAdapter,
+        "custom_rest": GenericRestAdapter,
         # "sap": SAPAdapter,           # Future
     }
     
@@ -205,6 +207,10 @@ class AdapterFactory:
         # ReneryoAdapter requires api_url and api_key from platform config
         if adapter_class == ReneryoAdapter:
             return self._create_reneryo_adapter()
+
+        # GenericRestAdapter uses profile metric mappings (custom_rest)
+        if adapter_class == GenericRestAdapter:
+            return self._create_generic_rest_adapter()
         
         # Fallback for unknown adapters
         return adapter_class()
@@ -278,6 +284,50 @@ class AdapterFactory:
             profile_name=profile_name,
             extra_settings=self._sanitize_extra_settings(extra),
             asset_mappings=asset_mappings,
+        )
+
+    def _create_generic_rest_adapter(self) -> GenericRestAdapter:
+        """Create GenericRestAdapter with config from active profile."""
+        api_url = ""
+        api_key = ""
+        timeout = 30
+        auth_type = "bearer"
+        profile_name = ""
+        extra: dict = {}
+
+        if self._settings_service is not None:
+            try:
+                profile_name = (
+                    self._settings_service.get_active_profile_name()
+                )
+                config = self._settings_service.get_profile(
+                    profile_name,
+                )
+                if config is not None:
+                    api_url = getattr(config, "api_url", "") or ""
+                    api_key = getattr(config, "api_key", "") or ""
+                    timeout = getattr(config, "timeout", 30) or 30
+                    extra = (
+                        getattr(config, "extra_settings", {}) or {}
+                    )
+                    auth_type = (
+                        extra.get("auth_type", "bearer")
+                        if isinstance(extra, dict)
+                        else "bearer"
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "Error reading custom_rest config: %s", exc,
+                )
+
+        return GenericRestAdapter(
+            api_url=api_url,
+            api_key=api_key,
+            timeout=timeout,
+            auth_type=auth_type,
+            settings_service=self._settings_service,
+            profile_name=profile_name,
+            extra_settings=extra if isinstance(extra, dict) else {},
         )
 
     @staticmethod
