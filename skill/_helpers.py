@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING
 
 from skill.domain.models import CanonicalMetric, TimePeriod
+from skill._intent_resolver import resolve_intent_name as _resolve_intent_name
+from skill._metric_resolver import resolve_metric_from_utterance as _resolve_metric_from_utterance
+
+if TYPE_CHECKING:
+    from ovos_bus_client.message import Message
 
 
 def parse_period(self, period_str: str) -> TimePeriod:
@@ -17,121 +22,16 @@ def resolve_metric_from_utterance(
     self,
     utterance: str,
 ) -> CanonicalMetric | None:
-    """Resolve a canonical metric from free-form KPI utterance text."""
-    if not utterance:
-        return None
+    """Resolve a canonical metric from free-form KPI utterance text.
 
-    normalized = re.sub(r"[^a-z0-9\s]", " ", utterance.lower())
-    normalized = re.sub(r"\s+", " ", normalized).strip()
+    Args:
+        self: Bound skill instance (kept for method compatibility).
+        utterance: Raw user utterance text.
 
-    co2_like = bool(
-        re.search(r"\bco\s*2\b", normalized)
-        or re.search(r"\bco2\b", normalized)
-        or re.search(r"\bco\s*two\b", normalized)
-        or "carbon dioxide" in normalized
-        or "carbon emissions" in normalized
-    )
-    total_like = bool(
-        "total" in normalized
-        or re.search(r"\btot\w*\b", normalized)
-        or "emissions" in normalized
-    )
-    if co2_like and total_like:
-        return CanonicalMetric.CO2_TOTAL
-
-    phrase_map: list[tuple[CanonicalMetric, tuple[str, ...]]] = [
-        (
-            CanonicalMetric.ENERGY_PER_UNIT,
-            (
-                "energy per unit",
-                "power per unit",
-                "electricity per unit",
-                "energy consumption per unit",
-                "specific energy",
-                "specific power",
-            ),
-        ),
-        (
-            CanonicalMetric.ENERGY_TOTAL,
-            (
-                "total energy",
-                "energy total",
-                "total power",
-                "total electricity",
-                "energy consumption",
-                "power consumption",
-            ),
-        ),
-        (
-            CanonicalMetric.PEAK_DEMAND,
-            (
-                "peak demand",
-                "maximum demand",
-                "max demand",
-                "peak power demand",
-            ),
-        ),
-        (CanonicalMetric.PEAK_TARIFF_EXPOSURE, ("peak tariff exposure", "tariff exposure")),
-        (CanonicalMetric.REWORK_RATE, ("rework rate", "rework")),
-        (CanonicalMetric.MATERIAL_EFFICIENCY, ("material efficiency",)),
-        (CanonicalMetric.RECYCLED_CONTENT, ("recycled content",)),
-        (CanonicalMetric.SUPPLIER_LEAD_TIME, ("supplier lead time", "lead time")),
-        (CanonicalMetric.SUPPLIER_DEFECT_RATE, ("supplier defect rate", "defect rate")),
-        (CanonicalMetric.SUPPLIER_ON_TIME, ("supplier on time", "on time delivery")),
-        (
-            CanonicalMetric.SUPPLIER_CO2_PER_KG,
-            (
-                "supplier co2 per kg",
-                "supplier co 2 per kg",
-                "supplier co two per kg",
-                "supplier carbon dioxide per kilogram",
-                "supplier emissions per kilogram",
-            ),
-        ),
-        (CanonicalMetric.THROUGHPUT, ("throughput",)),
-        (CanonicalMetric.CYCLE_TIME, ("cycle time",)),
-        (CanonicalMetric.CHANGEOVER_TIME, ("changeover time", "change over time")),
-        (
-            CanonicalMetric.CO2_PER_UNIT,
-            (
-                "co2 per unit",
-                "co 2 per unit",
-                "co two per unit",
-                "carbon dioxide per unit",
-                "emissions per unit",
-            ),
-        ),
-        (
-            CanonicalMetric.CO2_TOTAL,
-            (
-                "co2 total",
-                "co 2 total",
-                "co two total",
-                "total co2",
-                "total co 2",
-                "total co two",
-                "total carbon",
-                "total carbon emissions",
-                "total emissions",
-            ),
-        ),
-        (
-            CanonicalMetric.CO2_PER_BATCH,
-            (
-                "co2 per batch",
-                "co 2 per batch",
-                "co two per batch",
-                "carbon dioxide per batch",
-                "emissions per batch",
-            ),
-        ),
-    ]
-
-    for metric, phrases in phrase_map:
-        if any(phrase in normalized for phrase in phrases):
-            return metric
-
-    return None
+    Returns:
+        Matched canonical metric, otherwise ``None``.
+    """
+    return _resolve_metric_from_utterance(utterance)
 
 
 def is_non_mock_profile(self) -> bool:
@@ -231,7 +131,11 @@ def parse_numeric_amount(self, raw_amount: str) -> float | None:
     return None
 
 
-def resolve_temperature_amount(self, message, default: float = 5.0) -> float:
+def resolve_temperature_amount(
+    self,
+    message: Message,
+    default: float = 5.0,
+) -> float:
     """Resolve what-if temperature delta from slots or raw utterance."""
     data = getattr(message, "data", {}) or {}
     slot_amount = self._parse_numeric_amount(str(data.get("amount", "")))
@@ -259,7 +163,7 @@ def resolve_temperature_amount(self, message, default: float = 5.0) -> float:
     return default
 
 
-def extract_utterance_text(self, message) -> str:
+def extract_utterance_text(self, message: Message) -> str:
     """Extract raw utterance text from message payload/context."""
     data = getattr(message, "data", {}) or {}
     utterance = data.get("utterance")
@@ -312,7 +216,7 @@ def extract_line_assets_from_text(self, text: str) -> list[str]:
     return [self._canonicalize_asset_id(f"line {value}") for value in matches]
 
 
-def resolve_asset_id(self, message, default: str = "default") -> str:
+def resolve_asset_id(self, message: Message, default: str = "default") -> str:
     """Resolve asset_id using slot first, then utterance fallback parsing."""
     data = getattr(message, "data", {}) or {}
     slot_asset = self._canonicalize_asset_id(str(data.get("asset", "")))
@@ -328,7 +232,7 @@ def resolve_asset_id(self, message, default: str = "default") -> str:
     return default
 
 
-def resolve_compare_assets(self, message) -> tuple[str, str]:
+def resolve_compare_assets(self, message: Message) -> tuple[str, str]:
     """Resolve comparison assets with utterance fallback for line references."""
     data = getattr(message, "data", {}) or {}
     asset_a = self._canonicalize_asset_id(str(data.get("asset_a", "")))
@@ -365,54 +269,6 @@ def is_anomaly_query(self, utterance: str) -> bool:
     return any(pattern in normalized for pattern in anomaly_patterns)
 
 
-def extract_intent_name(self, message) -> str:
-    """Extract normalized intent name without '.intent' suffix."""
-    data = getattr(message, "data", {}) or {}
-
-    candidates: list[Any] = [
-        data.get("__intent__"),
-        data.get("intent_name"),
-        data.get("intent_type"),
-        data.get("intent"),
-        getattr(message, "msg_type", None),
-    ]
-
-    for candidate in candidates:
-        name = _normalize_intent_candidate(candidate)
-        if name:
-            return name
-
-    return ""
-
-
-def _normalize_intent_candidate(candidate: Any) -> str:
-    """Normalize intent value from dict/string payloads."""
-    if not candidate:
-        return ""
-
-    if isinstance(candidate, dict):
-        for key in ("intent_name", "name", "intent_type"):
-            value = _normalize_intent_candidate(candidate.get(key))
-            if value:
-                return value
-        return ""
-
-    if not isinstance(candidate, str):
-        return ""
-
-    value = candidate.strip()
-    if not value:
-        return ""
-
-    # Common format: skill_id:intent.name.intent
-    if ":" in value:
-        value = value.split(":", 1)[1]
-
-    if value.endswith(".intent"):
-        value = value[:-7]
-
-    # Guard for unrelated bus message types.
-    if not value.startswith("kpi."):
-        return ""
-
-    return value
+def extract_intent_name(self, message: Message) -> str:
+    """Extract normalized KPI intent name from bus message payload."""
+    return _resolve_intent_name(message)

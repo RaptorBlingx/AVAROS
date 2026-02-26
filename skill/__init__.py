@@ -4,27 +4,29 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any, Callable, List
+from typing import TYPE_CHECKING, Any, Callable, List
 
 from ovos_workshop.decorators import fallback_handler
 from ovos_workshop.skills import FallbackSkill
 
 from skill._handlers import (
     can_answer as _can_answer_impl,
+    handle_compare_energy as _handle_compare_energy_impl,
+    handle_intent_failure as _handle_intent_failure_impl,
+    handle_metric_query_fallback as _handle_metric_query_fallback_impl,
+    handle_trend_energy as _handle_trend_energy_impl,
+    handle_trend_scrap as _handle_trend_scrap_impl,
     dispatch_kpi_for_metric,
     handle_anomaly_check as _handle_anomaly_check_impl,
-    handle_compare_energy as _handle_compare_energy_impl,
+)
+from skill._system_handlers import (
     handle_control_turn_off as _handle_control_turn_off_impl,
     handle_control_turn_on as _handle_control_turn_on_impl,
     handle_greeting as _handle_greeting_impl,
     handle_help as _handle_help_impl,
     handle_help_capabilities_list as _handle_help_capabilities_list_impl,
-    handle_intent_failure as _handle_intent_failure_impl,
-    handle_metric_query_fallback as _handle_metric_query_fallback_impl,
     handle_status_profile_show as _handle_status_profile_show_impl,
     handle_status_system_show as _handle_status_system_show_impl,
-    handle_trend_energy as _handle_trend_energy_impl,
-    handle_trend_scrap as _handle_trend_scrap_impl,
     handle_whatif_temperature as _handle_whatif_temperature_impl,
 )
 from skill._helpers import (
@@ -46,49 +48,14 @@ from skill._helpers import (
     resolve_temperature_amount as _resolve_temperature_amount_impl,
     set_power_state as _set_power_state_impl,
 )
+from skill._intent_maps import INTENT_METRIC_MAP, NON_KPI_INTENT_MAP
 from skill.adapters.factory import AdapterFactory
 from skill.domain.exceptions import AVAROSError
-from skill.domain.models import CanonicalMetric
 from skill.services.response_builder import ResponseBuilder
 from skill.use_cases.query_dispatcher import QueryDispatcher
 
-INTENT_METRIC_MAP: dict[str, CanonicalMetric] = {
-    "kpi.energy.per_unit": CanonicalMetric.ENERGY_PER_UNIT,
-    "kpi.energy.total": CanonicalMetric.ENERGY_TOTAL,
-    "kpi.oee": CanonicalMetric.OEE,
-    "kpi.scrap_rate": CanonicalMetric.SCRAP_RATE,
-    "kpi.peak_demand": CanonicalMetric.PEAK_DEMAND,
-    "kpi.peak_tariff_exposure": CanonicalMetric.PEAK_TARIFF_EXPOSURE,
-    "kpi.rework_rate": CanonicalMetric.REWORK_RATE,
-    "kpi.material_efficiency": CanonicalMetric.MATERIAL_EFFICIENCY,
-    "kpi.recycled_content": CanonicalMetric.RECYCLED_CONTENT,
-    "kpi.supplier_lead_time": CanonicalMetric.SUPPLIER_LEAD_TIME,
-    "kpi.supplier_defect_rate": CanonicalMetric.SUPPLIER_DEFECT_RATE,
-    "kpi.supplier_on_time": CanonicalMetric.SUPPLIER_ON_TIME,
-    "kpi.supplier_co2_per_kg": CanonicalMetric.SUPPLIER_CO2_PER_KG,
-    "kpi.throughput": CanonicalMetric.THROUGHPUT,
-    "kpi.cycle_time": CanonicalMetric.CYCLE_TIME,
-    "kpi.changeover_time": CanonicalMetric.CHANGEOVER_TIME,
-    "kpi.co2.per_unit": CanonicalMetric.CO2_PER_UNIT,
-    "kpi.co2.total": CanonicalMetric.CO2_TOTAL,
-    "kpi.co2.per_batch": CanonicalMetric.CO2_PER_BATCH,
-}
-
-NON_KPI_INTENT_MAP: tuple[tuple[str, str], ...] = (
-    ("greeting.intent", "handle_greeting"),
-    ("help.intent", "handle_help"),
-    ("compare.energy.intent", "handle_compare_energy"),
-    ("trend.scrap.intent", "handle_trend_scrap"),
-    ("trend.energy.intent", "handle_trend_energy"),
-    ("anomaly.production.check.intent", "handle_anomaly_check"),
-    ("whatif.temperature.intent", "handle_whatif_temperature"),
-    ("control.device.turn_on.intent", "handle_control_turn_on"),
-    ("control.device.turn_off.intent", "handle_control_turn_off"),
-    ("status.system.show.intent", "handle_status_system_show"),
-    ("status.profile.show.intent", "handle_status_profile_show"),
-    ("help.capabilities.list.intent", "handle_help_capabilities_list"),
-)
-
+if TYPE_CHECKING:
+    from ovos_bus_client.message import Message
 
 class AVAROSSkill(FallbackSkill):
     """Voice-driven manufacturing KPI assistant."""
@@ -212,7 +179,7 @@ class AVAROSSkill(FallbackSkill):
         for intent_file, handler_name in NON_KPI_INTENT_MAP:
             _register(intent_file, getattr(self, handler_name))
 
-    def _handle_generic_kpi(self, message) -> None:
+    def _handle_generic_kpi(self, message: Message) -> None:
         """Generic KPI handler that maps intent name to canonical metric."""
         intent_name = self._extract_intent_name(message)
         metric = INTENT_METRIC_MAP.get(intent_name)
@@ -235,7 +202,7 @@ class AVAROSSkill(FallbackSkill):
         except Exception:
             return "mock"
 
-    def _handle_profile_switch(self, message) -> None:
+    def _handle_profile_switch(self, message: Message) -> None:
         profile_name = message.data.get("profile", "")
         self.log.info("Profile switch event received: '%s'", profile_name)
         try:
@@ -342,7 +309,15 @@ class AVAROSSkill(FallbackSkill):
             self.log.warning("Profile mismatch check failed: %s", exc)
 
     def _safe_dispatch(self, handler_name: str, action: Callable) -> Any:
-        """Safely execute dispatch action with runtime recovery + error handling."""
+        """Safely execute an action with runtime recovery and user-safe errors.
+
+        Args:
+            handler_name: Name of the calling handler for structured logs.
+            action: Callable that performs the actual dispatch logic.
+
+        Returns:
+            Result of ``action`` when successful; otherwise ``None``.
+        """
         self._ensure_runtime_services()
 
         if self.dispatcher is None:
