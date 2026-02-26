@@ -72,6 +72,25 @@ class TestMetricMappingValidationEndpoint:
         assert body["success"] is False
         assert body["error"] == "JSONPath did not resolve to a value"
 
+    def test_test_mapping_rejects_absolute_endpoint_url(self, client: TestClient) -> None:
+        payload = {
+            "base_url": "https://api.example.com",
+            "endpoint": "http://169.254.169.254/latest/meta-data",
+            "json_path": "$.data.energy",
+            "auth_type": "bearer",
+            "auth_token": "token-123",
+        }
+
+        fetch_mock = AsyncMock(return_value=(200, '{"data": {"energy": 42.5}}'))
+        with patch("services.metric_test_service._fetch_response", new=fetch_mock):
+            response = client.post("/api/v1/config/metrics/test", json=payload)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["success"] is False
+        assert body["error"] == "Connection failed: endpoint must be a relative path"
+        assert fetch_mock.await_count == 0
+
     def test_test_mapping_unreachable_url_returns_error(self, client: TestClient) -> None:
         payload = {
             "base_url": "https://api.example.com",
@@ -91,6 +110,27 @@ class TestMetricMappingValidationEndpoint:
         body = response.json()
         assert body["success"] is False
         assert body["error"].startswith("Connection failed:")
+
+    def test_test_mapping_upstream_4xx_returns_error(self, client: TestClient) -> None:
+        payload = {
+            "base_url": "https://api.example.com",
+            "endpoint": "/metrics/energy",
+            "json_path": "$.data.energy",
+            "auth_type": "bearer",
+            "auth_token": "token-123",
+        }
+
+        with patch(
+            "services.metric_test_service._fetch_response",
+            new=AsyncMock(return_value=(404, '{"error":"missing"}')),
+        ):
+            response = client.post("/api/v1/config/metrics/test", json=payload)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["success"] is False
+        assert body["error"] == "Connection failed: upstream returned HTTP 404"
+        assert body["raw_response_preview"] == '{"error":"missing"}'
 
     def test_test_mapping_non_numeric_value_returns_error(self, client: TestClient) -> None:
         payload = {

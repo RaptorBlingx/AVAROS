@@ -3,55 +3,30 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createMetricMapping,
   deleteMetricMapping,
-  getPlatformConfig,
   listMetricMappings,
-  testMetricMapping,
   toFriendlyErrorMessage,
   updateMetricMapping,
 } from "../../api/client";
-import type { CanonicalMetricName, MetricMapping } from "../../api/types";
+import type { CanonicalMetricName } from "../../api/types";
+import useMetricMappingTest from "../../hooks/useMetricMappingTest";
 import MetricMappingsTable from "../common/MetricMappingsTable";
 import EmptyState from "../common/EmptyState";
 import LoadingSpinner from "../common/LoadingSpinner";
+import MetricMappingRowActions from "./MetricMappingRowActions";
+import {
+  createSettingsRow,
+  EMPTY_SETTINGS_ROW_DEFAULTS,
+  type SettingsMetricRow,
+} from "./metricMappingsSection.helpers";
 import { useTheme } from "../common/ThemeProvider";
 import { METRIC_OPTIONS } from "../common/metricMapping";
 import type { MetricMappingRow, MetricRowError } from "../common/metricMapping";
-
-type SettingsMetricRow = MetricMappingRow & {
-  persisted: boolean;
-  originalMetric: CanonicalMetricName | null;
-};
-
-type MetricTestState =
-  | { status: "loading" }
-  | { status: "success"; value: number }
-  | { status: "error"; error: string };
 
 type MetricMappingsSectionProps = {
   onNotify: (type: "success" | "error", message: string) => void;
   refreshKey?: number;
   activeProfile?: string;
 };
-
-const EMPTY_ROW_DEFAULTS: Omit<SettingsMetricRow, "id" | "canonical_metric" | "persisted" | "originalMetric"> = {
-  endpoint: "",
-  json_path: "",
-  unit: "",
-  transform: "",
-};
-
-function createRow(mapping: MetricMapping): SettingsMetricRow {
-  return {
-    id: `${mapping.canonical_metric}-${Math.random().toString(36).slice(2, 9)}`,
-    canonical_metric: mapping.canonical_metric,
-    endpoint: mapping.endpoint,
-    json_path: mapping.json_path,
-    unit: mapping.unit,
-    transform: mapping.transform ?? "",
-    persisted: true,
-    originalMetric: mapping.canonical_metric,
-  };
-}
 
 export default function MetricMappingsSection({
   onNotify,
@@ -63,47 +38,55 @@ export default function MetricMappingsSection({
   const [errorsByRow, setErrorsByRow] = useState<Record<string, MetricRowError>>({});
   const [loading, setLoading] = useState(true);
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
-  const [testStateByRow, setTestStateByRow] = useState<Record<string, MetricTestState>>({});
 
   const usedMetrics = useMemo(
     () => new Set(rows.map((row) => row.canonical_metric)),
     [rows],
   );
 
-  const loadMappings = useCallback(async () => {
-    setLoading(true);
-    setSavingRowId(null);
-    setErrorsByRow({});
-    setTestStateByRow({});
-    try {
-      const mappings = await listMetricMappings();
-      setRows(mappings.map(createRow));
-    } catch (error: unknown) {
-      onNotify("error", toFriendlyErrorMessage(error));
-    } finally {
-      setLoading(false);
-    }
-  }, [onNotify]);
-
-  useEffect(() => {
-    void loadMappings();
-  }, [loadMappings, refreshKey, activeProfile]);
-
   const isMockProfile = useMemo(
     () => activeProfile === "mock",
     [activeProfile],
   );
 
+  const resolveRow = useCallback((rowId: string) => (
+    rows.find((row) => row.id === rowId)
+  ), [rows]);
+
+  const {
+    testStateByRow,
+    testRowMapping,
+    resetRowTestState,
+    clearAllTestState,
+  } = useMetricMappingTest({
+    disabled: isMockProfile,
+    resolveRow,
+  });
+
+  const loadMappings = useCallback(async () => {
+    setLoading(true);
+    setSavingRowId(null);
+    setErrorsByRow({});
+    clearAllTestState();
+    try {
+      const mappings = await listMetricMappings();
+      setRows(mappings.map(createSettingsRow));
+    } catch (error: unknown) {
+      onNotify("error", toFriendlyErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }, [clearAllTestState, onNotify]);
+
+  useEffect(() => {
+    void loadMappings();
+  }, [loadMappings, refreshKey, activeProfile]);
+
   const updateRow = useCallback(
     <K extends keyof SettingsMetricRow>(id: string, key: K, value: SettingsMetricRow[K]) => {
       setRows((prev) => prev.map((row) => (row.id === id ? { ...row, [key]: value } : row)));
       if (key === "endpoint" || key === "json_path" || key === "canonical_metric") {
-        setTestStateByRow((prev) => {
-          if (!prev[id]) return prev;
-          const copy = { ...prev };
-          delete copy[id];
-          return copy;
-        });
+        resetRowTestState(id);
       }
       setErrorsByRow((prev) => {
         if (!prev[id]) return prev;
@@ -117,7 +100,7 @@ export default function MetricMappingsSection({
         return { ...prev, [id]: next };
       });
     },
-    [],
+    [resetRowTestState],
   );
 
   const updateBaseRow = useCallback(
@@ -159,7 +142,7 @@ export default function MetricMappingsSection({
         canonical_metric: candidate.value,
         persisted: false,
         originalMetric: null,
-        ...EMPTY_ROW_DEFAULTS,
+        ...EMPTY_SETTINGS_ROW_DEFAULTS,
       },
     ]);
   }, [isMockProfile, onNotify, rows]);
@@ -201,12 +184,7 @@ export default function MetricMappingsSection({
             : item,
         ),
       );
-      setTestStateByRow((prev) => {
-        if (!prev[rowId]) return prev;
-        const copy = { ...prev };
-        delete copy[rowId];
-        return copy;
-      });
+      resetRowTestState(rowId);
       setErrorsByRow((prev) => {
         const copy = { ...prev };
         delete copy[rowId];
@@ -218,10 +196,14 @@ export default function MetricMappingsSection({
     } finally {
       setSavingRowId(null);
     }
-  }, [isMockProfile, onNotify, rows, validateRow]);
+  }, [isMockProfile, onNotify, resetRowTestState, rows, validateRow]);
 
-  const removeRow = useCallback(async (row: SettingsMetricRow) => {
+  const removeRow = useCallback(async (rowId: string) => {
     if (isMockProfile) {
+      return;
+    }
+    const row = rows.find((item) => item.id === rowId);
+    if (!row) {
       return;
     }
     try {
@@ -234,83 +216,12 @@ export default function MetricMappingsSection({
         delete copy[row.id];
         return copy;
       });
-      setTestStateByRow((prev) => {
-        if (!prev[row.id]) return prev;
-        const copy = { ...prev };
-        delete copy[row.id];
-        return copy;
-      });
+      resetRowTestState(row.id);
       onNotify("success", "Metric mapping removed.");
     } catch (error: unknown) {
       onNotify("error", toFriendlyErrorMessage(error));
     }
-  }, [isMockProfile, onNotify]);
-
-  const testRow = useCallback(async (rowId: string) => {
-    if (isMockProfile) {
-      return;
-    }
-    const row = rows.find((item) => item.id === rowId);
-    if (!row) {
-      return;
-    }
-    if (!row.endpoint.trim() || !row.json_path.trim()) {
-      setTestStateByRow((prev) => ({
-        ...prev,
-        [rowId]: {
-          status: "error",
-          error: "Endpoint and JSON path are required before testing.",
-        },
-      }));
-      return;
-    }
-
-    setTestStateByRow((prev) => ({ ...prev, [rowId]: { status: "loading" } }));
-    try {
-      const config = await getPlatformConfig();
-      if (!config.api_url.trim()) {
-        setTestStateByRow((prev) => ({
-          ...prev,
-          [rowId]: {
-            status: "error",
-            error: "Platform base URL is not configured yet.",
-          },
-        }));
-        return;
-      }
-
-      const response = await testMetricMapping({
-        base_url: config.api_url,
-        endpoint: row.endpoint.trim(),
-        json_path: row.json_path.trim(),
-        auth_type: config.extra_settings.auth_type === "cookie" ? "cookie" : "bearer",
-        auth_token: config.api_key,
-      });
-      if (response.success && typeof response.value === "number") {
-        const resolvedValue = response.value;
-        setTestStateByRow((prev) => ({
-          ...prev,
-          [rowId]: { status: "success", value: resolvedValue },
-        }));
-        return;
-      }
-      setTestStateByRow((prev) => ({
-        ...prev,
-        [rowId]: {
-          status: "error",
-          error: response.error ?? "Mapping test failed.",
-        },
-      }));
-    } catch (error: unknown) {
-      setTestStateByRow((prev) => ({
-        ...prev,
-        [rowId]: {
-          status: "error",
-          error: toFriendlyErrorMessage(error),
-        },
-      }));
-    }
-  }, [isMockProfile, rows]);
+  }, [isMockProfile, onNotify, resetRowTestState, rows]);
 
   return (
     <section className="space-y-3">
@@ -355,61 +266,25 @@ export default function MetricMappingsSection({
               readOnly={isMockProfile}
               onChange={updateBaseRow}
               renderActions={(row) => {
-                const rowTestState = testStateByRow[row.id];
-                const isTesting = rowTestState?.status === "loading";
-                let testLabel = "Test";
-                let testTitle = "Test this mapping";
-                if (rowTestState?.status === "loading") {
-                  testLabel = "Testing...";
-                } else if (rowTestState?.status === "success") {
-                  testLabel = "✓";
-                  testTitle = `Value: ${rowTestState.value}`;
-                } else if (rowTestState?.status === "error") {
-                  testLabel = "✕";
-                  testTitle = rowTestState.error;
-                }
-
                 return (
-                  <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto">
-                    <button
-                      type="button"
-                      onClick={() => void saveRow(row.id)}
-                      disabled={isMockProfile || savingRowId === row.id}
-                      className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${
-                        isDark
-                          ? "border-slate-400 bg-white text-slate-900"
-                          : "border-sky-300 bg-sky-50 text-sky-700"
-                      }`}
-                    >
-                      {savingRowId === row.id ? "Saving..." : row.persisted ? "Save" : "Create"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void testRow(row.id)}
-                      disabled={isMockProfile || savingRowId === row.id || isTesting}
-                      title={testTitle}
-                      aria-label={`Test mapping for ${row.canonical_metric}`}
-                      className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${
-                        isDark
-                          ? "border-slate-400 bg-slate-800 text-slate-100"
-                          : "border-slate-300 bg-white text-slate-700"
-                      }`}
-                    >
-                      {testLabel}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void removeRow(row)}
-                      disabled={isMockProfile}
-                      className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${
-                        isDark
-                          ? "border-rose-400 bg-rose-950/60 text-rose-200"
-                          : "border-rose-300 bg-rose-50 text-rose-700"
-                      }`}
-                    >
-                      Remove
-                    </button>
-                  </div>
+                  <MetricMappingRowActions
+                    rowId={row.id}
+                    metricName={row.canonical_metric}
+                    persisted={row.persisted}
+                    isDark={isDark}
+                    isMockProfile={isMockProfile}
+                    savingRowId={savingRowId}
+                    rowTestState={testStateByRow[row.id]}
+                    onSave={(rowId) => {
+                      void saveRow(rowId);
+                    }}
+                    onTest={(rowId) => {
+                      void testRowMapping(rowId);
+                    }}
+                    onRemove={(rowId) => {
+                      void removeRow(rowId);
+                    }}
+                  />
                 );
               }}
             />
