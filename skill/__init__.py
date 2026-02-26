@@ -1,5 +1,4 @@
 """AVAROS OVOS skill entrypoint with generic KPI dispatch."""
-
 from __future__ import annotations
 
 import asyncio
@@ -8,16 +7,10 @@ from typing import TYPE_CHECKING, Any, Callable, List
 
 from ovos_workshop.decorators import fallback_handler
 from ovos_workshop.skills import FallbackSkill
-
 from skill._handlers import (
     can_answer as _can_answer_impl,
-    handle_compare_energy as _handle_compare_energy_impl,
     handle_intent_failure as _handle_intent_failure_impl,
     handle_metric_query_fallback as _handle_metric_query_fallback_impl,
-    handle_trend_energy as _handle_trend_energy_impl,
-    handle_trend_scrap as _handle_trend_scrap_impl,
-    dispatch_kpi_for_metric,
-    handle_anomaly_check as _handle_anomaly_check_impl,
 )
 from skill._system_handlers import (
     handle_control_turn_off as _handle_control_turn_off_impl,
@@ -28,6 +21,15 @@ from skill._system_handlers import (
     handle_status_profile_show as _handle_status_profile_show_impl,
     handle_status_system_show as _handle_status_system_show_impl,
     handle_whatif_temperature as _handle_whatif_temperature_impl,
+)
+from skill._metric_handlers import (
+    dispatch_kpi_for_metric,
+    handle_anomaly_check as _handle_anomaly_check_impl,
+    handle_compare_energy as _handle_compare_energy_impl,
+    handle_compare_metric as _handle_compare_metric_impl,
+    handle_trend_energy as _handle_trend_energy_impl,
+    handle_trend_metric as _handle_trend_metric_impl,
+    handle_trend_scrap as _handle_trend_scrap_impl,
 )
 from skill._helpers import (
     canonicalize_asset_id as _canonicalize_asset_id_impl,
@@ -80,7 +82,9 @@ class AVAROSSkill(FallbackSkill):
 
     handle_greeting = _handle_greeting_impl
     handle_help = _handle_help_impl
+    handle_compare_metric = _handle_compare_metric_impl
     handle_compare_energy = _handle_compare_energy_impl
+    handle_trend_metric = _handle_trend_metric_impl
     handle_trend_scrap = _handle_trend_scrap_impl
     handle_trend_energy = _handle_trend_energy_impl
     handle_anomaly_check = _handle_anomaly_check_impl
