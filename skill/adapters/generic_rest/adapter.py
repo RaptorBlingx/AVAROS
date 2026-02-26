@@ -8,11 +8,8 @@ from typing import TYPE_CHECKING, Any
 import aiohttp
 
 from skill.adapters.base import ManufacturingAdapter
-from skill.adapters.generic_rest._http import (
-    DEFAULT_BACKOFF_FACTORS,
-    DEFAULT_MAX_RETRIES,
-    GenericRestHttpMixin,
-)
+from skill.adapters.generic_rest._config_mixin import GenericRestConfigMixin
+from skill.adapters.generic_rest._http import GenericRestHttpMixin
 from skill.adapters.generic_rest._mapping_helpers import (
     MetricMapping,
     compute_trend_change,
@@ -24,6 +21,7 @@ from skill.adapters.generic_rest._mapping_helpers import (
     rank_descending,
     resolve_request,
 )
+from skill.adapters.generic_rest._settings_mixin import GenericRestSettingsMixin
 from skill.domain.exceptions import AdapterError
 from skill.domain.models import CanonicalMetric, TimePeriod
 from skill.domain.results import ComparisonItem, ComparisonResult, KPIResult, TrendResult
@@ -34,7 +32,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class GenericRestAdapter(GenericRestHttpMixin, ManufacturingAdapter):
+class GenericRestAdapter(
+    GenericRestHttpMixin,
+    GenericRestConfigMixin,
+    GenericRestSettingsMixin,
+    ManufacturingAdapter,
+):
     """Platform-agnostic adapter driven by metric mappings."""
 
     def __init__(
@@ -257,41 +260,6 @@ class GenericRestAdapter(GenericRestHttpMixin, ManufacturingAdapter):
         """Return platform name used in logs/UI."""
         return "GENERIC_REST"
 
-    def _resolve_trend_request(
-        self,
-        *,
-        mapping: MetricMapping,
-        period: TimePeriod,
-        asset_id: str,
-        granularity: str,
-    ) -> tuple[str, dict[str, str]]:
-        """Resolve trend endpoint + params.
-
-        Convention: If no explicit trend endpoint is configured, use the KPI
-        endpoint and append ``period={start}_{end}`` and
-        ``granularity={granularity}`` query params.
-        """
-        if str(mapping.get("trend_endpoint", "") or "").strip():
-            return resolve_request(
-                mapping=mapping,
-                period=period,
-                asset_id=asset_id,
-                extra_settings=self._string_settings(),
-                endpoint_key="trend_endpoint",
-            )
-
-        endpoint, params = resolve_request(
-            mapping=mapping,
-            period=period,
-            asset_id=asset_id,
-            extra_settings=self._string_settings(),
-        )
-        start_iso = period.start.strftime("%Y-%m-%dT%H:%M:%SZ")
-        end_iso = period.end.strftime("%Y-%m-%dT%H:%M:%SZ")
-        params["period"] = f"{start_iso}_{end_iso}"
-        params["granularity"] = granularity
-        return endpoint, params
-
     def _require_metric_mapping(self, metric: CanonicalMetric) -> MetricMapping:
         """Load mapping for metric or raise clear missing-mapping error."""
         mapping = self._lookup_metric_mapping_by_name(metric.value)
@@ -307,96 +275,3 @@ class GenericRestAdapter(GenericRestHttpMixin, ManufacturingAdapter):
                 "Add a metric mapping in Settings first."
             ),
         )
-
-    def _lookup_metric_mapping_by_name(self, metric_name: str) -> MetricMapping | None:
-        """Resolve mapping from SettingsService (or extra_settings fallback)."""
-        if self._settings_service is not None:
-            mapping = self._settings_service.get_metric_mapping(metric_name)
-            if isinstance(mapping, dict):
-                return mapping
-
-        local_mappings = self._extra_settings.get("metric_mappings")
-        if isinstance(local_mappings, dict):
-            mapping = local_mappings.get(metric_name)
-            if isinstance(mapping, dict):
-                return mapping
-
-        return None
-
-    def _list_metric_mappings(self) -> dict[str, MetricMapping]:
-        """Return current active profile mappings."""
-        if self._settings_service is not None:
-            mappings = self._settings_service.list_metric_mappings()
-            if isinstance(mappings, dict):
-                return {
-                    str(name): value
-                    for name, value in mappings.items()
-                    if isinstance(value, dict)
-                }
-
-        local_mappings = self._extra_settings.get("metric_mappings")
-        if isinstance(local_mappings, dict):
-            return {
-                str(name): value
-                for name, value in local_mappings.items()
-                if isinstance(value, dict)
-            }
-
-        return {}
-
-    def _string_settings(self) -> dict[str, str]:
-        """Stringify scalar extra settings for placeholder replacement."""
-        result: dict[str, str] = {}
-        for key, value in self._extra_settings.items():
-            if isinstance(value, (dict, list, tuple, set)):
-                continue
-            if value is None:
-                continue
-            result[str(key)] = str(value)
-        return result
-
-    @staticmethod
-    def _normalize_metric_name(capability: str) -> str:
-        """Normalize capability string to canonical metric naming."""
-        normalized = str(capability or "").strip().lower().replace(" ", "_")
-        if not normalized:
-            return ""
-        try:
-            metric = CanonicalMetric.from_string(normalized)
-        except ValueError:
-            return ""
-        return metric.value
-
-    @staticmethod
-    def _parse_max_retries(extra_settings: dict[str, Any]) -> int:
-        """Parse retry count from extra settings with safe fallback."""
-        value = extra_settings.get("max_retries", extra_settings.get("retry_count", DEFAULT_MAX_RETRIES))
-        try:
-            retries = int(value)
-        except (TypeError, ValueError):
-            return DEFAULT_MAX_RETRIES
-        return max(0, retries)
-
-    @staticmethod
-    def _parse_backoff_factors(extra_settings: dict[str, Any]) -> tuple[float, ...]:
-        """Parse retry backoff factors from extra settings."""
-        raw = extra_settings.get("backoff_factors")
-        if isinstance(raw, (list, tuple)):
-            factors: list[float] = []
-            for item in raw:
-                try:
-                    factors.append(float(item))
-                except (TypeError, ValueError):
-                    continue
-            if factors:
-                return tuple(factors)
-
-        base_value = extra_settings.get("backoff_base")
-        if base_value is not None:
-            try:
-                base = float(base_value)
-            except (TypeError, ValueError):
-                base = 0.5
-            return tuple(base * (2**idx) for idx in range(DEFAULT_MAX_RETRIES))
-
-        return DEFAULT_BACKOFF_FACTORS
