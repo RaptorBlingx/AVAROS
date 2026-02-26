@@ -474,6 +474,26 @@ class TestAdapterFactoryProfiles:
 
         assert isinstance(adapter, ReneryoAdapter)
 
+    def test_custom_rest_profile_creates_generic_rest_adapter(self) -> None:
+        """When active profile is custom_rest, GenericRestAdapter is created."""
+        from skill.adapters.generic_rest import GenericRestAdapter
+
+        config = MagicMock()
+        config.platform_type = "custom_rest"
+        config.api_url = "https://api.example.com"
+        config.api_key = "test-key"
+        config.timeout = 20
+        config.extra_settings = {"auth_type": "cookie"}
+
+        service = MagicMock()
+        service.get_active_profile_name.return_value = "custom-rest"
+        service.get_profile.return_value = config
+
+        factory = AdapterFactory(settings_service=service)
+        adapter = factory.create()
+
+        assert isinstance(adapter, GenericRestAdapter)
+
     def test_create_with_missing_profile_falls_back_to_mock(self) -> None:
         """When active profile config returns None, fall back to mock."""
         service = MagicMock()
