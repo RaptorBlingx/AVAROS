@@ -8,6 +8,23 @@ from skill.domain.models import CanonicalMetric
 
 _UTTERANCE_PHRASE_MAP: tuple[tuple[CanonicalMetric, tuple[str, ...]], ...] = (
     (
+        CanonicalMetric.OEE,
+        (
+            "oee",
+            "overall equipment effectiveness",
+            "equipment effectiveness",
+        ),
+    ),
+    (
+        CanonicalMetric.SCRAP_RATE,
+        (
+            "scrap rate",
+            "scrap",
+            "waste rate",
+            "waste",
+        ),
+    ),
+    (
         CanonicalMetric.ENERGY_PER_UNIT,
         (
             "energy per unit",
@@ -132,6 +149,11 @@ def resolve_metric_from_utterance(utterance: str) -> CanonicalMetric | None:
 
     for metric, phrases in _UTTERANCE_PHRASE_MAP:
         if any(phrase in normalized for phrase in phrases):
+            return metric
+
+    for metric in CanonicalMetric:
+        canonical_phrase = metric.value.replace("_", " ")
+        if canonical_phrase in normalized:
             return metric
 
     return None
