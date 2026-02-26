@@ -1,5 +1,4 @@
 """AVAROS OVOS skill entrypoint with generic KPI dispatch."""
-
 from __future__ import annotations
 
 import asyncio
@@ -8,13 +7,8 @@ from typing import Any, Callable, List
 
 from ovos_workshop.decorators import fallback_handler
 from ovos_workshop.skills import FallbackSkill
-
 from skill._handlers import (
     can_answer as _can_answer_impl,
-    dispatch_kpi_for_metric,
-    handle_anomaly_check as _handle_anomaly_check_impl,
-    handle_compare_energy as _handle_compare_energy_impl,
-    handle_compare_metric as _handle_compare_metric_impl,
     handle_control_turn_off as _handle_control_turn_off_impl,
     handle_control_turn_on as _handle_control_turn_on_impl,
     handle_greeting as _handle_greeting_impl,
@@ -24,6 +18,12 @@ from skill._handlers import (
     handle_metric_query_fallback as _handle_metric_query_fallback_impl,
     handle_status_profile_show as _handle_status_profile_show_impl,
     handle_status_system_show as _handle_status_system_show_impl,
+)
+from skill._metric_handlers import (
+    dispatch_kpi_for_metric,
+    handle_anomaly_check as _handle_anomaly_check_impl,
+    handle_compare_energy as _handle_compare_energy_impl,
+    handle_compare_metric as _handle_compare_metric_impl,
     handle_trend_energy as _handle_trend_energy_impl,
     handle_trend_metric as _handle_trend_metric_impl,
     handle_trend_scrap as _handle_trend_scrap_impl,

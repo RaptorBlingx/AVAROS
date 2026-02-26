@@ -13,9 +13,11 @@ def _make_skill() -> AVAROSSkill:
     skill = AVAROSSkill()
     skill.log = Mock()
     skill.speak = Mock()
+    skill.speak_dialog = Mock()
     skill.dispatcher = Mock()
     skill.dispatcher.adapter = Mock()
     skill.dispatcher.adapter.get_supported_metrics = Mock(return_value=list(CanonicalMetric))
+    skill.dispatcher.adapter.supports_capability = Mock(return_value=True)
     skill.response_builder = Mock()
     skill._resolve_compare_assets = Mock(return_value=("Line-1", "Line-2"))
     skill._resolve_asset_id = Mock(return_value="Line-1")
@@ -69,9 +71,7 @@ def test_compare_metric_unrecognized_metric_speaks_error():
     skill.handle_compare_metric(_message(metric="foobar metric", period="today"))
 
     skill.dispatcher.compare.assert_not_called()
-    skill.speak.assert_called_once_with(
-        "I didn't recognize that metric. Try saying the full metric name."
-    )
+    skill.speak_dialog.assert_called_once_with("metric.not_recognized")
 
 
 def test_compare_metric_unmapped_metric_speaks_error():
@@ -82,7 +82,25 @@ def test_compare_metric_unmapped_metric_speaks_error():
     skill.handle_compare_metric(_message(metric="oee", period="today"))
 
     skill.dispatcher.compare.assert_not_called()
-    skill.speak.assert_called_once_with("That metric is not configured for this platform")
+    skill.speak_dialog.assert_called_once_with(
+        "metric.not_configured",
+        data={"metric": CanonicalMetric.OEE.display_name},
+    )
+
+
+def test_compare_metric_mapping_guard_fails_closed_on_adapter_errors():
+    """Adapter capability lookup errors should fail closed and block dispatch."""
+    skill = _make_skill()
+    skill.dispatcher.adapter.get_supported_metrics.side_effect = RuntimeError("boom-1")
+    skill.dispatcher.adapter.supports_capability.side_effect = RuntimeError("boom-2")
+
+    skill.handle_compare_metric(_message(metric="oee", period="today"))
+
+    skill.dispatcher.compare.assert_not_called()
+    skill.speak_dialog.assert_called_once_with(
+        "metric.not_configured",
+        data={"metric": CanonicalMetric.OEE.display_name},
+    )
 
 
 def test_trend_metric_resolves_throughput_and_dispatches():
@@ -123,9 +141,7 @@ def test_trend_metric_unrecognized_metric_speaks_error():
     skill.handle_trend_metric(_message(metric="unknown trend metric", period="today"))
 
     skill.dispatcher.get_trend.assert_not_called()
-    skill.speak.assert_called_once_with(
-        "I didn't recognize that metric. Try saying the full metric name."
-    )
+    skill.speak_dialog.assert_called_once_with("metric.not_recognized")
 
 
 def test_trend_metric_unmapped_metric_speaks_error():
@@ -136,7 +152,10 @@ def test_trend_metric_unmapped_metric_speaks_error():
     skill.handle_trend_metric(_message(metric="oee", period="today"))
 
     skill.dispatcher.get_trend.assert_not_called()
-    skill.speak.assert_called_once_with("That metric is not configured for this platform")
+    skill.speak_dialog.assert_called_once_with(
+        "metric.not_configured",
+        data={"metric": CanonicalMetric.OEE.display_name},
+    )
 
 
 def test_old_compare_energy_intent_still_works():
