@@ -10,79 +10,57 @@ import {
 import type {
   CanonicalMetricName,
   MetricMapping,
-  MetricMappingRequest,
 } from "../../api/types";
+import useMetricMappingTest from "../../hooks/useMetricMappingTest";
 import Tooltip from "../common/Tooltip";
 import ErrorMessage from "../common/ErrorMessage";
 import LoadingSpinner from "../common/LoadingSpinner";
 import MetricMappingsTable from "../common/MetricMappingsTable";
 import { METRIC_OPTIONS } from "../common/metricMapping";
 import type { MetricMappingRow, MetricRowError } from "../common/metricMapping";
+import MetricMappingRowActions from "./MetricMappingRowActions";
+import {
+  createWizardRow,
+  EMPTY_WIZARD_ROW_DEFAULTS,
+  toMappingRequestPayload,
+} from "./metricMappingStep.helpers";
 
 type MetricMappingStepProps = {
   onComplete: () => void;
   onSkip: () => void;
 };
 
-const EMPTY_ROW_DEFAULTS: Omit<MetricMappingRow, "id" | "canonical_metric"> = {
-  endpoint: "",
-  json_path: "",
-  unit: "",
-  transform: "",
-};
-
-function createRow(mapping: MetricMapping): MetricMappingRow {
-  return {
-    id: `${mapping.canonical_metric}-${Math.random().toString(36).slice(2, 9)}`,
-    canonical_metric: mapping.canonical_metric,
-    endpoint: mapping.endpoint,
-    json_path: mapping.json_path,
-    unit: mapping.unit,
-    transform: mapping.transform ?? "",
-  };
-}
-
-function toRequestPayload(row: MetricMappingRow): MetricMappingRequest {
-  return {
-    canonical_metric: row.canonical_metric,
-    endpoint: row.endpoint.trim(),
-    json_path: row.json_path.trim(),
-    unit: row.unit.trim(),
-    transform: row.transform.trim() || null,
-  };
-}
-
 export default function MetricMappingStep({
   onComplete,
   onSkip,
 }: MetricMappingStepProps) {
   const [rows, setRows] = useState<MetricMappingRow[]>([]);
-  const [existingByMetric, setExistingByMetric] = useState<
-    Partial<Record<CanonicalMetricName, MetricMapping>>
-  >({});
-  const [errorsByRow, setErrorsByRow] = useState<
-    Record<string, MetricRowError>
-  >({});
+  const [existingByMetric, setExistingByMetric] = useState<Partial<Record<CanonicalMetricName, MetricMapping>>>({});
+  const [errorsByRow, setErrorsByRow] = useState<Record<string, MetricRowError>>({});
   const [formError, setFormError] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const usedMetrics = useMemo(
-    () => new Set(rows.map((row) => row.canonical_metric)),
-    [rows],
-  );
+  const usedMetrics = useMemo(() => new Set(rows.map((row) => row.canonical_metric)), [rows]);
+  const unMappedMetrics = useMemo(() => METRIC_OPTIONS.filter((option) => !usedMetrics.has(option.value)), [usedMetrics]);
 
-  const unMappedMetrics = useMemo(
-    () => METRIC_OPTIONS.filter((option) => !usedMetrics.has(option.value)),
-    [usedMetrics],
-  );
+  const resolveRow = useCallback((rowId: string) => rows.find((row) => row.id === rowId), [rows]);
+
+  const {
+    testStateByRow,
+    testRowMapping,
+    resetRowTestState,
+    clearAllTestState,
+  } = useMetricMappingTest({
+    resolveRow,
+  });
 
   const loadMappings = useCallback(async () => {
     setLoading(true);
     setFormError("");
     try {
       const mappings = await listMetricMappings();
-      const nextRows = mappings.map(createRow);
+      const nextRows = mappings.map(createWizardRow);
       const nextExistingByMetric: Partial<
         Record<CanonicalMetricName, MetricMapping>
       > = {};
@@ -91,12 +69,13 @@ export default function MetricMappingStep({
       }
       setRows(nextRows);
       setExistingByMetric(nextExistingByMetric);
+      clearAllTestState();
     } catch (error: unknown) {
       setFormError(toFriendlyErrorMessage(error));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [clearAllTestState]);
 
   useEffect(() => {
     void loadMappings();
@@ -147,7 +126,7 @@ export default function MetricMappingStep({
       {
         id: `${metric}-${Date.now()}`,
         canonical_metric: metric,
-        ...EMPTY_ROW_DEFAULTS,
+        ...EMPTY_WIZARD_ROW_DEFAULTS,
       },
     ]);
   }, [unMappedMetrics]);
@@ -159,7 +138,8 @@ export default function MetricMappingStep({
       delete copy[id];
       return copy;
     });
-  }, []);
+    resetRowTestState(id);
+  }, [resetRowTestState]);
 
   const updateRow = useCallback(
     <K extends keyof MetricMappingRow>(
@@ -170,6 +150,13 @@ export default function MetricMappingStep({
       setRows((prev) =>
         prev.map((row) => (row.id === id ? { ...row, [key]: value } : row)),
       );
+      if (
+        key === "endpoint" ||
+        key === "json_path" ||
+        key === "canonical_metric"
+      ) {
+        resetRowTestState(id);
+      }
       setErrorsByRow((prev) => {
         if (!prev[id]) return prev;
         const rowErrors = { ...prev[id] };
@@ -182,7 +169,7 @@ export default function MetricMappingStep({
         return { ...prev, [id]: rowErrors };
       });
     },
-    [],
+    [resetRowTestState],
   );
 
   const saveMappings = useCallback(async () => {
@@ -200,7 +187,7 @@ export default function MetricMappingStep({
       );
 
       for (const row of rows) {
-        const payload = toRequestPayload(row);
+        const payload = toMappingRequestPayload(row);
         if (!existingByMetric[row.canonical_metric]) {
           await createMetricMapping(payload);
         } else {
@@ -264,13 +251,15 @@ export default function MetricMappingStep({
               usedMetrics={usedMetrics}
               onChange={updateRow}
               renderActions={(row) => (
-                <button
-                  type="button"
-                  className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800 transition hover:bg-red-100 dark:border-red-500/40 dark:bg-red-900/40 dark:text-red-200 dark:hover:bg-red-900/60"
-                  onClick={() => removeRow(row.id)}
-                >
-                  Remove
-                </button>
+                <MetricMappingRowActions
+                  rowId={row.id}
+                  metricName={row.canonical_metric}
+                  rowTestState={testStateByRow[row.id]}
+                  onTest={(rowId) => {
+                    void testRowMapping(rowId);
+                  }}
+                  onRemove={removeRow}
+                />
               )}
             />
 

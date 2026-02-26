@@ -33,6 +33,8 @@ from schemas.metrics import (  # noqa: E402
     MetricMappingListResponse,
     MetricMappingRequest,
     MetricMappingResponse,
+    MetricMappingTestRequest,
+    MetricMappingTestResponse,
 )
 from schemas.status import SystemStatusResponse  # noqa: E402
 
@@ -303,6 +305,58 @@ class TestMetricMappingListResponse:
         data = model.model_dump()
         assert len(data) == 1
         assert data[0]["canonical_metric"] == "oee"
+
+
+class TestMetricMappingTestRequest:
+    """Tests for MetricMappingTestRequest schema."""
+
+    def test_valid_metric_mapping_test_request(self) -> None:
+        model = MetricMappingTestRequest(
+            base_url="https://api.example.com",
+            endpoint="/metrics/energy",
+            json_path="$.data.value",
+            auth_type="bearer",
+            auth_token="token",
+        )
+
+        assert model.auth_type == "bearer"
+
+    def test_invalid_auth_type_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            MetricMappingTestRequest(
+                base_url="https://api.example.com",
+                endpoint="/metrics/energy",
+                json_path="$.data.value",
+                auth_type="basic",  # type: ignore[arg-type]
+                auth_token="token",
+            )
+
+    def test_empty_endpoint_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            MetricMappingTestRequest(
+                base_url="https://api.example.com",
+                endpoint="",
+                json_path="$.data.value",
+                auth_type="cookie",
+                auth_token="token",
+            )
+
+
+class TestMetricMappingTestResponse:
+    """Tests for MetricMappingTestResponse serialisation."""
+
+    def test_success_response_serialises(self) -> None:
+        model = MetricMappingTestResponse(
+            success=True,
+            value=11.25,
+            raw_response_preview='{"data":{"value":11.25}}',
+            error=None,
+        )
+
+        data = model.model_dump()
+        assert data["success"] is True
+        assert data["value"] == 11.25
+        assert data["error"] is None
 
 
 # ══════════════════════════════════════════════════════════

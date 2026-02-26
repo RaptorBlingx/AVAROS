@@ -19,6 +19,8 @@ import type {
   IntentState,
   MetricMapping,
   MetricMappingRequest,
+  MetricMappingTestRequest,
+  MetricMappingTestResponse,
   PlatformConfigRequest,
   PlatformConfigResponse,
   PlatformResetResponse,
@@ -207,6 +209,15 @@ export async function deleteMetricMapping(
 ): Promise<void> {
   await request<unknown>(`/api/v1/config/metrics/${metricName}`, {
     method: "DELETE",
+  });
+}
+
+export function testMetricMapping(
+  payload: MetricMappingTestRequest,
+): Promise<MetricMappingTestResponse> {
+  return request<MetricMappingTestResponse>("/api/v1/config/metrics/test", {
+    method: "POST",
+    body: payload,
   });
 }
 
