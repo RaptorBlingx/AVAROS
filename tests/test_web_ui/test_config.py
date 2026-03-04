@@ -812,7 +812,7 @@ class TestProfileEndpoints:
             json={
                 "name": "reneryo",
                 "platform_type": "reneryo",
-                "api_url": "http://10.33.10.110:30896",
+                "api_url": "http://198.51.100.1:30896",
                 "api_key": "old-cookie",
                 "extra_settings": {"auth_type": "bearer"},
             },
