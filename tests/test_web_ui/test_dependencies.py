@@ -26,6 +26,32 @@ class FakeSettingsService:
         type(self).initialized += 1
 
 
+<<<<<<< HEAD
+=======
+class FakeKPIMeasurementService:
+    """Lightweight stand-in for KPI measurement dependency."""
+
+
+class FakeKPICollector:
+    """Track constructor calls for KPI collector singleton test."""
+
+    created = 0
+
+    def __init__(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+        type(self).created += 1
+
+
+class FakeKPIScheduler:
+    """Track constructor calls for KPI scheduler singleton test."""
+
+    created = 0
+
+    def __init__(self, collector: FakeKPICollector) -> None:
+        type(self).created += 1
+        self.collector = collector
+
+
+>>>>>>> feature/P6-E02-dashboard-scheduler-fixes
 def test_get_settings_service_returns_cached_singleton(monkeypatch) -> None:
     """Consecutive calls should reuse one initialized SettingsService."""
     FakeSettingsService.created = 0
@@ -56,3 +82,30 @@ def test_get_adapter_factory_uses_cached_settings_instance(monkeypatch) -> None:
     assert factory._settings_service is settings_service
 
     dependencies.get_settings_service.cache_clear()
+<<<<<<< HEAD
+=======
+
+
+def test_get_kpi_scheduler_returns_cached_singleton(monkeypatch) -> None:
+    """KPI scheduler provider should create one shared singleton instance."""
+    FakeKPICollector.created = 0
+    FakeKPIScheduler.created = 0
+    dependencies.get_kpi_scheduler.cache_clear()
+
+    monkeypatch.setattr(dependencies, "KPICollector", FakeKPICollector)
+    monkeypatch.setattr(dependencies, "KPIScheduler", FakeKPIScheduler)
+    monkeypatch.setattr(
+        dependencies,
+        "get_kpi_measurement_service",
+        lambda: FakeKPIMeasurementService(),
+    )
+
+    first = dependencies.get_kpi_scheduler()
+    second = dependencies.get_kpi_scheduler()
+
+    assert first is second
+    assert FakeKPICollector.created == 1
+    assert FakeKPIScheduler.created == 1
+
+    dependencies.get_kpi_scheduler.cache_clear()
+>>>>>>> feature/P6-E02-dashboard-scheduler-fixes

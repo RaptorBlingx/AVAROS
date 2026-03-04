@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 from config import APP_VERSION, CORS_ORIGINS, DATABASE_URL, WEB_API_KEY
-from dependencies import get_settings_service
+from dependencies import get_kpi_scheduler, get_settings_service
 from routers.assets import router as assets_router
 from routers.config import router as config_router
 from routers.emission_factors import router as emission_factors_router
@@ -58,7 +58,7 @@ async def api_key_auth_middleware(request: Request, call_next):  # type: ignore[
 
 
 @app.on_event("startup")
-def startup_check() -> None:
+async def startup_check() -> None:
     """Validate shared skill imports and DB-backed settings init path."""
     settings_service = get_settings_service()
     settings_service.initialize()
@@ -67,6 +67,21 @@ def startup_check() -> None:
         settings_service.__class__.__name__,
         bool(DATABASE_URL),
     )
+    scheduler = get_kpi_scheduler()
+    try:
+        await scheduler.start()
+    except Exception as exc:
+        logger.warning(
+            "KPI scheduler startup skipped: %s",
+            exc,
+        )
+
+
+@app.on_event("shutdown")
+def shutdown_scheduler() -> None:
+    """Stop KPI scheduler background task during app shutdown."""
+    scheduler = get_kpi_scheduler()
+    scheduler.stop()
 
 
 @app.get("/health")

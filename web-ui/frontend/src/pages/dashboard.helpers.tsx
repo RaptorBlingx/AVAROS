@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import type { SystemStatusResponse } from "../api/types";
+import type { KPIProgressItem, SystemStatusResponse } from "../api/types";
 
 type StatusTone = "info" | "good" | "warning";
 
@@ -13,9 +13,22 @@ export type DashboardStatusCard = {
 };
 
 export type KpiSummaryItem = {
+  metric: KPIProgressItem["metric"];
   title: string;
   description: string;
   icon: ReactNode;
+};
+
+export type DashboardKpiCardData = {
+  title: string;
+  description: string;
+  icon: ReactNode;
+  currentValue: string;
+  baselineValue: string;
+  improvementLabel: string;
+  targetLabel: string;
+  targetMet: boolean;
+  directionLabel: string;
 };
 
 export const DASHBOARD_ONBOARDING_STEPS = [
@@ -28,7 +41,7 @@ export const DASHBOARD_ONBOARDING_STEPS = [
   {
     title: "Your KPIs",
     description:
-      "These KPI cards are placeholders until data sources are fully configured.",
+      "These cards show current KPI values and progress against configured baselines.",
     selector: '[data-onboarding-target="kpi-summary"]',
   },
   {
@@ -59,6 +72,7 @@ export const DASHBOARD_ONBOARDING_STEPS = [
 
 export const KPI_SUMMARY_ITEMS: KpiSummaryItem[] = [
   {
+    metric: "energy_per_unit",
     title: "Energy per Unit",
     description: "Track electricity intensity per produced unit.",
     icon: (
@@ -77,6 +91,7 @@ export const KPI_SUMMARY_ITEMS: KpiSummaryItem[] = [
     ),
   },
   {
+    metric: "material_efficiency",
     title: "Material Efficiency",
     description: "Compare consumed material against quality output.",
     icon: (
@@ -95,6 +110,7 @@ export const KPI_SUMMARY_ITEMS: KpiSummaryItem[] = [
     ),
   },
   {
+    metric: "co2_total",
     title: "CO2 Emissions",
     description: "Follow derived carbon performance over time.",
     icon: (
@@ -113,6 +129,52 @@ export const KPI_SUMMARY_ITEMS: KpiSummaryItem[] = [
     ),
   },
 ];
+
+function formatValue(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
+function formatImprovement(item: KPIProgressItem): string {
+  const sign = item.improvement_percent >= 0 ? "+" : "";
+  return `${sign}${item.improvement_percent.toFixed(1)}% vs baseline`;
+}
+
+function formatTarget(item: KPIProgressItem): string {
+  return `${item.target_percent.toFixed(1)}% target`;
+}
+
+function normalizeDirection(direction: string): string {
+  const normalized = direction.trim().toLowerCase();
+  if (!normalized) {
+    return "Stable";
+  }
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+export function buildDashboardKpiCards(
+  progressItems: KPIProgressItem[],
+): DashboardKpiCardData[] {
+  const progressMap = new Map(progressItems.map((item) => [item.metric, item]));
+
+  return KPI_SUMMARY_ITEMS.flatMap((item) => {
+    const progress = progressMap.get(item.metric);
+    if (!progress) {
+      return [];
+    }
+
+    return {
+      title: item.title,
+      description: item.description,
+      icon: item.icon,
+      currentValue: `${formatValue(progress.current_value)} ${progress.unit}`,
+      baselineValue: `${formatValue(progress.baseline_value)} ${progress.unit}`,
+      improvementLabel: formatImprovement(progress),
+      targetLabel: formatTarget(progress),
+      targetMet: progress.target_met,
+      directionLabel: normalizeDirection(progress.direction),
+    };
+  });
+}
 
 export function buildDashboardStatusCards(
   status: SystemStatusResponse,

@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
-import { getHealth, getStatus, toFriendlyErrorMessage } from "../api/client";
-import type { HealthResponse, SystemStatusResponse } from "../api/types";
+import {
+  ApiError,
+  DEFAULT_SITE_ID,
+  getHealth,
+  getSiteProgress,
+  getStatus,
+  toFriendlyErrorMessage,
+} from "../api/client";
+import type {
+  HealthResponse,
+  SiteProgressResponse,
+  SystemStatusResponse,
+} from "../api/types";
 import EmptyState from "../components/common/EmptyState";
 import ErrorMessage from "../components/common/ErrorMessage";
 import KPISummaryCard from "../components/common/KPISummaryCard";
@@ -18,9 +29,9 @@ import {
 import StatusCard from "../components/StatusCard";
 import { useTheme } from "../components/common/ThemeProvider";
 import {
+  buildDashboardKpiCards,
   buildDashboardStatusCards,
   DASHBOARD_ONBOARDING_STEPS,
-  KPI_SUMMARY_ITEMS,
 } from "./dashboard.helpers";
 
 export default function Dashboard() {
@@ -28,6 +39,9 @@ export default function Dashboard() {
   const { isDark } = useTheme();
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [status, setStatus] = useState<SystemStatusResponse | null>(null);
+  const [siteProgress, setSiteProgress] = useState<SiteProgressResponse | null>(
+    null,
+  );
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
@@ -40,6 +54,14 @@ export default function Dashboard() {
         getHealth(),
         getStatus(),
       ]);
+      let progressData: SiteProgressResponse | null = null;
+      try {
+        progressData = await getSiteProgress(DEFAULT_SITE_ID);
+      } catch (err) {
+        if (!(err instanceof ApiError && err.status === 404)) {
+          throw err;
+        }
+      }
       const shouldRedirectToWizard =
         !import.meta.env.DEV &&
         !statusData.configured &&
@@ -62,6 +84,7 @@ export default function Dashboard() {
       }
       setHealth(healthData);
       setStatus(statusData);
+      setSiteProgress(progressData);
     } catch (err) {
       setError(toFriendlyErrorMessage(err));
     } finally {
@@ -96,6 +119,12 @@ export default function Dashboard() {
     () => (status ? buildDashboardStatusCards(status) : []),
     [status],
   );
+  const kpiCards = useMemo(
+    () => buildDashboardKpiCards(siteProgress?.progress ?? []),
+    [siteProgress?.progress],
+  );
+  const showKpiEmptyState =
+    !loading && !error && (siteProgress?.progress.length ?? 0) === 0;
 
   return (
     <section className="space-y-5">
@@ -170,16 +199,36 @@ export default function Dashboard() {
             Quick Access WASABI KPIs
           </h3>
         </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {KPI_SUMMARY_ITEMS.map((item) => (
-            <KPISummaryCard
-              key={item.title}
-              title={item.title}
-              description={item.description}
-              icon={item.icon}
-            />
-          ))}
-        </div>
+        {showKpiEmptyState ? (
+          <div className="brand-surface rounded-xl px-5 py-6 text-center">
+            <p className="m-0 text-sm font-semibold text-slate-900 dark:text-slate-100">
+              No KPI data available — configure a platform and record a baseline.
+            </p>
+            <Link
+              to="/settings"
+              className="mt-3 inline-flex text-sm font-semibold text-sky-700 underline underline-offset-2 hover:text-sky-600 dark:text-sky-300 dark:hover:text-sky-200"
+            >
+              Configure in Settings
+            </Link>
+          </div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {kpiCards.map((item) => (
+              <KPISummaryCard
+                key={item.title}
+                title={item.title}
+                description={item.description}
+                icon={item.icon}
+                currentValue={item.currentValue}
+                baselineValue={item.baselineValue}
+                improvementLabel={item.improvementLabel}
+                targetLabel={item.targetLabel}
+                targetMet={item.targetMet}
+                directionLabel={item.directionLabel}
+              />
+            ))}
+          </div>
+        )}
       </section>
 
       <div

@@ -59,6 +59,10 @@ vi.mock("../../components/settings/IntentActivationSection", () => ({
   ),
 }));
 
+vi.mock("../../components/settings/VoiceSettingsSection", () => ({
+  default: () => <div data-testid="voice-settings" />,
+}));
+
 vi.mock("../../components/settings/PlatformConfigSection", () => ({
   default: ({
     onProfileSwitch,
