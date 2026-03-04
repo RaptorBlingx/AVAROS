@@ -16,11 +16,15 @@ title = "AVAROS Gitleaks Config"
   ]
 
 [[allowlist]]
-  description = "Test files may use fake keys like test-key, old-cookie, etc."
+  description = "Test fixtures may use explicit fake credentials"
+  paths = [
+    "tests/",
+    "test_e2e.py",
+  ]
   regexTarget = "match"
   regexes = [
-    "test-key",
-    "old-cookie",
-    "fake-.*",
-    "dummy-.*",
+    "(?i)\\btest-key\\b",
+    "(?i)\\bold-cookie\\b",
+    "(?i)\\bfake-(key|token|secret|password)\\b",
+    "(?i)\\bdummy-(key|token|secret|password)\\b",
   ]
