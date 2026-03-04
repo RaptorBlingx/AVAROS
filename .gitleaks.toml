@@ -1,0 +1,26 @@
+# Gitleaks configuration for AVAROS
+# https://github.com/gitleaks/gitleaks
+
+title = "AVAROS Gitleaks Config"
+
+# Allow known false positives and doc examples
+[[allowlist]]
+  description = "DEVELOPMENT.md example credential (clearly marked BAD)"
+  paths = ["DEVELOPMENT.md"]
+
+[[allowlist]]
+  description = "E2E test compose files use ephemeral test credentials"
+  paths = [
+    "docker/docker-compose.e2e.yml",
+    "docker/docker-compose.e2e-voice.yml",
+  ]
+
+[[allowlist]]
+  description = "Test files may use fake keys like test-key, old-cookie, etc."
+  regexTarget = "match"
+  regexes = [
+    "test-key",
+    "old-cookie",
+    "fake-.*",
+    "dummy-.*",
+  ]

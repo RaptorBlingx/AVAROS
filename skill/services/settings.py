@@ -1013,7 +1013,7 @@ class SettingsService(ProfileMixin):
                 ),
                 api_key=os.environ.get(
                     "AVAROS_DEMO_RENERYO_API_KEY",
-                    "demo-token",
+                    "",
                 ),
                 extra_settings={
                     "auth_type": os.environ.get(

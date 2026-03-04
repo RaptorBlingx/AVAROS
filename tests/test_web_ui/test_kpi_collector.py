@@ -50,7 +50,7 @@ def _make_settings(platform_type: str = "reneryo") -> SettingsService:
         svc.update_platform_config(
             PlatformConfig(
                 platform_type=platform_type,
-                api_url="http://10.33.10.110:30896",
+                api_url="http://198.51.100.1:30896",
                 api_key="test-key",
                 extra_settings={"auth_type": "cookie"},
             )

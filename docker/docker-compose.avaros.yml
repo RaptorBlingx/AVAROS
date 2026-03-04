@@ -56,9 +56,10 @@ services:
       - ovos
 
     # Corporate DNS name doesn't always resolve inside Docker Desktop.
-    # Pin the current internal deploy host for stable demo/runtime access.
+    # Set RENERYO_DEPLOYS_IP in .env when connecting to real RENERYO.
+    # Defaults to 127.0.0.1 (safe no-op for mock adapter).
     extra_hosts:
-      - "deploys.int.arti.ac:${RENERYO_DEPLOYS_IP:-10.33.10.110}"
+      - "deploys.int.arti.ac:${RENERYO_DEPLOYS_IP:-127.0.0.1}"
     
     # Mount WASABI OVOS shared volumes and skill code
     volumes:
@@ -92,7 +93,7 @@ services:
       - AVAROS_BOOTSTRAP_DEMO_PROFILE=true
       - AVAROS_DEMO_PROFILE_NAME=reneryo-mock
       - AVAROS_DEMO_RENERYO_URL=http://reneryo-mock:8090
-      - AVAROS_DEMO_RENERYO_API_KEY=demo-token
+      - AVAROS_DEMO_RENERYO_API_KEY=${AVAROS_DEMO_RENERYO_API_KEY:-}
       - AVAROS_DEMO_RENERYO_AUTH_TYPE=bearer
       - AVAROS_DEMO_RENERYO_API_FORMAT=mock
       
@@ -148,7 +149,7 @@ services:
       - ovos
 
     extra_hosts:
-      - "deploys.int.arti.ac:${RENERYO_DEPLOYS_IP:-10.33.10.110}"
+      - "deploys.int.arti.ac:${RENERYO_DEPLOYS_IP:-127.0.0.1}"
 
     # Web UI is only accessible via avaros-proxy (HTTPS)
     # For direct HTTP access in dev, use docker-compose.dev.yml override
@@ -168,7 +169,7 @@ services:
       - AVAROS_BOOTSTRAP_DEMO_PROFILE=true
       - AVAROS_DEMO_PROFILE_NAME=reneryo-mock
       - AVAROS_DEMO_RENERYO_URL=http://reneryo-mock:8090
-      - AVAROS_DEMO_RENERYO_API_KEY=demo-token
+      - AVAROS_DEMO_RENERYO_API_KEY=${AVAROS_DEMO_RENERYO_API_KEY:-}
       - AVAROS_DEMO_RENERYO_AUTH_TYPE=bearer
       - AVAROS_DEMO_RENERYO_API_FORMAT=mock
       # HiveMind voice config: passed via env_file (.env) — do NOT redeclare
@@ -260,12 +261,12 @@ services:
       - ../.env
 
     environment:
-      - HIVEMIND_MASTER_KEY=${HIVEMIND_MASTER_KEY:-avaros-dev-key-change-in-production}
+      - HIVEMIND_MASTER_KEY=${HIVEMIND_MASTER_KEY:-}
       - OVOS_BUS_HOST=${OVOS_BUS_HOST:-ovos_messagebus}
       - OVOS_BUS_PORT=${OVOS_BUS_PORT:-8181}
       - HIVEMIND_WS_PORT=${HIVEMIND_WS_PORT:-5678}
       # Client credentials and allowed_types come from env_file (.env).
-      # When .env is absent, entrypoint.sh applies dev defaults (DEC-005).
+      # When .env is absent, entrypoint.sh auto-generates random credentials.
       - HIVEMIND_CLIENT_ALLOWED_TYPES=${HIVEMIND_CLIENT_ALLOWED_TYPES:-recognizer_loop:utterance,recognizer_loop:record_begin,recognizer_loop:record_end,recognizer_loop:audio_output_start,recognizer_loop:audio_output_end,recognizer_loop:b64_transcribe,speak,speak:b64_audio,enclosure.mouth.text,mycroft.skill.handler.start,mycroft.skill.handler.complete,mycroft.audio.service.queue,mycroft.audio.service.play,mycroft.audio.service.stop,mycroft.audio.service.pause,mycroft.audio.service.resume,ovos.common_play.SEI.get.response}
 
     volumes:
