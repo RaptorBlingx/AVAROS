@@ -261,7 +261,8 @@ services:
       - ../.env
 
     environment:
-      - HIVEMIND_MASTER_KEY=${HIVEMIND_MASTER_KEY:-}
+      # HIVEMIND_MASTER_KEY comes from env_file (.env) — do NOT redeclare
+      # here or compose shell-variable resolution overrides .env with empty.
       - OVOS_BUS_HOST=${OVOS_BUS_HOST:-ovos_messagebus}
       - OVOS_BUS_PORT=${OVOS_BUS_PORT:-8181}
       - HIVEMIND_WS_PORT=${HIVEMIND_WS_PORT:-5678}
