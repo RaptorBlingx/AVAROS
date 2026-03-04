@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from collections.abc import Coroutine
 from typing import TYPE_CHECKING, Any, Callable, List
 
 from ovos_workshop.decorators import fallback_handler
@@ -228,13 +229,7 @@ class AVAROSSkill(FallbackSkill):
             self.log.warning("No adapter factory — cannot reload")
             return
 
-        loop = asyncio.new_event_loop()
-        try:
-            new_adapter = loop.run_until_complete(
-                self.adapter_factory.reload(profile_name),
-            )
-        finally:
-            loop.close()
+        new_adapter = self._run_adapter_reload(profile_name)
 
         self.dispatcher = QueryDispatcher(
             adapter=new_adapter,
@@ -250,6 +245,34 @@ class AVAROSSkill(FallbackSkill):
             self._loaded_profile,
             self._loaded_platform,
         )
+
+    def _run_adapter_reload(self, profile_name: str) -> Any:
+        """Execute adapter reload coroutine using reusable runtime loop."""
+        if self.dispatcher is not None:
+            return self.dispatcher._run_async(
+                self.adapter_factory.reload(profile_name),
+            )
+
+        return self._run_with_current_event_loop(
+            self.adapter_factory.reload(profile_name),
+        )
+
+    def _run_with_current_event_loop(self, coro: Coroutine[Any, Any, Any]) -> Any:
+        """Run coroutine in current thread event loop with safe fallback."""
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            self.log.warning(
+                "No current asyncio event loop; creating a fallback loop for reload",
+            )
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        if loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(coro, loop)
+            return future.result(timeout=30)
+
+        return loop.run_until_complete(coro)
 
     def _force_mock_fallback(self) -> None:
         """Force MockAdapter as safe fallback (DEC-005)."""

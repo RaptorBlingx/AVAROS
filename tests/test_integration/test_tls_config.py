@@ -171,6 +171,10 @@ class TestDockerComposeProxy:
         """Proxy service mounts SSL directory."""
         assert "nginx/ssl:/etc/nginx/ssl" in compose_content
 
+    def test_proxy_mounts_letsencrypt_volume(self, compose_content: str) -> None:
+        """Proxy service mounts Let's Encrypt certificates volume."""
+        assert "letsencrypt_certs:/etc/letsencrypt" in compose_content
+
     def test_web_ui_not_directly_exposed(self, compose_content: str) -> None:
         """Web UI no longer exposes port 8081 directly."""
         # The compose file should use 'expose' not 'ports' for web-ui
@@ -198,6 +202,41 @@ class TestDockerComposeProxy:
                     "Web UI should not directly expose port 8081 "
                     "in production compose"
                 )
+
+
+class TestDockerComposeCertbot:
+    """Validate certbot service wiring in docker-compose.avaros.yml."""
+
+    @pytest.fixture()
+    def compose_content(self) -> str:
+        """Read docker-compose.avaros.yml content."""
+        return (DOCKER_DIR / "docker-compose.avaros.yml").read_text()
+
+    def test_certbot_service_defined(self, compose_content: str) -> None:
+        """Docker Compose includes certbot service."""
+        assert "certbot:" in compose_content
+        assert "certbot/certbot" in compose_content
+
+    def test_certbot_conditional_domain_check(self, compose_content: str) -> None:
+        """Certbot command checks LETSENCRYPT_DOMAIN before requesting cert."""
+        assert "LETSENCRYPT_DOMAIN not set; skipping certificate acquisition" in compose_content
+
+    def test_certbot_and_proxy_share_letsencrypt_volume(
+        self, compose_content: str,
+    ) -> None:
+        """Certbot and proxy share /etc/letsencrypt persisted volume."""
+        assert "letsencrypt_certs:/etc/letsencrypt" in compose_content
+        assert "letsencrypt_certs:" in compose_content
+
+
+class TestSkillHealthcheck:
+    """Validate runtime health check semantics for avaros_skill service."""
+
+    def test_skill_healthcheck_uses_http_endpoint(self) -> None:
+        """Skill health check probes Web UI /health endpoint over HTTP."""
+        content = (DOCKER_DIR / "docker-compose.avaros.yml").read_text()
+        assert "urllib.request.urlopen('http://avaros-web-ui:8080/health')" in content
+        assert "from skill import AVAROSSkill" not in content
 
 
 class TestSslDirectory:
