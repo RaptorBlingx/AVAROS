@@ -349,6 +349,57 @@ class TestReloadAdapterEdgeCases:
         assert skill.dispatcher is not old_dispatcher
         assert skill._loaded_profile == "demo"
 
+    def test_reload_adapter_reuses_dispatcher_async_runner(self):
+        """Reload uses dispatcher async runner instead of creating new loop."""
+        skill = _initialized_skill()
+        skill.settings_service = Mock()
+        skill.settings_service.get_active_profile_name.return_value = "demo"
+        profile = Mock()
+        profile.platform_type = "mock"
+        skill.settings_service.get_profile.return_value = profile
+
+        new_adapter = MockAdapter()
+        skill.adapter_factory.reload = AsyncMock(return_value=new_adapter)
+
+        def _run_async_stub(coro):
+            coro.close()
+            return new_adapter
+
+        async_runner = Mock(side_effect=_run_async_stub)
+        skill.dispatcher._run_async = async_runner
+
+        with patch("skill.asyncio.new_event_loop") as new_loop:
+            skill._reload_adapter("demo")
+
+        async_runner.assert_called_once()
+        new_loop.assert_not_called()
+
+    def test_reload_adapter_creates_fallback_loop_when_missing(self):
+        """If no loop exists, reload creates and reuses a fallback loop."""
+        skill = _initialized_skill()
+        skill.settings_service = Mock()
+        skill.settings_service.get_active_profile_name.return_value = "demo"
+        profile = Mock()
+        profile.platform_type = "mock"
+        skill.settings_service.get_profile.return_value = profile
+        skill.dispatcher = None
+        new_adapter = MockAdapter()
+        skill.adapter_factory.reload = AsyncMock(return_value=new_adapter)
+
+        fallback_loop = asyncio.new_event_loop()
+        try:
+            with patch(
+                "skill.asyncio.get_event_loop",
+                side_effect=RuntimeError("no loop"),
+            ), patch("skill.asyncio.new_event_loop", return_value=fallback_loop):
+                skill._reload_adapter("demo")
+        finally:
+            fallback_loop.close()
+
+        skill.log.warning.assert_any_call(
+            "No current asyncio event loop; creating a fallback loop for reload",
+        )
+
 
 # ══════════════════════════════════════════════════════════
 # Asset Resolution from ASR Variants
