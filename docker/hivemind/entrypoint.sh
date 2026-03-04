@@ -24,10 +24,40 @@ MARKER_FILE="${CONFIG_DIR}/.initialized"
 OVOS_BUS_HOST="${OVOS_BUS_HOST:-ovos_messagebus}"
 OVOS_BUS_PORT="${OVOS_BUS_PORT:-8181}"
 HIVEMIND_WS_PORT="${HIVEMIND_WS_PORT:-5678}"
-HIVEMIND_MASTER_KEY="${HIVEMIND_MASTER_KEY:-avaros-dev-key-change-in-production}"
+HIVEMIND_MASTER_KEY="${HIVEMIND_MASTER_KEY:-}"
 HIVEMIND_CLIENT_NAME="${HIVEMIND_CLIENT_NAME:-avaros-web-client}"
-HIVEMIND_CLIENT_KEY="${HIVEMIND_CLIENT_KEY:-avaros-dev-key}"
-HIVEMIND_CLIENT_SECRET="${HIVEMIND_CLIENT_SECRET:-avaros-dev-secret}"
+HIVEMIND_CLIENT_KEY="${HIVEMIND_CLIENT_KEY:-}"
+HIVEMIND_CLIENT_SECRET="${HIVEMIND_CLIENT_SECRET:-}"
+
+# --- Auto-generate missing credentials (DEC-005: zero-config) ---
+# In production, set these explicitly in .env. When missing, random
+# values are generated so the container starts without configuration.
+_auto_generated=""
+if [ -z "${HIVEMIND_MASTER_KEY}" ]; then
+  HIVEMIND_MASTER_KEY="$(head -c 16 /dev/urandom | xxd -p)"
+  _auto_generated="${_auto_generated} HIVEMIND_MASTER_KEY"
+fi
+if [ -z "${HIVEMIND_CLIENT_KEY}" ]; then
+  HIVEMIND_CLIENT_KEY="$(head -c 16 /dev/urandom | xxd -p)"
+  _auto_generated="${_auto_generated} HIVEMIND_CLIENT_KEY"
+fi
+if [ -z "${HIVEMIND_CLIENT_SECRET}" ]; then
+  HIVEMIND_CLIENT_SECRET="$(head -c 16 /dev/urandom | xxd -p)"
+  _auto_generated="${_auto_generated} HIVEMIND_CLIENT_SECRET"
+fi
+if [ -n "${_auto_generated}" ]; then
+  echo ""
+  echo "WARNING: Auto-generated HiveMind credentials (not set in .env):"
+  echo "  ${_auto_generated}"
+  echo ""
+  echo "  HIVEMIND_MASTER_KEY=${HIVEMIND_MASTER_KEY}"
+  echo "  HIVEMIND_CLIENT_KEY=${HIVEMIND_CLIENT_KEY}"
+  echo "  HIVEMIND_CLIENT_SECRET=${HIVEMIND_CLIENT_SECRET}"
+  echo ""
+  echo "  For production, add these to .env with stable values."
+  echo "  Generate with: python3 -c \"import secrets; print(secrets.token_hex(16))\""
+  echo ""
+fi
 # Keep browser/client encryption deterministic:
 # - default to first 16 chars of client secret
 # - normalize invalid lengths to 16 chars (AES-128)

@@ -69,7 +69,7 @@ services:
     container_name: avaros-web-ui
     restart: unless-stopped
     environment:
-      - AVAROS_WEB_API_KEY=${AVAROS_WEB_API_KEY:-emre-strong-key-123}
+      - AVAROS_WEB_API_KEY=${AVAROS_WEB_API_KEY:-}
       - AVAROS_DATABASE_URL=sqlite:////data/avaros.db
       - HIVEMIND_WS_URL=${HIVEMIND_WS_URL:-ws://localhost:5678}
       - HIVEMIND_CLIENT_NAME=${HIVEMIND_CLIENT_NAME:-avaros-web-client}
@@ -95,13 +95,13 @@ services:
     container_name: avaros-hivemind
     restart: unless-stopped
     environment:
-      - HIVEMIND_MASTER_KEY=${HIVEMIND_MASTER_KEY:-avaros-dev-key-change-in-production}
+      - HIVEMIND_MASTER_KEY=${HIVEMIND_MASTER_KEY:-}
       - OVOS_BUS_HOST=avaros-ovos-core
       - OVOS_BUS_PORT=8181
       - HIVEMIND_WS_PORT=5678
       - HIVEMIND_CLIENT_NAME=${HIVEMIND_CLIENT_NAME:-avaros-web-client}
-      - HIVEMIND_CLIENT_KEY=${HIVEMIND_CLIENT_KEY:-avaros-web-client}
-      - HIVEMIND_CLIENT_SECRET=${HIVEMIND_CLIENT_SECRET:-avaros-web-secret-change-in-production}
+      - HIVEMIND_CLIENT_KEY=${HIVEMIND_CLIENT_KEY:-}
+      - HIVEMIND_CLIENT_SECRET=${HIVEMIND_CLIENT_SECRET:-}
       - HIVEMIND_ACCESS_KEY=${HIVEMIND_ACCESS_KEY:-}
       - HIVEMIND_PASSWORD=${HIVEMIND_PASSWORD:-}
     volumes:
