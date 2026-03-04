@@ -19,15 +19,15 @@ services:
       - ovos
 
     environment:
-      POSTGRES_USER: avaros
-      POSTGRES_PASSWORD: avaros
+      POSTGRES_USER: ${POSTGRES_USER:-avaros}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-avaros}
       POSTGRES_DB: avaros
 
     volumes:
       - avaros_pgdata:/var/lib/postgresql/data
 
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U avaros"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-avaros}"]
       interval: 10s
       timeout: 5s
       start_period: 10s
@@ -87,7 +87,7 @@ services:
       - MESSAGEBUS_PORT=${MESSAGEBUS_PORT:-8181}
       
       # Database configuration (PostgreSQL — production-grade)
-      - AVAROS_DATABASE_URL=postgresql://avaros:avaros@avaros_db:5432/avaros
+      - AVAROS_DATABASE_URL=postgresql://${POSTGRES_USER:-avaros}:${POSTGRES_PASSWORD:-avaros}@avaros_db:5432/avaros
       # Demo profile bootstrap (reneryo-mock)
       - AVAROS_BOOTSTRAP_DEMO_PROFILE=true
       - AVAROS_DEMO_PROFILE_NAME=reneryo-mock
@@ -156,7 +156,7 @@ services:
       - ../.env
 
     environment:
-      - AVAROS_DATABASE_URL=postgresql://avaros:avaros@avaros_db:5432/avaros
+      - AVAROS_DATABASE_URL=postgresql://${POSTGRES_USER:-avaros}:${POSTGRES_PASSWORD:-avaros}@avaros_db:5432/avaros
       - AVAROS_WEB_UI_PORT=8080
       # Demo profile bootstrap (reneryo-mock)
       - AVAROS_BOOTSTRAP_DEMO_PROFILE=true

@@ -26,15 +26,16 @@ def _resolve_api_key() -> str:
     """Return API key from env or generate a secure default.
 
     When no ``AVAROS_WEB_API_KEY`` is set, a 32-byte hex token is
-    generated and logged so the operator can retrieve it.
+    generated and only a masked preview is logged.
     """
     key = os.environ.get("AVAROS_WEB_API_KEY", "")
     if key:
         return key
     generated = secrets.token_hex(32)
     logger.warning(
-        "AVAROS_WEB_API_KEY not set — generated default key: %s",
-        generated,
+        "AVAROS_WEB_API_KEY not set — generated default key: %s...%s",
+        generated[:4],
+        generated[-4:],
     )
     return generated
 
