@@ -34,15 +34,15 @@ HIVEMIND_CLIENT_SECRET="${HIVEMIND_CLIENT_SECRET:-}"
 # values are generated so the container starts without configuration.
 _auto_generated=""
 if [ -z "${HIVEMIND_MASTER_KEY}" ]; then
-  HIVEMIND_MASTER_KEY="$(head -c 16 /dev/urandom | xxd -p)"
+  HIVEMIND_MASTER_KEY="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
   _auto_generated="${_auto_generated} HIVEMIND_MASTER_KEY"
 fi
 if [ -z "${HIVEMIND_CLIENT_KEY}" ]; then
-  HIVEMIND_CLIENT_KEY="$(head -c 16 /dev/urandom | xxd -p)"
+  HIVEMIND_CLIENT_KEY="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
   _auto_generated="${_auto_generated} HIVEMIND_CLIENT_KEY"
 fi
 if [ -z "${HIVEMIND_CLIENT_SECRET}" ]; then
-  HIVEMIND_CLIENT_SECRET="$(head -c 16 /dev/urandom | xxd -p)"
+  HIVEMIND_CLIENT_SECRET="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
   _auto_generated="${_auto_generated} HIVEMIND_CLIENT_SECRET"
 fi
 if [ -n "${_auto_generated}" ]; then
