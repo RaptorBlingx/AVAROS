@@ -77,6 +77,26 @@ curl -i http://localhost:8080/api/v1/status \
 
 If you get `401 Invalid or missing API key`, check `avaros-web-ui` logs and verify the value in `.env`.
 
+### Environment Variables and Secret Handling
+- Use `.env.example` as the template for local `.env`.
+- Keep credentials out of tracked files (compose/YAML/HTML/docs).
+- `HIVEMIND_MASTER_KEY`, `HIVEMIND_CLIENT_KEY`, `HIVEMIND_CLIENT_SECRET`, and
+  `HIVEMIND_CLIENT_CRYPTO_KEY` can be left empty for local runs; the HiveMind
+  entrypoint will auto-generate values at startup and log them.
+- For shared/staging/production environments, set explicit strong values in `.env`.
+
+### Troubleshooting: Voice shows "disabled"
+- If voice appears disabled right after changing `AVAROS_WEB_API_KEY`, the browser may still be using an old key from local storage.
+- Re-enter the API key in the UI (or clear browser storage) and refresh the page.
+- Confirm backend config is reachable:
+
+```bash
+curl -i http://localhost:8080/api/v1/voice/config \
+  -H "X-API-Key: <your-key>"
+```
+
+Expected: `200 OK` and `"voice_enabled": true`.
+
 ---
 
 ## 📁 Project Structure
