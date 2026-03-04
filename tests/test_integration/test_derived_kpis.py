@@ -110,12 +110,14 @@ def period() -> TimePeriod:
 @pytest.fixture
 def dispatcher_with_production(
     adapter: MockAdapter,
+    settings_service: SettingsService,
     co2_service: CO2DerivationService,
     production_service_with_data: ProductionDataService,
 ) -> QueryDispatcher:
     """Dispatcher with all services wired."""
     return QueryDispatcher(
         adapter=adapter,
+        settings_service=settings_service,
         co2_service=co2_service,
         production_data_service=production_service_with_data,
     )
@@ -124,11 +126,13 @@ def dispatcher_with_production(
 @pytest.fixture
 def dispatcher_no_production(
     adapter: MockAdapter,
+    settings_service: SettingsService,
     co2_service: CO2DerivationService,
 ) -> QueryDispatcher:
     """Dispatcher WITHOUT production data service."""
     return QueryDispatcher(
         adapter=adapter,
+        settings_service=settings_service,
         co2_service=co2_service,
     )
 
@@ -227,6 +231,7 @@ class TestDerivedKpiErrors:
 
     def test_no_production_data_for_period(
         self, adapter: MockAdapter,
+        settings_service: SettingsService,
         co2_service: CO2DerivationService,
     ) -> None:
         """Empty production dataset raises MetricNotSupportedError."""
@@ -237,6 +242,7 @@ class TestDerivedKpiErrors:
 
         dispatcher = QueryDispatcher(
             adapter=adapter,
+            settings_service=settings_service,
             co2_service=co2_service,
             production_data_service=empty_service,
         )

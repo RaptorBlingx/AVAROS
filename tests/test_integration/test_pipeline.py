@@ -11,7 +11,7 @@ Pipelines tested:
     - KPI: dispatcher.get_kpi() → builder.format_kpi_result()
     - Comparison: dispatcher.compare() → builder.format_comparison_result()
     - Trend: dispatcher.get_trend() → builder.format_trend_result()
-    - Anomaly: dispatcher.check_anomaly() → builder.format_anomaly_result()
+    - Anomaly: dispatcher.check_anomaly() → honest AVAROSError
     - WhatIf: dispatcher.simulate_whatif() → builder.format_whatif_result()
     - Adapter hot-swap
     - Audit trail round-trip
@@ -22,6 +22,7 @@ from __future__ import annotations
 import pytest
 
 from skill.adapters.mock import MockAdapter
+from skill.domain.exceptions import AVAROSError
 from skill.domain.models import (
     CanonicalMetric,
     ScenarioParameter,
@@ -29,7 +30,6 @@ from skill.domain.models import (
     WhatIfScenario,
 )
 from skill.domain.results import (
-    AnomalyResult,
     ComparisonResult,
     KPIResult,
     TrendResult,
@@ -213,20 +213,17 @@ class TestTrendPipeline:
 
 
 class TestAnomalyPipeline:
-    """End-to-end: dispatcher → response_builder for anomaly checks."""
+    """End-to-end: anomaly requests fail honestly until implemented."""
 
-    def test_anomaly_pipeline_no_anomaly(
+    def test_anomaly_pipeline_reports_pending_feature(
         self,
         dispatcher: QueryDispatcher,
-        builder: ResponseBuilder,
     ) -> None:
-        """Phase 1 stub returns no anomaly; response is reassuring."""
-        result = dispatcher.check_anomaly(CanonicalMetric.OEE, "Line-1")
-        response = builder.format_anomaly_result(result)
+        """The dispatcher should admit PREVENTION is still pending."""
+        with pytest.raises(AVAROSError) as exc_info:
+            dispatcher.check_anomaly(CanonicalMetric.OEE, "Line-1")
 
-        assert isinstance(result, AnomalyResult)
-        assert result.is_anomalous is False
-        assert "normal" in response.lower() or "no unusual" in response.lower()
+        assert "not yet available" in exc_info.value.user_message.lower()
 
 
 # ══════════════════════════════════════════════════════════

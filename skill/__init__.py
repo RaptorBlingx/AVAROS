@@ -142,7 +142,10 @@ class AVAROSSkill(FallbackSkill):
         self.settings_service = settings_service
         self.adapter_factory = AdapterFactory(settings_service=self.settings_service)
         adapter = self.adapter_factory.create()
-        self.dispatcher = QueryDispatcher(adapter=adapter)
+        self.dispatcher = QueryDispatcher(
+            adapter=adapter,
+            settings_service=self.settings_service,
+        )
         try:
             self.dispatcher._run_async(adapter.initialize())
         except Exception as exc:
@@ -233,7 +236,10 @@ class AVAROSSkill(FallbackSkill):
         finally:
             loop.close()
 
-        self.dispatcher = QueryDispatcher(adapter=new_adapter)
+        self.dispatcher = QueryDispatcher(
+            adapter=new_adapter,
+            settings_service=self.settings_service,
+        )
         if self.response_builder is None:
             self.response_builder = ResponseBuilder(verbosity="normal")
         self._loaded_profile = self._resolve_active_profile()
@@ -250,7 +256,10 @@ class AVAROSSkill(FallbackSkill):
         from skill.adapters.mock import MockAdapter
 
         mock = MockAdapter()
-        self.dispatcher = QueryDispatcher(adapter=mock)
+        self.dispatcher = QueryDispatcher(
+            adapter=mock,
+            settings_service=self.settings_service,
+        )
         if self.response_builder is None:
             self.response_builder = ResponseBuilder(verbosity="normal")
         self._loaded_profile = "mock"

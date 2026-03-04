@@ -666,6 +666,21 @@ class SettingsService(ProfileMixin):
                 result[source] = ef
         return result
 
+    def get_primary_energy_source(self) -> str:
+        """Return the best-fit energy source for CO2 derivation."""
+        self._ensure_initialized()
+        factors = self.list_emission_factors()
+        extra = self.get_platform_config().extra_settings
+        preferred = str(extra.get("energy_source", "") if isinstance(extra, dict) else "")
+        preferred = preferred.strip().lower()
+        if preferred and preferred in factors:
+            return preferred
+        if len(factors) == 1:
+            return next(iter(factors))
+        if "electricity" in factors:
+            return "electricity"
+        return next(iter(sorted(factors))) if factors else "electricity"
+
     def delete_emission_factor(self, energy_source: str) -> bool:
         """Delete a stored emission factor (profile-scoped, DEC-029).
 

@@ -23,6 +23,7 @@ from ovos_bus_client import MessageBusClient
 
 from skill import AVAROSSkill
 from skill.adapters.mock import MockAdapter
+from skill.domain.exceptions import AVAROSError
 from skill.domain.models import CanonicalMetric
 from skill.use_cases.query_dispatcher import QueryDispatcher
 
@@ -562,14 +563,20 @@ class TestIntentFailureRecovery:
         skill.dispatcher.get_kpi.assert_not_called()
         skill.speak.assert_not_called()
 
-    def test_intent_failure_recovers_anomaly_for_unusual_patterns(self):
-        """Intent failure should recover anomaly requests from unusual-pattern phrasing."""
+    def test_intent_failure_speaks_honest_anomaly_message(self):
+        """Intent failure should speak the pending-feature anomaly message."""
         skill = _initialized_skill()
         skill._check_profile_mismatch = Mock()
         skill.dispatcher = Mock()
-        skill.dispatcher.check_anomaly.return_value = Mock()
+        skill.dispatcher.check_anomaly.side_effect = AVAROSError(
+            message="Anomaly detection is not yet available.",
+            code="ANOMALY_NOT_AVAILABLE",
+            user_message=(
+                "Anomaly detection is not yet available. This feature requires "
+                "the PREVENTION service which is pending."
+            ),
+        )
         skill.response_builder = Mock()
-        skill.response_builder.format_anomaly_result.return_value = "anomaly response"
         skill.speak = Mock()
 
         msg = Mock()
@@ -578,7 +585,11 @@ class TestIntentFailureRecovery:
         skill._handle_intent_failure(msg)
 
         skill.dispatcher.check_anomaly.assert_called_once()
-        skill.speak.assert_called_once_with("anomaly response")
+        skill.response_builder.format_anomaly_result.assert_not_called()
+        skill.speak.assert_called_once_with(
+            "Anomaly detection is not yet available. This feature requires "
+            "the PREVENTION service which is pending."
+        )
 
 
 class TestFallbackEligibility:

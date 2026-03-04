@@ -282,3 +282,29 @@ class TestErrorHandling:
         assert co2 is not None
         # 1000 kWh * 0.48 (TR default electricity factor)
         assert co2.baseline_value == pytest.approx(480.0)
+
+    @pytest.mark.asyncio
+    async def test_derives_co2_total_using_profile_energy_source(self) -> None:
+        settings = _make_settings("reneryo")
+        settings.set_emission_factor("gas", 0.2)
+        kpi = _make_kpi_service()
+        collector = KPICollector(settings, kpi)
+
+        async def selective_get_kpi(metric, *args, **kwargs):
+            if metric == CanonicalMetric.CO2_TOTAL:
+                raise RuntimeError("co2 endpoint unavailable")
+            if metric == CanonicalMetric.ENERGY_TOTAL:
+                return _kpi_result(metric, 1000.0, "kWh")
+            if metric == CanonicalMetric.ENERGY_PER_UNIT:
+                return _kpi_result(metric, 2.35, "kWh/unit")
+            raise RuntimeError("unsupported in this test")
+
+        adapter = _mock_adapter()
+        adapter.get_kpi = AsyncMock(side_effect=selective_get_kpi)
+
+        with patch.object(collector, "_create_adapter", return_value=adapter):
+            await collector.seed_baselines("pilot-1")
+
+        co2 = kpi.get_baseline("co2_total", "pilot-1")
+        assert co2 is not None
+        assert co2.baseline_value == pytest.approx(200.0)

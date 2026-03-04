@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 from fastapi import Depends
 
 from skill.adapters.factory import AdapterFactory
@@ -10,9 +12,12 @@ from skill.services.production_data import ProductionDataService
 from skill.services.settings import SettingsService
 
 
+@lru_cache(maxsize=1)
 def get_settings_service() -> SettingsService:
-    """Provide a SettingsService instance for request handlers."""
-    return SettingsService()
+    """Provide a cached, initialized SettingsService for request handlers."""
+    service = SettingsService()
+    service.initialize()
+    return service
 
 
 def get_adapter_factory(
@@ -37,7 +42,6 @@ def get_production_data_service() -> ProductionDataService:
 def get_kpi_measurement_service() -> KPIMeasurementService:
     """Provide a KPIMeasurementService instance for request handlers."""
     return KPIMeasurementService()
-
 
 
 

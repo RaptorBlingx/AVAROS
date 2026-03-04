@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from skill.domain.models import CanonicalMetric
-from skill.domain.results import AnomalyResult, ComparisonResult, KPIResult, TrendResult
+from skill.domain.results import ComparisonResult, KPIResult, TrendResult
 
 if TYPE_CHECKING:
     from ovos_bus_client.message import Message
@@ -115,14 +115,10 @@ def handle_anomaly_check(skill: "AVAROSSkill", message: Message) -> None:
 
     def _execute() -> None:
         asset_id = skill._resolve_asset_id(message)
-
-        result: AnomalyResult = skill.dispatcher.check_anomaly(
+        skill.dispatcher.check_anomaly(
             metric=CanonicalMetric.OEE,
             asset_id=asset_id,
         )
-
-        response = skill.response_builder.format_anomaly_result(result)
-        skill.speak(response)
 
     skill._safe_dispatch("handle_anomaly_check", _execute)
 
@@ -134,12 +130,10 @@ def handle_metric_query_fallback(skill: "AVAROSSkill", message: Message) -> bool
 
         def _execute_anomaly() -> bool:
             asset_id = skill._resolve_asset_id(message)
-            result: AnomalyResult = skill.dispatcher.check_anomaly(
+            skill.dispatcher.check_anomaly(
                 metric=CanonicalMetric.OEE,
                 asset_id=asset_id,
             )
-            response = skill.response_builder.format_anomaly_result(result)
-            skill.speak(response)
             return True
 
         handled = skill._safe_dispatch(
@@ -176,12 +170,10 @@ def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
 
         def _execute_anomaly() -> None:
             asset_id = skill._resolve_asset_id(message)
-            result: AnomalyResult = skill.dispatcher.check_anomaly(
+            skill.dispatcher.check_anomaly(
                 metric=CanonicalMetric.OEE,
                 asset_id=asset_id,
             )
-            response = skill.response_builder.format_anomaly_result(result)
-            skill.speak(response)
 
         skill._safe_dispatch("_handle_intent_failure_anomaly", _execute_anomaly)
         return

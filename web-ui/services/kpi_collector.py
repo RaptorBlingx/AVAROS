@@ -334,7 +334,7 @@ class KPICollector:
         try:
             return self._co2.derive_co2_total(
                 energy_kwh=energy_total.value,
-                energy_source="electricity",
+                energy_source=self._resolve_energy_source(),
                 asset_id=_DEFAULT_ASSET_ID,
                 period=period,
             )
@@ -367,6 +367,14 @@ class KPICollector:
         config = self._settings.get_platform_config()
         platform = getattr(config, "platform_type", "mock") or "mock"
         return platform.lower() == "mock"
+
+    def _resolve_energy_source(self) -> str:
+        """Return the configured energy source for collector-side CO2 math."""
+        try:
+            return self._settings.get_primary_energy_source()
+        except Exception:
+            logger.debug("Collector energy source lookup failed", exc_info=True)
+            return "electricity"
 
     @staticmethod
     def _apply_mock_bias(

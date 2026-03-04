@@ -21,10 +21,10 @@ import asyncio
 import concurrent.futures
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NoReturn
 import uuid
 
-from skill.domain.exceptions import MetricNotSupportedError
+from skill.domain.exceptions import AVAROSError, MetricNotSupportedError
 from skill.domain.models import CanonicalMetric, TimePeriod
 from skill.domain.results import KPIResult
 from skill.services.audit import AuditLogger
@@ -36,11 +36,11 @@ if TYPE_CHECKING:
     from skill.domain.results import (
         ComparisonResult,
         TrendResult,
-        AnomalyResult,
         WhatIfResult,
     )
     from skill.services.co2_service import CO2DerivationService
     from skill.services.production_data import ProductionDataService
+    from skill.services.settings import SettingsService
 
 
 logger = logging.getLogger(__name__)
@@ -90,6 +90,7 @@ class QueryDispatcher:
         audit_logger: AuditLogger | None = None,
         co2_service: CO2DerivationService | None = None,
         production_data_service: ProductionDataService | None = None,
+        settings_service: SettingsService | None = None,
     ) -> None:
         """
         Initialize dispatcher with an adapter.
@@ -100,11 +101,14 @@ class QueryDispatcher:
             co2_service: Optional CO2DerivationService for derived metrics
             production_data_service: Optional ProductionDataService for
                 supplementary data (production counts, material usage)
+            settings_service: Optional SettingsService for profile-driven
+                energy source resolution in CO₂ derivation
         """
         self._adapter = adapter
         self._audit_logger = audit_logger or AuditLogger()
         self._co2_service = co2_service
         self._production_service = production_data_service
+        self._settings_service = settings_service
         self._loop: asyncio.AbstractEventLoop | None = None
         self._executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=1,
@@ -286,25 +290,17 @@ class QueryDispatcher:
         metric: CanonicalMetric,
         asset_id: str,
         threshold: float | None = None,
-    ) -> AnomalyResult:
+    ) -> NoReturn:
         """
-        Check for anomalies (orchestrates PREVENTION service).
-        
-        TODO PHASE 3: Implement DEC-007 compliant orchestration:
-        1. Get raw data: adapter.get_raw_data(metric, asset_id, period)
-        2. Call PREVENTION: prevention_client.detect_anomalies(raw_data, threshold)
-        3. Call DocuBoT: docubot_client.explain_anomaly(metric, anomalies)
-        4. Combine into AnomalyResult
-        
-        Current Phase 1 behavior: Returns mock result for testing intent handlers.
+        Admit that anomaly detection is not yet available.
         
         Args:
             metric: Canonical metric to check
             asset_id: Target asset identifier
             threshold: Optional sensitivity threshold
             
-        Returns:
-            AnomalyResult with detection status and details
+        Raises:
+            AVAROSError: Always, until PREVENTION integration is available.
         """
         query_id = self._generate_query_id()
         
@@ -312,22 +308,18 @@ class QueryDispatcher:
             "[%s] check_anomaly: metric=%s, asset=%s, threshold=%s",
             query_id, metric.value, asset_id, threshold,
         )
-        
-        # TODO PHASE 3: Replace with orchestration logic
-        # For now, return mock result for testing
-        from skill.domain.results import AnomalyResult
-        from datetime import datetime
-        result = AnomalyResult(
-            is_anomalous=False,
-            anomalies=[],
-            severity="none",
-            asset_id=asset_id,
-            metric=metric,
-            recommendation_id=self._generate_query_id(),
+
+        message = (
+            "Anomaly detection is not yet available. This feature requires "
+            "the PREVENTION service which is pending."
         )
-        
-        self._log_audit("check_anomaly", query_id, metric.value, asset_id, result)
-        return result
+        error = AVAROSError(
+            message=message,
+            code="ANOMALY_NOT_AVAILABLE",
+            user_message=message,
+        )
+        self._log_audit("check_anomaly", query_id, metric.value, asset_id, error)
+        raise error
     
     # =========================================================================
     # Query Type 5: What-If Simulation (INTELLIGENCE - Phase 3)
@@ -417,17 +409,16 @@ class QueryDispatcher:
         asset_id: str, period: TimePeriod,
     ) -> KPIResult:
         """Derive carbon KPI from energy data + emission factors."""
+        energy_source = self._resolve_energy_source()
         if metric == CanonicalMetric.CO2_TOTAL:
             energy = self._run_async(
                 self._adapter.get_kpi(
                     CanonicalMetric.ENERGY_TOTAL, asset_id, period,
                 ),
             )
-            # TODO: energy_source hardcoded to "electricity" —
-            # parameterize when gas/water metering added
             return self._co2_service.derive_co2_total(
                 energy_kwh=energy.value,
-                energy_source="electricity",
+                energy_source=energy_source,
                 asset_id=asset_id, period=period,
             )
         if metric == CanonicalMetric.CO2_PER_UNIT:
@@ -498,7 +489,7 @@ class QueryDispatcher:
         return self._co2_service.derive_co2_per_unit(
             energy_kwh=energy.value,
             production_count=summary.total_produced,
-            energy_source="electricity",
+            energy_source=self._resolve_energy_source(),
             asset_id=asset_id, period=period,
         )
 
@@ -522,10 +513,9 @@ class QueryDispatcher:
                 period, granularity,
             ),
         )
-        # TODO: energy_source hardcoded — see _derive_carbon_kpi
         return self._co2_service.derive_co2_trend(
             energy_data_points=energy_trend.data_points,
-            energy_source="electricity",
+            energy_source=self._resolve_energy_source(),
             asset_id=asset_id, period=period,
             granularity=granularity,
         )
@@ -545,6 +535,16 @@ class QueryDispatcher:
                 "native_" + metric.value,
             )
         )
+
+    def _resolve_energy_source(self) -> str:
+        """Return the configured energy source for CO2 derivation."""
+        if self._settings_service is None:
+            return "electricity"
+        try:
+            return self._settings_service.get_primary_energy_source()
+        except Exception:
+            logger.debug("Energy source lookup failed; using electricity", exc_info=True)
+            return "electricity"
 
     def _derive_supplementary_kpi(
         self, metric: CanonicalMetric,
@@ -730,6 +730,8 @@ class QueryDispatcher:
             return f"Direction: {result.direction}, change: {result.change_percent:.1f}%"
         elif isinstance(result, AnomalyResult):
             return f"Anomalous: {result.is_anomalous}, count: {len(result.anomalies)}"
+        elif isinstance(result, AVAROSError):
+            return result.user_message
         elif isinstance(result, WhatIfResult):
             return f"Delta: {result.delta:.2f}, improvement: {result.is_improvement}"
         else:

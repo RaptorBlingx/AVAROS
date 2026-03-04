@@ -5,7 +5,7 @@ Covers all public methods and internal helpers of QueryDispatcher:
     - Initialization (with/without audit_logger)
     - adapter property and set_adapter()
     - get_kpi, compare, get_trend (async adapter calls via _run_async)
-    - check_anomaly, simulate_whatif (Phase 1 stubs)
+    - check_anomaly (honest pending-feature error), simulate_whatif
     - _run_async (async/sync bridging)
     - _log_audit (audit record creation, error resilience)
     - _generate_response_summary (all 5 result types)
@@ -34,9 +34,10 @@ from skill.domain.results import (
     TrendResult,
     WhatIfResult,
 )
-from skill.domain.exceptions import MetricNotSupportedError
+from skill.domain.exceptions import AVAROSError, MetricNotSupportedError
 from skill.services.audit import AuditLogger
 from skill.services.co2_service import CO2DerivationService
+from skill.services.models import PlatformConfig
 from skill.services.settings import SettingsService
 from skill.use_cases.query_dispatcher import QueryDispatcher
 
@@ -277,33 +278,34 @@ class TestGetTrend:
 
 
 # ══════════════════════════════════════════════════════════
-# 6. check_anomaly (Phase 1 stub)
+# 6. check_anomaly
 # ══════════════════════════════════════════════════════════
 
 
 class TestCheckAnomaly:
-    """Tests for check_anomaly() Phase 1 stub."""
+    """Tests for honest anomaly availability behavior."""
 
-    def test_check_anomaly_returns_anomaly_result(
+    def test_check_anomaly_raises_honest_error(
         self, dispatcher: QueryDispatcher
     ) -> None:
-        """check_anomaly() returns a valid AnomalyResult."""
-        result = dispatcher.check_anomaly(CanonicalMetric.OEE, "Line-1")
-        assert isinstance(result, AnomalyResult)
-        assert result.is_anomalous is False
-        assert result.severity == "none"
-        assert result.asset_id == "Line-1"
-        assert result.metric == CanonicalMetric.OEE
+        """check_anomaly() should admit the feature is unavailable."""
+        with pytest.raises(AVAROSError) as exc_info:
+            dispatcher.check_anomaly(CanonicalMetric.OEE, "Line-1")
+
+        assert exc_info.value.code == "ANOMALY_NOT_AVAILABLE"
+        assert "PREVENTION service" in exc_info.value.user_message
 
     def test_check_anomaly_creates_audit_record(
         self, dispatcher: QueryDispatcher, audit_logger: AuditLogger
     ) -> None:
-        """check_anomaly() logs an audit entry."""
-        dispatcher.check_anomaly(CanonicalMetric.OEE, "Line-1")
+        """check_anomaly() still logs an audit entry before failing."""
+        with pytest.raises(AVAROSError):
+            dispatcher.check_anomaly(CanonicalMetric.OEE, "Line-1")
 
         logs = audit_logger.get_recent_logs(limit=1)
         assert len(logs) == 1
         assert logs[0].query_type == "check_anomaly"
+        assert "not yet available" in logs[0].response_summary.lower()
 
 
 # ══════════════════════════════════════════════════════════
@@ -422,29 +424,22 @@ class TestRunAsync:
     def test_run_async_running_loop_branch(
         self, dispatcher: QueryDispatcher
     ) -> None:
-        """_run_async() uses run_coroutine_threadsafe when loop is running."""
-        import asyncio
-        from unittest.mock import MagicMock
-
-        mock_loop = MagicMock()
-        mock_loop.is_running.return_value = True
+        """_run_async() executes work through the dispatcher's executor."""
         mock_future = MagicMock()
-        mock_future.result.return_value = "from_running_loop"
+        dispatcher._executor = MagicMock()
 
         async def sample_coro() -> str:
             return "from_running_loop"
 
-        with patch(
-            "skill.use_cases.query_dispatcher.asyncio.get_event_loop",
-            return_value=mock_loop,
-        ), patch(
-            "skill.use_cases.query_dispatcher.asyncio.run_coroutine_threadsafe",
-            return_value=mock_future,
-        ) as mock_rcts:
-            result = dispatcher._run_async(sample_coro())
+        def _submit(fn):
+            mock_future.result.return_value = fn()
+            return mock_future
+
+        dispatcher._executor.submit.side_effect = _submit
+        result = dispatcher._run_async(sample_coro())
 
         assert result == "from_running_loop"
-        mock_rcts.assert_called_once()
+        dispatcher._executor.submit.assert_called_once()
         mock_future.result.assert_called_once_with(timeout=30)
 
 
@@ -535,7 +530,13 @@ class TestGenerateResponseSummary:
         self, dispatcher: QueryDispatcher
     ) -> None:
         """AnomalyResult summary includes is_anomalous."""
-        result = dispatcher.check_anomaly(CanonicalMetric.OEE, "Line-1")
+        result = AnomalyResult(
+            is_anomalous=False,
+            anomalies=[],
+            severity="none",
+            asset_id="Line-1",
+            metric=CanonicalMetric.OEE,
+        )
         summary = dispatcher._generate_response_summary(result)
         assert "Anomalous" in summary
 
@@ -624,6 +625,7 @@ class TestQueryDispatcherCO2Derivation:
     def dispatcher_with_co2(
         self,
         adapter_no_native_carbon: MockAdapter,
+        settings_service: SettingsService,
         co2_service: CO2DerivationService,
     ) -> QueryDispatcher:
         """Dispatcher with CO2 derivation enabled."""
@@ -632,6 +634,7 @@ class TestQueryDispatcherCO2Derivation:
         return QueryDispatcher(
             adapter=adapter_no_native_carbon,
             audit_logger=audit,
+            settings_service=settings_service,
             co2_service=co2_service,
         )
 
@@ -720,7 +723,9 @@ class TestQueryDispatcherCO2Derivation:
         assert co2.unit == "kg CO₂-eq"
 
     def test_co2_total_equals_energy_times_factor(
-        self, co2_service: CO2DerivationService,
+        self,
+        settings_service: SettingsService,
+        co2_service: CO2DerivationService,
     ) -> None:
         """Verify exact multiplication: CO₂ = energy × 0.48 (TR default)."""
         from datetime import datetime
@@ -744,6 +749,7 @@ class TestQueryDispatcherCO2Derivation:
         dispatcher = QueryDispatcher(
             adapter=mock_adapter,
             audit_logger=audit,
+            settings_service=settings_service,
             co2_service=co2_service,
         )
 
@@ -758,3 +764,47 @@ class TestQueryDispatcherCO2Derivation:
         assert result.value == 120.0
         assert result.unit == "kg CO₂-eq"
         assert result.metric == CanonicalMetric.CO2_TOTAL
+
+    def test_co2_total_uses_primary_energy_source_from_settings(
+        self,
+        settings_service: SettingsService,
+        co2_service: CO2DerivationService,
+    ) -> None:
+        """Gas-only custom profile should derive CO2 using gas factor."""
+        settings_service.update_platform_config(
+            PlatformConfig(
+                platform_type="reneryo",
+                api_url="http://example.invalid",
+                api_key="test-key",
+            )
+        )
+        settings_service.set_emission_factor("gas", 0.2)
+
+        energy_result = KPIResult(
+            metric=CanonicalMetric.ENERGY_TOTAL,
+            value=250.0,
+            unit="kWh",
+            asset_id="Line-1",
+            period=TimePeriod.today(),
+            timestamp=TimePeriod.today().end,
+        )
+        mock_adapter = MagicMock()
+        mock_adapter.get_kpi = AsyncMock(return_value=energy_result)
+        mock_adapter.supports_capability.return_value = False
+        mock_adapter.platform_name = "reneryo"
+        audit = AuditLogger()
+        audit.initialize()
+        dispatcher = QueryDispatcher(
+            adapter=mock_adapter,
+            audit_logger=audit,
+            settings_service=settings_service,
+            co2_service=co2_service,
+        )
+
+        result = dispatcher.get_kpi(
+            metric=CanonicalMetric.CO2_TOTAL,
+            asset_id="Line-1",
+            period=TimePeriod.today(),
+        )
+
+        assert result.value == 50.0

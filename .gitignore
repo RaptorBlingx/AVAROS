@@ -30,6 +30,7 @@ venv/
 ENV/
 env/
 .venv
+.venv-markitdown/
 
 # Testing
 .pytest_cache/
