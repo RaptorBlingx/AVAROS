@@ -498,7 +498,8 @@ class TestReneryoAdapterFactoryIntegration:
         config.api_key = "my-key"
         config.timeout = 30
         config.extra_settings = {"auth_type": "bearer", "seu_id": "SEU-ABC"}
-        settings.get_platform_config.return_value = config
+        settings.get_active_profile_name.return_value = "reneryo"
+        settings.get_profile.return_value = config
 
         factory = AdapterFactory(settings_service=settings)
         adapter = factory.create()
@@ -509,29 +510,47 @@ class TestReneryoAdapterFactoryIntegration:
 
 
 class TestReneryoApiFormatDetection:
-    """Tests for fallback RENERYO API format detection."""
+    """Tests for RENERYO API format selection from profile settings."""
 
-    def test_detect_format_uses_mock_for_local_hosts(self) -> None:
-        """Local/mock hosts are detected as mock format."""
-        assert (
-            AdapterFactory._detect_reneryo_api_format("http://localhost:8090")
-            == "mock"
-        )
-        assert (
-            AdapterFactory._detect_reneryo_api_format("http://reneryo-mock:8090")
-            == "mock"
-        )
+    def test_factory_defaults_api_format_to_native(self) -> None:
+        """Factory defaults api_format to native when setting is absent."""
+        from unittest.mock import MagicMock
 
-    def test_detect_format_defaults_to_native_for_unknown_domains(self) -> None:
-        """Unknown domains should not silently fall back to mock."""
-        assert (
-            AdapterFactory._detect_reneryo_api_format("https://tenant.example.com/api")
-            == "native"
-        )
+        settings = MagicMock()
+        config = MagicMock()
+        config.platform_type = "reneryo"
+        config.api_url = "https://api.reneryo.test"
+        config.api_key = "my-key"
+        config.timeout = 30
+        config.extra_settings = {}
+        settings.get_active_profile_name.return_value = "reneryo"
+        settings.get_profile.return_value = config
 
-    def test_detect_format_empty_url_falls_back_to_mock(self) -> None:
-        """Empty URL keeps mock fallback for zero-config path."""
-        assert AdapterFactory._detect_reneryo_api_format("") == "mock"
+        factory = AdapterFactory(settings_service=settings)
+        adapter = factory.create()
+
+        assert isinstance(adapter, ReneryoAdapter)
+        assert adapter._api_format == "native"
+
+    def test_factory_uses_explicit_api_format(self) -> None:
+        """Factory passes configured api_format through to adapter."""
+        from unittest.mock import MagicMock
+
+        settings = MagicMock()
+        config = MagicMock()
+        config.platform_type = "reneryo"
+        config.api_url = "https://api.reneryo.test"
+        config.api_key = "my-key"
+        config.timeout = 30
+        config.extra_settings = {"api_format": "mock"}
+        settings.get_active_profile_name.return_value = "reneryo"
+        settings.get_profile.return_value = config
+
+        factory = AdapterFactory(settings_service=settings)
+        adapter = factory.create()
+
+        assert isinstance(adapter, ReneryoAdapter)
+        assert adapter._api_format == "mock"
 
 
 # ===========================================================================

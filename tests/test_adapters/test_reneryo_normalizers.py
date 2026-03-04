@@ -167,9 +167,9 @@ class TestNormalizeMeterToKpi:
         assert result["unit"] == "m³"
 
     def test_fallback_to_first_record(self, meter_response: dict) -> None:
-        """Unknown asset falls back to first record."""
-        result = normalize_meter_to_kpi(meter_response, "Unknown-Meter")
-        assert result["value"] == 22655.28751
+        """Unknown specific asset should raise instead of guessing."""
+        with pytest.raises(KeyError):
+            normalize_meter_to_kpi(meter_response, "Unknown-Meter")
 
     def test_empty_records_raises(self) -> None:
         """Empty records list raises KeyError."""

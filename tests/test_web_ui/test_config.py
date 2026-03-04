@@ -771,7 +771,9 @@ class TestProfileEndpoints:
 
         activate_resp = client.post("/api/v1/config/profiles/site-a/activate")
         assert activate_resp.status_code == 200
-        assert activate_resp.json()["is_active"] is True
+        assert activate_resp.json()["status"] == "activated"
+        assert activate_resp.json()["active_profile"] == "site-a"
+        assert activate_resp.json()["adapter_type"] == "reneryo"
 
         list_resp = client.get("/api/v1/config/profiles")
         assert list_resp.status_code == 200
@@ -782,7 +784,9 @@ class TestProfileEndpoints:
         assert platform_resp.json()["platform_type"] == "reneryo"
 
         delete_resp = client.delete("/api/v1/config/profiles/site-a")
-        assert delete_resp.status_code == 204
+        assert delete_resp.status_code == 200
+        assert delete_resp.json()["status"] == "deleted"
+        assert delete_resp.json()["deleted_profile"] == "site-a"
 
         list_after_delete = client.get("/api/v1/config/profiles").json()
         assert list_after_delete["active_profile"] == "mock"
@@ -802,7 +806,7 @@ class TestProfileEndpoints:
         client: TestClient,
         settings_service: SettingsService,
     ) -> None:
-        """Activating reneryo profile forces default cookie auth key."""
+        """Activating reneryo profile keeps stored profile credentials."""
         create_resp = client.post(
             "/api/v1/config/profiles",
             json={
@@ -817,26 +821,22 @@ class TestProfileEndpoints:
 
         activate_resp = client.post("/api/v1/config/profiles/reneryo/activate")
         assert activate_resp.status_code == 200
-        assert activate_resp.json()["is_active"] is True
+        assert activate_resp.json()["status"] == "activated"
+        assert activate_resp.json()["active_profile"] == "reneryo"
+        assert activate_resp.json()["adapter_type"] == "reneryo"
 
         platform_cfg = settings_service.get_platform_config()
         assert platform_cfg.platform_type == "reneryo"
-        assert (
-            platform_cfg.api_key
-            == "575e90e9-ac4b-4fa8-a373-1206b67b2ad5."
-            "b4DLZUbCyjECM0mb2C%2Fy9ca%2BekfgWv9tCVc8C5Unq2E%3D"
-        )
-        assert platform_cfg.extra_settings.get("auth_type") == "cookie"
+        assert platform_cfg.api_key == "old-cookie"
+        assert platform_cfg.extra_settings.get("auth_type") == "bearer"
 
-    def test_activate_mock_collects_kpi_data(self, client: TestClient) -> None:
-        """Mock activation triggers baseline seed + historical snapshots."""
-        fake_collector = AsyncMock()
-        fake_collector.seed_baselines = AsyncMock(return_value=3)
-        fake_collector.seed_mock_snapshot_history = AsyncMock(return_value=30)
-
-        with patch("routers.config.KPICollector", return_value=fake_collector):
+    def test_activate_mock_returns_activation_contract(self, client: TestClient) -> None:
+        """Mock activation returns the expected activation response payload."""
+        with patch("routers.profiles._notify_skill_via_bus", return_value=False):
             resp = client.post("/api/v1/config/profiles/mock/activate")
 
         assert resp.status_code == 200
-        fake_collector.seed_baselines.assert_awaited_once_with("pilot-1")
-        fake_collector.seed_mock_snapshot_history.assert_awaited_once_with("pilot-1", points=10)
+        body = resp.json()
+        assert body["status"] == "activated"
+        assert body["active_profile"] == "mock"
+        assert body["adapter_type"] == "mock"

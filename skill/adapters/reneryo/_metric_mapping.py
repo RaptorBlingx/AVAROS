@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
 
@@ -100,6 +101,7 @@ def parse_mapped_kpi_response(
         unit=unit,
         asset_id=asset_id,
         period=period,
+        timestamp=datetime.now(tz=timezone.utc),
     )
 
 

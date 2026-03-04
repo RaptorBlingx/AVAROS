@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 
 import pytest
+import pytest_asyncio
 
 from skill.adapters.reneryo import ReneryoAdapter
 from skill.domain.exceptions import AdapterError
@@ -33,7 +34,7 @@ pytestmark = pytest.mark.integration
 # =========================================================================
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def adapter():
     """Create and initialize a ReneryoAdapter pointing at mock server."""
     a = ReneryoAdapter(
@@ -47,7 +48,7 @@ async def adapter():
     await a.shutdown()
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def cookie_adapter():
     """Create a ReneryoAdapter using cookie auth."""
     a = ReneryoAdapter(

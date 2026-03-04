@@ -62,6 +62,9 @@ class KPICollector:
 
         Returns the number of baselines written (0 when all already exist).
         """
+        if self._is_mock_platform():
+            return 0
+
         existing = self._kpi.get_all_baselines(site_id)
         existing_metrics = {bl.metric for bl in existing}
 
@@ -83,6 +86,9 @@ class KPICollector:
 
         Returns the number of snapshots recorded.
         """
+        if self._is_mock_platform():
+            return 0
+
         adapter = await self._create_adapter()
         try:
             return await self._fetch_and_record_snapshots(adapter, site_id)

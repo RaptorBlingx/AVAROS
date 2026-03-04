@@ -20,6 +20,7 @@ from skill.domain.exceptions import ConfigurationError, ValidationError
 from skill.domain.models import CanonicalMetric, DataPoint, TimePeriod
 from skill.domain.results import KPIResult, TrendResult
 from skill.services.co2_service import CO2DerivationService
+from skill.services.models import PlatformConfig
 from skill.services.settings import SettingsService
 
 
@@ -135,6 +136,16 @@ class TestDeriveCO2Total:
         self, settings_service: SettingsService, period: TimePeriod,
     ) -> None:
         """Custom stored factor overrides default."""
+        settings_service.create_profile(
+            "reneryo",
+            PlatformConfig(
+                platform_type="reneryo",
+                api_url="https://api.reneryo.example.com",
+                api_key="secret",
+                extra_settings={"auth_type": "cookie"},
+            ),
+        )
+        settings_service.set_active_profile("reneryo")
         settings_service.set_emission_factor("electricity", 0.55)
         svc = CO2DerivationService(settings_service)
         result = svc.derive_co2_total(

@@ -26,8 +26,6 @@ class FakeSettingsService:
         type(self).initialized += 1
 
 
-<<<<<<< HEAD
-=======
 class FakeKPIMeasurementService:
     """Lightweight stand-in for KPI measurement dependency."""
 
@@ -51,7 +49,6 @@ class FakeKPIScheduler:
         self.collector = collector
 
 
->>>>>>> feature/P6-E02-dashboard-scheduler-fixes
 def test_get_settings_service_returns_cached_singleton(monkeypatch) -> None:
     """Consecutive calls should reuse one initialized SettingsService."""
     FakeSettingsService.created = 0
@@ -82,8 +79,6 @@ def test_get_adapter_factory_uses_cached_settings_instance(monkeypatch) -> None:
     assert factory._settings_service is settings_service
 
     dependencies.get_settings_service.cache_clear()
-<<<<<<< HEAD
-=======
 
 
 def test_get_kpi_scheduler_returns_cached_singleton(monkeypatch) -> None:
@@ -108,4 +103,3 @@ def test_get_kpi_scheduler_returns_cached_singleton(monkeypatch) -> None:
     assert FakeKPIScheduler.created == 1
 
     dependencies.get_kpi_scheduler.cache_clear()
->>>>>>> feature/P6-E02-dashboard-scheduler-fixes
