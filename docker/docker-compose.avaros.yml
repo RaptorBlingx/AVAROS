@@ -192,6 +192,32 @@ services:
       start_period: 10s
       retries: 3
 
+  avaros-wakeword:
+    container_name: avaros-wakeword
+    hostname: avaros-wakeword
+    build:
+      context: ../services/wakeword
+    restart: unless-stopped
+    ports:
+      - "${WAKEWORD_PORT:-9999}:9999"
+    environment:
+      - WAKEWORD_MODEL=${WAKEWORD_MODEL:-hey_jarvis}
+      - WAKEWORD_THRESHOLD=${WAKEWORD_THRESHOLD:-0.5}
+    networks:
+      - ovos
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:9999/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+
   reneryo-mock:
     container_name: reneryo-mock
     hostname: reneryo-mock
