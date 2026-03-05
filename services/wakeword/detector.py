@@ -42,14 +42,23 @@ def _resolve_model_path(model_name: str) -> str:
         model_name: Clean model name, e.g. ``"hey_jarvis"``.
 
     Returns:
-        Absolute filesystem path to the ``.onnx`` model file.
+        Absolute filesystem path to the configured model file.
 
     Raises:
         ValueError: If *model_name* is not in the registry.
     """
     import openwakeword  # deferred so unit tests don't need the lib
 
-    registry: dict[str, dict[str, str]] = openwakeword.models
+    # openwakeword API changed from `models` -> `MODELS` in newer releases.
+    registry = getattr(openwakeword, "MODELS", None)
+    if registry is None:
+                registry = getattr(openwakeword, "models", None)
+    if registry is None:
+        raise ValueError(
+            "openWakeWord model registry not found (expected MODELS/models)"
+        )
+
+    registry = dict(registry)
     if model_name not in registry:
         available = sorted(registry.keys())
         raise ValueError(

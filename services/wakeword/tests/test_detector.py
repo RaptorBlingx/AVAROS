@@ -83,7 +83,7 @@ class TestResolveModelPath:
         path = _resolve_model_path("hey_jarvis")
 
         # Assert
-        assert path.endswith(".onnx")
+        assert path.endswith(".onnx") or path.endswith(".tflite")
         assert "hey_jarvis" in path
 
     def test_unknown_model_raises_value_error(self) -> None:

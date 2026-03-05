@@ -13,7 +13,7 @@ const MODES: ModeMeta[] = [
   {
     mode: "wake-word",
     label: "Wake Word",
-    tooltip: "Hands-free. Say 'Hey AVAROS' to start.",
+    tooltip: "Hands-free. Say your configured wake word to start.",
   },
   {
     mode: "push-to-talk",
@@ -34,7 +34,6 @@ export default function ModeToggle() {
     stopListening,
     stopSpeaking,
     wakeWordState,
-    wakeWordFallbackActive,
     isModelLoading,
     micPermission,
     requestMicPermission,
@@ -83,15 +82,13 @@ export default function ModeToggle() {
     hintWarning = true;
   } else if (isModelLoading && isWakeWordMode) {
     hintText = "Loading wake-word model...";
-  } else if (wakeWordUnsupported && isWakeWordMode && !wakeWordFallbackActive) {
+  } else if (wakeWordUnsupported && isWakeWordMode) {
     hintText = "Wake Word is unavailable in this browser. Use Push-to-Talk.";
     hintWarning = true;
-  } else if (wakeWordError && isWakeWordMode && !wakeWordFallbackActive) {
+  } else if (wakeWordError && isWakeWordMode) {
     hintText =
       "Wake Word failed to start. Check microphone permission and reload page.";
     hintWarning = true;
-  } else if (wakeWordFallbackActive && isWakeWordMode) {
-    hintText = "Wake Word fallback is active. Say 'Hey AVAROS' then your command.";
   }
 
   return (
