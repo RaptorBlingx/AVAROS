@@ -42,7 +42,22 @@ function getConfiguredWakeWordUrl(): string | undefined {
   if (typeof window === "undefined") return undefined;
   const raw = window.localStorage.getItem(WAKE_WORD_URL_STORAGE_KEY);
   const value = raw?.trim();
-  return value ? value : undefined;
+  if (!value) return undefined;
+
+  const host = window.location.hostname;
+  const isLocalHost = host === "localhost" || host === "127.0.0.1";
+
+  // Hosted deployments should ignore stale localhost URLs from previous local runs.
+  if (!isLocalHost && /(^wss?:\/\/)?(localhost|127\.0\.0\.1)([:/]|$)/i.test(value)) {
+    return undefined;
+  }
+
+  // Avoid mixed-content websocket URLs when the app is served over HTTPS.
+  if (window.location.protocol === "https:" && value.startsWith("ws://")) {
+    return undefined;
+  }
+
+  return value;
 }
 
 // ── Types ──────────────────────────────────────────────

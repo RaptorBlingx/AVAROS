@@ -82,7 +82,7 @@ const BACKOFF_MULTIPLIER = 2;
 /**
  * Resolve the default WebSocket URL from environment or hostname.
  *
- * Priority: VITE_WAKEWORD_URL env → current hostname with port 9999.
+ * Priority: VITE_WAKEWORD_URL env → hosted proxy path → localhost direct.
  */
 function resolveDefaultWsUrl(): string {
   /* c8 ignore start — env-dependent */
@@ -94,8 +94,17 @@ function resolveDefaultWsUrl(): string {
   }
 
   if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    const isLocalHost = host === "localhost" || host === "127.0.0.1";
+
+    // Local development: connect directly to wakeword service port.
+    if (isLocalHost) {
+      return `ws://${host}:9999/ws/detect`;
+    }
+
+    // Hosted deployment: use nginx TLS endpoint and proxy path.
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${proto}//${window.location.hostname}:9999/ws/detect`;
+    return `${proto}//${window.location.host}/wakeword/ws/detect`;
   }
   /* c8 ignore stop */
 
