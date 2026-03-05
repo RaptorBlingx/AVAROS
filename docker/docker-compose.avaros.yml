@@ -200,9 +200,15 @@ services:
     restart: unless-stopped
     ports:
       - "${WAKEWORD_PORT:-9999}:9999"
+    volumes:
+      # Optional: mount custom model directory for trained wake-word models
+      - ${WAKEWORD_MODELS_DIR:-../services/wakeword/models}:/app/models
     environment:
       - WAKEWORD_MODEL=${WAKEWORD_MODEL:-hey_jarvis}
       - WAKEWORD_THRESHOLD=${WAKEWORD_THRESHOLD:-0.5}
+      # Uncomment to use a custom .onnx/.tflite model from /app/models:
+      # - WAKEWORD_MODEL_PATH=/app/models/hey_avaros.onnx
+      # - WAKEWORD_MODEL_LABEL=hey_avaros
     networks:
       - ovos
     healthcheck:

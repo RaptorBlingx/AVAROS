@@ -6,7 +6,7 @@ mock ``Model`` for deterministic detection tests.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -208,6 +208,99 @@ class TestDetectorWithMock:
 
 
 # ── WakeWordDetector with real openWakeWord ──────────────
+
+
+class TestDetectorWithCustomPath:
+    """Tests for custom model path loading."""
+
+    def test_custom_path_calls_ensure_preprocessing_assets(self) -> None:
+        """Custom path loading ensures preprocessing assets exist."""
+        # Arrange
+        mock_model_instance = _mock_oww_model("hey_avaros", score=0.88)
+        mock_model_cls = MagicMock(return_value=mock_model_instance)
+
+        # Act
+        with patch("detector._ensure_preprocessing_assets") as mock_preproc, \
+             patch("openwakeword.model.Model", mock_model_cls):
+            detector = WakeWordDetector(
+                model_name="hey_avaros",
+                custom_model_path="/app/models/hey_avaros.onnx",
+            )
+
+        # Assert
+        mock_preproc.assert_called_once()
+        detector.close()
+
+    def test_custom_path_loads_model_with_correct_path(self) -> None:
+        """Custom path is passed to the Model constructor."""
+        # Arrange
+        mock_model_instance = _mock_oww_model("hey_avaros", score=0.88)
+        mock_model_cls = MagicMock(return_value=mock_model_instance)
+
+        # Act
+        with patch("detector._ensure_preprocessing_assets"), \
+             patch("openwakeword.model.Model", mock_model_cls):
+            detector = WakeWordDetector(
+                model_name="hey_avaros",
+                custom_model_path="/app/models/hey_avaros.onnx",
+            )
+
+        # Assert — first attempt uses wakeword_models=[path]
+        mock_model_cls.assert_called_once_with(
+            wakeword_models=["/app/models/hey_avaros.onnx"],
+        )
+        detector.close()
+
+    def test_custom_path_detector_processes_audio(self) -> None:
+        """Detector with custom path produces detection events."""
+        # Arrange
+        mock_model_instance = _mock_oww_model("hey_avaros", score=0.88)
+        mock_model_cls = MagicMock(return_value=mock_model_instance)
+
+        with patch("detector._ensure_preprocessing_assets"), \
+             patch("openwakeword.model.Model", mock_model_cls):
+            detector = WakeWordDetector(
+                model_name="hey_avaros",
+                threshold=0.5,
+                custom_model_path="/app/models/hey_avaros.onnx",
+            )
+
+        # Act
+        result = detector.process_audio(_silence_frame())
+
+        # Assert
+        assert result is not None
+        assert result.model == "hey_avaros"
+        assert result.score == 0.88
+        detector.close()
+
+    def test_custom_path_skips_registry_lookup(self) -> None:
+        """Custom path does not call _ensure_openwakeword_assets."""
+        # Arrange
+        mock_model_instance = _mock_oww_model("hey_avaros", score=0.0)
+        mock_model_cls = MagicMock(return_value=mock_model_instance)
+
+        # Act
+        with patch("detector._ensure_preprocessing_assets"), \
+             patch("detector._ensure_openwakeword_assets") as mock_oww, \
+             patch("openwakeword.model.Model", mock_model_cls):
+            WakeWordDetector(
+                model_name="hey_avaros",
+                custom_model_path="/app/models/hey_avaros.onnx",
+            )
+
+        # Assert
+        mock_oww.assert_not_called()
+
+    def test_no_custom_path_uses_registry(self) -> None:
+        """Without custom_model_path, registry loading is used."""
+        # Arrange & Act & Assert — existing behavior still works
+        detector = WakeWordDetector(
+            model_name="hey_jarvis",
+            threshold=0.5,
+        )
+        assert detector._predict_key.startswith("hey_jarvis")
+        detector.close()
 
 
 class TestDetectorWithRealModel:

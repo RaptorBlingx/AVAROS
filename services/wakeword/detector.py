@@ -8,6 +8,7 @@ when the score exceeds a configurable threshold.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -15,6 +16,7 @@ from typing import Any
 import numpy as np
 
 logger = logging.getLogger(__name__)
+_OWW_ASSETS_READY = False
 
 # openWakeWord uses 80 ms internal frames (1280 samples @ 16 kHz).
 # Each sample is 2 bytes (int16), so one frame = 2560 bytes on the wire.
@@ -52,7 +54,7 @@ def _resolve_model_path(model_name: str) -> str:
     # openwakeword API changed from `models` -> `MODELS` in newer releases.
     registry = getattr(openwakeword, "MODELS", None)
     if registry is None:
-                registry = getattr(openwakeword, "models", None)
+        registry = getattr(openwakeword, "models", None)
     if registry is None:
         raise ValueError(
             "openWakeWord model registry not found (expected MODELS/models)"
@@ -66,6 +68,96 @@ def _resolve_model_path(model_name: str) -> str:
             f"Available: {available}"
         )
     return registry[model_name]["model_path"]
+
+
+def _get_oww_resources_dir() -> str:
+    """Return the directory containing openWakeWord model/asset files.
+
+    Derives the path from the model registry so it matches the
+    location where preprocessing assets are stored alongside models.
+
+    Returns:
+        Absolute path to the resources directory.
+    """
+    import openwakeword  # deferred so unit tests don't need the lib
+
+    registry = getattr(openwakeword, "MODELS", None)
+    if registry is None:
+        registry = getattr(openwakeword, "models", None)
+    if registry:
+        registry = dict(registry)
+        any_model = next(iter(registry.values()))
+        return os.path.dirname(any_model["model_path"])
+
+    # Fallback: package resources directory
+    return os.path.join(os.path.dirname(openwakeword.__file__), "resources")
+
+
+def _ensure_preprocessing_assets() -> None:
+    """Download shared preprocessing models if missing.
+
+    openWakeWord requires ``melspectrogram`` and ``embedding_model``
+    for ALL models (including custom ones).  File extension varies
+    by library version (``.onnx`` or ``.tflite``).
+
+    Raises:
+        ValueError: If download fails or assets are incomplete.
+    """
+    global _OWW_ASSETS_READY
+
+    if _OWW_ASSETS_READY:
+        return
+
+    resources_dir = _get_oww_resources_dir()
+
+    def _asset_exists(stem: str) -> bool:
+        """Check if an asset exists in any supported format."""
+        return any(
+            os.path.exists(os.path.join(resources_dir, f"{stem}{ext}"))
+            for ext in (".onnx", ".tflite")
+        )
+
+    if _asset_exists("melspectrogram") and _asset_exists("embedding_model"):
+        _OWW_ASSETS_READY = True
+        return
+
+    logger.info("Downloading shared preprocessing assets to %s", resources_dir)
+
+    try:
+        from openwakeword.utils import download_models
+
+        os.makedirs(resources_dir, exist_ok=True)
+        download_models(target_directory=resources_dir)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(
+            f"Failed to download preprocessing assets: {exc}"
+        ) from exc
+
+    if not _asset_exists("melspectrogram") or not _asset_exists("embedding_model"):
+        raise ValueError("Preprocessing assets incomplete after download")
+
+    _OWW_ASSETS_READY = True
+
+
+def _ensure_openwakeword_assets(model_name: str) -> str:
+    """Ensure registry model and shared preprocessing assets exist.
+
+    Args:
+        model_name: Registry model name (e.g. ``"hey_jarvis"``).
+
+    Returns:
+        Absolute filesystem path to the model file.
+
+    Raises:
+        ValueError: If model not in registry or download fails.
+    """
+    model_path = _resolve_model_path(model_name)
+    _ensure_preprocessing_assets()
+
+    if not os.path.exists(model_path):
+        raise ValueError(f"Model file missing after download: {model_path}")
+
+    return model_path
 
 
 # ── Detector ─────────────────────────────────────────────
@@ -85,6 +177,7 @@ class WakeWordDetector:
         model_name: str = "hey_jarvis",
         threshold: float = 0.5,
         *,
+        custom_model_path: str | None = None,
         _model: Any | None = None,
     ) -> None:
         self._model_name = model_name
@@ -96,7 +189,7 @@ class WakeWordDetector:
             self._oww = _model
             self._predict_key = model_name
         else:
-            self._oww = self._load_model(model_name)
+            self._oww = self._load_model(model_name, custom_model_path)
             self._predict_key = self._resolve_predict_key()
 
         logger.info(
@@ -158,13 +251,61 @@ class WakeWordDetector:
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
-    def _load_model(self, model_name: str) -> Any:
-        """Load a single openWakeWord model by registry name."""
+    def _load_model(
+        self, model_name: str, custom_model_path: str | None = None,
+    ) -> Any:
+        """Load an openWakeWord model by registry name or custom path.
+
+        Args:
+            model_name: Display name (used in logs and events).
+            custom_model_path: Absolute path to a custom ``.onnx``/``.tflite``
+                model file.  When set, bypasses registry lookup.
+
+        Returns:
+            An ``openwakeword.model.Model`` instance.
+
+        Raises:
+            ValueError: If the model cannot be loaded.
+        """
         from openwakeword.model import Model
 
-        model_path = _resolve_model_path(model_name)
-        logger.info("Loading openWakeWord model: %s (%s)", model_name, model_path)
-        return Model(wakeword_model_paths=[model_path])
+        if custom_model_path:
+            _ensure_preprocessing_assets()
+            model_path = custom_model_path
+            logger.info(
+                "Loading custom model: %s (%s)", model_name, custom_model_path,
+            )
+        else:
+            model_path = _ensure_openwakeword_assets(model_name)
+            logger.info(
+                "Loading openWakeWord model: %s (%s)", model_name, model_path,
+            )
+
+        # Build ordered list of load attempts.
+        # Newer openwakeword expects canonical model names; older variants
+        # accepted custom file paths through a different kwarg.
+        if custom_model_path:
+            attempts: tuple[dict[str, list[str]], ...] = (
+                {"wakeword_models": [model_path]},
+                {"wakeword_model_paths": [model_path]},
+            )
+        else:
+            attempts = (
+                {"wakeword_models": [model_name]},
+                {"wakeword_models": [model_path]},
+                {"wakeword_model_paths": [model_path]},
+            )
+
+        last_error: Exception | None = None
+        for kwargs in attempts:
+            try:
+                return Model(**kwargs)
+            except (TypeError, ValueError) as exc:
+                last_error = exc
+
+        if last_error is not None:
+            raise ValueError(str(last_error)) from last_error
+        raise ValueError(f"Unable to load model '{model_name}'")
 
     def _resolve_predict_key(self) -> str:
         """Discover the actual dict key returned by ``predict()``.
