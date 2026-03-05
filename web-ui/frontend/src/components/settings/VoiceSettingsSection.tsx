@@ -333,15 +333,19 @@ export default function VoiceSettingsSection({
   ]);
 
   const wakeWordStatusText = useMemo(() => {
-    if (!settings.wakeWordEnabled) return "Model disabled";
-    if (isModelLoading) return "Loading model...";
+    if (!settings.wakeWordEnabled) return "Service disabled";
+    if (isModelLoading) return "Connecting...";
     if (wakeWordState === "listening" || wakeWordState === "detected") {
-      return "Model loaded ✓";
+      return "Connected ✓";
     }
-    if (wakeWordState === "unsupported") return "Model not available";
-    if (wakeWordState === "error") return "Model failed to start";
-    return "Model idle";
+    if (wakeWordState === "unsupported") return "Service not available";
+    if (wakeWordState === "error") return "Connection failed";
+    return "Service idle";
   }, [isModelLoading, settings.wakeWordEnabled, wakeWordState]);
+
+  const wakeWordConnected =
+    settings.wakeWordEnabled &&
+    (wakeWordState === "listening" || wakeWordState === "detected");
 
   const wakeWordTestToneClass =
     wakeWordTestStatus.tone === "success"
@@ -424,9 +428,21 @@ export default function VoiceSettingsSection({
                 {settings.wakeWordEnabled ? "On" : "Off"}
               </button>
             </div>
-            <p className="m-0 text-xs text-slate-500 dark:text-slate-400">
-              {wakeWordStatusText}
-            </p>
+            <div className="flex items-center gap-2">
+              <span
+                className={`inline-block h-2.5 w-2.5 rounded-full ${
+                  wakeWordConnected
+                    ? "bg-emerald-500"
+                    : settings.wakeWordEnabled
+                      ? "bg-red-500"
+                      : "bg-slate-400"
+                }`}
+                title={wakeWordConnected ? "Connected" : "Disconnected"}
+              />
+              <p className="m-0 text-xs text-slate-500 dark:text-slate-400">
+                {wakeWordStatusText}
+              </p>
+            </div>
 
             <label className="block">
               <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
@@ -449,6 +465,25 @@ export default function VoiceSettingsSection({
                 <span>Medium</span>
                 <span>High</span>
               </div>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
+                Service URL
+              </span>
+              <input
+                type="text"
+                placeholder="ws://localhost:9999/ws/detect"
+                value={settings.wakeWordUrl ?? ""}
+                onChange={(event) =>
+                  settings.updateSetting("wakeWordUrl", event.target.value)
+                }
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                disabled={!settings.wakeWordEnabled}
+              />
+              <span className="mt-0.5 block text-[11px] text-slate-400">
+                Auto-populated from VITE_WAKEWORD_URL or Docker env
+              </span>
             </label>
 
             <div className="flex items-center gap-2">

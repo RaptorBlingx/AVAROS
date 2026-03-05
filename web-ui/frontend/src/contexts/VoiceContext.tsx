@@ -138,21 +138,23 @@ const WAKE_WORD_ARM_MS = 10000;
 const WAKE_WORD_PROMPT = "How can I help you?";
 const WAKE_WORD_PROMPT_COOLDOWN_MS = 5000;
 
-/** Ignore STT results that are our own TTS prompt (avoids acoustic feedback loop). */
-function isOwnPromptEcho(transcript: string): boolean {
+/** Ignore STT results that match the last TTS utterance (avoids acoustic feedback loop). */
+function isOwnPromptEcho(
+  transcript: string,
+  lastTtsUtterance: string,
+): boolean {
+  if (!lastTtsUtterance) return false;
   const n = transcript.trim().toLowerCase().replace(/\s+/g, " ");
-  const patterns = [
-    "how can i help you",
-    "hey can i help you",
-    "how can i help",
-    "hey can i help",
-    "how can help you",
-    "how can help",
-    "hey can help you",
-    "hey can help",
-  ];
-  return patterns.some(
-    (p) => n === p || n.startsWith(p + " ") || n.includes(" " + p),
+  const ref = lastTtsUtterance.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!n || !ref) return false;
+  const allowContainsMatch = ref.length >= 12;
+  // Exact match, prefix match, or substring containment (accounts for STT
+  // mis-hearing a fragment of the TTS prompt).
+  return (
+    n === ref ||
+    n.startsWith(ref) ||
+    ref.startsWith(n) ||
+    (allowContainsMatch && n.includes(ref))
   );
 }
 
@@ -254,6 +256,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const [ttsVolume, setTTSVolumeState] = useState(1.0);
   const isSpeakingRef = useRef(false);
   const wakeWordPromptCooldownUntilRef = useRef(0);
+  const lastTtsUtteranceRef = useRef("");
 
   const sttSupported = isSpeechRecognitionSupported();
   const ttsSupported = isSpeechSynthesisSupported();
@@ -309,6 +312,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     if (!ttsRef.current) return;
     wakeWordPromptCooldownUntilRef.current =
       Date.now() + WAKE_WORD_PROMPT_COOLDOWN_MS;
+    lastTtsUtteranceRef.current = WAKE_WORD_PROMPT;
     try {
       await ttsRef.current.speak(WAKE_WORD_PROMPT);
     } catch {
@@ -359,7 +363,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   const {
     wakeWordState,
-    wakeWordFallbackActive,
     wakeWordEnabled,
     wakeWordSensitivity,
     setWakeWordSensitivity,
@@ -367,21 +370,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     voiceMode,
     setVoiceMode,
   } = useWakeWord({ sttRef, onDetected: onWakeWordDetected });
-
-  const ensureWakeWordFallbackListening = useCallback(async () => {
-    if (voiceMode !== "wake-word" || !wakeWordFallbackActive) return;
-    const stt = sttRef.current;
-    if (!stt) return;
-    if (stt.getState() === "listening") return;
-
-    stt.setContinuous(true);
-    try {
-      await stt.start();
-      setVoiceState("listening");
-    } catch {
-      // Best-effort self-heal for fallback mode.
-    }
-  }, [voiceMode, wakeWordFallbackActive]);
 
   useEffect(() => {
     interimTranscriptRef.current = interimTranscript;
@@ -404,20 +392,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       clearWakeWordCommandWindow();
     }
   }, [voiceMode, clearWakeWordCommandWindow]);
-
-  // Keep fallback wake-word listening alive even after long sessions
-  // or browser recognition interruptions.
-  useEffect(() => {
-    if (voiceMode !== "wake-word" || !wakeWordFallbackActive) return;
-    if (isSpeakingRef.current) return;
-    void ensureWakeWordFallbackListening();
-
-    const timer = window.setInterval(() => {
-      if (isSpeakingRef.current) return;
-      void ensureWakeWordFallbackListening();
-    }, 2500);
-    return () => window.clearInterval(timer);
-  }, [voiceMode, wakeWordFallbackActive, ensureWakeWordFallbackListening]);
 
   // ── Initialize STT / TTS ───────────────────────────
   useEffect(() => {
@@ -488,20 +462,16 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         metricsRef.current.mark("stt_completed");
         let transcript = result.transcript;
         if (voiceMode === "wake-word") {
-          if (isOwnPromptEcho(transcript)) return;
+          if (isOwnPromptEcho(transcript, lastTtsUtteranceRef.current)) return;
           const parsed = parseWakeWordUtterance(transcript);
           if (parsed.hasWakeWord && parsed.command) {
             clearWakeWordCommandWindow();
             transcript = parsed.command;
           } else if (parsed.hasWakeWord && !parsed.command) {
             triggerWakeWordPrompt();
-            if (!wakeWordFallbackActive) {
-              void startWakeWordCommandCapture();
-            }
+            void startWakeWordCommandCapture();
             return;
-          } else if (wakeWordFallbackActive && isWakeWordCommandWindowOpen()) {
-            clearWakeWordCommandWindow();
-          } else if (!wakeWordFallbackActive && isWakeWordCommandWindowOpen()) {
+          } else if (isWakeWordCommandWindowOpen()) {
             clearWakeWordCommandWindow();
           } else {
             setFinalTranscript("");
@@ -520,18 +490,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         setFinalTranscript(transcript);
         setInterimTranscript("");
       } else {
-        if (
-          voiceMode === "wake-word" &&
-          wakeWordFallbackActive &&
-          !isWakeWordCommandWindowOpen() &&
-          !isOwnPromptEcho(result.transcript)
-        ) {
-          const parsed = parseWakeWordUtterance(result.transcript);
-          if (parsed.hasWakeWord && !parsed.command) {
-            triggerWakeWordPrompt();
-            return;
-          }
-        }
         setInterimTranscript(result.transcript);
       }
     });
@@ -586,7 +544,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   }, [
     sttSupported,
     voiceMode,
-    wakeWordFallbackActive,
     armWakeWordCommandWindow,
     promptWakeWordReady,
     triggerWakeWordPrompt,
@@ -612,20 +569,13 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         if (state === "idle") {
           metricsRef.current.mark("tts_completed");
           metricsRef.current.toConsoleLog();
-          if (voiceMode === "wake-word" && wakeWordFallbackActive) {
-            setVoiceState("listening");
-            void ensureWakeWordFallbackListening();
-          } else {
-            setVoiceState("idle");
-          }
+          setVoiceState("idle");
         }
       }
     });
   }, [
     ttsSupported,
     voiceMode,
-    wakeWordFallbackActive,
-    ensureWakeWordFallbackListening,
   ]);
 
   // ── Auto-send final transcript to HiveMind ─────────
@@ -663,6 +613,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       metricsRef.current.mark("response_received");
       const text = (msg.data.utterance as string | undefined) ?? "";
       if (text && ttsRef.current) {
+        lastTtsUtteranceRef.current = text;
         metricsRef.current.mark("tts_started");
         void ttsRef.current.speak(text);
       }
@@ -763,7 +714,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       wakeWordState,
       wakeWordEnabled,
       wakeWordSensitivity,
-      wakeWordFallbackActive,
       setWakeWordSensitivity,
       isModelLoading,
       setVoiceMode,
@@ -796,7 +746,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       wakeWordState,
       wakeWordEnabled,
       wakeWordSensitivity,
-      wakeWordFallbackActive,
       setWakeWordSensitivity,
       isModelLoading,
       setVoiceMode,

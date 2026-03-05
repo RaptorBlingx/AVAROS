@@ -5,7 +5,7 @@
  */
 
 import type { VoiceMode } from "../services/voice-mode";
-import type { WakeWordState } from "../services/wake-word-types";
+import type { WakeWordState } from "../services/wake-word-backend";
 import type { PermissionState } from "../services/audio-permissions";
 
 // Re-export for consumer convenience
@@ -39,7 +39,6 @@ export interface VoiceContextValue {
   isSpeaking: boolean;
 
   wakeWordState: WakeWordState;
-  wakeWordFallbackActive: boolean;
   wakeWordEnabled: boolean;
   wakeWordSensitivity: number;
   setWakeWordSensitivity: (value: number) => void;

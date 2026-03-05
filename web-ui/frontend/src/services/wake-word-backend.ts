@@ -25,6 +25,20 @@ export type BackendWakeWordState =
   | "error"
   | "unsupported";
 
+/**
+ * Canonical wake word state exposed to UI consumers.
+ *
+ * Matches the legacy TF.js `WakeWordState` shape so existing context/types
+ * keep working after the TF.js removal (P6-E08).
+ */
+export type WakeWordState =
+  | "idle"
+  | "loading"
+  | "listening"
+  | "detected"
+  | "error"
+  | "unsupported";
+
 export interface BackendWakeWordConfig {
   /** WebSocket URL for the wake word backend. */
   wsUrl: string;
@@ -93,8 +107,8 @@ function resolveDefaultWsUrl(): string {
 /**
  * Backend wake-word detection via openWakeWord WebSocket.
  *
- * Implements the same interface contract as `WakeWordService` (TF.js)
- * so the two can be swapped in `VoiceModeService`.
+ * This is the sole wake word engine in the frontend (DEC-033).
+ * Voice mode orchestration always uses this service for wake-word mode.
  */
 export class BackendWakeWordService {
   private _state: BackendWakeWordState = "idle";

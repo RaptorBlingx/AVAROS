@@ -15,8 +15,6 @@
   "dependencies": {
     "@radix-ui/react-popover": "^1.1.15",
     "@radix-ui/react-select": "^2.2.6",
-    "@tensorflow-models/speech-commands": "^0.5.4",
-    "@tensorflow/tfjs": "^4.22.0",
     "chart.js": "^4.5.1",
     "date-fns": "^4.1.0",
     "react": "^18.3.1",

@@ -1,13 +1,13 @@
 /**
  * Custom hook for wake word detection and voice mode management.
  *
- * Manages WakeWordService + BackendWakeWordService + VoiceModeService
- * lifecycle, state, and event subscriptions. Extracted from VoiceContext
- * to keep file sizes under 300 lines.
+ * Manages BackendWakeWordService + VoiceModeService lifecycle, state,
+ * and event subscriptions. Extracted from VoiceContext to keep file
+ * sizes under 300 lines.
  *
- * Priority: BackendWakeWordService (openWakeWord via WebSocket) is tried
- * first.  If unavailable, the hook degrades to push-to-talk mode.
- * The TF.js WakeWordService is kept for backward compat (P6-E08 removes).
+ * Priority: BackendWakeWordService (openWakeWord via WebSocket) is the
+ * sole wake word engine.  If unavailable, the hook degrades to
+ * push-to-talk mode (no privacy-leaking continuous STT fallback).
  */
 
 import {
@@ -17,17 +17,17 @@ import {
   useState,
 } from "react";
 
-import { WakeWordService } from "../services/wake-word";
 import { BackendWakeWordService } from "../services/wake-word-backend";
 import type {
   BackendWakeWordState,
   DetectionPayload,
+  WakeWordState,
 } from "../services/wake-word-backend";
-import type { WakeWordState } from "../services/wake-word-types";
 import { VoiceModeService, type VoiceMode } from "../services/voice-mode";
 import type { STTService } from "../services/stt";
 
 const VOICE_MODE_STORAGE_KEY = "avaros-voice-mode";
+const WAKE_WORD_URL_STORAGE_KEY = "avaros_wake_word_url";
 
 function getInitialVoiceMode(): VoiceMode {
   if (typeof window === "undefined") return "text";
@@ -38,11 +38,17 @@ function getInitialVoiceMode(): VoiceMode {
   return "text";
 }
 
+function getConfiguredWakeWordUrl(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  const raw = window.localStorage.getItem(WAKE_WORD_URL_STORAGE_KEY);
+  const value = raw?.trim();
+  return value ? value : undefined;
+}
+
 // ── Types ──────────────────────────────────────────────
 
 export interface UseWakeWordResult {
   wakeWordState: WakeWordState;
-  wakeWordFallbackActive: boolean;
   wakeWordEnabled: boolean;
   wakeWordSensitivity: number;
   setWakeWordSensitivity: (value: number) => void;
@@ -65,18 +71,16 @@ interface UseWakeWordOptions {
 /**
  * Manage wake word detection and three-mode voice toggle.
  *
- * Initializes WakeWordService and VoiceModeService, wires events,
+ * Initializes BackendWakeWordService and VoiceModeService, wires events,
  * and provides state + setters for use in VoiceContext.
  */
 export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
   const { sttRef, onDetected } = options;
 
-  const wakeWordRef = useRef<WakeWordService | null>(null);
   const backendWakeWordRef = useRef<BackendWakeWordService | null>(null);
   const voiceModeRef = useRef<VoiceModeService | null>(null);
 
   const [wakeWordState, setWakeWordState] = useState<WakeWordState>("idle");
-  const [wakeWordFallbackActive, setWakeWordFallbackActive] = useState(false);
   const [wakeWordSensitivity, setWakeWordSensitivityState] = useState(0.75);
   const [isModelLoading, setIsModelLoading] = useState(false);
   const [voiceMode, setVoiceModeState] = useState<VoiceMode>(getInitialVoiceMode);
@@ -89,14 +93,13 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
       return voiceModeRef.current;
     }
 
-    if (!sttRef.current || !wakeWordRef.current) {
+    if (!sttRef.current || !backendWakeWordRef.current) {
       return null;
     }
 
     voiceModeRef.current = new VoiceModeService(
-      wakeWordRef.current,
-      sttRef.current,
       backendWakeWordRef.current,
+      sttRef.current,
     );
 
     return voiceModeRef.current;
@@ -104,47 +107,19 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
 
   // Initialize services
   useEffect(() => {
-    if (!wakeWordRef.current) {
-      wakeWordRef.current = new WakeWordService({
-        sensitivity: wakeWordSensitivity,
-      });
-    }
-
     if (!backendWakeWordRef.current) {
-      backendWakeWordRef.current = new BackendWakeWordService();
+      const configuredUrl = getConfiguredWakeWordUrl();
+      backendWakeWordRef.current = configuredUrl
+        ? new BackendWakeWordService({ wsUrl: configuredUrl })
+        : new BackendWakeWordService();
     }
 
     ensureVoiceModeService();
 
     return () => {
-      void wakeWordRef.current?.dispose();
       backendWakeWordRef.current?.dispose();
     };
   }, [ensureVoiceModeService]);
-
-  // Wire wake word events (TF.js)
-  useEffect(() => {
-    const ww = wakeWordRef.current;
-    if (!ww) return;
-
-    const unsubState = ww.onStateChange((state) => {
-      if (!isBackendWakeWord) {
-        setWakeWordState(state);
-        setIsModelLoading(state === "loading");
-      }
-    });
-
-    const unsubDetected = ww.onDetected(() => {
-      if (!isBackendWakeWord) {
-        onDetected();
-      }
-    });
-
-    return () => {
-      unsubState();
-      unsubDetected();
-    };
-  }, [onDetected, isBackendWakeWord]);
 
   // Wire backend wake word events
   useEffect(() => {
@@ -178,57 +153,20 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
 
   const setVoiceMode = useCallback(
     async (mode: VoiceMode) => {
-      const activateWakeWordFallback = async () => {
-        if (!sttRef.current) {
-          throw new Error("STT service is not ready");
-        }
-        // Fallback mode: keep wake-word UX by using continuous STT and
-        // filtering utterances by "hey avaros" in VoiceContext.
-        sttRef.current.setContinuous(true);
-        await sttRef.current.start();
-        setWakeWordFallbackActive(true);
-        setWakeWordState("listening");
-        setIsModelLoading(false);
-        setVoiceModeState("wake-word");
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem(VOICE_MODE_STORAGE_KEY, "wake-word");
-        }
-      };
-
       const service = ensureVoiceModeService();
-      try {
-        if (!service) {
-          if (mode === "wake-word") {
-            await activateWakeWordFallback();
-            return;
-          }
-          throw new Error("Voice mode service is not ready");
-        }
+      if (!service) {
+        throw new Error("Voice mode service is not ready");
+      }
 
-        await service.setMode(mode);
-        const effectiveMode = service.getMode();
-        setWakeWordFallbackActive(false);
-        setIsBackendWakeWord(service.isUsingBackend());
-        if (effectiveMode !== "wake-word") {
-          sttRef.current?.stop();
-        }
-        setVoiceModeState(effectiveMode);
-        sttRef.current?.setContinuous(effectiveMode === "wake-word");
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem(VOICE_MODE_STORAGE_KEY, effectiveMode);
-        }
-      } catch (error) {
-        if (mode === "wake-word") {
-          try {
-            await activateWakeWordFallback();
-            return;
-          } catch (fallbackError) {
-            console.warn("Wake-word mode failed to start.", error, fallbackError);
-          }
-        }
-        setWakeWordFallbackActive(false);
-        sttRef.current?.setContinuous(false);
-        throw error;
+      await service.setMode(mode);
+      const effectiveMode = service.getMode();
+      setIsBackendWakeWord(service.isUsingBackend());
+      if (effectiveMode !== "wake-word") {
+        sttRef.current?.stop();
+      }
+      setVoiceModeState(effectiveMode);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(VOICE_MODE_STORAGE_KEY, effectiveMode);
       }
     },
     [ensureVoiceModeService, sttRef],
@@ -236,12 +174,11 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
 
   const setWakeWordSensitivity = useCallback((value: number) => {
     setWakeWordSensitivityState(value);
-    wakeWordRef.current?.setSensitivity(value);
+    backendWakeWordRef.current?.setSensitivity(value);
   }, []);
 
   return {
     wakeWordState,
-    wakeWordFallbackActive,
     wakeWordEnabled,
     wakeWordSensitivity,
     setWakeWordSensitivity,

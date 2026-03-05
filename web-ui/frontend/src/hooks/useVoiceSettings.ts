@@ -9,6 +9,7 @@ export type VoiceSettingsState = {
   voiceMode: VoiceMode;
   wakeWordEnabled: boolean;
   wakeWordSensitivity: number;
+  wakeWordUrl: string;
   sttEngine: STTEngine;
   ttsEngine: TTSEngine;
   language: string;
@@ -21,6 +22,7 @@ const STORAGE_KEYS = {
   voiceMode: "avaros_voice_mode",
   wakeWordEnabled: "avaros_voice_wake_word_enabled",
   wakeWordSensitivity: "avaros_wake_word_sensitivity",
+  wakeWordUrl: "avaros_wake_word_url",
   sttEngine: "avaros_stt_engine",
   language: "avaros_voice_language",
   ttsEngine: "avaros_tts_engine",
@@ -33,6 +35,7 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettingsState = {
   voiceMode: "push-to-talk",
   wakeWordEnabled: true,
   wakeWordSensitivity: 0.75,
+  wakeWordUrl: "",
   sttEngine: "browser",
   ttsEngine: "browser",
   language: "en-US",
@@ -103,6 +106,9 @@ function readInitialSettings(): VoiceSettingsState {
       0,
       1,
     ),
+    wakeWordUrl:
+      localStorage.getItem(STORAGE_KEYS.wakeWordUrl) ??
+      DEFAULT_VOICE_SETTINGS.wakeWordUrl,
     sttEngine,
     ttsEngine,
     language:
@@ -143,6 +149,7 @@ export function useVoiceSettings(): {
   voiceMode: VoiceMode;
   wakeWordEnabled: boolean;
   wakeWordSensitivity: number;
+  wakeWordUrl: string;
   sttEngine: STTEngine;
   ttsEngine: TTSEngine;
   language: string;
@@ -175,6 +182,9 @@ export function useVoiceSettings(): {
             0,
             1,
           );
+          break;
+        case "wakeWordUrl":
+          next.wakeWordUrl = typeof value === "string" ? value : "";
           break;
         case "sttEngine":
           next.sttEngine = value === "server" ? "server" : "browser";

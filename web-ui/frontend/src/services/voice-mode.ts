@@ -15,7 +15,6 @@
  * audio stream) before activating the new one.
  */
 
-import { WakeWordService } from "./wake-word";
 import { BackendWakeWordService } from "./wake-word-backend";
 import { STTService } from "./stt";
 
@@ -30,20 +29,17 @@ type VoidCallback = () => void;
 
 export class VoiceModeService {
   private _mode: VoiceMode;
-  private wakeWordService: WakeWordService;
-  private backendWakeWord: BackendWakeWordService | null;
+  private backendWakeWord: BackendWakeWordService;
   private sttService: STTService;
   private modeChangeCallbacks: ModeChangeCallback[] = [];
   private _usingBackend = false;
 
   constructor(
-    wakeWord: WakeWordService,
+    backendWakeWord: BackendWakeWordService,
     stt: STTService,
-    backendWakeWord?: BackendWakeWordService | null,
   ) {
-    this.wakeWordService = wakeWord;
+    this.backendWakeWord = backendWakeWord;
     this.sttService = stt;
-    this.backendWakeWord = backendWakeWord ?? null;
     this._mode = "text"; // safe default — no audio resources used
   }
 
@@ -104,7 +100,7 @@ export class VoiceModeService {
   /**
    * Activate the given mode.
    *
-   * - **wake-word:** Try backend service first (if available).
+   * - **wake-word:** Try backend service (if available).
    *     If backend is unavailable, degrade to push-to-talk.
    * - **push-to-talk:** Nothing to pre-load — user triggers recording.
    * - **text:** Nothing to start.
@@ -131,63 +127,46 @@ export class VoiceModeService {
    *
    * Proactively checks `isAvailable()` as a gate.  Falls back to
    * push-to-talk when the backend is unreachable or fails during
-   * initialization (per DEC-033 — backend preferred, no broken
-   * TF.js fallback).
+   * initialization (per DEC-033 — backend only, no TF.js fallback).
    *
    * @returns Effective mode — "wake-word" on success, "push-to-talk" on degradation.
    */
   private async activateWakeWord(): Promise<VoiceMode> {
-    if (this.backendWakeWord) {
-      try {
-        // Proactive availability gate: if already connected, skip init
-        if (this.backendWakeWord.isAvailable()) {
-          await this.backendWakeWord.startListening();
-          this._usingBackend = true;
-          return "wake-word";
-        }
-
-        // Not yet connected — try to initialize
-        await this.backendWakeWord.initialize();
+    try {
+      // Proactive availability gate: if already connected, skip init
+      if (this.backendWakeWord.isAvailable()) {
         await this.backendWakeWord.startListening();
         this._usingBackend = true;
         return "wake-word";
-      } catch {
-        // Backend unavailable — degrade to push-to-talk
-        console.warn(
-          "Backend wake word service unavailable, " +
-            "degrading to push-to-talk.",
-        );
-        this._usingBackend = false;
-        return "push-to-talk";
       }
-    }
 
-    // Legacy TF.js path (kept for backward compat — P6-E08 will remove)
-    if (!this.backendWakeWord) {
-      if (!this.wakeWordService.isModelLoaded()) {
-        await this.wakeWordService.initialize();
-      }
-      await this.wakeWordService.startListening();
+      // Not yet connected — try to initialize
+      await this.backendWakeWord.initialize();
+      await this.backendWakeWord.startListening();
+      this._usingBackend = true;
+      return "wake-word";
+    } catch {
+      // Backend unavailable — degrade to push-to-talk
+      console.warn(
+        "Backend wake word service unavailable, " +
+          "degrading to push-to-talk.",
+      );
       this._usingBackend = false;
+      return "push-to-talk";
     }
-    return "wake-word";
   }
 
   /**
    * Deactivate / tear down the given mode.
    *
-   * - **wake-word:** Stop the active service (backend or TF.js).
+   * - **wake-word:** Stop the backend wake word service.
    * - **push-to-talk:** Stop any in-progress STT session.
    * - **text:** No-op.
    */
   private async deactivateMode(mode: VoiceMode): Promise<void> {
     switch (mode) {
       case "wake-word":
-        if (this._usingBackend && this.backendWakeWord) {
-          this.backendWakeWord.stopListening();
-        } else {
-          this.wakeWordService.stopListening();
-        }
+        this.backendWakeWord.stopListening();
         this._usingBackend = false;
         break;
 
