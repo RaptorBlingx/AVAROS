@@ -36,13 +36,33 @@ vi.mock("../../services/wake-word", () => ({
 
 vi.mock("../../services/voice-mode", () => ({
   VoiceModeService: class MockVoiceModeService {
+    private _mode = "text";
+
     constructor(...args: unknown[]) {
       mockState.voiceModeCtor(...args);
     }
 
-    setMode(mode: string): Promise<void> {
-      return mockState.voiceModeInstance.setMode(mode);
+    async setMode(mode: string): Promise<string> {
+      await mockState.voiceModeInstance.setMode(mode);
+      this._mode = mode;
+      return mode;
     }
+
+    getMode(): string {
+      return this._mode;
+    }
+
+    isUsingBackend(): boolean {
+      return false;
+    }
+  },
+}));
+
+vi.mock("../../services/wake-word-backend", () => ({
+  BackendWakeWordService: class MockBackendWakeWordService {
+    onStateChange = vi.fn().mockReturnValue(() => {});
+    onDetected = vi.fn().mockReturnValue(() => {});
+    dispose = vi.fn();
   },
 }));
 

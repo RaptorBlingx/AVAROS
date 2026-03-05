@@ -199,4 +199,171 @@ describe("VoiceModeService", () => {
       expect(modes).toHaveLength(1); // No new callback
     });
   });
+
+  // ── Backend wake word fallback tests ─────────────────
+
+  describe("backend wake word fallback", () => {
+    /**
+     * Stub BackendWakeWordService with the methods VoiceModeService calls.
+     */
+    function createMockBackendWakeWord(overrides?: {
+      isAvailable?: boolean;
+      initializeError?: boolean;
+      startListeningError?: boolean;
+    }) {
+      const opts = {
+        isAvailable: false,
+        initializeError: false,
+        startListeningError: false,
+        ...overrides,
+      };
+
+      return {
+        isAvailable: vi.fn().mockReturnValue(opts.isAvailable),
+        isModelLoaded: vi.fn().mockReturnValue(opts.isAvailable),
+        initialize: opts.initializeError
+          ? vi.fn().mockRejectedValue(new Error("WebSocket connection failed"))
+          : vi.fn().mockResolvedValue(undefined),
+        startListening: opts.startListeningError
+          ? vi.fn().mockRejectedValue(new Error("Audio capture failed"))
+          : vi.fn().mockResolvedValue(undefined),
+        stopListening: vi.fn(),
+        dispose: vi.fn(),
+        setSensitivity: vi.fn(),
+        getSensitivity: vi.fn().mockReturnValue(0.5),
+        onDetected: vi.fn().mockReturnValue(() => {}),
+        onStateChange: vi.fn().mockReturnValue(() => {}),
+        isUsingBackend: vi.fn().mockReturnValue(false),
+      };
+    }
+
+    it("test_wake_word_degrades_to_push_to_talk_when_backend_unavailable", async () => {
+      const mockBackend = createMockBackendWakeWord({
+        isAvailable: false,
+        initializeError: true,
+      });
+
+      const svc = new VoiceModeService(
+        mockWakeWord as never,
+        mockSTT as never,
+        mockBackend as never,
+      );
+
+      const effectiveMode = await svc.setMode("wake-word");
+
+      expect(effectiveMode).toBe("push-to-talk");
+      expect(svc.getMode()).toBe("push-to-talk");
+      expect(svc.isUsingBackend()).toBe(false);
+    });
+
+    it("test_mode_change_event_fires_with_degraded_mode", async () => {
+      const mockBackend = createMockBackendWakeWord({
+        isAvailable: false,
+        initializeError: true,
+      });
+
+      const svc = new VoiceModeService(
+        mockWakeWord as never,
+        mockSTT as never,
+        mockBackend as never,
+      );
+
+      const modes: VoiceMode[] = [];
+      svc.onModeChange((m) => modes.push(m));
+
+      await svc.setMode("wake-word");
+
+      expect(modes).toEqual(["push-to-talk"]);
+    });
+
+    it("test_wake_word_succeeds_when_backend_available", async () => {
+      const mockBackend = createMockBackendWakeWord({
+        isAvailable: true,
+      });
+
+      const svc = new VoiceModeService(
+        mockWakeWord as never,
+        mockSTT as never,
+        mockBackend as never,
+      );
+
+      const effectiveMode = await svc.setMode("wake-word");
+
+      expect(effectiveMode).toBe("wake-word");
+      expect(svc.getMode()).toBe("wake-word");
+      expect(svc.isUsingBackend()).toBe(true);
+      // Should use isAvailable() fast path, skip initialize()
+      expect(mockBackend.initialize).not.toHaveBeenCalled();
+      expect(mockBackend.startListening).toHaveBeenCalled();
+    });
+
+    it("test_wake_word_initializes_when_not_yet_available", async () => {
+      const mockBackend = createMockBackendWakeWord({
+        isAvailable: false,
+        initializeError: false,
+      });
+
+      const svc = new VoiceModeService(
+        mockWakeWord as never,
+        mockSTT as never,
+        mockBackend as never,
+      );
+
+      const effectiveMode = await svc.setMode("wake-word");
+
+      expect(effectiveMode).toBe("wake-word");
+      expect(mockBackend.isAvailable).toHaveBeenCalled();
+      expect(mockBackend.initialize).toHaveBeenCalled();
+      expect(mockBackend.startListening).toHaveBeenCalled();
+      expect(svc.isUsingBackend()).toBe(true);
+    });
+
+    it("test_wake_word_degrades_when_start_listening_fails", async () => {
+      const mockBackend = createMockBackendWakeWord({
+        isAvailable: true,
+        startListeningError: true,
+      });
+
+      const svc = new VoiceModeService(
+        mockWakeWord as never,
+        mockSTT as never,
+        mockBackend as never,
+      );
+
+      const effectiveMode = await svc.setMode("wake-word");
+
+      expect(effectiveMode).toBe("push-to-talk");
+      expect(svc.getMode()).toBe("push-to-talk");
+      expect(svc.isUsingBackend()).toBe(false);
+    });
+
+    it("test_deactivate_backend_wake_word_stops_listening", async () => {
+      const mockBackend = createMockBackendWakeWord({
+        isAvailable: true,
+      });
+
+      const svc = new VoiceModeService(
+        mockWakeWord as never,
+        mockSTT as never,
+        mockBackend as never,
+      );
+
+      await svc.setMode("wake-word");
+      expect(svc.isUsingBackend()).toBe(true);
+
+      await svc.setMode("text");
+      expect(mockBackend.stopListening).toHaveBeenCalled();
+      expect(svc.isUsingBackend()).toBe(false);
+    });
+
+    it("test_returns_effective_mode_on_noop", async () => {
+      const svc = new VoiceModeService(
+        mockWakeWord as never,
+        mockSTT as never,
+      );
+
+      const result = await svc.setMode("text"); // already text
+      expect(result).toBe("text");
+    });
+  });
 });

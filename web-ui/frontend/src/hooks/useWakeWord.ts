@@ -1,9 +1,13 @@
 /**
  * Custom hook for wake word detection and voice mode management.
  *
- * Manages WakeWordService + VoiceModeService lifecycle, state, and
- * event subscriptions. Extracted from VoiceContext to keep file sizes
- * under 300 lines.
+ * Manages WakeWordService + BackendWakeWordService + VoiceModeService
+ * lifecycle, state, and event subscriptions. Extracted from VoiceContext
+ * to keep file sizes under 300 lines.
+ *
+ * Priority: BackendWakeWordService (openWakeWord via WebSocket) is tried
+ * first.  If unavailable, the hook degrades to push-to-talk mode.
+ * The TF.js WakeWordService is kept for backward compat (P6-E08 removes).
  */
 
 import {
@@ -14,6 +18,11 @@ import {
 } from "react";
 
 import { WakeWordService } from "../services/wake-word";
+import { BackendWakeWordService } from "../services/wake-word-backend";
+import type {
+  BackendWakeWordState,
+  DetectionPayload,
+} from "../services/wake-word-backend";
 import type { WakeWordState } from "../services/wake-word-types";
 import { VoiceModeService, type VoiceMode } from "../services/voice-mode";
 import type { STTService } from "../services/stt";
@@ -40,13 +49,15 @@ export interface UseWakeWordResult {
   isModelLoading: boolean;
   voiceMode: VoiceMode;
   setVoiceMode: (mode: VoiceMode) => Promise<void>;
+  /** True when the backend openWakeWord service is being used. */
+  isBackendWakeWord: boolean;
 }
 
 interface UseWakeWordOptions {
   /** STT service ref — used to toggle continuous mode on mode switch. */
   sttRef: React.RefObject<STTService | null>;
-  /** Called when the wake word is detected (typically starts STT). */
-  onDetected: () => void;
+  /** Called when wake word is detected; payload is available for backend path. */
+  onDetected: (payload?: DetectionPayload) => void;
 }
 
 // ── Hook ───────────────────────────────────────────────
@@ -61,6 +72,7 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
   const { sttRef, onDetected } = options;
 
   const wakeWordRef = useRef<WakeWordService | null>(null);
+  const backendWakeWordRef = useRef<BackendWakeWordService | null>(null);
   const voiceModeRef = useRef<VoiceModeService | null>(null);
 
   const [wakeWordState, setWakeWordState] = useState<WakeWordState>("idle");
@@ -68,6 +80,7 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
   const [wakeWordSensitivity, setWakeWordSensitivityState] = useState(0.75);
   const [isModelLoading, setIsModelLoading] = useState(false);
   const [voiceMode, setVoiceModeState] = useState<VoiceMode>(getInitialVoiceMode);
+  const [isBackendWakeWord, setIsBackendWakeWord] = useState(false);
 
   const wakeWordEnabled = voiceMode === "wake-word";
 
@@ -83,6 +96,7 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
     voiceModeRef.current = new VoiceModeService(
       wakeWordRef.current,
       sttRef.current,
+      backendWakeWordRef.current,
     );
 
     return voiceModeRef.current;
@@ -96,24 +110,65 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
       });
     }
 
+    if (!backendWakeWordRef.current) {
+      backendWakeWordRef.current = new BackendWakeWordService();
+    }
+
     ensureVoiceModeService();
 
     return () => {
       void wakeWordRef.current?.dispose();
+      backendWakeWordRef.current?.dispose();
     };
   }, [ensureVoiceModeService]);
 
-  // Wire wake word events
+  // Wire wake word events (TF.js)
   useEffect(() => {
     const ww = wakeWordRef.current;
     if (!ww) return;
 
     const unsubState = ww.onStateChange((state) => {
-      setWakeWordState(state);
-      setIsModelLoading(state === "loading");
+      if (!isBackendWakeWord) {
+        setWakeWordState(state);
+        setIsModelLoading(state === "loading");
+      }
     });
 
-    const unsubDetected = ww.onDetected(onDetected);
+    const unsubDetected = ww.onDetected(() => {
+      if (!isBackendWakeWord) {
+        onDetected();
+      }
+    });
+
+    return () => {
+      unsubState();
+      unsubDetected();
+    };
+  }, [onDetected, isBackendWakeWord]);
+
+  // Wire backend wake word events
+  useEffect(() => {
+    const bww = backendWakeWordRef.current;
+    if (!bww) return;
+
+    const unsubState = bww.onStateChange((state: BackendWakeWordState) => {
+      // Map backend states to WakeWordState where possible
+      const stateMap: Record<BackendWakeWordState, WakeWordState> = {
+        idle: "idle",
+        connecting: "loading",
+        listening: "listening",
+        detected: "detected",
+        error: "error",
+        unsupported: "unsupported",
+      };
+      setWakeWordState(stateMap[state]);
+      setIsModelLoading(state === "connecting");
+      setIsBackendWakeWord(
+        state === "listening" || state === "detected",
+      );
+    });
+
+    const unsubDetected = bww.onDetected((payload) => onDetected(payload));
 
     return () => {
       unsubState();
@@ -151,14 +206,16 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
         }
 
         await service.setMode(mode);
+        const effectiveMode = service.getMode();
         setWakeWordFallbackActive(false);
-        if (mode !== "wake-word") {
+        setIsBackendWakeWord(service.isUsingBackend());
+        if (effectiveMode !== "wake-word") {
           sttRef.current?.stop();
         }
-        setVoiceModeState(mode);
-        sttRef.current?.setContinuous(mode === "wake-word");
+        setVoiceModeState(effectiveMode);
+        sttRef.current?.setContinuous(effectiveMode === "wake-word");
         if (typeof window !== "undefined") {
-          window.localStorage.setItem(VOICE_MODE_STORAGE_KEY, mode);
+          window.localStorage.setItem(VOICE_MODE_STORAGE_KEY, effectiveMode);
         }
       } catch (error) {
         if (mode === "wake-word") {
@@ -191,5 +248,6 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
     isModelLoading,
     voiceMode,
     setVoiceMode,
+    isBackendWakeWord,
   };
 }
