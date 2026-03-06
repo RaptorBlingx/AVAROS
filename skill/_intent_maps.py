@@ -38,5 +38,6 @@ NON_KPI_INTENT_MAP: tuple[tuple[str, str], ...] = (
     ("control.device.turn_off.intent", "handle_control_turn_off"),
     ("status.system.show.intent", "handle_status_system_show"),
     ("status.profile.show.intent", "handle_status_profile_show"),
+    ("list.assets.intent", "handle_list_assets"),
     ("help.capabilities.list.intent", "handle_help_capabilities_list"),
 )

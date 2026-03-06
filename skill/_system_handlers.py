@@ -140,3 +140,23 @@ def handle_help_capabilities_list(skill: "AVAROSSkill", message: Message) -> Non
         )
 
     skill._safe_dispatch("handle_help_capabilities_list", _execute)
+
+
+def handle_list_assets(skill: "AVAROSSkill", message: Message) -> None:
+    """Handle voice request to list configured assets."""
+
+    def _execute() -> None:
+        assets = skill._get_asset_registry(force_refresh=True)
+        if not assets:
+            skill.speak_dialog("list.assets")
+            return
+
+        names = [
+            str(asset.display_name or asset.asset_id).strip()
+            for asset in assets
+            if str(asset.display_name or asset.asset_id).strip()
+        ]
+        response = skill.response_builder.format_asset_list(names)
+        skill.speak(response)
+
+    skill._safe_dispatch("handle_list_assets", _execute)

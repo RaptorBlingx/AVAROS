@@ -5,6 +5,10 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from skill._asset_resolution import (
+    get_asset_registry as _get_asset_registry,
+    resolve_asset_id_from_text as _resolve_asset_id_from_text,
+)
 from skill.domain.models import CanonicalMetric, TimePeriod
 from skill._intent_resolver import resolve_intent_name as _resolve_intent_name
 from skill._metric_resolver import resolve_metric_from_utterance as _resolve_metric_from_utterance
@@ -177,31 +181,46 @@ def extract_utterance_text(self, message: Message) -> str:
     return ""
 
 
-def canonicalize_asset_id(self, raw_asset: str) -> str:
-    """Normalize common spoken asset forms into stable IDs."""
-    token = (raw_asset or "").strip()
-    if not token:
-        return ""
+def get_asset_registry(self, force_refresh: bool = False):
+    """Return active-profile asset registry from adapter/settings cache."""
+    return _get_asset_registry(self, force_refresh=force_refresh)
 
-    normalized = re.sub(r"[-_]+", " ", token.lower()).strip()
-    line_match = re.fullmatch(
-        r"line\s+(1|2|3|4|5|one|two|three|four|five|to|too)",
-        normalized,
+
+def canonicalize_asset_id(
+    self,
+    raw_asset: str,
+    *,
+    raise_on_unknown: bool = False,
+) -> str:
+    """Normalize spoken asset text into canonical asset IDs."""
+    if self is None:
+        token = (raw_asset or "").strip()
+        if not token:
+            return ""
+        normalized = re.sub(r"[-_]+", " ", token.lower()).strip()
+        line_match = re.fullmatch(
+            r"line\s+(1|2|3|4|5|one|two|three|four|five|to|too)",
+            normalized,
+        )
+        if not line_match:
+            return token
+        digits = {
+            "one": "1",
+            "two": "2",
+            "three": "3",
+            "four": "4",
+            "five": "5",
+            "to": "2",
+            "too": "2",
+        }
+        suffix = digits.get(line_match.group(1), line_match.group(1))
+        return f"Line-{suffix}"
+
+    return _resolve_asset_id_from_text(
+        self,
+        raw_asset,
+        raise_on_unknown=raise_on_unknown,
     )
-    if not line_match:
-        return token
-
-    digits = {
-        "one": "1",
-        "two": "2",
-        "three": "3",
-        "four": "4",
-        "five": "5",
-        "to": "2",
-        "too": "2",
-    }
-    suffix = digits.get(line_match.group(1), line_match.group(1))
-    return f"Line-{suffix}"
 
 
 def extract_line_assets_from_text(self, text: str) -> list[str]:
@@ -219,15 +238,22 @@ def extract_line_assets_from_text(self, text: str) -> list[str]:
 def resolve_asset_id(self, message: Message, default: str = "default") -> str:
     """Resolve asset_id using slot first, then utterance fallback parsing."""
     data = getattr(message, "data", {}) or {}
-    slot_asset = self._canonicalize_asset_id(str(data.get("asset", "")))
-    if slot_asset and slot_asset.lower() not in {"to", "too", "for", "on", "line"}:
+    slot_value = str(data.get("asset", "")).strip()
+    if slot_value:
+        slot_asset = self._canonicalize_asset_id(
+            slot_value,
+            raise_on_unknown=True,
+        )
         return slot_asset
 
-    utterance_assets = self._extract_line_assets_from_text(
-        self._extract_utterance_text(message)
-    )
+    utterance_text = self._extract_utterance_text(message)
+    utterance_assets = self._extract_line_assets_from_text(utterance_text)
     if utterance_assets:
         return utterance_assets[0]
+
+    alias_match = self._canonicalize_asset_id(utterance_text)
+    if alias_match and alias_match != utterance_text:
+        return alias_match
 
     return default
 

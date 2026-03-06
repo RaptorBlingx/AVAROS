@@ -300,3 +300,30 @@ class ResponseBuilder:
                 return "Scrap rate is excellent."
         
         return ""
+
+    def format_asset_list(self, asset_names: list[str], max_items: int = 10) -> str:
+        """Format concise voice response listing configured assets."""
+        names = [name.strip() for name in asset_names if name and name.strip()]
+        if not names:
+            return "No assets are configured yet. You can add assets in the Web UI settings."
+
+        total = len(names)
+        shown = names[:max_items]
+        visible_text = self._join_list_for_voice(shown)
+        remaining = total - len(shown)
+        if remaining > 0:
+            return (
+                f"You have {total} assets configured: {visible_text}, and {remaining} more. "
+                "Check the Web UI for the full list."
+            )
+        return f"You have {total} assets configured: {visible_text}."
+
+    def _join_list_for_voice(self, values: list[str]) -> str:
+        """Join list items in natural voice-friendly form."""
+        if not values:
+            return ""
+        if len(values) == 1:
+            return values[0]
+        if len(values) == 2:
+            return f"{values[0]} and {values[1]}"
+        return f"{', '.join(values[:-1])}, and {values[-1]}"
