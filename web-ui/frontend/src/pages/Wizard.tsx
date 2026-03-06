@@ -393,6 +393,7 @@ export default function Wizard() {
     if (state.currentStep === 4) {
       return (
         <AssetMappingStep
+          platformType={state.platformType}
           onComplete={handleAssetStepComplete}
           onSkip={handleAssetStepComplete}
         />
