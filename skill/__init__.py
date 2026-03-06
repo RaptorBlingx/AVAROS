@@ -158,6 +158,7 @@ class AVAROSSkill(FallbackSkill):
         self._register_intent_handlers()
 
         self.bus.on("avaros.profile.activated", self._handle_profile_switch)
+        self.bus.on("avaros.entities.updated", self._handle_asset_entities_updated)
         self.bus.on("intent_failure", self._handle_intent_failure)
         self.log.info(
             "AVAROS skill initialized with adapter: %s (profile='%s')",
@@ -182,10 +183,24 @@ class AVAROSSkill(FallbackSkill):
                     raise
                 self.log.warning("Intent registration skipped without bus: %s", intent_file)
 
+        self._register_entity_files()
         for intent_name in INTENT_METRIC_MAP:
             _register(f"{intent_name}.intent", self._handle_generic_kpi)
         for intent_file, handler_name in NON_KPI_INTENT_MAP:
             _register(intent_file, getattr(self, handler_name))
+
+    def _register_entity_files(self) -> None:
+        """Register dynamic asset entity files used by intent slots."""
+        for entity_file in ("asset.entity", "asset_a.entity", "asset_b.entity"):
+            try:
+                self.register_entity_file(entity_file)
+            except RuntimeError as exc:
+                if "bus not set" not in str(exc):
+                    raise
+                self.log.warning(
+                    "Entity registration skipped without bus: %s",
+                    entity_file,
+                )
 
     def _handle_generic_kpi(self, message: Message) -> None:
         """Generic KPI handler that maps intent name to canonical metric."""
@@ -222,6 +237,15 @@ class AVAROSSkill(FallbackSkill):
                 exc,
             )
             self._force_mock_fallback()
+
+    def _handle_asset_entities_updated(self, message: Message) -> None:
+        """Refresh loaded entity files after dynamic regeneration."""
+        profile_name = str(message.data.get("profile", "")).strip()
+        self.log.info(
+            "Asset entity update event received (profile='%s')",
+            profile_name or "unknown",
+        )
+        self._register_entity_files()
 
     def _reload_adapter(self, profile_name: str) -> None:
         """Reload adapter and rebuild QueryDispatcher for active profile."""

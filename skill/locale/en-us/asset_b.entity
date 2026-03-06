@@ -1,17 +1,20 @@
-compressor 1
-compressor-1
-compressor one
-compressor 2
-compressor-2
-compressor two
-line 1
 line-1
-line one
-line 2
+line 1
 line-2
-line two
-electric main meter
-main meter
-meter 1
-meter 2
-default
+line 2
+line-3
+line 3
+compressor-1
+compressor 1
+compressor-2
+compressor 2
+boiler-1
+boiler 1
+furnace-1
+furnace 1
+cnc-01
+cnc 01
+cnc-02
+cnc 02
+cnc-03
+cnc 03

@@ -80,6 +80,15 @@ def sample_mapping_co2() -> dict[str, Any]:
     }
 
 
+@pytest.fixture
+def isolated_locale_root(monkeypatch, tmp_path):
+    """Route dynamic entity generation to a temp locale folder."""
+    locale_root = tmp_path / "locale"
+    (locale_root / "en-us").mkdir(parents=True)
+    monkeypatch.setenv("AVAROS_LOCALE_ROOT", str(locale_root))
+    return locale_root
+
+
 # ══════════════════════════════════════════════════════════
 # 1. SettingsService Initialization & Lifecycle
 # ══════════════════════════════════════════════════════════
@@ -624,7 +633,7 @@ class TestMetricMappingIsolation:
 # ══════════════════════════════════════════════════════════
 
 
-@pytest.mark.usefixtures("active_profile")
+@pytest.mark.usefixtures("active_profile", "isolated_locale_root")
 class TestAssetMappingCRUD:
     """Tests for asset_mappings profile-scoped storage."""
 
