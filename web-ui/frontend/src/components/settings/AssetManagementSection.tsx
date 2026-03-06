@@ -98,6 +98,7 @@ export default function AssetManagementSection({
           const seuAssets = discoveredAssets.filter((asset) => asset.asset_type === "seu");
           if (next.length === 1 && !next[0].assetId.trim() && seuAssets.length > 0) {
             return seuAssets.slice(0, 5).map((asset) => ({
+              rowId: `discovered-${asset.asset_id}`,
               assetId: asset.asset_id,
               displayName: asset.display_name,
               assetType: "seu",

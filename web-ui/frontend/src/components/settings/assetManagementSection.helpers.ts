@@ -1,6 +1,7 @@
 import type { AssetMappingItem, PlatformType } from "../../api/types";
 
 export type AssetRow = {
+  rowId: string;
   assetId: string;
   displayName: string;
   assetType: "machine" | "line" | "sensor" | "seu";
@@ -15,6 +16,11 @@ export const TYPE_OPTIONS: Array<AssetRow["assetType"]> = [
   "sensor",
   "seu",
 ];
+
+function createRowId(seed?: string): string {
+  const base = seed ? seed.replace(/[^a-zA-Z0-9_-]/g, "") : "row";
+  return `${base}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 export function toAssetId(value: string): string {
   return value
@@ -40,6 +46,7 @@ export function aliasesToCsv(aliases?: string[]): string {
 
 export function createEmptyRow(): AssetRow {
   return {
+    rowId: createRowId(),
     assetId: "",
     displayName: "",
     assetType: "machine",
@@ -57,6 +64,7 @@ export function toRows(mappings: Record<string, AssetMappingItem>): AssetRow[] {
       ? (rawType as AssetRow["assetType"])
       : "machine";
     return {
+      rowId: createRowId(assetId),
       assetId,
       displayName,
       assetType,

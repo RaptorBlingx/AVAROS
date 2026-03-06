@@ -21,7 +21,7 @@ export default function AssetManagementRows({
     <div className="space-y-3">
       {rows.map((row, index) => (
         <div
-          key={`${row.assetId || "row"}-${index}`}
+          key={row.rowId}
           className="grid gap-2 rounded-xl border border-slate-300 bg-white p-3 dark:border-slate-600 dark:bg-slate-800 md:grid-cols-5"
         >
           <input
