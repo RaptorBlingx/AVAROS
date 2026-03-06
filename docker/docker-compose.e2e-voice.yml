@@ -21,10 +21,6 @@ services:
   ovos-core:
     image: smartgic/ovos-core:latest
     container_name: e2e-ovos-core
-    entrypoint:
-      - sh
-      - -lc
-      - /home/ovos/.venv/bin/pip install -U ovos-common-query-pipeline-plugin >/tmp/ovos-commonqa-pip.log 2>&1 || true; exec /home/ovos/.venv/bin/ovos-core
     depends_on:
       ovos_messagebus:
         condition: service_healthy
