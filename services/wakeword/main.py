@@ -17,7 +17,12 @@ from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
-from detector import WakeWordDetector, _resolve_model_path
+if __package__:
+    # Package import path (used by tests and repo-root execution).
+    from .detector import WakeWordDetector, _resolve_model_path
+else:
+    # Script-style import path (used by container CMD: uvicorn main:app).
+    from detector import WakeWordDetector, _resolve_model_path
 
 SERVICE_VERSION = "0.1.0"
 
@@ -146,6 +151,7 @@ async def ws_detect(websocket: WebSocket) -> None:
     try:
         detector = WakeWordDetector(
             model_name=_model_name(),
+            display_name=_model_label(),
             threshold=_threshold(),
             custom_model_path=_custom_model_path(),
         )

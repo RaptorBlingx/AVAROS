@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from detector import (
+from services.wakeword.detector import (
     BYTES_PER_FRAME,
     DetectionEvent,
     WakeWordDetector,
@@ -220,7 +220,7 @@ class TestDetectorWithCustomPath:
         mock_model_cls = MagicMock(return_value=mock_model_instance)
 
         # Act
-        with patch("detector._ensure_preprocessing_assets") as mock_preproc, \
+        with patch("services.wakeword.detector._ensure_preprocessing_assets") as mock_preproc, \
              patch("openwakeword.model.Model", mock_model_cls):
             detector = WakeWordDetector(
                 model_name="hey_avaros",
@@ -238,7 +238,7 @@ class TestDetectorWithCustomPath:
         mock_model_cls = MagicMock(return_value=mock_model_instance)
 
         # Act
-        with patch("detector._ensure_preprocessing_assets"), \
+        with patch("services.wakeword.detector._ensure_preprocessing_assets"), \
              patch("openwakeword.model.Model", mock_model_cls):
             detector = WakeWordDetector(
                 model_name="hey_avaros",
@@ -257,7 +257,7 @@ class TestDetectorWithCustomPath:
         mock_model_instance = _mock_oww_model("hey_avaros", score=0.88)
         mock_model_cls = MagicMock(return_value=mock_model_instance)
 
-        with patch("detector._ensure_preprocessing_assets"), \
+        with patch("services.wakeword.detector._ensure_preprocessing_assets"), \
              patch("openwakeword.model.Model", mock_model_cls):
             detector = WakeWordDetector(
                 model_name="hey_avaros",
@@ -281,8 +281,8 @@ class TestDetectorWithCustomPath:
         mock_model_cls = MagicMock(return_value=mock_model_instance)
 
         # Act
-        with patch("detector._ensure_preprocessing_assets"), \
-             patch("detector._ensure_openwakeword_assets") as mock_oww, \
+        with patch("services.wakeword.detector._ensure_preprocessing_assets"), \
+             patch("services.wakeword.detector._ensure_openwakeword_assets") as mock_oww, \
              patch("openwakeword.model.Model", mock_model_cls):
             WakeWordDetector(
                 model_name="hey_avaros",

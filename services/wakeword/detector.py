@@ -175,12 +175,14 @@ class WakeWordDetector:
     def __init__(
         self,
         model_name: str = "hey_jarvis",
+        display_name: str | None = None,
         threshold: float = 0.5,
         *,
         custom_model_path: str | None = None,
         _model: Any | None = None,
     ) -> None:
         self._model_name = model_name
+        self._display_name = display_name or model_name
         self._threshold = threshold
         self._buffer = bytearray()
 
@@ -193,8 +195,9 @@ class WakeWordDetector:
             self._predict_key = self._resolve_predict_key()
 
         logger.info(
-            "Detector ready: model=%s, predict_key=%s, threshold=%.2f",
+            "Detector ready: model=%s, display_name=%s, predict_key=%s, threshold=%.2f",
             self._model_name,
+            self._display_name,
             self._predict_key,
             self._threshold,
         )
@@ -246,7 +249,7 @@ class WakeWordDetector:
 
         return DetectionEvent(
             event="detected",
-            model=self._model_name,
+            model=self._display_name,
             score=round(score, 4),
             timestamp=datetime.now(timezone.utc).isoformat(),
         )

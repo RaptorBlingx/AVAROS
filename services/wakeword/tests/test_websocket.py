@@ -13,8 +13,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from detector import DetectionEvent
-from main import app
+from services.wakeword import main as wakeword_main
+from services.wakeword.detector import DetectionEvent
+
+app = wakeword_main.app
 
 
 # ── Health endpoint ───────────────────────────────────────
@@ -112,7 +114,7 @@ class TestWebSocketEndpoint:
 
         # Act
         with patch(
-            "main.WakeWordDetector",
+            "services.wakeword.main.WakeWordDetector",
             return_value=mock_detector,
         ):
             with client.websocket_connect("/ws/detect") as ws:
@@ -136,7 +138,7 @@ class TestWebSocketEndpoint:
 
         # Act & Assert
         with patch(
-            "main.WakeWordDetector",
+            "services.wakeword.main.WakeWordDetector",
             return_value=mock_detector,
         ):
             with client.websocket_connect("/ws/detect") as ws:
@@ -164,7 +166,7 @@ class TestWebSocketEndpoint:
 
         # Act
         with patch(
-            "main.WakeWordDetector",
+            "services.wakeword.main.WakeWordDetector",
             return_value=mock_detector,
         ):
             with client.websocket_connect("/ws/detect") as ws:
@@ -178,8 +180,8 @@ class TestWebSocketEndpoint:
         assert data["score"] == 0.91
         assert "timestamp" in data
 
-    def test_websocket_uses_registry_model_not_label(self) -> None:
-        """Model label must not override actual registry model loading name."""
+    def test_websocket_uses_model_label_for_detector_name(self) -> None:
+        """Detector loads registry model but emits configured display label."""
         # Arrange
         mock_detector = MagicMock()
         mock_detector.process_audio.return_value = None
@@ -187,7 +189,10 @@ class TestWebSocketEndpoint:
         client = TestClient(app)
 
         # Act
-        with patch("main.WakeWordDetector", return_value=mock_detector) as detector_cls:
+        with patch(
+            "services.wakeword.main.WakeWordDetector",
+            return_value=mock_detector,
+        ) as detector_cls:
             with patch.dict(
                 "os.environ",
                 {
@@ -203,6 +208,73 @@ class TestWebSocketEndpoint:
         detector_cls.assert_called_once()
         kwargs = detector_cls.call_args.kwargs
         assert kwargs["model_name"] == "hey_jarvis"
+        assert kwargs["display_name"] == "hey_avaros"
+
+    def test_websocket_uses_custom_path_stem_when_label_missing(self) -> None:
+        """Custom-path mode uses stem as display name when label is absent."""
+        # Arrange
+        mock_detector = MagicMock()
+        mock_detector.process_audio.return_value = None
+        mock_detector.close.return_value = None
+        client = TestClient(app)
+
+        # Act
+        with patch(
+            "services.wakeword.main.WakeWordDetector",
+            return_value=mock_detector,
+        ) as detector_cls:
+            with patch.dict(
+                "os.environ",
+                {
+                    "WAKEWORD_MODEL_PATH": "/app/models/hey_avaros.onnx",
+                },
+                clear=False,
+            ):
+                with client.websocket_connect("/ws/detect"):
+                    pass
+
+        # Assert
+        detector_cls.assert_called_once()
+        kwargs = detector_cls.call_args.kwargs
+        assert kwargs["model_name"] == "hey_jarvis"
+        assert kwargs["display_name"] == "hey_avaros"
+
+    def test_websocket_registry_load_and_label_are_separate(self) -> None:
+        """Registry loading uses WAKEWORD_MODEL while response uses label."""
+        # Arrange
+        client = TestClient(app)
+
+        class _FakeModel:
+            def __init__(self) -> None:
+                self.models = {"hey_jarvis_v0.1": object()}
+
+            def predict(self, _samples: object) -> dict[str, float]:
+                return {"hey_jarvis_v0.1": 0.91}
+
+        # Act
+        with patch(
+            "services.wakeword.detector._ensure_openwakeword_assets",
+            return_value="/tmp/hey_jarvis.onnx",
+        ), patch(
+            "openwakeword.model.Model",
+            return_value=_FakeModel(),
+        ) as model_cls:
+            with patch.dict(
+                "os.environ",
+                {
+                    "WAKEWORD_MODEL": "hey_jarvis",
+                    "WAKEWORD_MODEL_LABEL": "hey_avaros",
+                },
+                clear=False,
+            ):
+                with client.websocket_connect("/ws/detect") as ws:
+                    ws.send_bytes(b"\x00" * 2560)
+                    data = ws.receive_json()
+
+        # Assert
+        assert data["event"] == "detected"
+        assert data["model"] == "hey_avaros"
+        model_cls.assert_called_once_with(wakeword_models=["hey_jarvis"])
 
 
 # ── Startup validation ────────────────────────────────────
