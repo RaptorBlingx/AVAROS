@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 
 
 class CanonicalMetric(Enum):
@@ -145,6 +145,30 @@ class CanonicalMetric(Enum):
             self.CO2_PER_BATCH: "kg CO₂-eq/batch",
         }
         return units.get(self, "")
+
+
+_VALID_ASSET_TYPES = {"machine", "line", "sensor", "seu"}
+
+
+@dataclass(frozen=True)
+class Asset:
+    """Immutable platform-agnostic asset descriptor."""
+
+    asset_id: str
+    display_name: str
+    asset_type: str
+    aliases: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Validate asset identity and type."""
+        if not self.asset_id.strip():
+            raise ValueError("asset_id must be non-empty")
+        if self.asset_type not in _VALID_ASSET_TYPES:
+            valid_types = ", ".join(sorted(_VALID_ASSET_TYPES))
+            raise ValueError(
+                f"Invalid asset_type '{self.asset_type}'. Must be one of: {valid_types}",
+            )
 
 
 @dataclass(frozen=True)

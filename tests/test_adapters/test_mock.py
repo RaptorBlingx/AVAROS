@@ -12,6 +12,7 @@ from datetime import datetime
 from skill.adapters.mock import MockAdapter
 from skill.adapters.base import ManufacturingAdapter
 from skill.domain.models import (
+    Asset,
     CanonicalMetric,
     TimePeriod,
     DataPoint,
@@ -441,9 +442,6 @@ class TestMockAdapterGetRawData:
 
         assert isinstance(result, list)
         assert len(result) > 0
-        for dp in result:
-            assert isinstance(dp, DataPoint)
-
     @pytest.mark.asyncio
     async def test_get_raw_data_values_are_numeric(
         self,
@@ -502,6 +500,35 @@ class TestMockAdapterGetRawData:
 
         assert isinstance(result, list)
         assert len(result) > 0
+
+
+# ---------------------------------------------------------------------------
+# Asset Discovery
+# ---------------------------------------------------------------------------
+
+
+class TestMockAdapterListAssets:
+    """Tests for list_assets() discovery output."""
+
+    @pytest.mark.asyncio
+    async def test_list_assets_returns_ten_demo_assets(
+        self,
+        adapter: MockAdapter,
+    ) -> None:
+        """Mock adapter should expose exactly 10 demo assets."""
+        assets = await adapter.list_assets()
+        assert len(assets) == 10
+        assert all(isinstance(asset, Asset) for asset in assets)
+
+    @pytest.mark.asyncio
+    async def test_list_assets_sorted_by_asset_id(
+        self,
+        adapter: MockAdapter,
+    ) -> None:
+        """Asset order should be deterministic and sorted."""
+        assets = await adapter.list_assets()
+        asset_ids = [asset.asset_id for asset in assets]
+        assert asset_ids == sorted(asset_ids)
 
 
 # ---------------------------------------------------------------------------

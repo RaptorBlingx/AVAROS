@@ -768,6 +768,63 @@ class SettingsService(ProfileMixin):
         key = self._scoped_key(self.METRIC_MAPPING_PREFIX, metric_name)
         self.set_setting(key, mapping)
 
+    def get_asset_mappings(self, profile: str | None = None) -> dict[str, dict[str, Any]]:
+        """Return asset mappings for a profile (DEC-029 scoped storage)."""
+        self._ensure_initialized()
+        target_profile = self._resolve_asset_profile(profile)
+        if target_profile == self.BUILTIN_MOCK_PROFILE:
+            return {}
+        key = self._asset_mappings_storage_key(target_profile)
+        mappings = self.get_setting(key, default={})
+        if not isinstance(mappings, dict):
+            return {}
+        return deepcopy(mappings)
+
+    def set_asset_mappings(
+        self,
+        mappings: dict[str, dict[str, Any]],
+        profile: str | None = None,
+    ) -> None:
+        """Persist profile-scoped asset mappings."""
+        self._ensure_initialized()
+        target_profile = self._resolve_asset_profile(profile)
+        if target_profile == self.BUILTIN_MOCK_PROFILE:
+            raise ValidationError(
+                message="Cannot write settings for built-in mock profile",
+                field="profile",
+                value=target_profile,
+            )
+        normalized = self._normalize_asset_mappings(mappings)
+        key = self._asset_mappings_storage_key(target_profile)
+        self.set_setting(key, normalized)
+
+    def get_asset_list(self, profile: str | None = None) -> list[dict[str, Any]]:
+        """Return a normalized list view of configured assets."""
+        mappings = self.get_asset_mappings(profile=profile)
+        assets: list[dict[str, Any]] = []
+        for asset_id, mapping in sorted(mappings.items(), key=lambda item: item[0]):
+            if not isinstance(mapping, dict):
+                continue
+            aliases = mapping.get("aliases", [])
+            aliases_list = aliases if isinstance(aliases, list) else []
+            display_name = str(mapping.get("display_name") or mapping.get("name") or asset_id)
+            asset_type = str(mapping.get("asset_type") or "machine")
+            metadata = {
+                key: value
+                for key, value in mapping.items()
+                if key not in {"display_name", "name", "asset_type", "aliases"}
+            }
+            assets.append(
+                {
+                    "asset_id": asset_id,
+                    "display_name": display_name,
+                    "asset_type": asset_type,
+                    "aliases": aliases_list,
+                    "metadata": metadata,
+                },
+            )
+        return assets
+
     # ── Voice Config CRUD (DEC-006) ─────────────────────
 
     def get_voice_config(self) -> VoiceConfig:
@@ -986,6 +1043,50 @@ class SettingsService(ProfileMixin):
                 field="intent_name",
                 value=intent_name,
             )
+
+    def _resolve_asset_profile(self, profile: str | None) -> str:
+        """Resolve effective profile name for asset mapping CRUD."""
+        target_profile = str(profile).strip() if profile is not None else ""
+        if not target_profile:
+            target_profile = self.get_active_profile_name()
+        if target_profile == self.BUILTIN_MOCK_PROFILE:
+            return target_profile
+        if self.get_profile(target_profile) is None:
+            raise ValidationError(
+                message=f"Profile '{target_profile}' does not exist",
+                field="profile",
+                value=target_profile,
+            )
+        return target_profile
+
+    def _asset_mappings_storage_key(self, profile: str) -> str:
+        """Build storage key for profile-scoped asset mappings."""
+        return f"{self.ASSET_MAPPINGS_KEY}:{profile}"
+
+    @staticmethod
+    def _normalize_asset_mappings(
+        mappings: dict[str, dict[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        """Validate and normalize asset mapping payload."""
+        if not isinstance(mappings, dict):
+            raise ValidationError(
+                message="Asset mappings payload must be a dictionary",
+                field="asset_mappings",
+                value=str(type(mappings)),
+            )
+        normalized: dict[str, dict[str, Any]] = {}
+        for asset_id, mapping in mappings.items():
+            normalized_id = str(asset_id).strip()
+            if not normalized_id:
+                continue
+            if not isinstance(mapping, dict):
+                raise ValidationError(
+                    message=f"Asset mapping for '{normalized_id}' must be a dictionary",
+                    field="asset_mappings",
+                    value=normalized_id,
+                )
+            normalized[normalized_id] = deepcopy(mapping)
+        return normalized
 
     def _bootstrap_demo_profile_if_enabled(self) -> None:
         """Create optional reneryo-mock demo profile for zero-config demos.

@@ -24,19 +24,16 @@ import uuid
 
 from skill.adapters.base import ManufacturingAdapter
 from skill.domain.models import (
+    Asset,
     CanonicalMetric,
     TimePeriod,
     DataPoint,
-    WhatIfScenario,
-    Anomaly,
 )
 from skill.domain.results import (
     KPIResult,
     ComparisonResult,
     ComparisonItem,
     TrendResult,
-    AnomalyResult,
-    WhatIfResult,
     ConnectionTestResult,
 )
 
@@ -318,6 +315,20 @@ class MockAdapter(ManufacturingAdapter):
             ))
         
         return data_points
+
+    async def list_assets(self) -> list[Asset]:
+        """Return demo assets as canonical Asset objects sorted by asset_id."""
+        assets = [
+            Asset(
+                asset_id=asset_name,
+                display_name=asset_name,
+                asset_type=self._infer_asset_type(asset_name),
+                aliases=self._build_asset_aliases(asset_name),
+                metadata={"source": "mock_demo"},
+            )
+            for asset_name in self._DEMO_ASSETS
+        ]
+        return sorted(assets, key=lambda item: item.asset_id)
     
     # =========================================================================
     # Connection Testing
@@ -358,3 +369,18 @@ class MockAdapter(ManufacturingAdapter):
     def _generate_recommendation_id(self) -> str:
         """Generate unique ID for audit trail (GDPR compliance)."""
         return f"mock-{uuid.uuid4().hex[:12]}"
+
+    @staticmethod
+    def _infer_asset_type(asset_name: str) -> str:
+        """Infer asset type from demo naming convention."""
+        if asset_name.lower().startswith("line-"):
+            return "line"
+        return "machine"
+
+    @staticmethod
+    def _build_asset_aliases(asset_name: str) -> list[str]:
+        """Generate simple voice-friendly aliases for demo assets."""
+        lower_name = asset_name.lower()
+        spaced = lower_name.replace("-", " ")
+        aliases = {lower_name, spaced}
+        return sorted(alias for alias in aliases if alias)
