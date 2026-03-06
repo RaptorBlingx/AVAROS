@@ -102,7 +102,7 @@ class TestWebSocketEndpoint:
         # Arrange
         fake_event = DetectionEvent(
             event="detected",
-            model="hey_jarvis",
+            model="hey_avaros",
             score=0.92,
             timestamp="2026-03-04T12:00:00+00:00",
         )
@@ -123,7 +123,7 @@ class TestWebSocketEndpoint:
 
         # Assert
         assert data["event"] == "detected"
-        assert data["model"] == "hey_jarvis"
+        assert data["model"] == "hey_avaros"
         assert data["score"] == 0.92
         assert "timestamp" in data
 
@@ -154,7 +154,7 @@ class TestWebSocketEndpoint:
         # Arrange
         fake_event = DetectionEvent(
             event="detected",
-            model="hey_jarvis",
+            model="hey_avaros",
             score=0.91,
             timestamp="2026-03-04T12:00:00+00:00",
         )
@@ -176,7 +176,7 @@ class TestWebSocketEndpoint:
 
         # Assert
         assert data["event"] == "detected"
-        assert data["model"] == "hey_jarvis"
+        assert data["model"] == "hey_avaros"
         assert data["score"] == 0.91
         assert "timestamp" in data
 
@@ -196,7 +196,7 @@ class TestWebSocketEndpoint:
             with patch.dict(
                 "os.environ",
                 {
-                    "WAKEWORD_MODEL": "hey_jarvis",
+                    "WAKEWORD_MODEL": "hey_avaros",
                     "WAKEWORD_MODEL_LABEL": "hey_avaros",
                 },
                 clear=False,
@@ -207,7 +207,7 @@ class TestWebSocketEndpoint:
         # Assert
         detector_cls.assert_called_once()
         kwargs = detector_cls.call_args.kwargs
-        assert kwargs["model_name"] == "hey_jarvis"
+        assert kwargs["model_name"] == "hey_avaros"
         assert kwargs["display_name"] == "hey_avaros"
 
     def test_websocket_uses_custom_path_stem_when_label_missing(self) -> None:
@@ -236,7 +236,7 @@ class TestWebSocketEndpoint:
         # Assert
         detector_cls.assert_called_once()
         kwargs = detector_cls.call_args.kwargs
-        assert kwargs["model_name"] == "hey_jarvis"
+        assert kwargs["model_name"] == "hey_avaros"
         assert kwargs["display_name"] == "hey_avaros"
 
     def test_websocket_registry_load_and_label_are_separate(self) -> None:
@@ -246,15 +246,15 @@ class TestWebSocketEndpoint:
 
         class _FakeModel:
             def __init__(self) -> None:
-                self.models = {"hey_jarvis_v0.1": object()}
+                self.models = {"alexa_v0.1": object()}
 
             def predict(self, _samples: object) -> dict[str, float]:
-                return {"hey_jarvis_v0.1": 0.91}
+                return {"alexa_v0.1": 0.91}
 
         # Act
         with patch(
             "services.wakeword.detector._ensure_openwakeword_assets",
-            return_value="/tmp/hey_jarvis.onnx",
+            return_value="/tmp/alexa.onnx",
         ), patch(
             "openwakeword.model.Model",
             return_value=_FakeModel(),
@@ -262,7 +262,7 @@ class TestWebSocketEndpoint:
             with patch.dict(
                 "os.environ",
                 {
-                    "WAKEWORD_MODEL": "hey_jarvis",
+                    "WAKEWORD_MODEL": "alexa",
                     "WAKEWORD_MODEL_LABEL": "hey_avaros",
                 },
                 clear=False,
@@ -274,7 +274,7 @@ class TestWebSocketEndpoint:
         # Assert
         assert data["event"] == "detected"
         assert data["model"] == "hey_avaros"
-        model_cls.assert_called_once_with(wakeword_models=["hey_jarvis"])
+        model_cls.assert_called_once_with(wakeword_models=["alexa"])
 
 
 # ── Startup validation ────────────────────────────────────

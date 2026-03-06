@@ -47,7 +47,7 @@ export default function VoiceSettingsSection({
   }>({
     running: false,
     tone: "neutral",
-    message: "Run wake-word test for 10 seconds to verify environment detection.",
+    message: "Run wake-word test for 10 seconds, then say \"Hey AVAROS\".",
   });
 
   const voicesByLanguage = useMemo(() => {
@@ -287,7 +287,7 @@ export default function VoiceSettingsSection({
     setWakeWordTestStatus({
       running: true,
       tone: "neutral",
-      message: "Listening for 10 seconds. Say your configured wake word",
+      message: "Listening for 10 seconds. Say \"Hey AVAROS\" clearly.",
     });
 
     wakeWordTestTimerRef.current = window.setTimeout(() => {
@@ -299,7 +299,7 @@ export default function VoiceSettingsSection({
       setWakeWordTestStatus({
         running: false,
         tone: "warning",
-        message: "Not detected. Try saying your configured wake word clearly.",
+        message: "Not detected. Try saying \"Hey AVAROS\" clearly.",
       });
     }, 10000);
   }, [
@@ -375,7 +375,7 @@ export default function VoiceSettingsSection({
               {
                 mode: "wake-word" as VoiceMode,
                 label: "Wake Word",
-                description: "Say your configured wake word to activate — mic stays on",
+                description: "Say \"Hey AVAROS\" to activate — mic stays on",
               },
               {
                 mode: "push-to-talk" as VoiceMode,

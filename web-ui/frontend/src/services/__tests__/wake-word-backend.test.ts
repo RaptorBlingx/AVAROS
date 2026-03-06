@@ -321,7 +321,7 @@ describe("BackendWakeWordService", () => {
       MockWebSocket.lastInstance()!.simulateMessage(
         JSON.stringify({
           event: "detected",
-          model: "hey_jarvis",
+          model: "hey_avaros",
           score: 0.92,
           timestamp: "2026-03-05T12:00:00Z",
         }),
@@ -329,7 +329,7 @@ describe("BackendWakeWordService", () => {
 
       expect(detected).toHaveBeenCalledOnce();
       expect(detected).toHaveBeenCalledWith({
-        model: "hey_jarvis",
+        model: "hey_avaros",
         score: 0.92,
       });
     });
@@ -347,7 +347,7 @@ describe("BackendWakeWordService", () => {
       MockWebSocket.lastInstance()!.simulateMessage(
         JSON.stringify({
           event: "detected",
-          model: "hey_jarvis",
+          model: "hey_avaros",
           score: 0.85,
           timestamp: "2026-03-05T12:00:00Z",
         }),
@@ -373,7 +373,7 @@ describe("BackendWakeWordService", () => {
       MockWebSocket.lastInstance()!.simulateMessage(
         JSON.stringify({
           event: "detected",
-          model: "hey_jarvis",
+          model: "hey_avaros",
           score: 0.90,
           timestamp: "2026-03-05T12:00:00Z",
         }),

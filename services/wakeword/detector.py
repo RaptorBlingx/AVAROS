@@ -41,7 +41,7 @@ def _resolve_model_path(model_name: str) -> str:
     """Look up a pre-trained model path from the openWakeWord registry.
 
     Args:
-        model_name: Clean model name, e.g. ``"hey_jarvis"``.
+        model_name: Clean model name, e.g. ``"hey_avaros"``.
 
     Returns:
         Absolute filesystem path to the configured model file.
@@ -143,7 +143,7 @@ def _ensure_openwakeword_assets(model_name: str) -> str:
     """Ensure registry model and shared preprocessing assets exist.
 
     Args:
-        model_name: Registry model name (e.g. ``"hey_jarvis"``).
+        model_name: Registry model name (e.g. ``"hey_avaros"``).
 
     Returns:
         Absolute filesystem path to the model file.
@@ -314,7 +314,7 @@ class WakeWordDetector:
         """Discover the actual dict key returned by ``predict()``.
 
         When loading via ``wakeword_model_paths``, the key includes a
-        version suffix (e.g. ``hey_jarvis_v0.1``).  We find it by
+        version suffix (e.g. ``hey_avaros_v0.1``).  We find it by
         matching the loaded ``models`` dict.
         """
         loaded_keys = list(self._oww.models.keys())

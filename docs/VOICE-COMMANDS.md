@@ -6,7 +6,7 @@ Printable reference card for site operators.
 
 ## How to Use
 
-1. Say **"Hey Mycroft"** to wake the assistant
+1. Say **"Hey AVAROS"** to wake the assistant
 2. Wait for the confirmation sound
 3. Speak your query using the phrases below
 

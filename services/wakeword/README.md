@@ -21,7 +21,7 @@ docker compose -f docker/docker-compose.avaros.yml up avaros-wakeword
 
 | Variable | Default | Description |
 |---|---|---|
-| `WAKEWORD_MODEL` | `hey_jarvis` | Pre-trained model name from the openWakeWord registry |
+| `WAKEWORD_MODEL` | `hey_avaros` | Active wake-word model label/name |
 | `WAKEWORD_THRESHOLD` | `0.5` | Detection confidence threshold (0.0–1.0) |
 
 ### Available Models
@@ -34,7 +34,9 @@ The built-in openWakeWord registry ships with:
 - `timer`
 - `weather`
 
-Custom `.onnx` models can be added by extending `_resolve_model_path()`.
+Custom local model files are also supported (for example
+`/app/models/hey_avaros.onnx`) via `WAKEWORD_MODEL_PATH` and
+`WAKEWORD_MODEL_LABEL`.
 
 ## API
 
@@ -45,7 +47,7 @@ Readiness probe.
 ```json
 {
   "status": "ok",
-  "models_loaded": ["hey_jarvis"],
+  "models_loaded": ["hey_avaros"],
   "version": "0.1.0"
 }
 ```
@@ -58,7 +60,7 @@ with a JSON message **only** when a wake word is detected:
 ```json
 {
   "event": "detected",
-  "model": "hey_jarvis",
+  "model": "hey_avaros",
   "score": 0.9231,
   "timestamp": "2026-03-04T12:00:00+00:00"
 }
