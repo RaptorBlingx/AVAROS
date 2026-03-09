@@ -26,6 +26,7 @@ from skill.adapters.reneryo._endpoints import (
     REAL_METER_ENDPOINT,
     REAL_SEU_GRAPH_ENDPOINT,
     REAL_SEU_ITEMS_ENDPOINT,
+    REAL_SEU_NAMES_ENDPOINT,
     REAL_SEU_VALUES_ENDPOINT,
     REAL_SUPPORTED_METRICS,
     SUPPORTED_CAPABILITIES,
@@ -57,7 +58,7 @@ from skill.adapters.reneryo._parsers import (
     parse_trend_response,
 )
 from skill.domain.exceptions import AdapterError
-from skill.domain.models import CanonicalMetric, TimePeriod
+from skill.domain.models import Asset, CanonicalMetric, TimePeriod
 
 if TYPE_CHECKING:
     from skill.domain.models import DataPoint
@@ -362,6 +363,36 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
         if not isinstance(data, list):
             data = [data]
         return parse_raw_data_response(data, metric)
+
+    async def list_assets(self) -> list[Asset]:
+        """Discover RENERYO SEUs and map them to canonical Asset objects."""
+        try:
+            payload = await self._retry_fetch(REAL_SEU_NAMES_ENDPOINT)
+        except Exception as exc:
+            logger.warning("RENERYO asset discovery failed: %s", exc)
+            return []
+
+        records = payload.get("records", []) if isinstance(payload, dict) else []
+        assets: list[Asset] = []
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            seu_id = str(record.get("id", "")).strip()
+            if not seu_id:
+                continue
+            display_name = str(record.get("name") or seu_id).strip()
+            energy_resource = str(record.get("energyResource", "")).strip()
+            aliases = self._build_asset_aliases(display_name, seu_id)
+            assets.append(
+                Asset(
+                    asset_id=seu_id,
+                    display_name=display_name,
+                    asset_type="seu",
+                    aliases=aliases,
+                    metadata={"energy_resource": energy_resource},
+                ),
+            )
+        return sorted(assets, key=lambda item: item.asset_id)
 
     # =========================================================================
     # Capability Discovery
@@ -676,3 +707,13 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
     @staticmethod
     def _normalize_asset_key(value: str) -> str:
         return "".join(ch for ch in (value or "").lower() if ch.isalnum())
+
+    @staticmethod
+    def _build_asset_aliases(display_name: str, seu_id: str) -> list[str]:
+        """Generate simple aliases for voice matching."""
+        aliases = {
+            display_name.strip().lower(),
+            display_name.strip().lower().replace("-", " "),
+            seu_id.strip().lower(),
+        }
+        return sorted(alias for alias in aliases if alias)

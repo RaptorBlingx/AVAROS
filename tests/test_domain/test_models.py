@@ -10,6 +10,7 @@ import pytest
 from datetime import datetime, timedelta
 
 from skill.domain.models import (
+    Asset,
     CanonicalMetric,
     TimePeriod,
     DataPoint,
@@ -105,6 +106,37 @@ class TestCanonicalMetric:
         assert CanonicalMetric.THROUGHPUT.default_unit == "units/hr"
         assert CanonicalMetric.CYCLE_TIME.default_unit == "sec"
         assert CanonicalMetric.CO2_TOTAL.default_unit == "kg CO₂-eq"
+
+
+class TestAsset:
+    """Tests for Asset domain model."""
+
+    def test_asset_creation_with_required_fields(self):
+        """Asset should be constructible with valid required fields."""
+        asset = Asset(
+            asset_id="line-1",
+            display_name="Line 1",
+            asset_type="line",
+        )
+        assert asset.asset_id == "line-1"
+        assert asset.display_name == "Line 1"
+        assert asset.asset_type == "line"
+
+    def test_asset_empty_asset_id_raises_value_error(self):
+        """Asset should reject empty/blank asset_id values."""
+        with pytest.raises(ValueError, match="asset_id must be non-empty"):
+            Asset(asset_id="   ", display_name="Line 1", asset_type="line")
+
+    def test_asset_invalid_type_raises_value_error(self):
+        """Asset should reject unknown asset types."""
+        with pytest.raises(ValueError, match="Invalid asset_type"):
+            Asset(asset_id="line-1", display_name="Line 1", asset_type="robot")
+
+    def test_asset_is_frozen(self):
+        """Asset dataclass must be immutable (DEC-004)."""
+        asset = Asset(asset_id="line-1", display_name="Line 1", asset_type="line")
+        with pytest.raises(AttributeError):
+            asset.display_name = "Other"
 
 
 class TestTimePeriod:
@@ -654,4 +686,3 @@ class TestDefaultEmissionFactors:
                 assert isinstance(ef, EmissionFactor), (
                     f"{country}/{source_name} is {type(ef)}"
                 )
-

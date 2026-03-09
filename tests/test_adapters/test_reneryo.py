@@ -279,6 +279,54 @@ class TestReneryoAdapterQueryMethods:
         assert "initialize" in message.lower()
 
 
+class TestReneryoAdapterListAssets:
+    """Tests for RENERYO SEU discovery mapping."""
+
+    @pytest.mark.asyncio
+    async def test_list_assets_maps_seu_records_to_assets(
+        self,
+        adapter: ReneryoAdapter,
+    ) -> None:
+        """SEU name payload should map to canonical Asset entries."""
+        from unittest.mock import AsyncMock
+
+        adapter._retry_fetch = AsyncMock(
+            return_value={
+                "records": [
+                    {"id": "seu-2", "name": "Line 2", "energyResource": "ELECTRIC"},
+                    {"id": "seu-1", "name": "Line 1", "energyResource": "GAS"},
+                ],
+            }
+        )
+
+        assets = await adapter.list_assets()
+
+        assert [asset.asset_id for asset in assets] == ["seu-1", "seu-2"]
+        assert assets[0].asset_type == "seu"
+        assert assets[0].display_name == "Line 1"
+        assert assets[0].metadata["energy_resource"] == "GAS"
+
+    @pytest.mark.asyncio
+    async def test_list_assets_returns_empty_on_discovery_error(
+        self,
+        adapter: ReneryoAdapter,
+    ) -> None:
+        """Discovery failures should return [] instead of raising."""
+        from unittest.mock import AsyncMock
+
+        adapter._retry_fetch = AsyncMock(
+            side_effect=AdapterError(
+                message="boom",
+                code="RENERYO_CONNECTION_FAILED",
+                platform="reneryo",
+            ),
+        )
+
+        assets = await adapter.list_assets()
+
+        assert assets == []
+
+
 # ---------------------------------------------------------------------------
 # Platform Name & Capability Tests
 # ---------------------------------------------------------------------------

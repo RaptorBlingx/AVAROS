@@ -264,10 +264,12 @@ class AdapterFactory:
                         if isinstance(extra, dict)
                         else ""
                     )
-                    if isinstance(extra, dict):
-                        raw_mappings = extra.get("asset_mappings", {})
-                        if isinstance(raw_mappings, dict):
-                            asset_mappings = raw_mappings
+                    profile_for_assets = profile_name or None
+                    raw_mappings = self._settings_service.get_asset_mappings(
+                        profile=profile_for_assets,
+                    )
+                    if isinstance(raw_mappings, dict):
+                        asset_mappings = raw_mappings
             except Exception as exc:
                 logger.warning(
                     "Error reading RENERYO config: %s", exc,

@@ -620,7 +620,91 @@ class TestMetricMappingIsolation:
 
 
 # ══════════════════════════════════════════════════════════
-# 10. Metric Mapping — Validation Edge Cases
+# 10. Asset Mapping CRUD
+# ══════════════════════════════════════════════════════════
+
+
+@pytest.mark.usefixtures("active_profile")
+class TestAssetMappingCRUD:
+    """Tests for asset_mappings profile-scoped storage."""
+
+    def test_get_asset_mappings_default_returns_empty_dict(
+        self, service: SettingsService
+    ) -> None:
+        """No mappings saved should return {}."""
+        assert service.get_asset_mappings() == {}
+
+    def test_set_asset_mappings_round_trip(
+        self, service: SettingsService
+    ) -> None:
+        """set_asset_mappings() should persist and retrieve payload."""
+        payload = {
+            "Line-1": {
+                "seu_id": "seu-1",
+                "metric_resources": {"oee": "resource-1"},
+            }
+        }
+        service.set_asset_mappings(payload)
+        assert service.get_asset_mappings() == payload
+
+    def test_set_asset_mappings_isolated_by_profile(
+        self, service: SettingsService
+    ) -> None:
+        """Asset mappings should be isolated between profiles."""
+        service.set_asset_mappings({"Line-1": {"seu_id": "seu-1"}})
+        service.create_profile("custom-rest", PlatformConfig(
+            platform_type="custom_rest",
+            api_url="https://api.example.com",
+        ))
+        service.set_active_profile("custom-rest")
+        service.set_asset_mappings({"Machine-A": {"endpoint": "/assets/a"}})
+
+        assert service.get_asset_mappings() == {"Machine-A": {"endpoint": "/assets/a"}}
+        assert service.get_asset_mappings(profile="reneryo") == {
+            "Line-1": {"seu_id": "seu-1"}
+        }
+
+    def test_mock_profile_returns_empty_asset_mappings(
+        self, service: SettingsService
+    ) -> None:
+        """Built-in mock profile should always return empty mappings."""
+        service.set_active_profile("mock")
+        assert service.get_asset_mappings() == {}
+
+    def test_mock_profile_rejects_asset_mapping_write(
+        self, service: SettingsService
+    ) -> None:
+        """Writing asset mappings to built-in mock profile should fail."""
+        service.set_active_profile("mock")
+        with pytest.raises(ValidationError, match="mock profile"):
+            service.set_asset_mappings({"Line-1": {"seu_id": "seu-1"}})
+
+    def test_get_asset_list_returns_normalized_entries(
+        self, service: SettingsService
+    ) -> None:
+        """get_asset_list() should return normalized assets with metadata."""
+        service.set_asset_mappings(
+            {
+                "Line-1": {
+                    "display_name": "Production Line 1",
+                    "asset_type": "line",
+                    "aliases": ["line one"],
+                    "seu_id": "seu-1",
+                }
+            }
+        )
+
+        rows = service.get_asset_list()
+
+        assert len(rows) == 1
+        assert rows[0]["asset_id"] == "Line-1"
+        assert rows[0]["display_name"] == "Production Line 1"
+        assert rows[0]["asset_type"] == "line"
+        assert rows[0]["metadata"]["seu_id"] == "seu-1"
+
+
+# ══════════════════════════════════════════════════════════
+# 11. Metric Mapping — Validation Edge Cases
 # ══════════════════════════════════════════════════════════
 
 
@@ -669,7 +753,7 @@ class TestMetricMappingValidation:
 
 
 # ══════════════════════════════════════════════════════════
-# 11. Encryption
+# 12. Encryption
 # ══════════════════════════════════════════════════════════
 
 
@@ -695,7 +779,7 @@ class TestEncryption:
 
 
 # ══════════════════════════════════════════════════════════
-# 12. Intent Activation — set_intent_active
+# 13. Intent Activation — set_intent_active
 # ══════════════════════════════════════════════════════════
 
 

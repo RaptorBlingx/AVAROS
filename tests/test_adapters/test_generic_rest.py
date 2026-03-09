@@ -16,14 +16,23 @@ from skill.domain.results import ComparisonResult, KPIResult, TrendResult
 class _StubSettingsService:
     """Minimal settings stub exposing metric mapping APIs."""
 
-    def __init__(self, mappings: dict[str, dict] | None = None) -> None:
+    def __init__(
+        self,
+        mappings: dict[str, dict] | None = None,
+        asset_mappings: dict[str, dict] | None = None,
+    ) -> None:
         self._mappings = mappings or {}
+        self._asset_mappings = asset_mappings or {}
 
     def get_metric_mapping(self, metric_name: str) -> dict | None:
         return self._mappings.get(metric_name)
 
     def list_metric_mappings(self) -> dict[str, dict]:
         return dict(self._mappings)
+
+    def get_asset_mappings(self, profile: str | None = None) -> dict[str, dict]:
+        _ = profile
+        return dict(self._asset_mappings)
 
 
 @pytest.fixture
@@ -38,6 +47,16 @@ def _build_adapter(mappings: dict[str, dict], auth_type: str = "bearer") -> Gene
         api_key="secret-token",
         auth_type=auth_type,
         settings_service=_StubSettingsService(mappings),
+        profile_name="custom",
+    )
+
+
+def _build_asset_adapter(asset_mappings: dict[str, dict]) -> GenericRestAdapter:
+    return GenericRestAdapter(
+        api_url="https://api.example.com",
+        api_key="secret-token",
+        auth_type="bearer",
+        settings_service=_StubSettingsService({}, asset_mappings=asset_mappings),
         profile_name="custom",
     )
 
@@ -290,6 +309,31 @@ def test_supports_capability_false_for_unmapped_metric() -> None:
     })
 
     assert adapter.supports_capability("energy_per_unit") is False
+
+
+@pytest.mark.asyncio
+async def test_list_assets_returns_assets_from_saved_mappings() -> None:
+    """Asset list should be derived from SettingsService asset mappings."""
+    adapter = _build_asset_adapter(
+        {
+            "line-2": {"display_name": "Line 2", "asset_type": "line"},
+            "line-1": {"display_name": "Line 1", "asset_type": "line"},
+        },
+    )
+
+    assets = await adapter.list_assets()
+
+    assert [asset.asset_id for asset in assets] == ["line-1", "line-2"]
+    assert assets[0].display_name == "Line 1"
+    assert assets[0].asset_type == "line"
+
+
+@pytest.mark.asyncio
+async def test_list_assets_returns_empty_without_saved_mappings() -> None:
+    """No saved mappings should yield an empty asset list."""
+    adapter = _build_asset_adapter({})
+    assets = await adapter.list_assets()
+    assert assets == []
 
 
 @pytest.mark.asyncio

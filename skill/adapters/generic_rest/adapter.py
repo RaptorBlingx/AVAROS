@@ -23,7 +23,7 @@ from skill.adapters.generic_rest._mapping_helpers import (
 )
 from skill.adapters.generic_rest._settings_mixin import GenericRestSettingsMixin
 from skill.domain.exceptions import AdapterError
-from skill.domain.models import CanonicalMetric, TimePeriod
+from skill.domain.models import Asset, CanonicalMetric, TimePeriod
 from skill.domain.results import ComparisonItem, ComparisonResult, KPIResult, TrendResult
 
 if TYPE_CHECKING:
@@ -201,6 +201,18 @@ class GenericRestAdapter(
         )
         return await self._retry_fetch(endpoint, params)
 
+    async def list_assets(self) -> list[Asset]:
+        """Return assets from profile-scoped asset mappings."""
+        mappings = self._load_asset_mappings()
+        assets: list[Asset] = []
+        for asset_id, mapping in sorted(mappings.items(), key=lambda item: item[0]):
+            if not isinstance(mapping, dict):
+                continue
+            asset = self._build_asset_from_mapping(asset_id, mapping)
+            if asset is not None:
+                assets.append(asset)
+        return assets
+
     def supports_capability(self, capability: str) -> bool:
         """Return True only when capability maps to a configured metric."""
         metric_name = self._normalize_metric_name(capability)
@@ -275,3 +287,51 @@ class GenericRestAdapter(
                 "Add a metric mapping in Settings first."
             ),
         )
+
+    def _load_asset_mappings(self) -> dict[str, dict[str, Any]]:
+        """Load profile asset mappings from SettingsService or local fallback."""
+        if self._settings_service is not None:
+            mappings = self._settings_service.get_asset_mappings(
+                profile=self._profile_name or None,
+            )
+            if isinstance(mappings, dict):
+                return mappings
+        local = self._extra_settings.get("asset_mappings")
+        return local if isinstance(local, dict) else {}
+
+    @staticmethod
+    def _build_asset_from_mapping(asset_id: str, mapping: dict[str, Any]) -> Asset | None:
+        """Convert a mapping row into a canonical Asset instance."""
+        normalized_id = str(asset_id).strip()
+        if not normalized_id:
+            return None
+
+        display_name = str(
+            mapping.get("display_name")
+            or mapping.get("name")
+            or normalized_id,
+        ).strip()
+        asset_type = str(mapping.get("asset_type") or "machine").strip().lower()
+        if asset_type not in {"machine", "line", "sensor", "seu"}:
+            asset_type = "machine"
+
+        aliases: list[str] = []
+        raw_aliases = mapping.get("aliases", [])
+        if isinstance(raw_aliases, list):
+            aliases = [str(alias).strip() for alias in raw_aliases if str(alias).strip()]
+        metadata = {
+            key: value
+            for key, value in mapping.items()
+            if key not in {"display_name", "name", "asset_type", "aliases"}
+        }
+
+        try:
+            return Asset(
+                asset_id=normalized_id,
+                display_name=display_name or normalized_id,
+                asset_type=asset_type,
+                aliases=aliases,
+                metadata=metadata,
+            )
+        except ValueError:
+            return None

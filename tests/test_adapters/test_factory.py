@@ -78,6 +78,10 @@ class _StubAdapter(ManufacturingAdapter):
         """Stub — not called in these tests."""
         ...
 
+    async def list_assets(self):  # type: ignore[override]
+        """Stub — not called in these tests."""
+        return []
+
 
 # ---------------------------------------------------------------------------
 # create() — Adapter Creation
@@ -234,6 +238,7 @@ class TestGetConfiguredPlatform:
         config.platform_type = "RENERYO"
         service.get_active_profile_name.return_value = "reneryo"
         service.get_profile.return_value = config
+        service.get_asset_mappings.return_value = {"Line-1": {"seu_id": "seu-1"}}
 
         factory = AdapterFactory(settings_service=service)
         result = factory._get_configured_platform()
@@ -283,6 +288,7 @@ class TestInstantiateAdapter:
         }
         service.get_active_profile_name.return_value = "reneryo"
         service.get_profile.return_value = config
+        service.get_asset_mappings.return_value = {"Line-1": {"seu_id": "seu-1"}}
 
         factory = AdapterFactory(settings_service=service)
 
@@ -294,6 +300,8 @@ class TestInstantiateAdapter:
             assert kwargs["settings_service"] is service
             assert kwargs["profile_name"] == "reneryo"
             assert kwargs["extra_settings"]["SEU_ID"] == "seu-7"
+            assert kwargs["asset_mappings"] == {"Line-1": {"seu_id": "seu-1"}}
+            service.get_asset_mappings.assert_called_once_with(profile="reneryo")
 
 
 # ---------------------------------------------------------------------------

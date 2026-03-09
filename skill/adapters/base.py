@@ -2,7 +2,7 @@
 ManufacturingAdapter - Abstract Base Class
 
 Defines the contract that ALL platform adapters must implement.
-Every adapter provides exactly 5 query methods that return canonical types.
+Every adapter provides the core query methods plus asset discovery.
 
 Usage:
     class ReneryoAdapter(ManufacturingAdapter):
@@ -23,14 +23,17 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from skill.domain.models import CanonicalMetric, TimePeriod, WhatIfScenario
+    from skill.domain.models import (
+        Asset,
+        CanonicalMetric,
+        DataPoint,
+        TimePeriod,
+    )
     from skill.domain.results import (
         ConnectionTestResult,
         KPIResult,
         ComparisonResult,
         TrendResult,
-        AnomalyResult,
-        WhatIfResult,
     )
 
 
@@ -39,7 +42,7 @@ class ManufacturingAdapter(ABC):
     Abstract base class for all manufacturing platform adapters.
     
     This defines the contract between AVAROS skill handlers and
-    platform-specific implementations. All 5 query types are represented.
+    platform-specific implementations.
     
     Implementing Classes:
         - MockAdapter: Demo data (default, zero-config)
@@ -213,6 +216,11 @@ class ManufacturingAdapter(ABC):
             # Then feeds to PREVENTION for anomaly detection
             anomalies = prevention_client.detect_anomalies(raw_data)
         """
+        ...
+
+    @abstractmethod
+    async def list_assets(self) -> list[Asset]:
+        """Return all assets available on this platform."""
         ...
     
     # =========================================================================
