@@ -208,6 +208,7 @@ services:
       - WAKEWORD_MODEL_PATH=${WAKEWORD_MODEL_PATH:-/app/models/hey_avaros.onnx}
       - WAKEWORD_MODEL_LABEL=${WAKEWORD_MODEL_LABEL:-hey_avaros}
       - WAKEWORD_THRESHOLD=${WAKEWORD_THRESHOLD:-0.5}
+      - WAKEWORD_CONFIRMATION_FRAMES=${WAKEWORD_CONFIRMATION_FRAMES:-3}
     networks:
       - ovos
     healthcheck:

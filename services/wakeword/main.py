@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from typing import Any
@@ -19,10 +20,18 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 if __package__:
     # Package import path (used by tests and repo-root execution).
-    from .detector import WakeWordDetector, _resolve_model_path
+    from .detector import (
+        DEFAULT_CONFIRMATION_FRAMES,
+        WakeWordDetector,
+        _resolve_model_path,
+    )
 else:
     # Script-style import path (used by container CMD: uvicorn main:app).
-    from detector import WakeWordDetector, _resolve_model_path
+    from detector import (  # type: ignore[no-redef]
+        DEFAULT_CONFIRMATION_FRAMES,
+        WakeWordDetector,
+        _resolve_model_path,
+    )
 
 SERVICE_VERSION = "0.1.0"
 
@@ -33,6 +42,8 @@ logging.basicConfig(
 logger = logging.getLogger("avaros-wakeword")
 
 MAX_WS_CLOSE_REASON_BYTES = 120
+_THRESHOLD_LOCK = threading.Lock()
+_SESSION_THRESHOLDS: dict[str, float] = {}
 
 
 # ── Startup validation ──────────────────────────────────
@@ -107,6 +118,25 @@ def _threshold() -> float:
         return 0.5
 
 
+def _confirmation_frames() -> int:
+    """Return the required consecutive above-threshold frames.
+
+    Configurable via ``WAKEWORD_CONFIRMATION_FRAMES``.
+    Default: ``DEFAULT_CONFIRMATION_FRAMES`` (3 → 240 ms at 80 ms/frame).
+
+    Returns:
+        Positive integer ≥ 1.
+    """
+    raw = os.environ.get(
+        "WAKEWORD_CONFIRMATION_FRAMES",
+        str(DEFAULT_CONFIRMATION_FRAMES),
+    )
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return DEFAULT_CONFIRMATION_FRAMES
+
+
 def _safe_close_reason(reason: str) -> str:
     """Return a WebSocket close reason that fits protocol limits."""
     encoded = reason.encode("utf-8")
@@ -115,20 +145,90 @@ def _safe_close_reason(reason: str) -> str:
     return encoded[:MAX_WS_CLOSE_REASON_BYTES].decode("utf-8", errors="ignore")
 
 
+def _detector_threshold(detector: WakeWordDetector) -> float:
+    """Read current threshold from detector runtime info.
+
+    Falls back to env-configured threshold when detector metadata is
+    unavailable (e.g. mocked tests).
+    """
+    info = getattr(detector, "config_info", None)
+    if isinstance(info, dict):
+        value = info.get("threshold")
+        if isinstance(value, (int, float)):
+            return float(value)
+    return _threshold()
+
+
+def _register_session(session_id: str, detector: WakeWordDetector) -> None:
+    """Store runtime threshold for a new websocket session."""
+    with _THRESHOLD_LOCK:
+        _SESSION_THRESHOLDS[session_id] = _detector_threshold(detector)
+
+
+def _update_session_threshold(session_id: str, detector: WakeWordDetector) -> None:
+    """Update runtime threshold for an existing websocket session."""
+    with _THRESHOLD_LOCK:
+        _SESSION_THRESHOLDS[session_id] = _detector_threshold(detector)
+
+
+def _unregister_session(session_id: str) -> None:
+    """Remove runtime threshold for a closed websocket session."""
+    with _THRESHOLD_LOCK:
+        _SESSION_THRESHOLDS.pop(session_id, None)
+
+
+def _active_session_thresholds() -> list[float]:
+    """Return current runtime thresholds for all live websocket sessions."""
+    with _THRESHOLD_LOCK:
+        return [round(value, 4) for value in _SESSION_THRESHOLDS.values()]
+
+
 # ── Health endpoint ────────────────────────────────────
 
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    """Return service status and configured model info.
+    """Return service status and runtime configuration.
+
+    Exposes enough metadata to verify which model artefact is active
+    and whether runtime settings match expectations.  Does **not**
+    expose secrets.
 
     Returns:
-        JSON with ``status``, ``models_loaded``, and ``version``.
+        JSON with ``status``, ``models_loaded``, ``version``,
+        ``model_mode``, runtime threshold fields, and
+        ``confirmation_frames``.
     """
+    active_thresholds = _active_session_thresholds()
+    configured_threshold = _threshold()
+
+    if active_thresholds:
+        threshold_min = min(active_thresholds)
+        threshold_max = max(active_thresholds)
+        threshold_avg = round(sum(active_thresholds) / len(active_thresholds), 4)
+        threshold_source = "active_session_avg"
+        runtime_threshold = threshold_avg
+    else:
+        threshold_min = configured_threshold
+        threshold_max = configured_threshold
+        threshold_avg = configured_threshold
+        threshold_source = "configured"
+        runtime_threshold = configured_threshold
+
     return {
         "status": "ok",
         "models_loaded": [_model_label()],
         "version": SERVICE_VERSION,
+        "model_mode": "custom_path" if _custom_model_path() else "registry",
+        "configured_threshold": configured_threshold,
+        "threshold": runtime_threshold,
+        "threshold_source": threshold_source,
+        "active_session_count": len(active_thresholds),
+        "active_session_thresholds": active_thresholds,
+        "active_session_threshold_min": threshold_min,
+        "active_session_threshold_max": threshold_max,
+        "active_session_threshold_avg": threshold_avg,
+        "confirmation_frames": _confirmation_frames(),
     }
 
 
@@ -147,6 +247,7 @@ async def ws_detect(websocket: WebSocket) -> None:
     """
     await websocket.accept()
     logger.info("WebSocket connected: %s", websocket.client)
+    session_id = str(id(websocket))
 
     try:
         detector = WakeWordDetector(
@@ -154,7 +255,9 @@ async def ws_detect(websocket: WebSocket) -> None:
             display_name=_model_label(),
             threshold=_threshold(),
             custom_model_path=_custom_model_path(),
+            confirmation_frames=_confirmation_frames(),
         )
+        _register_session(session_id, detector)
     except ValueError as exc:
         logger.error("Failed to create detector: %s", exc)
         await websocket.close(code=1008, reason=_safe_close_reason(str(exc)))
@@ -176,8 +279,30 @@ async def ws_detect(websocket: WebSocket) -> None:
                     logger.debug("Ignoring non-JSON text websocket message")
                     continue
 
-                if payload.get("command") == "set_sensitivity":
-                    logger.debug("Sensitivity update received and ignored")
+                command = payload.get("command")
+                if command == "set_sensitivity":
+                    value = payload.get("value")
+                    if isinstance(value, (int, float)):
+                        # Sensitivity is inverted: higher sensitivity
+                        # = easier to trigger = lower threshold.
+                        new_threshold = 1.0 - float(value)
+                        detector.update_threshold(new_threshold)
+                        _update_session_threshold(session_id, detector)
+                        logger.info(
+                            "Threshold set to %.2f via set_sensitivity(%.2f)",
+                            new_threshold,
+                            float(value),
+                        )
+                    continue
+                if command == "set_threshold":
+                    value = payload.get("value")
+                    if isinstance(value, (int, float)):
+                        detector.update_threshold(float(value))
+                        _update_session_threshold(session_id, detector)
+                        logger.info(
+                            "Threshold set to %.2f via set_threshold",
+                            float(value),
+                        )
                     continue
                 logger.debug("Ignoring unsupported websocket command: %s", payload)
                 continue
@@ -192,4 +317,5 @@ async def ws_detect(websocket: WebSocket) -> None:
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected: %s", websocket.client)
     finally:
+        _unregister_session(session_id)
         detector.close()

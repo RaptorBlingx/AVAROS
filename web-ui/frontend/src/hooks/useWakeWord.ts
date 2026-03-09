@@ -96,7 +96,7 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
   const voiceModeRef = useRef<VoiceModeService | null>(null);
 
   const [wakeWordState, setWakeWordState] = useState<WakeWordState>("idle");
-  const [wakeWordSensitivity, setWakeWordSensitivityState] = useState(0.75);
+  const [wakeWordSensitivity, setWakeWordSensitivityState] = useState(0.5);
   const [isModelLoading, setIsModelLoading] = useState(false);
   const [voiceMode, setVoiceModeState] = useState<VoiceMode>(getInitialVoiceMode);
   const [isBackendWakeWord, setIsBackendWakeWord] = useState(false);

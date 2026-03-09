@@ -23,6 +23,12 @@ _OWW_ASSETS_READY = False
 SAMPLES_PER_FRAME = 1280
 BYTES_PER_FRAME = SAMPLES_PER_FRAME * 2
 
+# Confirmation: require N consecutive above-threshold frames before emitting
+# detection.  At 80 ms per frame, 3 frames = 240 ms sustained confidence.
+DEFAULT_CONFIRMATION_FRAMES = 3
+MIN_THRESHOLD = 0.1
+MAX_THRESHOLD = 0.95
+
 
 @dataclass(frozen=True)
 class DetectionEvent:
@@ -179,12 +185,16 @@ class WakeWordDetector:
         threshold: float = 0.5,
         *,
         custom_model_path: str | None = None,
+        confirmation_frames: int = DEFAULT_CONFIRMATION_FRAMES,
         _model: Any | None = None,
     ) -> None:
         self._model_name = model_name
         self._display_name = display_name or model_name
         self._threshold = threshold
         self._buffer = bytearray()
+        self._custom_model_path = custom_model_path
+        self._confirmation_required = max(1, confirmation_frames)
+        self._confirmation_count = 0
 
         if _model is not None:
             # Test-injection path — skip openWakeWord import.
@@ -195,11 +205,13 @@ class WakeWordDetector:
             self._predict_key = self._resolve_predict_key()
 
         logger.info(
-            "Detector ready: model=%s, display_name=%s, predict_key=%s, threshold=%.2f",
+            "Detector ready: model=%s, display_name=%s, predict_key=%s, "
+            "threshold=%.2f, confirmation_frames=%d",
             self._model_name,
             self._display_name,
             self._predict_key,
             self._threshold,
+            self._confirmation_required,
         )
 
     # ── Public API ────────────────────────────────────
@@ -227,6 +239,38 @@ class WakeWordDetector:
                 return event
         return None
 
+    def update_threshold(self, value: float) -> None:
+        """Update the detection threshold at runtime.
+
+        Clamps *value* to [``MIN_THRESHOLD``, ``MAX_THRESHOLD``] and
+        resets the confirmation counter so that stale partial
+        confirmations from the old threshold are discarded.
+
+        Args:
+            value: New threshold (0–1).
+        """
+        self._threshold = max(MIN_THRESHOLD, min(MAX_THRESHOLD, value))
+        self._confirmation_count = 0
+        logger.info("Threshold updated to %.2f", self._threshold)
+
+    @property
+    def config_info(self) -> dict[str, Any]:
+        """Return runtime configuration metadata (no secrets).
+
+        Returns:
+            Dict with model label, mode, threshold, and confirmation
+            settings.
+        """
+        return {
+            "model_label": self._display_name,
+            "model_name": self._model_name,
+            "predict_key": self._predict_key,
+            "mode": "custom_path" if self._custom_model_path else "registry",
+            "custom_model_path": self._custom_model_path,
+            "threshold": self._threshold,
+            "confirmation_frames": self._confirmation_required,
+        }
+
     @property
     def loaded_models(self) -> list[str]:
         """Return the list of actually-loaded model names."""
@@ -235,24 +279,36 @@ class WakeWordDetector:
     def close(self) -> None:
         """Release per-connection state."""
         self._buffer.clear()
+        self._confirmation_count = 0
 
     # ── Internals ─────────────────────────────────────
 
     def _run_inference(self, chunk: bytes) -> DetectionEvent | None:
-        """Convert PCM chunk to numpy, call predict, check threshold."""
+        """Convert PCM chunk to numpy, call predict, check threshold.
+
+        Detection requires ``confirmation_frames`` consecutive frames
+        above threshold.  A single below-threshold frame resets the
+        counter, preventing impulse noise (coughs, clicks) from
+        triggering a wake event.
+        """
         samples = np.frombuffer(chunk, dtype=np.int16)
         predictions: dict[str, Any] = self._oww.predict(samples)
         score = float(predictions.get(self._predict_key, 0.0))
 
-        if score < self._threshold:
-            return None
+        if score >= self._threshold:
+            self._confirmation_count += 1
+            if self._confirmation_count >= self._confirmation_required:
+                self._confirmation_count = 0
+                return DetectionEvent(
+                    event="detected",
+                    model=self._display_name,
+                    score=round(score, 4),
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+        else:
+            self._confirmation_count = 0
 
-        return DetectionEvent(
-            event="detected",
-            model=self._display_name,
-            score=round(score, 4),
-            timestamp=datetime.now(timezone.utc).isoformat(),
-        )
+        return None
 
     def _load_model(
         self, model_name: str, custom_model_path: str | None = None,

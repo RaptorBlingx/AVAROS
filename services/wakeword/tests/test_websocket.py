@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import os
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from services.wakeword import main as wakeword_main
+from services.wakeword.detector import DEFAULT_CONFIRMATION_FRAMES
 from services.wakeword.detector import DetectionEvent
 
 app = wakeword_main.app
@@ -40,6 +42,10 @@ class TestHealthEndpoint:
         assert isinstance(body["models_loaded"], list)
         assert len(body["models_loaded"]) > 0
         assert "version" in body
+        assert "model_mode" in body
+        assert "threshold" in body
+        assert "threshold_source" in body
+        assert "confirmation_frames" in body
 
     def test_health_reflects_configured_model(self) -> None:
         """Health reports the model configured via env var."""
@@ -130,8 +136,14 @@ class TestWebSocketEndpoint:
     def test_websocket_silence_no_response(self) -> None:
         """When detector returns None, server sends nothing."""
         # Arrange
+        processed = threading.Event()
         mock_detector = MagicMock()
-        mock_detector.process_audio.return_value = None
+
+        def _process_audio(_payload: bytes) -> None:
+            processed.set()
+            return None
+
+        mock_detector.process_audio.side_effect = _process_audio
         mock_detector.close.return_value = None
 
         client = TestClient(app)
@@ -143,10 +155,7 @@ class TestWebSocketEndpoint:
         ):
             with client.websocket_connect("/ws/detect") as ws:
                 ws.send_bytes(b"\x00" * 2560)
-                # Server should NOT send anything for silence.
-                # TestClient would raise if we tried receive_json()
-                # with a timeout — but that's tricky. Instead we
-                # verify process_audio was called and no crash.
+                assert processed.wait(timeout=0.5)
                 mock_detector.process_audio.assert_called_once()
 
     def test_websocket_text_command_ignored_and_audio_still_processed(self) -> None:
@@ -218,18 +227,19 @@ class TestWebSocketEndpoint:
         mock_detector.close.return_value = None
         client = TestClient(app)
 
-        # Act
-        with patch(
-            "services.wakeword.main.WakeWordDetector",
-            return_value=mock_detector,
-        ) as detector_cls:
-            with patch.dict(
-                "os.environ",
-                {
-                    "WAKEWORD_MODEL_PATH": "/app/models/hey_avaros.onnx",
-                },
-                clear=False,
-            ):
+        # Act — env patch outermost so it is visible to ASGI thread
+        with patch.dict(
+            "os.environ",
+            {
+                "WAKEWORD_MODEL": "hey_avaros",
+                "WAKEWORD_MODEL_PATH": "/app/models/hey_avaros.onnx",
+            },
+            clear=False,
+        ):
+            with patch(
+                "services.wakeword.main.WakeWordDetector",
+                return_value=mock_detector,
+            ) as detector_cls:
                 with client.websocket_connect("/ws/detect"):
                     pass
 
@@ -268,7 +278,10 @@ class TestWebSocketEndpoint:
                 clear=False,
             ):
                 with client.websocket_connect("/ws/detect") as ws:
-                    ws.send_bytes(b"\x00" * 2560)
+                    # Detection requires sustained confidence across
+                    # multiple frames (confirmation window).
+                    for _ in range(DEFAULT_CONFIRMATION_FRAMES):
+                        ws.send_bytes(b"\x00" * 2560)
                     data = ws.receive_json()
 
         # Assert
@@ -310,3 +323,189 @@ class TestStartupValidation:
         with patch.dict("os.environ", env, clear=False):
             with TestClient(app):
                 pass
+
+
+# ── Health metadata tests ─────────────────────────────────
+
+
+class TestHealthMetadata:
+    """Tests for enhanced runtime configuration in health output."""
+
+    def test_health_reports_custom_path_mode(self) -> None:
+        """Health shows model_mode='custom_path' when WAKEWORD_MODEL_PATH set."""
+        # Arrange
+        client = TestClient(app)
+
+        # Act
+        with patch.dict(
+            "os.environ",
+            {"WAKEWORD_MODEL_PATH": "/app/models/hey_avaros.onnx"},
+            clear=False,
+        ):
+            response = client.get("/health")
+
+        # Assert
+        assert response.json()["model_mode"] == "custom_path"
+
+    def test_health_reports_registry_mode(self) -> None:
+        """Health shows model_mode='registry' when no custom path set."""
+        # Arrange
+        client = TestClient(app)
+
+        # Act
+        with patch.dict("os.environ", {}, clear=False):
+            # Ensure WAKEWORD_MODEL_PATH is absent
+            env_copy = dict(os.environ)
+            env_copy.pop("WAKEWORD_MODEL_PATH", None)
+            with patch.dict("os.environ", env_copy, clear=True):
+                response = client.get("/health")
+
+        # Assert
+        assert response.json()["model_mode"] == "registry"
+
+    def test_health_reports_threshold(self) -> None:
+        """Health response includes the configured threshold."""
+        # Arrange
+        client = TestClient(app)
+
+        # Act
+        with patch.dict("os.environ", {"WAKEWORD_THRESHOLD": "0.7"}, clear=False):
+            response = client.get("/health")
+
+        # Assert
+        assert response.json()["threshold"] == 0.7
+        assert response.json()["configured_threshold"] == 0.7
+        assert response.json()["threshold_source"] == "configured"
+        assert response.json()["active_session_threshold_min"] == 0.7
+        assert response.json()["active_session_threshold_max"] == 0.7
+        assert response.json()["active_session_threshold_avg"] == 0.7
+
+    def test_health_reports_confirmation_frames(self) -> None:
+        """Health response includes confirmation_frames config."""
+        # Arrange
+        client = TestClient(app)
+
+        # Act
+        with patch.dict(
+            "os.environ",
+            {"WAKEWORD_CONFIRMATION_FRAMES": "5"},
+            clear=False,
+        ):
+            response = client.get("/health")
+
+        # Assert
+        assert response.json()["confirmation_frames"] == 5
+
+    def test_health_reports_active_runtime_threshold_for_live_session(self) -> None:
+        """Health reflects runtime threshold after websocket updates."""
+        # Arrange
+        threshold_updated = threading.Event()
+        client = TestClient(app)
+
+        class _FakeDetector:
+            def __init__(self) -> None:
+                self.current_threshold = 0.5
+
+            @property
+            def config_info(self) -> dict[str, float]:
+                return {"threshold": self.current_threshold}
+
+            def update_threshold(self, value: float) -> None:
+                self.current_threshold = value
+                threshold_updated.set()
+
+            def process_audio(self, _payload: bytes) -> None:
+                return None
+
+            def close(self) -> None:
+                return None
+
+        fake_detector = _FakeDetector()
+
+        # Act
+        with patch(
+            "services.wakeword.main.WakeWordDetector",
+            return_value=fake_detector,
+        ):
+            with client.websocket_connect("/ws/detect") as ws:
+                ws.send_text('{"command":"set_threshold","value":0.72}')
+                assert threshold_updated.wait(timeout=0.5)
+                response = client.get("/health")
+
+                # Assert
+                body = response.json()
+                assert body["threshold"] == 0.72
+                assert body["threshold_source"] == "active_session_avg"
+                assert body["active_session_count"] == 1
+                assert body["active_session_thresholds"] == [0.72]
+                assert body["active_session_threshold_min"] == 0.72
+                assert body["active_session_threshold_max"] == 0.72
+                assert body["active_session_threshold_avg"] == 0.72
+
+
+# ── WebSocket sensitivity / threshold handling ────────────
+
+
+class TestWebSocketSensitivity:
+    """Tests for real set_sensitivity and set_threshold WS commands."""
+
+    def test_set_sensitivity_updates_detector_threshold(self) -> None:
+        """set_sensitivity command updates detector via update_threshold."""
+        # Arrange
+        mock_detector = MagicMock()
+        mock_detector.process_audio.return_value = None
+        mock_detector.close.return_value = None
+        client = TestClient(app)
+
+        # Act
+        with patch(
+            "services.wakeword.main.WakeWordDetector",
+            return_value=mock_detector,
+        ):
+            with client.websocket_connect("/ws/detect") as ws:
+                ws.send_text('{"command":"set_sensitivity","value":0.75}')
+                # Send audio to keep loop alive then disconnect
+                ws.send_bytes(b"\x00" * 2560)
+
+        # Assert — sensitivity 0.75 → threshold 0.25 (inverted)
+        mock_detector.update_threshold.assert_called_once_with(0.25)
+
+    def test_set_threshold_updates_detector_directly(self) -> None:
+        """set_threshold command updates detector threshold directly."""
+        # Arrange
+        mock_detector = MagicMock()
+        mock_detector.process_audio.return_value = None
+        mock_detector.close.return_value = None
+        client = TestClient(app)
+
+        # Act
+        with patch(
+            "services.wakeword.main.WakeWordDetector",
+            return_value=mock_detector,
+        ):
+            with client.websocket_connect("/ws/detect") as ws:
+                ws.send_text('{"command":"set_threshold","value":0.65}')
+                ws.send_bytes(b"\x00" * 2560)
+
+        # Assert
+        mock_detector.update_threshold.assert_called_once_with(0.65)
+
+    def test_set_sensitivity_ignores_missing_value(self) -> None:
+        """set_sensitivity without a value does not crash."""
+        # Arrange
+        mock_detector = MagicMock()
+        mock_detector.process_audio.return_value = None
+        mock_detector.close.return_value = None
+        client = TestClient(app)
+
+        # Act — no crash
+        with patch(
+            "services.wakeword.main.WakeWordDetector",
+            return_value=mock_detector,
+        ):
+            with client.websocket_connect("/ws/detect") as ws:
+                ws.send_text('{"command":"set_sensitivity"}')
+                ws.send_bytes(b"\x00" * 2560)
+
+        # Assert — update_threshold never called
+        mock_detector.update_threshold.assert_not_called()

@@ -42,7 +42,13 @@ export type WakeWordState =
 export interface BackendWakeWordConfig {
   /** WebSocket URL for the wake word backend. */
   wsUrl: string;
-  /** Detection sensitivity sent to the backend (0–1, default 0.5). */
+  /**
+   * Detection sensitivity sent to the backend (0–1, default 0.5).
+   *
+   * Mapped by the backend to a confidence threshold via
+   * `threshold = 1.0 - sensitivity`.  Higher sensitivity means
+   * easier to trigger (lower threshold).
+   */
   sensitivity: number;
 }
 
