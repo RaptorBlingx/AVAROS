@@ -43,7 +43,7 @@ export interface BackendWakeWordConfig {
   /** WebSocket URL for the wake word backend. */
   wsUrl: string;
   /**
-   * Detection sensitivity sent to the backend (0–1, default 0.5).
+   * Detection sensitivity sent to the backend (0–1, default 0.15).
    *
    * Mapped by the backend to a confidence threshold via
    * `threshold = 1.0 - sensitivity`.  Higher sensitivity means
@@ -77,7 +77,7 @@ const DEFAULT_WS_URL = resolveDefaultWsUrl();
 
 const DEFAULT_CONFIG: BackendWakeWordConfig = {
   wsUrl: DEFAULT_WS_URL,
-  sensitivity: 0.5,
+  sensitivity: 0.15,
 };
 
 /** Exponential backoff parameters. */

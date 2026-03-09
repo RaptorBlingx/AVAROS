@@ -136,7 +136,7 @@ export default function MessageHistory({
             <p className="voice-chat-history__empty-icon" aria-hidden="true">
               💬
             </p>
-            <p>Say &quot;Hey AVAROS&quot; or type a question below.</p>
+            <p>Say &quot;Hey Jarvis&quot; or type a question below.</p>
           </div>
         ) : (
           messages.map((message) => (

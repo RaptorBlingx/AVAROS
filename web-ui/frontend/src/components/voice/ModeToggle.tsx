@@ -13,7 +13,7 @@ const MODES: ModeMeta[] = [
   {
     mode: "wake-word",
     label: "Wake Word",
-    tooltip: "Hands-free. Say \"Hey AVAROS\" to start.",
+    tooltip: "Hands-free. Say \"Hey Jarvis\" to start.",
   },
   {
     mode: "push-to-talk",

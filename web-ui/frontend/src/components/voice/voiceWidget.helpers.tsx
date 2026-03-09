@@ -23,6 +23,9 @@ const GREETING_WORDS = new Set([
   "hello avaros",
   "hi avaros",
   "hey avaros",
+  "hello jarvis",
+  "hi jarvis",
+  "hey jarvis",
 ]);
 const HELP_WORDS = new Set([
   "help",

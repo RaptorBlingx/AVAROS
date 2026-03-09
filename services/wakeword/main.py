@@ -280,12 +280,26 @@ async def ws_detect(websocket: WebSocket) -> None:
                     continue
 
                 command = payload.get("command")
+                configured_floor = _threshold()
                 if command == "set_sensitivity":
                     value = payload.get("value")
                     if isinstance(value, (int, float)):
                         # Sensitivity is inverted: higher sensitivity
                         # = easier to trigger = lower threshold.
                         new_threshold = 1.0 - float(value)
+                        # Enforce server-configured floor — no client
+                        # can push the threshold below the configured
+                        # WAKEWORD_THRESHOLD.
+                        if new_threshold < configured_floor:
+                            logger.warning(
+                                "Client requested threshold %.2f via "
+                                "set_sensitivity(%.2f) but floor is %.2f; "
+                                "clamping to floor.",
+                                new_threshold,
+                                float(value),
+                                configured_floor,
+                            )
+                            new_threshold = configured_floor
                         detector.update_threshold(new_threshold)
                         _update_session_threshold(session_id, detector)
                         logger.info(
@@ -297,11 +311,21 @@ async def ws_detect(websocket: WebSocket) -> None:
                 if command == "set_threshold":
                     value = payload.get("value")
                     if isinstance(value, (int, float)):
-                        detector.update_threshold(float(value))
+                        new_threshold = float(value)
+                        if new_threshold < configured_floor:
+                            logger.warning(
+                                "Client requested threshold %.2f via "
+                                "set_threshold but floor is %.2f; "
+                                "clamping to floor.",
+                                new_threshold,
+                                configured_floor,
+                            )
+                            new_threshold = configured_floor
+                        detector.update_threshold(new_threshold)
                         _update_session_threshold(session_id, detector)
                         logger.info(
                             "Threshold set to %.2f via set_threshold",
-                            float(value),
+                            new_threshold,
                         )
                     continue
                 logger.debug("Ignoring unsupported websocket command: %s", payload)
@@ -313,6 +337,12 @@ async def ws_detect(websocket: WebSocket) -> None:
 
             event = detector.process_audio(pcm_frame)
             if event is not None:
+                logger.warning(
+                    "DETECTION FIRED: model=%s score=%.4f session=%s",
+                    event.model,
+                    event.score,
+                    session_id,
+                )
                 await websocket.send_json(asdict(event))
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected: %s", websocket.client)

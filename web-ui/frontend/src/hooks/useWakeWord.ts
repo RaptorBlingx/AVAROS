@@ -72,6 +72,10 @@ export interface UseWakeWordResult {
   setVoiceMode: (mode: VoiceMode) => Promise<void>;
   /** True when the backend openWakeWord service is being used. */
   isBackendWakeWord: boolean;
+  /** Pause wake-word audio streaming (keeps WebSocket open for quick restart). */
+  pauseDetection: () => void;
+  /** Resume wake-word audio streaming after a paused interaction cycle. */
+  resumeDetection: () => void;
 }
 
 interface UseWakeWordOptions {
@@ -96,7 +100,7 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
   const voiceModeRef = useRef<VoiceModeService | null>(null);
 
   const [wakeWordState, setWakeWordState] = useState<WakeWordState>("idle");
-  const [wakeWordSensitivity, setWakeWordSensitivityState] = useState(0.5);
+  const [wakeWordSensitivity, setWakeWordSensitivityState] = useState(0.15);
   const [isModelLoading, setIsModelLoading] = useState(false);
   const [voiceMode, setVoiceModeState] = useState<VoiceMode>(getInitialVoiceMode);
   const [isBackendWakeWord, setIsBackendWakeWord] = useState(false);
@@ -192,6 +196,14 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
     backendWakeWordRef.current?.setSensitivity(value);
   }, []);
 
+  const pauseDetection = useCallback(() => {
+    backendWakeWordRef.current?.stopListening();
+  }, []);
+
+  const resumeDetection = useCallback(() => {
+    void backendWakeWordRef.current?.startListening();
+  }, []);
+
   return {
     wakeWordState,
     wakeWordEnabled,
@@ -201,5 +213,7 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
     voiceMode,
     setVoiceMode,
     isBackendWakeWord,
+    pauseDetection,
+    resumeDetection,
   };
 }

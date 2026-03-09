@@ -195,6 +195,8 @@ class WakeWordDetector:
         self._custom_model_path = custom_model_path
         self._confirmation_required = max(1, confirmation_frames)
         self._confirmation_count = 0
+        self._inference_count = 0
+        self._max_score_window = 0.0
 
         if _model is not None:
             # Test-injection path — skip openWakeWord import.
@@ -294,6 +296,30 @@ class WakeWordDetector:
         samples = np.frombuffer(chunk, dtype=np.int16)
         predictions: dict[str, Any] = self._oww.predict(samples)
         score = float(predictions.get(self._predict_key, 0.0))
+
+        # Periodic diagnostics: log peak score every ~100 frames (~8 s).
+        self._inference_count += 1
+        self._max_score_window = max(self._max_score_window, score)
+        if self._inference_count % 100 == 0:
+            logger.debug(
+                "Score diagnostics: peak=%.4f over last 100 frames "
+                "(threshold=%.2f, confirmation=%d/%d)",
+                self._max_score_window,
+                self._threshold,
+                self._confirmation_count,
+                self._confirmation_required,
+            )
+            self._max_score_window = 0.0
+
+        # Log any score above 0.1 to catch near-misses.
+        if score >= 0.1:
+            logger.info(
+                "Elevated score: %.4f (threshold=%.2f, confirm=%d/%d)",
+                score,
+                self._threshold,
+                self._confirmation_count,
+                self._confirmation_required,
+            )
 
         if score >= self._threshold:
             self._confirmation_count += 1

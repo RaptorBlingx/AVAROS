@@ -204,9 +204,10 @@ services:
       # Optional: mount custom model directory for trained wake-word models
       - ${WAKEWORD_MODELS_DIR:-../services/wakeword/models}:/app/models
     environment:
-      - WAKEWORD_MODEL=${WAKEWORD_MODEL:-hey_avaros}
-      - WAKEWORD_MODEL_PATH=${WAKEWORD_MODEL_PATH:-/app/models/hey_avaros.onnx}
-      - WAKEWORD_MODEL_LABEL=${WAKEWORD_MODEL_LABEL:-hey_avaros}
+      - WAKEWORD_MODEL=${WAKEWORD_MODEL:-hey_jarvis}
+      # To use a custom trained model, uncomment WAKEWORD_MODEL_PATH:
+      # - WAKEWORD_MODEL_PATH=${WAKEWORD_MODEL_PATH:-/app/models/hey_avaros.onnx}
+      - WAKEWORD_MODEL_LABEL=${WAKEWORD_MODEL_LABEL:-hey_jarvis}
       - WAKEWORD_THRESHOLD=${WAKEWORD_THRESHOLD:-0.5}
       - WAKEWORD_CONFIRMATION_FRAMES=${WAKEWORD_CONFIRMATION_FRAMES:-3}
     networks:

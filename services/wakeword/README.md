@@ -53,15 +53,15 @@ Readiness probe.
   "models_loaded": ["hey_avaros"],
   "version": "0.1.0",
   "model_mode": "custom_path",
-  "configured_threshold": 0.5,
-  "threshold": 0.5,
+  "configured_threshold": 0.85,
+  "threshold": 0.85,
   "threshold_source": "configured",
   "active_session_count": 0,
   "active_session_thresholds": [],
-  "active_session_threshold_min": 0.5,
-  "active_session_threshold_max": 0.5,
-  "active_session_threshold_avg": 0.5,
-  "confirmation_frames": 3
+  "active_session_threshold_min": 0.85,
+  "active_session_threshold_max": 0.85,
+  "active_session_threshold_avg": 0.85,
+  "confirmation_frames": 5
 }
 ```
 

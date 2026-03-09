@@ -197,6 +197,9 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const isSpeakingRef = useRef(false);
   const wakeWordPromptCooldownUntilRef = useRef(0);
   const lastTtsUtteranceRef = useRef("");
+  const pauseDetectionRef = useRef<(() => void) | null>(null);
+  const resumeDetectionRef = useRef<(() => void) | null>(null);
+  const wakeWordPausedRef = useRef(false);
 
   const sttSupported = isSpeechRecognitionSupported();
   const ttsSupported = isSpeechSynthesisSupported();
@@ -290,6 +293,10 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     setInterimTranscript("");
     setFinalTranscript("");
     sttRef.current?.stop();
+    // Pause wake-word detection during the interaction cycle to prevent
+    // re-triggers from TTS echo or ambient sound.
+    pauseDetectionRef.current?.();
+    wakeWordPausedRef.current = true;
     void promptWakeWordReady()
       .catch(() => undefined)
       .finally(() => {
@@ -309,7 +316,15 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     isModelLoading,
     voiceMode,
     setVoiceMode,
+    pauseDetection,
+    resumeDetection,
   } = useWakeWord({ sttRef, onDetected: onWakeWordDetected });
+
+  // Keep refs in sync so onWakeWordDetected (defined before the hook) can call them.
+  useEffect(() => {
+    pauseDetectionRef.current = pauseDetection;
+    resumeDetectionRef.current = resumeDetection;
+  }, [pauseDetection, resumeDetection]);
 
   useEffect(() => {
     interimTranscriptRef.current = interimTranscript;
@@ -332,6 +347,20 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       clearWakeWordCommandWindow();
     }
   }, [voiceMode, clearWakeWordCommandWindow]);
+
+  // Resume wake-word detection after the full interaction cycle completes.
+  // Uses a 1 s debounce to skip the brief idle gap between the TTS prompt
+  // ending and STT command capture starting.
+  useEffect(() => {
+    if (voiceState !== "idle" || !wakeWordPausedRef.current || !wakeWordEnabled) return;
+    const timer = setTimeout(() => {
+      if (wakeWordPausedRef.current) {
+        wakeWordPausedRef.current = false;
+        resumeDetectionRef.current?.();
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [voiceState, wakeWordEnabled]);
 
   // ── Initialize STT / TTS ───────────────────────────
   useEffect(() => {
