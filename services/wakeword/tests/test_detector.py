@@ -245,10 +245,11 @@ class TestDetectorWithCustomPath:
                 custom_model_path="/app/models/hey_avaros.onnx",
             )
 
-        # Assert — first attempt uses wakeword_models=[path]
-        mock_model_cls.assert_called_once_with(
-            wakeword_models=["/app/models/hey_avaros.onnx"],
-        )
+        # Assert — first attempt uses wakeword_models=[path] with ONNX framework.
+        mock_model_cls.assert_called_once()
+        kwargs = mock_model_cls.call_args.kwargs
+        assert kwargs["wakeword_models"] == ["/app/models/hey_avaros.onnx"]
+        assert kwargs["inference_framework"] == "onnx"
         detector.close()
 
     def test_custom_path_detector_processes_audio(self) -> None:

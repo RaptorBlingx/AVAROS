@@ -288,7 +288,22 @@ class WakeWordDetector:
         # Newer openwakeword expects canonical model names; older variants
         # accepted custom file paths through a different kwarg.
         if custom_model_path:
+            model_ext = os.path.splitext(model_path)[1].lower()
+            framework: str | None = None
+            if model_ext == ".onnx":
+                framework = "onnx"
+            elif model_ext == ".tflite":
+                framework = "tflite"
+
             attempts: tuple[dict[str, list[str]], ...] = (
+                {
+                    "wakeword_models": [model_path],
+                    **({"inference_framework": framework} if framework else {}),
+                },
+                {
+                    "wakeword_model_paths": [model_path],
+                    **({"inference_framework": framework} if framework else {}),
+                },
                 {"wakeword_models": [model_path]},
                 {"wakeword_model_paths": [model_path]},
             )
