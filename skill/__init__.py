@@ -19,6 +19,7 @@ from skill._system_handlers import (
     handle_greeting as _handle_greeting_impl,
     handle_help as _handle_help_impl,
     handle_help_capabilities_list as _handle_help_capabilities_list_impl,
+    handle_list_assets as _handle_list_assets_impl,
     handle_status_profile_show as _handle_status_profile_show_impl,
     handle_status_system_show as _handle_status_system_show_impl,
     handle_whatif_temperature as _handle_whatif_temperature_impl,
@@ -37,6 +38,7 @@ from skill._helpers import (
     extract_intent_name as _extract_intent_name_impl,
     extract_line_assets_from_text as _extract_line_assets_from_text_impl,
     extract_utterance_text as _extract_utterance_text_impl,
+    get_asset_registry as _get_asset_registry_impl,
     get_intent_binding as _get_intent_binding_impl,
     get_power_state as _get_power_state_impl,
     is_anomaly_query as _is_anomaly_query_impl,
@@ -76,6 +78,7 @@ class AVAROSSkill(FallbackSkill):
     _extract_utterance_text = _extract_utterance_text_impl
     _canonicalize_asset_id = _canonicalize_asset_id_impl
     _extract_line_assets_from_text = _extract_line_assets_from_text_impl
+    _get_asset_registry = _get_asset_registry_impl
     _resolve_asset_id = _resolve_asset_id_impl
     _resolve_compare_assets = _resolve_compare_assets_impl
     _is_anomaly_query = _is_anomaly_query_impl
@@ -95,6 +98,7 @@ class AVAROSSkill(FallbackSkill):
     handle_status_system_show = _handle_status_system_show_impl
     handle_status_profile_show = _handle_status_profile_show_impl
     handle_help_capabilities_list = _handle_help_capabilities_list_impl
+    handle_list_assets = _handle_list_assets_impl
     _handle_intent_failure = _handle_intent_failure_impl
     can_answer = _can_answer_impl
     handle_metric_query_fallback = fallback_handler(95)(_handle_metric_query_fallback_impl)
@@ -109,6 +113,8 @@ class AVAROSSkill(FallbackSkill):
         self._loaded_profile: str = "mock"
         self._loaded_platform: str = "mock"
         self._is_initialized: bool = False
+        self._asset_registry_profile: str = ""
+        self._asset_registry_cache: list[Any] | None = None
 
         super().__init__(*args, **kwargs)
 
@@ -245,6 +251,8 @@ class AVAROSSkill(FallbackSkill):
             "Asset entity update event received (profile='%s')",
             profile_name or "unknown",
         )
+        self._asset_registry_cache = None
+        self._asset_registry_profile = ""
         self._register_entity_files()
 
     def _reload_adapter(self, profile_name: str) -> None:
@@ -263,6 +271,8 @@ class AVAROSSkill(FallbackSkill):
             self.response_builder = ResponseBuilder(verbosity="normal")
         self._loaded_profile = self._resolve_active_profile()
         self._loaded_platform = new_adapter.platform_name.lower()
+        self._asset_registry_cache = None
+        self._asset_registry_profile = ""
         self.log.info(
             "Adapter reloaded: %s (profile='%s', platform='%s')",
             type(new_adapter).__name__,
