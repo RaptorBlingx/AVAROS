@@ -453,9 +453,21 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       const interim = interimTranscriptRef.current.trim();
       const final = finalTranscriptRef.current.trim();
 
+      // Safety guard: in wake-word mode, ignore any STT tail activity
+      // unless we're inside the explicit post-wake command window.
+      if (voiceMode === "wake-word" && !isWakeWordCommandWindowOpen()) {
+        setFinalTranscript("");
+        setInterimTranscript("");
+        setVoiceState("idle");
+        return;
+      }
+
       // If engine emitted only interim text, promote it to final so
       // the utterance can still be sent to HiveMind.
       if (!final && interim) {
+        if (voiceMode === "wake-word") {
+          clearWakeWordCommandWindow();
+        }
         setFinalTranscript(interim);
         setInterimTranscript("");
         setVoiceState("processing");
