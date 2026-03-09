@@ -42,6 +42,7 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -51,8 +52,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from skill.domain.emission_factors import DEFAULT_EMISSION_FACTORS, EmissionFactor
 from skill.domain.exceptions import ValidationError
-from skill.domain.models import CanonicalMetric
+from skill.domain.models import Asset, CanonicalMetric
 from skill.services.database import Base, SettingModel
+from skill.services.entity_generator import (
+    regenerate_asset_entities_for_all_locales,
+)
 from skill.services.models import PlatformConfig, VoiceConfig  # re-export
 from skill.services.profiles import ProfileMixin
 
@@ -812,6 +816,7 @@ class SettingsService(ProfileMixin):
         normalized = self._normalize_asset_mappings(mappings)
         key = self._asset_mappings_storage_key(target_profile)
         self.set_setting(key, normalized)
+        self._regenerate_asset_entity_files(target_profile)
 
     def get_asset_list(self, profile: str | None = None) -> list[dict[str, Any]]:
         """Return a normalized list view of configured assets."""
@@ -1104,6 +1109,64 @@ class SettingsService(ProfileMixin):
                 )
             normalized[normalized_id] = deepcopy(mapping)
         return normalized
+
+    def _regenerate_asset_entity_files(self, profile: str) -> None:
+        """Regenerate locale entity files from current asset registry."""
+        try:
+            assets = self._asset_models_for_profile(profile)
+            regenerate_asset_entities_for_all_locales(
+                assets=assets,
+                locale_root=self._locale_root_path(),
+            )
+            logger.info(
+                "Regenerated asset entity files for profile '%s' (%d assets)",
+                profile,
+                len(assets),
+            )
+        except Exception as exc:
+            logger.warning("Asset entity regeneration failed: %s", exc)
+
+    def _asset_models_for_profile(self, profile: str) -> list[Asset]:
+        """Build canonical assets from profile-scoped mapping rows."""
+        rows = self.get_asset_list(profile=profile)
+        assets: list[Asset] = []
+        for row in rows:
+            asset_id = str(row.get("asset_id", "")).strip()
+            if not asset_id:
+                continue
+            display_name = str(row.get("display_name") or asset_id).strip()
+            asset_type = str(row.get("asset_type") or "machine").strip().lower()
+            if asset_type not in {"machine", "line", "sensor", "seu"}:
+                asset_type = "machine"
+            aliases_raw = row.get("aliases", [])
+            aliases = (
+                [str(alias).strip() for alias in aliases_raw if str(alias).strip()]
+                if isinstance(aliases_raw, list)
+                else []
+            )
+            metadata = row.get("metadata", {})
+            metadata_dict = metadata if isinstance(metadata, dict) else {}
+            try:
+                assets.append(
+                    Asset(
+                        asset_id=asset_id,
+                        display_name=display_name,
+                        asset_type=asset_type,
+                        aliases=aliases,
+                        metadata=metadata_dict,
+                    ),
+                )
+            except ValueError:
+                continue
+        return assets
+
+    @staticmethod
+    def _locale_root_path() -> Path:
+        """Resolve locale root path for dynamic entity generation."""
+        env_value = os.environ.get("AVAROS_LOCALE_ROOT", "").strip()
+        if env_value:
+            return Path(env_value)
+        return Path(__file__).resolve().parent.parent / "locale"
 
     def _bootstrap_demo_profile_if_enabled(self) -> None:
         """Create optional reneryo-mock demo profile for zero-config demos.
