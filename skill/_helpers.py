@@ -9,7 +9,7 @@ from skill._asset_resolution import (
     get_asset_registry as _get_asset_registry,
     resolve_asset_id_from_text as _resolve_asset_id_from_text,
 )
-from skill.domain.models import CanonicalMetric, TimePeriod
+from skill.domain.models import Asset, CanonicalMetric, TimePeriod
 from skill._intent_resolver import resolve_intent_name as _resolve_intent_name
 from skill._metric_resolver import resolve_metric_from_utterance as _resolve_metric_from_utterance
 
@@ -181,7 +181,7 @@ def extract_utterance_text(self, message: Message) -> str:
     return ""
 
 
-def get_asset_registry(self, force_refresh: bool = False):
+def get_asset_registry(self, force_refresh: bool = False) -> list[Asset]:
     """Return active-profile asset registry from adapter/settings cache."""
     return _get_asset_registry(self, force_refresh=force_refresh)
 
@@ -193,29 +193,6 @@ def canonicalize_asset_id(
     raise_on_unknown: bool = False,
 ) -> str:
     """Normalize spoken asset text into canonical asset IDs."""
-    if self is None:
-        token = (raw_asset or "").strip()
-        if not token:
-            return ""
-        normalized = re.sub(r"[-_]+", " ", token.lower()).strip()
-        line_match = re.fullmatch(
-            r"line\s+(1|2|3|4|5|one|two|three|four|five|to|too)",
-            normalized,
-        )
-        if not line_match:
-            return token
-        digits = {
-            "one": "1",
-            "two": "2",
-            "three": "3",
-            "four": "4",
-            "five": "5",
-            "to": "2",
-            "too": "2",
-        }
-        suffix = digits.get(line_match.group(1), line_match.group(1))
-        return f"Line-{suffix}"
-
     return _resolve_asset_id_from_text(
         self,
         raw_asset,
@@ -235,11 +212,14 @@ def extract_line_assets_from_text(self, text: str) -> list[str]:
     return [self._canonicalize_asset_id(f"line {value}") for value in matches]
 
 
+_NOISE_WORDS = frozenset({"to", "too", "for", "on", "line"})
+
+
 def resolve_asset_id(self, message: Message, default: str = "default") -> str:
     """Resolve asset_id using slot first, then utterance fallback parsing."""
     data = getattr(message, "data", {}) or {}
     slot_value = str(data.get("asset", "")).strip()
-    if slot_value:
+    if slot_value and slot_value.lower() not in _NOISE_WORDS:
         slot_asset = self._canonicalize_asset_id(
             slot_value,
             raise_on_unknown=True,

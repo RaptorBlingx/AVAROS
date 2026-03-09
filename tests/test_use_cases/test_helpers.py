@@ -5,12 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from unittest.mock import Mock
+
 from skill._helpers import (
     canonicalize_asset_id,
     extract_intent_name,
     resolve_metric_from_utterance,
 )
-from skill.domain.models import CanonicalMetric
+from skill.domain.models import Asset, CanonicalMetric
 
 
 @dataclass
@@ -35,8 +37,12 @@ def test_resolve_metric_from_utterance_handles_co2_total_variants() -> None:
 
 def test_canonicalize_asset_id_normalizes_line_synonyms() -> None:
     """Asset canonicalizer should normalize spoken line aliases."""
-    assert canonicalize_asset_id(None, "line too") == "Line-2"
-    assert canonicalize_asset_id(None, "Compressor-1") == "Compressor-1"
+    skill = Mock()
+    skill._get_asset_registry.return_value = [
+        Asset(asset_id="Line-2", display_name="Line 2", asset_type="line"),
+    ]
+    assert canonicalize_asset_id(skill, "line too") == "Line-2"
+    assert canonicalize_asset_id(skill, "Compressor-1") == "Compressor-1"
 
 
 def test_extract_intent_name_reads_nested_intent_payload() -> None:
