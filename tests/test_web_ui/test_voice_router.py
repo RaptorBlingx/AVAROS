@@ -130,7 +130,7 @@ class TestGetVoiceConfigFromSettings:
         client: TestClient,
         settings_service: SettingsService,
     ) -> None:
-        """hivemind_url reflects stored SettingsService value."""
+        """hivemind_url is normalized for HiveMind websocket auth parsing."""
         settings_service.update_voice_config(
             VoiceConfig(hivemind_url="wss://prod.example.com/hivemind")
         )
@@ -138,7 +138,7 @@ class TestGetVoiceConfigFromSettings:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["hivemind_url"] == "wss://prod.example.com/hivemind"
+        assert data["hivemind_url"] == "wss://prod.example.com/hivemind/"
 
     def test_returns_configured_key(
         self,

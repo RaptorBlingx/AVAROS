@@ -604,9 +604,20 @@ export class HiveMindService {
     const authToken = btoa(
       `${this.config.clientName}:${this.config.accessKey}`,
     );
+
+    const normalizeAuthBaseUrl = (rawUrl: string): string => {
+      // HiveMind websocket auth parser expects '/?authorization=...' pattern.
+      // Ensure there is always a slash before the query string.
+      if (rawUrl.includes("?")) {
+        return rawUrl.replace(/([^/?])(\?)/, "$1/$2");
+      }
+      return rawUrl.endsWith("/") ? rawUrl : `${rawUrl}/`;
+    };
+
     const withAuth = baseUrls.map((url) => {
-      const separator = url.includes("?") ? "&" : "?";
-      return `${url}${separator}authorization=${authToken}`;
+      const normalizedUrl = normalizeAuthBaseUrl(url);
+      const separator = normalizedUrl.includes("?") ? "&" : "?";
+      return `${normalizedUrl}${separator}authorization=${authToken}`;
     });
     return [...new Set(withAuth)];
   }

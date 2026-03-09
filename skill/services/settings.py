@@ -43,6 +43,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet
 from sqlalchemy import create_engine
@@ -754,6 +755,20 @@ class SettingsService(ProfileMixin):
     VOICE_CLIENT_SECRET = "voice:hivemind_client_secret"
     VOICE_CLIENT_CRYPTO_KEY = "voice:hivemind_client_crypto_key"
 
+    @staticmethod
+    def _normalize_hivemind_ws_url(raw_url: str) -> str:
+        """Normalize HiveMind websocket URL for protocol auth parsing.
+
+        HiveMind websocket auth expects ``/?authorization=...``. Ensure
+        path-based endpoints such as ``.../hivemind`` include a trailing slash.
+        """
+        parsed = urlparse(raw_url)
+        if not parsed.scheme or not parsed.netloc:
+            return raw_url
+        if parsed.path.endswith("/hivemind"):
+            return f"{raw_url}/"
+        return raw_url
+
     def set_metric_mapping(self, metric_name: str, mapping: dict[str, Any]) -> None:
         """Store a metric mapping (profile-scoped, DEC-029).
 
@@ -812,7 +827,9 @@ class SettingsService(ProfileMixin):
 
         # If persisted values are empty strings, fall back to environment
         # bootstrap defaults to keep voice bridge operable.
-        hivemind_url = str(hivemind_url or env_url)
+        hivemind_url = self._normalize_hivemind_ws_url(
+            str(hivemind_url or env_url)
+        )
         hivemind_name = str(hivemind_name or env_name)
         hivemind_key = str(hivemind_key or env_key)
         hivemind_crypto_key = str(hivemind_crypto_key or env_crypto_key)

@@ -148,6 +148,23 @@ describe("HiveMindService", () => {
       );
     });
 
+    it("adds trailing slash before auth query for path-based URLs", async () => {
+      const svc = new HiveMindService(
+        createDefaultConfig({
+          url: "wss://avaros.int.arti.ac/hivemind",
+        }),
+      );
+      const connectPromise = svc.connect();
+
+      mockWsInstance!.simulateOpen();
+      await connectPromise;
+
+      const expectedAuth = btoa("avaros-web-client:test-key");
+      expect(mockWsInstance!.url).toContain(
+        `/hivemind/?authorization=${expectedAuth}`,
+      );
+    });
+
     it("transitions to connected state on open", async () => {
       const svc = new HiveMindService(createDefaultConfig());
       const states: ConnectionState[] = [];
