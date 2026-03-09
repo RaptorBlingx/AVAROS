@@ -8,6 +8,8 @@ import {
 } from "react";
 
 import { normalizeUtteranceForIntent } from "../src/services/intent-normalizer";
+import { BackendWakeWordService } from "../src/services/wake-word-backend";
+import type { DetectionPayload } from "../src/services/wake-word-backend";
 import { ConnectionManager } from "./ConnectionManager";
 import { WidgetButton } from "./WidgetButton";
 import { WidgetPanel } from "./WidgetPanel";
@@ -45,6 +47,9 @@ function pickInitialMode(disabledModes: WidgetMode[]): WidgetMode {
   return nextMode ?? "text";
 }
 
+/** Cooldown to avoid re-prompting "How can I help you?" from TTS echo. */
+const WAKE_WORD_PROMPT_COOLDOWN_MS = 3000;
+
 function makeMessage(source: "user" | "avaros", text: string): ChatMessage {
   return {
     id:
@@ -61,102 +66,6 @@ function deriveTheme(theme: WidgetTheme): "light" | "dark" {
   if (theme === "light") return "light";
   if (theme === "dark") return "dark";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
-
-function levenshteinDistance(a: string, b: string): number {
-  const rows = a.length + 1;
-  const cols = b.length + 1;
-  const dp = Array.from({ length: rows }, () => Array<number>(cols).fill(0));
-
-  for (let i = 0; i < rows; i += 1) dp[i][0] = i;
-  for (let j = 0; j < cols; j += 1) dp[0][j] = j;
-
-  for (let i = 1; i < rows; i += 1) {
-    for (let j = 1; j < cols; j += 1) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      dp[i][j] = Math.min(
-        dp[i - 1][j] + 1,
-        dp[i][j - 1] + 1,
-        dp[i - 1][j - 1] + cost,
-      );
-    }
-  }
-  return dp[a.length][b.length];
-}
-
-function isWakeAssistantToken(rawToken: string): boolean {
-  const token = rawToken.toLowerCase().replace(/[^a-z]/g, "");
-  if (!token) return false;
-
-  const known = new Set([
-    "avaros",
-    "alvaros",
-    "albertos",
-    "avaroz",
-    "avarus",
-    "avaross",
-    "avarros",
-    "alvarez",
-    "averos",
-    "averos",
-    "aberos",
-    "abaros",
-    "avros",
-    "avaris",
-  ]);
-  if (known.has(token)) return true;
-  if ((token.startsWith("ava") || token.startsWith("alva") || token.startsWith("ave") || token.startsWith("aba")) && token.length >= 4) {
-    return true;
-  }
-  return levenshteinDistance(token, "avaros") <= 3;
-}
-
-function looksLikeDirectCommand(raw: string): boolean {
-  const normalized = raw.toLowerCase().trim();
-  return /^(show|compare|check|what if|what is|trend|anomaly|energy|scrap)\b/.test(
-    normalized,
-  );
-}
-
-function parseWakeWordUtterance(raw: string): { hasWakeWord: boolean; command: string } {
-  const cleaned = raw.trim();
-  if (!cleaned) return { hasWakeWord: false, command: "" };
-
-  const wakeMatch = /(?:^|\b)(hey|hi|ok|okay|a|hei|hay)\s+([a-zA-Z]+)[\s,.:;-]*/i.exec(cleaned);
-  if (wakeMatch && wakeMatch.index !== undefined) {
-    const assistantToken = wakeMatch[2] ?? "";
-    if (isWakeAssistantToken(assistantToken)) {
-      const wakeEndIndex = wakeMatch.index + wakeMatch[0].length;
-      const command = cleaned.slice(wakeEndIndex).trim();
-      return { hasWakeWord: true, command };
-    }
-  }
-
-  const words = cleaned.toLowerCase().split(/\s+/);
-  if (words.length <= 3) {
-    for (const word of words) {
-      const stripped = word.replace(/[^a-z]/g, "");
-      if (isWakeAssistantToken(stripped)) {
-        const idx = cleaned.toLowerCase().indexOf(word);
-        const command = cleaned.slice(idx + word.length).trim();
-        return { hasWakeWord: true, command };
-      }
-    }
-  }
-
-  return { hasWakeWord: false, command: cleaned };
-}
-
-/** Ignore STT results that are our own TTS prompt (avoids acoustic feedback loop). */
-function isOwnPromptEcho(transcript: string): boolean {
-  const n = transcript.toLowerCase().trim().replace(/\s+/g, " ");
-  const patterns = [
-    "how can i help you",
-    "hey can i help you",
-    "how can i help",
-    "hey can i help",
-  ];
-  return patterns.some((p) => n === p || n.startsWith(p + " ") || n.includes(" " + p));
 }
 
 function pickPreferredVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
@@ -180,6 +89,10 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   const wakeWordArmedRef = useRef(false);
   const responseResolvedRef = useRef(true);
   const ttsVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  const backendWakeWordRef = useRef<BackendWakeWordService | null>(null);
+  const wakeWordPromptCooldownRef = useRef(0);
+  const appendMessageRef = useRef<(msg: ChatMessage) => void>(() => {});
+  const speakAssistantTextRef = useRef<(text: string) => void>(() => {});
 
   const [panelOpen, setPanelOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
@@ -222,7 +135,8 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
 
       clearTtsWatcher();
 
-      if (modeRef.current === "wake-word" && recognitionRef.current) {
+      // Pause browser STT during TTS to avoid echo pickup.
+      if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch { /* already stopped */ }
       }
 
@@ -236,11 +150,6 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       const onTtsDone = () => {
         clearTtsWatcher();
         setTtsSpeakingRef.current?.(false);
-        if (modeRef.current === "wake-word") {
-          setTimeout(() => {
-            restartRecognitionRef.current?.();
-          }, 100);
-        }
       };
 
       utterance.onend = onTtsDone;
@@ -257,6 +166,13 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     },
     [clearTtsWatcher],
   );
+
+  // ── Backend Wake Word lifecycle ────────────────────
+
+  const disposeBackendWakeWord = useCallback(() => {
+    backendWakeWordRef.current?.dispose();
+    backendWakeWordRef.current = null;
+  }, []);
 
   const ensureConnected = useCallback(() => {
     if (configError) return;
@@ -447,71 +363,37 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     recognition.lang = "en-US";
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
-    recognition.continuous = activeMode === "wake-word";
+    // Never use continuous mode. In wake-word mode the backend handles
+    // passive listening; browser STT only captures one command at a time.
+    recognition.continuous = false;
 
     recognition.onstart = () => {
       setMicActive(true);
     };
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
-      const currentMode = modeRef.current;
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         const result = event.results[index];
         if (!result.isFinal) continue;
         const transcript = result[0]?.transcript?.trim();
         if (!transcript) continue;
 
-        if (currentMode === "wake-word") {
-          if (window.speechSynthesis.speaking) continue;
-          if (isOwnPromptEcho(transcript)) continue;
-          const parsed = parseWakeWordUtterance(transcript);
-          if (parsed.hasWakeWord && parsed.command) {
-            setPanelOpen(true);
-            wakeWordArmedRef.current = false;
-            setWakeWordArmed(false);
-            void sendText(parsed.command);
-            continue;
-          }
-
-          if (parsed.hasWakeWord && !parsed.command) {
-            setPanelOpen(true);
-            wakeWordArmedRef.current = true;
-            setWakeWordArmed(true);
-            appendMessage(makeMessage("avaros", "How can I help you?"));
-            speakAssistantText("How can I help you?");
-            continue;
-          }
-
-          if (wakeWordArmedRef.current) {
-            const lower = transcript.toLowerCase().trim();
-            const isRetrigger = /^(hey|hi|ok|okay|hei|hay)\b/i.test(lower);
-            if (isRetrigger) {
-              setPanelOpen(true);
-              wakeWordArmedRef.current = true;
-              setWakeWordArmed(true);
-              appendMessage(makeMessage("avaros", "How can I help you?"));
-              speakAssistantText("How can I help you?");
-              continue;
-            }
-            wakeWordArmedRef.current = false;
-            setWakeWordArmed(false);
-            void sendText(transcript);
-            continue;
-          }
-
-          continue;
-        }
-
+        // Send the command to AVAROS.
+        wakeWordArmedRef.current = false;
+        setWakeWordArmed(false);
         void sendText(transcript);
         stopListening();
       }
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      if (modeRef.current === "wake-word") {
-        if (event.error === "no-speech" || event.error === "aborted") {
-          return;
+      if (event.error === "no-speech" || event.error === "aborted") {
+        // In wake-word armed mode, silence means user didn't follow up.
+        if (wakeWordArmedRef.current) {
+          wakeWordArmedRef.current = false;
+          setWakeWordArmed(false);
         }
+        return;
       }
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
         setMicError("Microphone permission blocked. Allow access and retry.");
@@ -526,19 +408,12 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
 
     recognition.onend = () => {
       recognitionRef.current = null;
-      if (modeRef.current !== "wake-word") {
-        setMicActive(false);
+      setMicActive(false);
+      // If wake-word armed but no command captured, disarm.
+      if (wakeWordArmedRef.current) {
+        wakeWordArmedRef.current = false;
         setWakeWordArmed(false);
-        return;
       }
-      if (window.speechSynthesis.speaking) {
-        return;
-      }
-      setTimeout(() => {
-        if (modeRef.current !== "wake-word") return;
-        if (window.speechSynthesis.speaking) return;
-        restartRecognitionRef.current?.();
-      }, 50);
     };
 
     try {
@@ -549,7 +424,6 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       setMicError("Could not start microphone.");
     }
   }, [
-    appendMessage,
     configError,
     micPermission,
     requestMicPermission,
@@ -568,6 +442,65 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   useEffect(() => {
     wakeWordArmedRef.current = wakeWordArmed;
   }, [wakeWordArmed]);
+
+  // Keep refs current so the onDetected handler never captures stale callbacks.
+  appendMessageRef.current = appendMessage;
+  speakAssistantTextRef.current = speakAssistantText;
+
+  // ── Backend Wake Word: lifecycle + detection (single effect) ──
+  useEffect(() => {
+    if (mode !== "wake-word") {
+      backendWakeWordRef.current?.dispose();
+      backendWakeWordRef.current = null;
+      return;
+    }
+
+    if (backendWakeWordRef.current) return;
+    const bww = new BackendWakeWordService();
+    backendWakeWordRef.current = bww;
+
+    // Wire onDetected BEFORE startListening to avoid losing events.
+    const unsubDetected = bww.onDetected((_payload: DetectionPayload) => {
+      // Cooldown: suppress re-triggers within a short window (e.g. TTS echo).
+      if (Date.now() < wakeWordPromptCooldownRef.current) return;
+      if (window.speechSynthesis.speaking) return;
+
+      wakeWordPromptCooldownRef.current = Date.now() + WAKE_WORD_PROMPT_COOLDOWN_MS;
+      setPanelOpen(true);
+      wakeWordArmedRef.current = true;
+      setWakeWordArmed(true);
+      appendMessageRef.current(makeMessage("avaros", "How can I help you?"));
+      speakAssistantTextRef.current("How can I help you?");
+
+      // After TTS finishes, start single-shot browser STT for command capture.
+      const captureDelay = 1800; // rough TTS duration for "How can I help you?"
+      setTimeout(() => {
+        if (modeRef.current !== "wake-word") return;
+        if (!wakeWordArmedRef.current) return;
+        restartRecognitionRef.current?.();
+      }, captureDelay);
+    });
+
+    // Initialize and start listening after handler is wired.
+    void (async () => {
+      try {
+        await bww.initialize();
+        await bww.startListening();
+      } catch {
+        // Backend unavailable — degrade to push-to-talk.
+        bww.dispose();
+        backendWakeWordRef.current = null;
+        setMode((prev) => (prev === "wake-word" ? "push-to-talk" : prev));
+        modeRef.current = "push-to-talk";
+      }
+    })();
+
+    return () => {
+      unsubDetected();
+      bww.dispose();
+      backendWakeWordRef.current = null;
+    };
+  }, [mode]);
 
   useEffect(() => {
     if (!("speechSynthesis" in window)) return;
@@ -664,6 +597,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       clearFallbackTimer();
       clearCompletionTimer();
       stopListening();
+      disposeBackendWakeWord();
       responseResolvedRef.current = true;
       setWakeWordArmed(false);
     };
@@ -677,6 +611,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     config.encryptionKey,
     config.host,
     configError,
+    disposeBackendWakeWord,
     resolveAssistantMessage,
     stopListening,
   ]);
@@ -731,19 +666,12 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   }, [panelOpen, stopListening, mode, processing, handleCancelRequest]);
 
   useEffect(() => {
-    if (
-      mode === "wake-word" &&
-      connectionState === "connected" &&
-      micPermission === "granted" &&
-      !micActive &&
-      !recognitionRef.current
-    ) {
-      void startListening();
-    }
+    // In wake-word mode, the backend service handles passive listening.
+    // Browser STT is only started on-demand after detection.
     if (mode !== "wake-word") {
       setWakeWordArmed(false);
     }
-  }, [connectionState, micActive, micPermission, mode, startListening]);
+  }, [mode]);
 
   useEffect(() => {
     onReady({

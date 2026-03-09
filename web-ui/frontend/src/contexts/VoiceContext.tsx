@@ -172,66 +172,6 @@ function isLikelyNoiseUtterance(raw: string): boolean {
   return false;
 }
 
-function parseWakeWordUtterance(raw: string): {
-  hasWakeWord: boolean;
-  command: string;
-} {
-  const cleaned = raw.trim();
-  if (!cleaned) return { hasWakeWord: false, command: "" };
-
-  const normalizeToken = (value: string): string => {
-    return value
-      .toLowerCase()
-      .replace(/\u0131/g, "i")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z]/g, "");
-  };
-
-  const looksLikeWakeAlias = (token: string): boolean => {
-    const t = normalizeToken(token);
-    if (!t) return false;
-    if (
-      /^(avaros|abaros|alvaros|albertos|alberto|avarose|avarus|avaross|avarois|avaroz)$/.test(
-        t,
-      )
-    ) {
-      return true;
-    }
-    // Accept near-matches frequently produced by fallback STT.
-    return t.startsWith("avar") && t.length >= 5;
-  };
-
-  const words = cleaned.split(/\s+/).filter(Boolean);
-  const wakeIndex = words.findIndex((word, index) => {
-    if (looksLikeWakeAlias(word)) return true;
-    // Handle split phrase variants like "a varos"
-    if (
-      normalizeToken(word) === "a" &&
-      index + 1 < words.length &&
-      looksLikeWakeAlias(words[index + 1])
-    ) {
-      return true;
-    }
-    return false;
-  });
-
-  if (wakeIndex === -1) {
-    return { hasWakeWord: false, command: "" };
-  }
-
-  let commandStart = wakeIndex + 1;
-  if (
-    normalizeToken(words[wakeIndex] ?? "") === "a" &&
-    looksLikeWakeAlias(words[wakeIndex + 1] ?? "")
-  ) {
-    commandStart = wakeIndex + 2;
-  }
-
-  const command = words.slice(commandStart).join(" ").trim();
-  return { hasWakeWord: true, command };
-}
-
 interface VoiceProviderProps {
   children: ReactNode;
 }
@@ -463,21 +403,17 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         let transcript = result.transcript;
         if (voiceMode === "wake-word") {
           if (isOwnPromptEcho(transcript, lastTtsUtteranceRef.current)) return;
-          const parsed = parseWakeWordUtterance(transcript);
-          if (parsed.hasWakeWord && parsed.command) {
-            clearWakeWordCommandWindow();
-            transcript = parsed.command;
-          } else if (parsed.hasWakeWord && !parsed.command) {
-            triggerWakeWordPrompt();
-            void startWakeWordCommandCapture();
-            return;
-          } else if (isWakeWordCommandWindowOpen()) {
+          // In wake-word mode, STT is only active during the command window
+          // (after the backend openWakeWord detected the wake phrase).
+          // Accept the transcript as a command — no text-based wake word
+          // parsing needed (the backend already validated detection).
+          if (isWakeWordCommandWindowOpen()) {
             clearWakeWordCommandWindow();
           } else {
+            // STT fired outside the command window — discard.
             setFinalTranscript("");
             setInterimTranscript("");
             setVoiceState("idle");
-            clearWakeWordCommandWindow();
             return;
           }
         }
@@ -544,9 +480,6 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   }, [
     sttSupported,
     voiceMode,
-    armWakeWordCommandWindow,
-    promptWakeWordReady,
-    triggerWakeWordPrompt,
     isWakeWordCommandWindowOpen,
     clearWakeWordCommandWindow,
   ]);
