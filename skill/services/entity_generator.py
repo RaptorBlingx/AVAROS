@@ -58,15 +58,12 @@ def _normalize(value: str) -> str:
 def _default_mock_assets() -> list[Asset]:
     assets: list[Asset] = []
     for asset_name in MockAdapter._DEMO_ASSETS:
-        display_name = asset_name
-        aliases = [asset_name.lower().replace("-", " ")]
-        asset_type = "line" if asset_name.lower().startswith("line-") else "machine"
         assets.append(
             Asset(
                 asset_id=asset_name,
-                display_name=display_name,
-                asset_type=asset_type,
-                aliases=aliases,
+                display_name=asset_name,
+                asset_type=MockAdapter._infer_asset_type(asset_name),
+                aliases=MockAdapter._build_asset_aliases(asset_name),
                 metadata={"source": "mock_demo"},
             )
         )

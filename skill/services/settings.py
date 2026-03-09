@@ -60,6 +60,15 @@ from skill.services.entity_generator import (
 from skill.services.models import PlatformConfig, VoiceConfig  # re-export
 from skill.services.profiles import ProfileMixin
 
+try:
+    import websocket as _ws_lib  # websocket-client
+except ImportError:  # pragma: no cover
+    _ws_lib = None  # type: ignore[assignment]
+
+_MESSAGEBUS_URL = os.environ.get(
+    "OVOS_MESSAGEBUS_URL", "ws://ovos_messagebus:8181/core",
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -1125,6 +1134,26 @@ class SettingsService(ProfileMixin):
             )
         except Exception as exc:
             logger.warning("Asset entity regeneration failed: %s", exc)
+        self._notify_entity_refresh(profile)
+
+    @staticmethod
+    def _notify_entity_refresh(profile_name: str) -> bool:
+        """Emit best-effort entity refresh event to OVOS message bus."""
+        if _ws_lib is None:
+            return False
+        try:
+            ws = _ws_lib.create_connection(_MESSAGEBUS_URL, timeout=3)
+            payload = json.dumps({
+                "type": "avaros.entities.updated",
+                "data": {"profile": profile_name},
+                "context": {},
+            })
+            ws.send(payload)
+            ws.close()
+            return True
+        except Exception as exc:
+            logger.warning("Could not notify entity refresh via messagebus: %s", exc)
+            return False
 
     def _asset_models_for_profile(self, profile: str) -> list[Asset]:
         """Build canonical assets from profile-scoped mapping rows."""
