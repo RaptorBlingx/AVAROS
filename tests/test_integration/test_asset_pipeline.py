@@ -11,9 +11,6 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from skill._helpers import canonicalize_asset_id, get_asset_registry
 from skill.adapters.factory import AdapterFactory
@@ -25,33 +22,14 @@ from skill.services.entity_generator import (
     regenerate_asset_entities_for_all_locales,
 )
 from skill.services.models import PlatformConfig
-from skill.services.settings import Base, SettingsService
+from skill.services.settings import SettingsService
 from skill.use_cases.query_dispatcher import QueryDispatcher
+from tests.conftest import build_test_settings_service
 
 
 def _read_lines(path: Path) -> list[str]:
     text = path.read_text(encoding="utf-8")
     return [line.strip() for line in text.splitlines() if line.strip()]
-
-
-def _build_settings_service(database_url: str = "sqlite:///:memory:") -> SettingsService:
-    """Create an initialized SettingsService suitable for integration tests."""
-    if database_url == "sqlite:///:memory:":
-        service = SettingsService()
-        engine = create_engine(
-            database_url,
-            poolclass=StaticPool,
-            connect_args={"check_same_thread": False},
-        )
-        service._engine = engine
-        service._session_factory = sessionmaker(bind=engine, expire_on_commit=False)
-        Base.metadata.create_all(engine)
-        service._initialized = True
-        return service
-
-    service = SettingsService(database_url=database_url)
-    service.initialize()
-    return service
 
 
 def _build_skill_harness(settings_service: SettingsService) -> Any:
@@ -90,23 +68,27 @@ def _build_skill_harness(settings_service: SettingsService) -> Any:
     return _Harness()
 
 
-def test_full_asset_pipeline_discovery_save_entity_generation_and_resolution(
+def test_asset_pipeline_end_to_end_resolves_voice_input(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     """Mock discovery -> Settings save -> entity files -> voice canonicalization."""
+    # --- Arrange: locale dirs + SettingsService with a profile ---
     locale_root = tmp_path / "locale"
     (locale_root / "en-us").mkdir(parents=True)
     (locale_root / "tr-tr").mkdir(parents=True)
     monkeypatch.setenv("AVAROS_LOCALE_ROOT", str(locale_root))
 
-    service = _build_settings_service(database_url=f"sqlite:///{tmp_path / 'asset-pipeline.db'}")
+    service = build_test_settings_service(
+        database_url=f"sqlite:///{tmp_path / 'asset-pipeline.db'}",
+    )
     service.create_profile(
         "reneryo-prod",
         PlatformConfig(platform_type="reneryo", api_url="https://reneryo.example.com"),
     )
     service.set_active_profile("reneryo-prod")
 
+    # --- Act 1: Discovery + persist mappings ---
     adapter = MockAdapter()
     discovered_assets = asyncio.run(adapter.list_assets())
     assert len(discovered_assets) == 10
@@ -123,9 +105,11 @@ def test_full_asset_pipeline_discovery_save_entity_generation_and_resolution(
     mappings["Line-1"]["aliases"] = ["line 1", "production line one"]
     service.set_asset_mappings(mappings, profile="reneryo-prod")
 
+    # --- Act 2: Entity file generation ---
     regenerate_asset_entities(discovered_assets, locale_root / "en-us")
     regenerate_asset_entities_for_all_locales(discovered_assets, locale_root)
 
+    # --- Assert: entity files ---
     en_lines = _read_lines(locale_root / "en-us" / "asset.entity")
     tr_lines = _read_lines(locale_root / "tr-tr" / "asset.entity")
     assert "line 1" in en_lines
@@ -133,10 +117,12 @@ def test_full_asset_pipeline_discovery_save_entity_generation_and_resolution(
     assert _read_lines(locale_root / "en-us" / "asset_a.entity") == en_lines
     assert _read_lines(locale_root / "en-us" / "asset_b.entity") == en_lines
 
+    # --- Act 3: Voice canonicalization ---
     skill = _build_skill_harness(service)
     resolved = skill._canonicalize_asset_id("production line one", raise_on_unknown=True)
     assert resolved == "Line-1"
 
+    # --- Assert: unknown asset raises with helpful message ---
     with pytest.raises(AssetNotFoundError) as exc_info:
         skill._canonicalize_asset_id("nonexistent thing", raise_on_unknown=True)
     exc = exc_info.value
@@ -155,7 +141,9 @@ def test_asset_profile_isolation_across_reneryo_custom_and_mock(
     locale_root = tmp_path / "locale"
     (locale_root / "en-us").mkdir(parents=True)
     monkeypatch.setenv("AVAROS_LOCALE_ROOT", str(locale_root))
-    service = _build_settings_service(database_url=f"sqlite:///{tmp_path / 'asset-isolation.db'}")
+    service = build_test_settings_service(
+        database_url=f"sqlite:///{tmp_path / 'asset-isolation.db'}",
+    )
     service.create_profile(
         "reneryo-prod",
         PlatformConfig(platform_type="reneryo", api_url="https://reneryo.example.com"),
@@ -203,7 +191,9 @@ def test_web_ui_discover_endpoint_mock_profile_returns_generic_assets(tmp_path: 
     from dependencies import get_settings_service  # type: ignore[import-not-found]
     from main import app  # type: ignore[import-not-found]
 
-    settings = _build_settings_service(database_url=f"sqlite:///{tmp_path / 'asset-web-ui.db'}")
+    settings = build_test_settings_service(
+        database_url=f"sqlite:///{tmp_path / 'asset-web-ui.db'}",
+    )
     settings.set_active_profile("mock")
     app.dependency_overrides[get_settings_service] = lambda: settings
 
