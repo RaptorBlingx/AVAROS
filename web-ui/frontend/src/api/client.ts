@@ -487,42 +487,17 @@ export function discoverAssets(): Promise<AssetDiscoveryResponse> {
   );
 }
 
-async function requestAssetMappingsPrimary(): Promise<AssetMappingsResponse> {
+export function getConfiguredAssets(): Promise<AssetMappingsResponse> {
   return request<AssetMappingsResponse>("/api/v1/config/assets");
 }
 
-async function requestAssetMappingsLegacy(): Promise<AssetMappingsResponse> {
-  return request<AssetMappingsResponse>("/api/v1/assets/mappings");
-}
-
-export async function getConfiguredAssets(): Promise<AssetMappingsResponse> {
-  try {
-    return await requestAssetMappingsPrimary();
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 404) {
-      return requestAssetMappingsLegacy();
-    }
-    throw error;
-  }
-}
-
-export async function saveConfiguredAssets(
+export function saveConfiguredAssets(
   assetMappings: AssetMappingsResponse["asset_mappings"],
 ): Promise<AssetMappingsResponse> {
-  try {
-    return await request<AssetMappingsResponse>("/api/v1/config/assets", {
-      method: "POST",
-      body: { asset_mappings: assetMappings },
-    });
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 404) {
-      return request<AssetMappingsResponse>("/api/v1/assets/mappings", {
-        method: "PUT",
-        body: { asset_mappings: assetMappings },
-      });
-    }
-    throw error;
-  }
+  return request<AssetMappingsResponse>("/api/v1/config/assets", {
+    method: "POST",
+    body: { asset_mappings: assetMappings },
+  });
 }
 
 // Backward-compatible aliases for existing callers.
