@@ -75,6 +75,19 @@ All environment variables used by AVAROS services. Set these in the `.env` file 
 | `AVAROS_DATA_PATH` | No | `/data` | Skill | Path for local data storage |
 | `AVAROS_PORT` | No | `8080` | Skill | Port for standalone skill API (non-Docker) |
 
+## Reneryo Data Generator
+
+These variables configure the `tools/reneryo-mock/generator.py` daemon that seeds and continuously writes manufacturing data into Reneryo for all 19 AVAROS canonical metrics.
+
+| Variable | Required | Default | Used By | Description |
+|----------|----------|---------|---------|-------------|
+| `RENERYO_API_URL` | No | `http://deploys.int.arti.ac:31290/api` | Generator | Reneryo API base URL |
+| `RENERYO_SESSION_COOKIE` | Yes | *(none)* | Generator | Valid session cookie for Reneryo authentication. Obtain from browser DevTools after login. |
+| `GENERATOR_MODE` | No | `seed` | Generator | Operating mode: `seed` (historical backfill), `daemon` (continuous every interval), `verify` (read-back check), `list` (show mapping) |
+| `GENERATOR_INTERVAL` | No | `900` | Generator | Seconds between daemon writes (default 15 min) |
+| `GENERATOR_SEED_DAYS` | No | `90` | Generator | Days of historical data to seed on first run |
+| `GENERATOR_BATCH_DELAY` | No | `100` | Generator | Milliseconds between API batches (rate limiting) |
+
 ---
 
 ## Quick Setup

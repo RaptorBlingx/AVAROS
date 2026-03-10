@@ -11,12 +11,13 @@ from pydantic import BaseModel, Field
 from dependencies import get_adapter_factory, get_settings_service
 from skill.adapters.factory import AdapterFactory
 from skill.domain.exceptions import ValidationError
-from skill.domain.models import Asset
+from skill.domain.models import Asset, CanonicalMetric
 from skill.services.settings import SettingsService
 
 
 router = APIRouter(prefix="/api/v1", tags=["assets"])
 logger = logging.getLogger(__name__)
+_CANONICAL_METRICS = {metric.value for metric in CanonicalMetric}
 
 
 class AssetItem(BaseModel):
@@ -48,6 +49,79 @@ class AssetMappingsResponse(BaseModel):
     """Response model for profile-scoped asset mappings."""
 
     asset_mappings: dict[str, dict[str, Any]]
+
+
+class GeneratorMappingRequest(BaseModel):
+    """Accept mapping_output.json format from Reneryo data generator.
+
+    Generator outputs: ``{metric_name: {asset_id: resource_id}}``.
+    This endpoint transforms and merges it into SettingsService
+    asset mappings as ``{asset_id: {"metric_resources": {metric: rid}}}``.
+    """
+
+    mapping: dict[str, dict[str, str]]
+
+
+class GeneratorMappingResponse(BaseModel):
+    """Result of importing generator mapping into asset mappings."""
+
+    imported_metrics: int
+    imported_resources: int
+    asset_mappings: dict[str, dict[str, Any]]
+
+
+def _transform_generator_mapping(
+    generator_mapping: dict[str, dict[str, str]],
+) -> dict[str, dict[str, str]]:
+    """Invert generator mapping to per-asset metric_resources dict.
+
+    Args:
+        generator_mapping: ``{metric_name: {asset_id: resource_id}}``
+
+    Returns:
+        ``{asset_id: {metric_name: resource_id}}`` (inner dict only,
+        caller wraps in ``metric_resources`` key).
+    """
+    per_asset: dict[str, dict[str, str]] = {}
+    for metric_name, asset_map in generator_mapping.items():
+        if not isinstance(asset_map, dict):
+            continue
+        for asset_id, resource_id in asset_map.items():
+            if not isinstance(resource_id, str) or not resource_id.strip():
+                continue
+            per_asset.setdefault(asset_id, {})[metric_name] = resource_id.strip()
+    return per_asset
+
+
+def _warn_unknown_metrics(generator_mapping: dict[str, dict[str, str]]) -> None:
+    """Log unknown metric names to help operators catch typos."""
+    unknown = sorted(
+        metric_name
+        for metric_name in generator_mapping
+        if metric_name not in _CANONICAL_METRICS
+    )
+    if unknown:
+        logger.warning(
+            "Generator mapping contains unknown metrics: %s",
+            ", ".join(unknown),
+        )
+
+
+def _merge_generator_mapping(
+    existing: dict[str, dict[str, Any]],
+    per_asset: dict[str, dict[str, str]],
+) -> int:
+    """Merge per-asset metric_resources into existing asset mappings."""
+    total_resources = 0
+    for asset_id, metric_resources in per_asset.items():
+        entry = existing.get(asset_id, {})
+        old_resources = entry.get("metric_resources", {})
+        if not isinstance(old_resources, dict):
+            old_resources = {}
+        entry["metric_resources"] = {**old_resources, **metric_resources}
+        existing[asset_id] = entry
+        total_resources += len(metric_resources)
+    return total_resources
 
 
 def _supports_discovery(platform_type: str) -> bool:
@@ -165,4 +239,47 @@ async def discover_assets(
         supports_discovery=_supports_discovery(platform_type),
         assets=items,
         existing_mappings=settings_service.get_asset_mappings(),
+    )
+
+
+@router.post(
+    "/assets/import-generator-mapping",
+    response_model=GeneratorMappingResponse,
+)
+def import_generator_mapping(
+    payload: GeneratorMappingRequest,
+    settings_service: SettingsService = Depends(get_settings_service),
+) -> GeneratorMappingResponse:
+    """Import Reneryo data generator mapping_output.json into asset mappings.
+
+    Accepts the generator's ``{metric_name: {asset_id: resource_id}}``
+    format, transforms it to per-asset ``metric_resources`` dicts, and
+    merges into the existing SettingsService asset mappings.
+
+    Existing asset mapping fields (display_name, aliases, etc.) are
+    preserved — only ``metric_resources`` is updated/merged.
+    """
+    _warn_unknown_metrics(payload.mapping)
+    per_asset = _transform_generator_mapping(payload.mapping)
+    if not per_asset:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No valid metric-resource mappings found in payload",
+        )
+
+    existing = settings_service.get_asset_mappings()
+    total_resources = _merge_generator_mapping(existing, per_asset)
+
+    try:
+        settings_service.set_asset_mappings(existing)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=exc.message,
+        ) from exc
+
+    return GeneratorMappingResponse(
+        imported_metrics=len(payload.mapping),
+        imported_resources=total_resources,
+        asset_mappings=settings_service.get_asset_mappings(),
     )
