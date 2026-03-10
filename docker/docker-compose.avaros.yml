@@ -225,6 +225,28 @@ services:
       start_period: 5s
       retries: 3
 
+  avaros-data-generator:
+    container_name: avaros-data-generator
+    hostname: avaros-data-generator
+    build:
+      context: ../tools/reneryo-mock
+      dockerfile: Dockerfile.generator
+    restart: unless-stopped
+    environment:
+      - RENERYO_API_URL=${RENERYO_API_URL}
+      - RENERYO_SESSION_COOKIE=${RENERYO_SESSION_COOKIE}
+      - GENERATOR_MODE=daemon
+      - GENERATOR_INTERVAL=900
+      - GENERATOR_SEED_DAYS=90
+      - GENERATOR_BATCH_DELAY=100
+    networks:
+      - ovos
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
   reneryo-mock:
     container_name: reneryo-mock
     hostname: reneryo-mock
