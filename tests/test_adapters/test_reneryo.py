@@ -1091,7 +1091,7 @@ class TestReneryoGetRawData:
 
         with aioresponses() as mocked:
             mocked.get(
-                re.compile(r"https://reneryo\.example\.com/api/u/measurement/meter/item"),
+                re.compile(r"https://reneryo\.example\.com/api/v1/kpis/energy/per-unit"),
                 payload=[
                     {"value": 2.8, "unit": "kWh", "datetime": "2026-02-10T01:00:00Z",
                      "meter": "Line-1", "type": "energy_consumption", "id": "abc123"},
@@ -1115,7 +1115,7 @@ class TestReneryoGetRawData:
 
         with aioresponses() as mocked:
             mocked.get(
-                re.compile(r"https://reneryo\.example\.com/api/u/measurement/meter/item"),
+                re.compile(r"https://reneryo\.example\.com/api/v1/kpis/energy/per-unit"),
                 payload=[],
             )
             result = await initialized_adapter.get_raw_data(
@@ -1232,7 +1232,7 @@ class TestReneryoParsers:
 
         with aioresponses() as mocked:
             mocked.get(
-                re.compile(r"https://reneryo\.example\.com/api/u/measurement/meter/item"),
+                re.compile(r"https://reneryo\.example\.com/api/v1/kpis/energy/per-unit"),
                 payload=[{"unit": "kWh", "datetime": "2026-02-10T01:00:00Z"}],
             )
             with pytest.raises(AdapterError) as exc_info:
@@ -1710,3 +1710,406 @@ class TestReneryoConnectionTest:
             await adapter.test_connection()
 
         assert adapter._session is None
+
+
+# ===========================================================================
+# P7-E02: Compare/Raw Data Method Fixes + Endpoint Config
+# ===========================================================================
+
+
+class TestResolveEndpointPurposeGate:
+    """Tests for B4-PREREQ: _resolve_endpoint() accepts compare/raw purposes."""
+
+    def test_resolve_endpoint_compare_returns_metric_resource(self) -> None:
+        """purpose='compare' resolves metric resource URL for supported metric."""
+        adapter = ReneryoAdapter(
+            api_url="https://test", api_key="k", api_format="native",
+            asset_mappings={
+                "line_1": {
+                    "metric_resources": {"oee": "res-oee-123"},
+                },
+            },
+        )
+
+        endpoint = adapter._resolve_endpoint(
+            CanonicalMetric.OEE, purpose="compare", asset_id="line_1",
+        )
+
+        assert "/measurement/metric/resource/res-oee-123/values" in endpoint
+
+    def test_resolve_endpoint_raw_returns_metric_resource(self) -> None:
+        """purpose='raw' resolves metric resource URL for supported metric."""
+        adapter = ReneryoAdapter(
+            api_url="https://test", api_key="k", api_format="native",
+            asset_mappings={
+                "line_1": {
+                    "metric_resources": {"scrap_rate": "res-scrap-456"},
+                },
+            },
+        )
+
+        endpoint = adapter._resolve_endpoint(
+            CanonicalMetric.SCRAP_RATE, purpose="raw", asset_id="line_1",
+        )
+
+        assert "/measurement/metric/resource/res-scrap-456/values" in endpoint
+
+    def test_resolve_endpoint_compare_energy_still_returns_meter(self) -> None:
+        """Energy metrics still route to meter endpoint for compare (regression)."""
+        adapter = ReneryoAdapter(
+            api_url="https://test", api_key="k", api_format="native",
+        )
+
+        endpoint = adapter._resolve_endpoint(
+            CanonicalMetric.ENERGY_TOTAL, purpose="compare",
+        )
+
+        assert endpoint == "/api/u/measurement/meter/item"
+
+    def test_resolve_endpoint_raw_energy_still_returns_meter(self) -> None:
+        """Energy metrics still route to meter endpoint for raw (regression)."""
+        adapter = ReneryoAdapter(
+            api_url="https://test", api_key="k", api_format="native",
+        )
+
+        endpoint = adapter._resolve_endpoint(
+            CanonicalMetric.ENERGY_TOTAL, purpose="raw",
+        )
+
+        assert endpoint == "/api/u/measurement/meter/item"
+
+
+class TestEndpointConfig:
+    """Tests for B7 + B8: REAL_SUPPORTED_METRICS and REAL_PRODUCTION_METRICS."""
+
+    def test_real_supported_metrics_contains_all_19(self) -> None:
+        """REAL_SUPPORTED_METRICS contains exactly 19 CanonicalMetric values."""
+        from skill.adapters.reneryo._endpoints import REAL_SUPPORTED_METRICS
+
+        assert len(REAL_SUPPORTED_METRICS) == 19
+        for metric in CanonicalMetric:
+            assert metric in REAL_SUPPORTED_METRICS, (
+                f"{metric.value} missing from REAL_SUPPORTED_METRICS"
+            )
+
+    def test_real_production_metrics_is_empty(self) -> None:
+        """REAL_PRODUCTION_METRICS is empty frozenset per DEC-035."""
+        from skill.adapters.reneryo._endpoints import REAL_PRODUCTION_METRICS
+
+        assert REAL_PRODUCTION_METRICS == frozenset()
+        assert isinstance(REAL_PRODUCTION_METRICS, frozenset)
+
+    def test_real_energy_metrics_unchanged(self) -> None:
+        """REAL_ENERGY_METRICS still contains exactly 4 energy metrics."""
+        from skill.adapters.reneryo._endpoints import REAL_ENERGY_METRICS
+
+        assert len(REAL_ENERGY_METRICS) == 4
+        assert CanonicalMetric.ENERGY_PER_UNIT in REAL_ENERGY_METRICS
+        assert CanonicalMetric.ENERGY_TOTAL in REAL_ENERGY_METRICS
+        assert CanonicalMetric.PEAK_DEMAND in REAL_ENERGY_METRICS
+        assert CanonicalMetric.PEAK_TARIFF_EXPOSURE in REAL_ENERGY_METRICS
+
+    def test_real_material_metrics_has_4(self) -> None:
+        """REAL_MATERIAL_METRICS contains 4 material metrics."""
+        from skill.adapters.reneryo._endpoints import REAL_MATERIAL_METRICS
+
+        assert len(REAL_MATERIAL_METRICS) == 4
+        assert CanonicalMetric.SCRAP_RATE in REAL_MATERIAL_METRICS
+        assert CanonicalMetric.MATERIAL_EFFICIENCY in REAL_MATERIAL_METRICS
+
+    def test_real_carbon_metrics_has_3(self) -> None:
+        """REAL_CARBON_METRICS contains 3 carbon metrics."""
+        from skill.adapters.reneryo._endpoints import REAL_CARBON_METRICS
+
+        assert len(REAL_CARBON_METRICS) == 3
+        assert CanonicalMetric.CO2_PER_UNIT in REAL_CARBON_METRICS
+
+    def test_real_supplier_metrics_has_4(self) -> None:
+        """REAL_SUPPLIER_METRICS contains 4 supplier metrics."""
+        from skill.adapters.reneryo._endpoints import REAL_SUPPLIER_METRICS
+
+        assert len(REAL_SUPPLIER_METRICS) == 4
+        assert CanonicalMetric.SUPPLIER_LEAD_TIME in REAL_SUPPLIER_METRICS
+
+    def test_real_generated_metrics_has_4(self) -> None:
+        """REAL_GENERATED_METRICS contains 4 production metrics."""
+        from skill.adapters.reneryo._endpoints import REAL_GENERATED_METRICS
+
+        assert len(REAL_GENERATED_METRICS) == 4
+        assert CanonicalMetric.OEE in REAL_GENERATED_METRICS
+        assert CanonicalMetric.THROUGHPUT in REAL_GENERATED_METRICS
+
+
+class TestCompareMetricResource:
+    """Tests for B4: compare() per-asset metric resource loop."""
+
+    @pytest.mark.asyncio
+    async def test_compare_metric_resource_calls_per_asset(self) -> None:
+        """compare() with metric resource fetches once per asset."""
+        from unittest.mock import AsyncMock, call
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="key",
+            api_format="native",
+            asset_mappings={
+                "line_1": {"metric_resources": {"oee": "res-oee-1"}},
+                "line_2": {"metric_resources": {"oee": "res-oee-2"}},
+                "line_3": {"metric_resources": {"oee": "res-oee-3"}},
+            },
+        )
+        adapter._session = object()
+
+        responses = [
+            {"records": [
+                {"value": 80.0, "datetime": "2026-03-01T00:00:00Z"},
+                {"value": 85.0, "datetime": "2026-03-01T00:30:00Z"},
+            ]},
+            {"records": [
+                {"value": 90.0, "datetime": "2026-03-01T00:00:00Z"},
+                {"value": 92.0, "datetime": "2026-03-01T00:30:00Z"},
+            ]},
+            {"records": [
+                {"value": 75.0, "datetime": "2026-03-01T00:00:00Z"},
+                {"value": 78.0, "datetime": "2026-03-01T00:30:00Z"},
+            ]},
+        ]
+        adapter._retry_fetch = AsyncMock(side_effect=responses)
+
+        result = await adapter.compare(
+            CanonicalMetric.OEE,
+            ["line_1", "line_2", "line_3"],
+            TimePeriod.today(),
+        )
+
+        assert adapter._retry_fetch.call_count == 3
+        assert len(result.items) == 3
+        # OEE is higher-is-better, so line_2 (92.0) wins
+        assert result.winner_id == "line_2"
+        assert result.items[0].value == 92.0
+        assert result.items[1].value == 85.0
+        assert result.items[2].value == 78.0
+
+    @pytest.mark.asyncio
+    async def test_compare_metric_resource_uses_latest_value(self) -> None:
+        """compare() per-asset loop uses latest (last) record per asset."""
+        from unittest.mock import AsyncMock
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="key",
+            api_format="native",
+            asset_mappings={
+                "line_1": {"metric_resources": {"scrap_rate": "res-scrap-1"}},
+                "line_2": {"metric_resources": {"scrap_rate": "res-scrap-2"}},
+            },
+        )
+        adapter._session = object()
+        adapter._retry_fetch = AsyncMock(side_effect=[
+            {"records": [
+                {"value": 5.0, "datetime": "2026-03-01T00:00:00Z"},
+                {"value": 2.5, "datetime": "2026-03-01T00:30:00Z"},
+            ]},
+            {"records": [
+                {"value": 6.0, "datetime": "2026-03-01T00:00:00Z"},
+                {"value": 3.0, "datetime": "2026-03-01T00:30:00Z"},
+            ]},
+        ])
+
+        result = await adapter.compare(
+            CanonicalMetric.SCRAP_RATE,
+            ["line_1", "line_2"],
+            TimePeriod.today(),
+        )
+
+        # Latest values: line_1=2.5, line_2=3.0
+        # Scrap rate lower-is-better, so line_1 wins
+        assert result.winner_id == "line_1"
+        assert result.items[0].value == 2.5
+        assert result.items[1].value == 3.0
+
+    @pytest.mark.asyncio
+    async def test_compare_metric_resource_sends_period_raw(self) -> None:
+        """compare() per-asset loop sends period=RAW and count=100."""
+        from unittest.mock import AsyncMock
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="key",
+            api_format="native",
+            asset_mappings={
+                "line_1": {"metric_resources": {"oee": "res-1"}},
+                "line_2": {"metric_resources": {"oee": "res-2"}},
+            },
+        )
+        adapter._session = object()
+        adapter._retry_fetch = AsyncMock(side_effect=[
+            {"records": [{"value": 85.0, "datetime": "2026-03-01T00:00:00Z"}]},
+            {"records": [{"value": 90.0, "datetime": "2026-03-01T00:00:00Z"}]},
+        ])
+
+        await adapter.compare(
+            CanonicalMetric.OEE, ["line_1", "line_2"], TimePeriod.today(),
+        )
+
+        for call_args in adapter._retry_fetch.call_args_list:
+            params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("params", {})
+            assert params.get("period") == "RAW"
+            assert params.get("count") == "100"
+
+    @pytest.mark.asyncio
+    async def test_compare_seu_still_uses_single_fetch(self) -> None:
+        """compare() with SEU collection endpoint still uses single fetch (regression)."""
+        from aioresponses import aioresponses
+        from skill.domain.results import ComparisonResult
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="test-key",
+            api_format="native",
+            native_seu_id="seu-1",
+        )
+        await adapter.initialize()
+        try:
+            with aioresponses() as mocked:
+                mocked.get(
+                    re.compile(r"https://reneryo\.example\.com/api/u/measurement/seu/item\b"),
+                    payload={
+                        "records": [
+                            {"id": "seu-1", "name": "Line-1", "consumption": 100.0,
+                             "metric": {"unitGroup": "ENERGY"}},
+                            {"id": "seu-1", "name": "Line-2", "consumption": 120.0,
+                             "metric": {"unitGroup": "ENERGY"}},
+                        ],
+                    },
+                )
+                result = await adapter.compare(
+                    CanonicalMetric.ENERGY_PER_UNIT,
+                    ["Line-1", "Line-2"],
+                    TimePeriod.today(),
+                )
+                assert isinstance(result, ComparisonResult)
+                assert len(result.items) == 2
+        finally:
+            await adapter.shutdown()
+
+
+class TestGetRawDataEndpointResolution:
+    """Tests for B5: get_raw_data() uses _resolve_endpoint()."""
+
+    @pytest.mark.asyncio
+    async def test_get_raw_data_metric_resource_returns_data(self) -> None:
+        """get_raw_data() resolves to metric resource for non-energy metrics."""
+        from unittest.mock import AsyncMock
+        from skill.domain.models import DataPoint
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="key",
+            api_format="native",
+            asset_mappings={
+                "line_1": {"metric_resources": {"scrap_rate": "res-scrap-uuid"}},
+            },
+        )
+        adapter._session = object()
+        adapter._retry_fetch = AsyncMock(return_value={
+            "records": [
+                {"value": 2.1, "datetime": "2026-03-01T00:00:00Z"},
+                {"value": 2.3, "datetime": "2026-03-01T00:15:00Z"},
+                {"value": 2.5, "datetime": "2026-03-01T00:30:00Z"},
+            ],
+        })
+
+        result = await adapter.get_raw_data(
+            CanonicalMetric.SCRAP_RATE, "line_1", TimePeriod.today(),
+        )
+
+        assert len(result) == 3
+        assert isinstance(result[0], DataPoint)
+        assert result[0].value == 2.1
+        # Verify correct endpoint was called
+        call_endpoint = adapter._retry_fetch.call_args[0][0]
+        assert "/measurement/metric/resource/res-scrap-uuid/values" in call_endpoint
+
+    @pytest.mark.asyncio
+    async def test_get_raw_data_metric_resource_sends_period_raw(self) -> None:
+        """get_raw_data() with metric resource sends period=RAW and count=100."""
+        from unittest.mock import AsyncMock
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="key",
+            api_format="native",
+            asset_mappings={
+                "line_1": {"metric_resources": {"oee": "res-oee-uuid"}},
+            },
+        )
+        adapter._session = object()
+        adapter._retry_fetch = AsyncMock(return_value={
+            "records": [
+                {"value": 85.0, "datetime": "2026-03-01T00:00:00Z"},
+            ],
+        })
+
+        await adapter.get_raw_data(
+            CanonicalMetric.OEE, "line_1", TimePeriod.today(),
+        )
+
+        params = adapter._retry_fetch.call_args[0][1]
+        assert params.get("period") == "RAW"
+        assert params.get("count") == "100"
+
+    @pytest.mark.asyncio
+    async def test_get_raw_data_energy_still_uses_meter(self) -> None:
+        """get_raw_data() for energy metric still routes to meter (regression)."""
+        from aioresponses import aioresponses
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="key",
+            api_format="native",
+        )
+        await adapter.initialize()
+        try:
+            with aioresponses() as mocked:
+                mocked.get(
+                    re.compile(r"https://reneryo\.example\.com/api/u/measurement/meter/item"),
+                    payload={
+                        "records": [
+                            {"name": "Line-1", "consumption": 100.0,
+                             "metric": {"unitGroup": "ENERGY"}},
+                        ],
+                    },
+                )
+                result = await adapter.get_raw_data(
+                    CanonicalMetric.ENERGY_TOTAL, "Line-1", TimePeriod.today(),
+                )
+                assert len(result) == 1
+                assert result[0].value == 100.0
+        finally:
+            await adapter.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_get_raw_data_no_mapping_falls_to_endpoint_map(self) -> None:
+        """get_raw_data() without asset mappings uses mock endpoint map."""
+        from unittest.mock import AsyncMock
+        from skill.domain.models import DataPoint
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="key",
+            api_format="native",
+        )
+        adapter._session = object()
+        adapter._retry_fetch = AsyncMock(return_value=[
+            {"value": 82.0, "unit": "%", "timestamp": "2026-03-01T00:00:00Z"},
+        ])
+
+        result = await adapter.get_raw_data(
+            CanonicalMetric.OEE, "line_1", TimePeriod.today(),
+        )
+
+        assert len(result) == 1
+        # Without asset mapping, OEE falls to ENDPOINT_MAP
+        call_endpoint = adapter._retry_fetch.call_args[0][0]
+        assert "/api/v1/kpis/production/oee" in call_endpoint

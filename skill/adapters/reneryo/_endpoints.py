@@ -56,16 +56,43 @@ REAL_ENERGY_METRICS: frozenset[CanonicalMetric] = frozenset({
     CanonicalMetric.PEAK_TARIFF_EXPOSURE,
 })
 
-REAL_PRODUCTION_METRICS: frozenset[CanonicalMetric] = frozenset({
-    CanonicalMetric.OEE,
+# B8 (DEC-035): Reneryo has NO native production metrics. Empty per design.
+# Production metrics come via the data generator (custom metric bridge).
+REAL_PRODUCTION_METRICS: frozenset[CanonicalMetric] = frozenset()
+
+REAL_MATERIAL_METRICS: frozenset[CanonicalMetric] = frozenset({
     CanonicalMetric.SCRAP_RATE,
+    CanonicalMetric.REWORK_RATE,
+    CanonicalMetric.MATERIAL_EFFICIENCY,
+    CanonicalMetric.RECYCLED_CONTENT,
+})
+
+REAL_CARBON_METRICS: frozenset[CanonicalMetric] = frozenset({
+    CanonicalMetric.CO2_PER_UNIT,
+    CanonicalMetric.CO2_TOTAL,
+    CanonicalMetric.CO2_PER_BATCH,
+})
+
+REAL_SUPPLIER_METRICS: frozenset[CanonicalMetric] = frozenset({
+    CanonicalMetric.SUPPLIER_LEAD_TIME,
+    CanonicalMetric.SUPPLIER_DEFECT_RATE,
+    CanonicalMetric.SUPPLIER_ON_TIME,
+    CanonicalMetric.SUPPLIER_CO2_PER_KG,
+})
+
+REAL_GENERATED_METRICS: frozenset[CanonicalMetric] = frozenset({
+    CanonicalMetric.OEE,
     CanonicalMetric.THROUGHPUT,
     CanonicalMetric.CYCLE_TIME,
     CanonicalMetric.CHANGEOVER_TIME,
 })
 
 REAL_SUPPORTED_METRICS: frozenset[CanonicalMetric] = frozenset(
-    set(REAL_ENERGY_METRICS) | set(REAL_PRODUCTION_METRICS),
+    REAL_ENERGY_METRICS
+    | REAL_MATERIAL_METRICS
+    | REAL_CARBON_METRICS
+    | REAL_SUPPLIER_METRICS
+    | REAL_GENERATED_METRICS,
 )
 
 SUPPORTED_CAPABILITIES: set[str] = {"carbon", "realtime"}

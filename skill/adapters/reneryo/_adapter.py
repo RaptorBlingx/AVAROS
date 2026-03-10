@@ -215,6 +215,15 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             AdapterError: On connection, auth, or parse errors.
         """
         self._ensure_initialized()
+
+        # Probe with first asset to detect metric resource endpoints.
+        probe_endpoint = self._resolve_endpoint(
+            metric, purpose="compare", asset_id=asset_ids[0],
+        )
+        if self._is_metric_resource_endpoint(probe_endpoint):
+            data = await self._compare_per_asset(metric, asset_ids, period)
+            return parse_comparison_response(data, metric, period)
+
         endpoint = self._resolve_endpoint(
             metric, purpose="compare", asset_ids=asset_ids,
         )
@@ -354,14 +363,18 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             AdapterError: On connection, auth, or parse errors.
         """
         self._ensure_initialized()
+        endpoint = self._resolve_endpoint(metric, purpose="raw", asset_id=asset_id)
         params = self._build_query_params(
-            asset_id=asset_id, period=period,
+            asset_id=asset_id,
+            period=period,
+            is_metric_resource=self._is_metric_resource_endpoint(endpoint),
         )
-        data = await self._retry_fetch(
-            REAL_METER_ENDPOINT, params,
-        )
+        data = await self._retry_fetch(endpoint, params)
         if is_native_format(data):
-            data = normalize_meters_to_raw(data)
+            if self._is_metric_resource_endpoint(endpoint):
+                data = normalize_metric_resource_to_trend(data)
+            else:
+                data = normalize_meters_to_raw(data)
         if not isinstance(data, list):
             data = [data]
         return parse_raw_data_response(data, metric)
@@ -501,7 +514,7 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             if metric in REAL_ENERGY_METRICS:
                 return REAL_METER_ENDPOINT
 
-            if metric in REAL_SUPPORTED_METRICS and purpose in {"kpi", "trend"}:
+            if metric in REAL_SUPPORTED_METRICS and purpose in {"kpi", "trend", "compare", "raw"}:
                 resource_id = self._resolve_metric_resource_id(metric, asset_id)
                 if resource_id:
                     encoded_resource_id = quote(resource_id, safe="")
@@ -583,6 +596,59 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
 
         params["asset_ids"] = ",".join(asset_ids)
         return params
+
+    async def _compare_per_asset(
+        self,
+        metric: CanonicalMetric,
+        asset_ids: list[str],
+        period: TimePeriod,
+    ) -> list[dict]:
+        """Fetch metric resource per asset and build comparison items.
+
+        Each metric resource has a separate resource_id per asset.
+        Fetches individually, extracts latest value, and returns
+        comparison-format dicts for ``parse_comparison_response``.
+
+        Args:
+            metric: The canonical metric to compare.
+            asset_ids: List of assets to compare.
+            period: Time period for comparison.
+
+        Returns:
+            List of dicts: ``[{"asset_id", "value", "unit"}, ...]``.
+        """
+        items: list[dict] = []
+        for asset_id in asset_ids:
+            endpoint = self._resolve_endpoint(
+                metric, purpose="compare", asset_id=asset_id,
+            )
+            params = self._build_query_params(
+                asset_id=asset_id,
+                period=period,
+                is_metric_resource=True,
+            )
+            data = await self._retry_fetch(endpoint, params)
+            if is_native_format(data):
+                kpi = normalize_metric_resource_to_kpi(data)
+                items.append({
+                    "asset_id": asset_id,
+                    "value": kpi["value"],
+                    "unit": kpi.get("unit", metric.default_unit),
+                })
+            else:
+                raise AdapterError(
+                    message=(
+                        "Unexpected non-native response while comparing "
+                        f"metric resource for asset '{asset_id}'"
+                    ),
+                    code="RENERYO_UNEXPECTED_RESPONSE_FORMAT",
+                    platform="reneryo",
+                    user_message=(
+                        "I couldn't parse the comparison data from Reneryo. "
+                        "Please try again in a moment."
+                    ),
+                )
+        return items
 
     def _requires_native_period(self, endpoint: str) -> bool:
         """Return whether endpoint requires ``period`` query parameter.
