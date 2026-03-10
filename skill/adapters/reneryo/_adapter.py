@@ -155,6 +155,7 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             asset_id=asset_id,
             period=period,
             include_native_period=self._requires_native_period(endpoint),
+            is_metric_resource=self._is_metric_resource_endpoint(endpoint),
         )
         try:
             data = await self._retry_fetch(endpoint, params)
@@ -277,6 +278,7 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             period=period,
             granularity=granularity,
             include_native_period=self._requires_native_period(endpoint),
+            is_metric_resource=self._is_metric_resource_endpoint(endpoint),
         )
         try:
             data = await self._retry_fetch(endpoint, params)
@@ -521,6 +523,7 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
         period: TimePeriod | None = None,
         granularity: str = "",
         include_native_period: bool = False,
+        is_metric_resource: bool = False,
     ) -> dict[str, str]:
         """
         Build query parameters for both mock and real API formats.
@@ -532,6 +535,9 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             asset_id: Target asset identifier.
             period: Time period for the query.
             granularity: Data point frequency (for trend queries).
+            include_native_period: Add RENERYO ``period`` param (SEU endpoints).
+            is_metric_resource: Override to ``period=RAW`` + ``count=100``
+                for GAUGE metric resource endpoints.
 
         Returns:
             Dict of query parameter key-value pairs.
@@ -549,6 +555,9 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
                 params["granularity"] = granularity
         elif include_native_period:
             params["period"] = self._native_period_bucket(granularity)
+        if is_metric_resource:
+            params["period"] = "RAW"
+            params["count"] = "100"
         return params
 
     def _build_compare_query_params(
@@ -576,8 +585,15 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
         return params
 
     def _requires_native_period(self, endpoint: str) -> bool:
-        """Return whether endpoint requires ``period`` query parameter."""
-        return self._is_seu_endpoint(endpoint) or self._is_metric_resource_endpoint(endpoint)
+        """Return whether endpoint requires ``period`` query parameter.
+
+        Metric resource endpoints use GAUGE data that does NOT aggregate,
+        so ``period=DAILY`` returns 0 records. They need ``period=RAW``
+        instead, which is handled separately in ``_build_query_params``.
+        """
+        if self._is_metric_resource_endpoint(endpoint):
+            return False
+        return self._is_seu_endpoint(endpoint)
 
     @staticmethod
     def _native_period_bucket(granularity: str) -> str:
