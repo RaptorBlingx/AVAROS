@@ -163,7 +163,7 @@ def _resolve_json_path(payload: dict | list, json_path: str) -> object:
             code="RENERYO_MAPPING_INVALID",
             platform="reneryo",
         )
-    tokens = re.findall(r"([^.\[\]]+)|\[(\d+)\]", path[2:])
+    tokens = re.findall(r"([^.\[\]]+)|\[(-?\d+)\]", path[2:])
     current: object = payload
     for key_token, index_token in tokens:
         if key_token:
@@ -182,7 +182,7 @@ def _resolve_json_path(payload: dict | list, json_path: str) -> object:
                 platform="reneryo",
             )
         index = int(index_token)
-        if index >= len(current):
+        if index >= len(current) or index < -len(current):
             raise AdapterError(
                 message=f"json_path index out of range in {json_path}",
                 code="RENERYO_MAPPING_INVALID",

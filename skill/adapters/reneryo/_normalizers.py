@@ -169,8 +169,10 @@ def normalize_seu_values_to_kpi(data: dict) -> dict:
     Expected shape:
         {"records": [{"value": 12.3, "datetime": "...", "unit": "kWh/unit"}, ...]}
 
-    Uses the first record as current KPI value to match configured JSON path
-    behavior (``$.records[0].value``).
+    Uses the first record (``records[0]``) intentionally: SEU values use
+    ``period=DAILY`` which pre-aggregates, so record order is irrelevant.
+    This differs from metric resources which need ``records[-1]`` (latest)
+    because GAUGE data is returned ascending with ``period=RAW``.
     """
     records = data.get("records", [])
     if not records:
@@ -225,10 +227,10 @@ def normalize_metric_resource_to_kpi(data: dict) -> dict:
     records = data.get("records", [])
     if not records:
         raise KeyError("No metric resource value record found")
-    first = records[0]
+    latest = records[-1]
     return {
-        "value": float(first.get("value", 0.0)),
-        "timestamp": str(first.get("datetime", "")),
+        "value": float(latest.get("value", 0.0)),
+        "timestamp": str(latest.get("datetime", "")),
     }
 
 

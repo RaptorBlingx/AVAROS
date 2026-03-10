@@ -15,6 +15,7 @@ from skill.adapters.reneryo._normalizers import (
     normalize_meters_to_comparison,
     normalize_meters_to_raw,
     normalize_meters_to_trend,
+    normalize_metric_resource_to_kpi,
     normalize_metric_to_kpi,
 )
 
@@ -287,3 +288,53 @@ class TestNormalizeMetricToKpi:
         """Empty records list raises KeyError."""
         with pytest.raises(KeyError):
             normalize_metric_to_kpi({"records": []}, "Any")
+
+
+# =========================================================================
+# Metric Resource → KPI Normalization (B2: latest record)
+# =========================================================================
+
+
+class TestNormalizeMetricResourceToKpi:
+    """Tests for metric resource → KPI using latest record."""
+
+    def test_returns_latest_record_not_oldest(self) -> None:
+        """With ascending sort, records[-1] is the latest value."""
+        data = {
+            "records": [
+                {"value": 80.0, "datetime": "2026-03-01T00:00:00Z"},
+                {"value": 82.5, "datetime": "2026-03-01T00:15:00Z"},
+                {"value": 85.0, "datetime": "2026-03-01T00:30:00Z"},
+            ],
+        }
+
+        result = normalize_metric_resource_to_kpi(data)
+
+        assert result["value"] == 85.0
+        assert result["timestamp"] == "2026-03-01T00:30:00Z"
+
+    def test_single_record_returns_that_record(self) -> None:
+        """Single record is both first and last."""
+        data = {
+            "records": [{"value": 42.0, "datetime": "2026-03-01T12:00:00Z"}],
+        }
+
+        result = normalize_metric_resource_to_kpi(data)
+
+        assert result["value"] == 42.0
+
+    def test_empty_records_raises_key_error(self) -> None:
+        """Empty records list raises KeyError."""
+        with pytest.raises(KeyError):
+            normalize_metric_resource_to_kpi({"records": []})
+
+    def test_returns_dict_with_value_and_timestamp(self) -> None:
+        """Result contains value and timestamp keys."""
+        data = {
+            "records": [{"value": 10.0, "datetime": "2026-03-01T08:00:00Z"}],
+        }
+
+        result = normalize_metric_resource_to_kpi(data)
+
+        assert "value" in result
+        assert "timestamp" in result

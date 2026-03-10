@@ -1242,6 +1242,204 @@ class TestReneryoParsers:
             assert exc_info.value.code == "RENERYO_INVALID_RESPONSE"
 
 
+# ===========================================================================
+# P7-E01: Metric Resource Read Path Fixes
+# ===========================================================================
+
+
+class TestRequiresNativePeriod:
+    """Tests for _requires_native_period() (B1)."""
+
+    def test_seu_endpoint_requires_native_period(self) -> None:
+        """SEU endpoints still require native period parameter."""
+        adapter = ReneryoAdapter(api_url="https://test", api_key="k")
+
+        result = adapter._requires_native_period(
+            "/api/u/measurement/seu/item/abc-123/values",
+        )
+
+        assert result is True
+
+    def test_metric_resource_endpoint_does_not_require_native_period(self) -> None:
+        """Metric resource endpoints do NOT require native period (GAUGE)."""
+        adapter = ReneryoAdapter(api_url="https://test", api_key="k")
+
+        result = adapter._requires_native_period(
+            "/api/u/measurement/metric/resource/abc-123/values",
+        )
+
+        assert result is False
+
+    def test_meter_endpoint_does_not_require_native_period(self) -> None:
+        """Meter endpoint does not require native period."""
+        adapter = ReneryoAdapter(api_url="https://test", api_key="k")
+
+        result = adapter._requires_native_period(
+            "/api/u/measurement/meter/item",
+        )
+
+        assert result is False
+
+
+class TestBuildQueryParamsMetricResource:
+    """Tests for _build_query_params() with metric resource flag (B6)."""
+
+    def test_metric_resource_includes_period_raw(self) -> None:
+        """Metric resource queries include period=RAW."""
+        adapter = ReneryoAdapter(
+            api_url="https://test", api_key="k", api_format="native",
+        )
+
+        params = adapter._build_query_params(
+            period=TimePeriod.today(),
+            is_metric_resource=True,
+        )
+
+        assert params["period"] == "RAW"
+
+    def test_metric_resource_includes_count_100(self) -> None:
+        """Metric resource queries include count=100."""
+        adapter = ReneryoAdapter(
+            api_url="https://test", api_key="k", api_format="native",
+        )
+
+        params = adapter._build_query_params(
+            period=TimePeriod.today(),
+            is_metric_resource=True,
+        )
+
+        assert params["count"] == "100"
+
+    def test_non_metric_resource_no_count(self) -> None:
+        """Non-metric-resource queries do not include count."""
+        adapter = ReneryoAdapter(
+            api_url="https://test", api_key="k", api_format="native",
+        )
+
+        params = adapter._build_query_params(
+            period=TimePeriod.today(),
+            is_metric_resource=False,
+        )
+
+        assert "count" not in params
+
+    def test_seu_endpoint_still_gets_native_period(self) -> None:
+        """SEU endpoints still get DAILY/HOURLY period (regression)."""
+        adapter = ReneryoAdapter(
+            api_url="https://test", api_key="k", api_format="native",
+        )
+
+        params = adapter._build_query_params(
+            period=TimePeriod.today(),
+            include_native_period=True,
+            is_metric_resource=False,
+        )
+
+        assert params["period"] == "DAILY"
+        assert "count" not in params
+
+
+class TestMetricResourceIntegration:
+    """Integration tests for metric resource KPI and trend paths."""
+
+    @pytest.mark.asyncio
+    async def test_get_kpi_metric_resource_returns_latest_value(self) -> None:
+        """get_kpi() for GAUGE metric resource returns latest (last) record."""
+        from unittest.mock import AsyncMock
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="key",
+            api_format="native",
+            asset_mappings={
+                "line_1": {
+                    "seu_id": "",
+                    "metric_resources": {"oee": "res-oee-uuid"},
+                },
+            },
+        )
+        adapter._session = object()
+        adapter._retry_fetch = AsyncMock(return_value={
+            "records": [
+                {"value": 80.0, "datetime": "2026-03-01T00:00:00Z"},
+                {"value": 82.5, "datetime": "2026-03-01T00:15:00Z"},
+                {"value": 85.0, "datetime": "2026-03-01T00:30:00Z"},
+            ],
+        })
+
+        result = await adapter.get_kpi(
+            CanonicalMetric.OEE, "line_1", TimePeriod.today(),
+        )
+
+        assert result.value == 85.0
+        call_args = adapter._retry_fetch.call_args
+        params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("params", {})
+        assert params.get("period") == "RAW"
+        assert params.get("count") == "100"
+
+    @pytest.mark.asyncio
+    async def test_get_trend_metric_resource_returns_all_points(self) -> None:
+        """get_trend() for GAUGE metric resource returns non-empty time series."""
+        from unittest.mock import AsyncMock
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="key",
+            api_format="native",
+            asset_mappings={
+                "line_1": {
+                    "seu_id": "",
+                    "metric_resources": {"scrap_rate": "res-scrap-uuid"},
+                },
+            },
+        )
+        adapter._session = object()
+        adapter._retry_fetch = AsyncMock(return_value={
+            "records": [
+                {"value": 2.1, "datetime": "2026-03-01T00:00:00Z"},
+                {"value": 2.3, "datetime": "2026-03-01T00:15:00Z"},
+                {"value": 2.5, "datetime": "2026-03-01T00:30:00Z"},
+            ],
+        })
+
+        result = await adapter.get_trend(
+            CanonicalMetric.SCRAP_RATE, "line_1", TimePeriod.last_week(),
+        )
+
+        assert len(result.data_points) == 3
+        call_args = adapter._retry_fetch.call_args
+        params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("params", {})
+        assert params.get("period") == "RAW"
+        assert params.get("count") == "100"
+
+    @pytest.mark.asyncio
+    async def test_seu_endpoint_still_uses_daily_period(self) -> None:
+        """SEU endpoint regression: still uses DAILY period, no count param."""
+        from unittest.mock import AsyncMock
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="key",
+            api_format="native",
+            native_seu_id="seu-abc",
+        )
+        adapter._session = object()
+        adapter._retry_fetch = AsyncMock(return_value={
+            "records": [
+                {"value": 4.2, "datetime": "2026-03-01T00:00:00Z", "unit": "kWh/unit"},
+            ],
+        })
+
+        await adapter.get_kpi(
+            CanonicalMetric.ENERGY_PER_UNIT, "line_1", TimePeriod.today(),
+        )
+
+        call_args = adapter._retry_fetch.call_args
+        params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("params", {})
+        assert params.get("period") == "DAILY"
+        assert "count" not in params
+
+
 class TestReneryoLifecycleHTTP:
     """Tests for initialize() and shutdown() with real aiohttp sessions."""
 

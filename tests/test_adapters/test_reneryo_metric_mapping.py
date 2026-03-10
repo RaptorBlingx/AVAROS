@@ -110,6 +110,51 @@ class TestMetricMappingHelpers:
         assert params["period"] == "DAILY"
 
 
+class TestResolveJsonPathNegativeIndex:
+    """Tests for _resolve_json_path with negative array indices (B3)."""
+
+    def test_negative_index_returns_last_element(self) -> None:
+        """$.records[-1].value returns the last array element."""
+        payload = {"records": [{"value": 1.0}, {"value": 2.0}, {"value": 3.0}]}
+
+        result = extract_mapped_value(payload, "$.records[-1].value")
+
+        assert result == pytest.approx(3.0)
+
+    def test_negative_index_minus_two_returns_second_to_last(self) -> None:
+        """$.records[-2].value returns the second-to-last element."""
+        payload = {"records": [{"value": 10.0}, {"value": 20.0}, {"value": 30.0}]}
+
+        result = extract_mapped_value(payload, "$.records[-2].value")
+
+        assert result == pytest.approx(20.0)
+
+    def test_positive_index_zero_still_works(self) -> None:
+        """$.records[0].value still returns the first element."""
+        payload = {"records": [{"value": 42.0}, {"value": 99.0}]}
+
+        result = extract_mapped_value(payload, "$.records[0].value")
+
+        assert result == pytest.approx(42.0)
+
+    def test_negative_index_out_of_range_raises(self) -> None:
+        """Out-of-range negative index raises AdapterError."""
+        payload = {"records": [{"value": 1.0}]}
+
+        with pytest.raises(AdapterError) as exc_info:
+            extract_mapped_value(payload, "$.records[-5].value")
+
+        assert exc_info.value.code == "RENERYO_MAPPING_INVALID"
+
+    def test_negative_index_on_single_element(self) -> None:
+        """$.items[-1] on a single-element list returns that element."""
+        payload = {"items": [99.5]}
+
+        result = extract_mapped_value(payload, "$.items[-1]")
+
+        assert result == pytest.approx(99.5)
+
+
 class TestReneryoAdapterMappingPath:
     """Adapter behavior when profile-scoped mapping is configured."""
 
