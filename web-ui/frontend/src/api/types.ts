@@ -313,35 +313,31 @@ export type DeleteProfileResponse = {
 export type MetricResourceMap = Record<string, string>;
 
 export type AssetMappingItem = {
-  seu_id: string;
-  metric_resources: MetricResourceMap;
+  display_name?: string;
+  asset_type?: "machine" | "line" | "sensor" | "seu";
+  aliases?: string[];
+  endpoint_template?: string;
+  seu_id?: string;
+  metric_resources?: MetricResourceMap;
+  [key: string]: unknown;
 };
 
 export type AssetMappingsResponse = {
   asset_mappings: Record<string, AssetMappingItem>;
 };
 
-export type MetricResourceOption = {
-  id: string;
-  name: string;
-};
-
-export type DiscoveredSeu = {
-  id: string;
-  name: string;
-  energy_resource: string;
-};
-
-export type MetricCandidate = {
-  key: string;
-  id: string;
-  name: string;
+export type AssetRecord = {
+  asset_id: string;
+  display_name: string;
+  asset_type: "machine" | "line" | "sensor" | "seu";
+  aliases: string[];
+  metadata?: Record<string, unknown>;
 };
 
 export type AssetDiscoveryResponse = {
-  seus: DiscoveredSeu[];
-  metrics: MetricCandidate[];
-  resources: Record<string, MetricResourceOption[]>;
+  platform_type: PlatformType;
+  supports_discovery: boolean;
+  assets: AssetRecord[];
   existing_mappings: Record<string, AssetMappingItem>;
 };
 

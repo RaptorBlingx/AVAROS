@@ -1,167 +1,194 @@
-"""Asset discovery and mapping APIs for RENERYO native integration."""
+"""Platform-agnostic asset discovery and mapping APIs."""
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from dependencies import get_settings_service
-from skill.adapters.reneryo import ReneryoAdapter
-from skill.adapters.reneryo._endpoints import (
-    REAL_METRIC_NAMES_ENDPOINT,
-    REAL_METRIC_RESOURCES_ENDPOINT,
-    REAL_SEU_NAMES_ENDPOINT,
-)
+try:
+    import websocket  # websocket-client
+except ImportError:  # pragma: no cover
+    websocket = None  # type: ignore[assignment]
+
+from dependencies import get_adapter_factory, get_settings_service
+from skill.adapters.factory import AdapterFactory
+from skill.domain.exceptions import ValidationError
+from skill.domain.models import Asset
 from skill.services.settings import SettingsService
 
 
-router = APIRouter(prefix="/api/v1/assets", tags=["assets"])
+router = APIRouter(prefix="/api/v1", tags=["assets"])
 logger = logging.getLogger(__name__)
 
-
-class DiscoveredSeu(BaseModel):
-    id: str
-    name: str
-    energy_resource: str = ""
+MESSAGEBUS_URL = os.environ.get(
+    "OVOS_MESSAGEBUS_URL", "ws://ovos_messagebus:8181/core",
+)
 
 
-class MetricCandidate(BaseModel):
-    key: str
-    id: str = ""
-    name: str = ""
+class AssetItem(BaseModel):
+    """Transport model for discovered/configured assets."""
 
-
-class MetricResourceOption(BaseModel):
-    id: str
-    name: str
+    asset_id: str
+    display_name: str
+    asset_type: str
+    aliases: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AssetDiscoveryResponse(BaseModel):
-    seus: list[DiscoveredSeu] = Field(default_factory=list)
-    metrics: list[MetricCandidate] = Field(default_factory=list)
-    resources: dict[str, list[MetricResourceOption]] = Field(default_factory=dict)
+    """Unified discovery payload for all platform types."""
+
+    platform_type: str
+    supports_discovery: bool
+    assets: list[AssetItem] = Field(default_factory=list)
     existing_mappings: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class AssetMappingsRequest(BaseModel):
+    """Save payload for profile-scoped asset mappings."""
+
     asset_mappings: dict[str, dict[str, Any]]
 
 
 class AssetMappingsResponse(BaseModel):
+    """Response model for profile-scoped asset mappings."""
+
     asset_mappings: dict[str, dict[str, Any]]
 
 
-def _select_metric(records: list[dict[str, Any]], key: str) -> tuple[str, str]:
-    needle = "oee" if key == "oee" else "scrap"
-    for record in records:
-        name = str(record.get("name", ""))
-        if needle in name.lower():
-            return str(record.get("id", "")), name
-    return "", ""
+def _notify_entity_refresh(profile_name: str) -> bool:
+    """Emit best-effort entity refresh event to OVOS message bus."""
+    if websocket is None:
+        return False
+    try:
+        ws = websocket.create_connection(MESSAGEBUS_URL, timeout=3)
+        payload = {
+            "type": "avaros.entities.updated",
+            "data": {"profile": profile_name},
+            "context": {},
+        }
+        ws.send(json.dumps(payload))
+        ws.close()
+        return True
+    except Exception as exc:
+        logger.warning("Could not notify entity refresh via messagebus: %s", exc)
+        return False
 
 
-@router.get("/mappings", response_model=AssetMappingsResponse)
+def _supports_discovery(platform_type: str) -> bool:
+    """Return whether platform has live discovery support."""
+    return platform_type.lower() in {"reneryo", "mock"}
+
+
+def _serialize_asset(asset: Asset) -> AssetItem:
+    """Convert domain Asset model to API transport model."""
+    return AssetItem(
+        asset_id=asset.asset_id,
+        display_name=asset.display_name,
+        asset_type=asset.asset_type,
+        aliases=asset.aliases,
+        metadata=asset.metadata,
+    )
+
+
+def _get_current_platform(settings_service: SettingsService) -> str:
+    """Resolve active profile platform type."""
+    profile_name = settings_service.get_active_profile_name()
+    profile = settings_service.get_profile(profile_name)
+    if profile is None:
+        return "mock"
+    return str(profile.platform_type or "mock").lower()
+
+
+def _persist_asset_mappings(
+    payload: AssetMappingsRequest,
+    settings_service: SettingsService,
+) -> AssetMappingsResponse:
+    """Save mappings and trigger asset entity refresh event."""
+    try:
+        settings_service.set_asset_mappings(payload.asset_mappings)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=exc.message,
+        ) from exc
+    _notify_entity_refresh(settings_service.get_active_profile_name())
+    return AssetMappingsResponse(
+        asset_mappings=settings_service.get_asset_mappings(),
+    )
+
+
+@router.get("/assets/mappings", response_model=AssetMappingsResponse)
 def get_asset_mappings(
     settings_service: SettingsService = Depends(get_settings_service),
 ) -> AssetMappingsResponse:
-    """Return saved asset mappings used by RENERYO adapter."""
-    return AssetMappingsResponse(asset_mappings=settings_service.get_asset_mappings())
+    """Legacy endpoint returning current profile asset mappings."""
+    return AssetMappingsResponse(
+        asset_mappings=settings_service.get_asset_mappings(),
+    )
 
 
-@router.put("/mappings", response_model=AssetMappingsResponse)
+@router.put("/assets/mappings", response_model=AssetMappingsResponse)
 def put_asset_mappings(
     payload: AssetMappingsRequest,
     settings_service: SettingsService = Depends(get_settings_service),
 ) -> AssetMappingsResponse:
-    """Persist asset mappings and sync platform extra settings."""
-    settings_service.set_asset_mappings(payload.asset_mappings)
-    return AssetMappingsResponse(asset_mappings=settings_service.get_asset_mappings())
+    """Legacy endpoint for updating profile-scoped asset mappings."""
+    return _persist_asset_mappings(payload, settings_service)
 
 
-@router.get("/discover", response_model=AssetDiscoveryResponse)
-async def discover_assets(
+@router.get("/config/assets", response_model=AssetMappingsResponse)
+def get_config_assets(
     settings_service: SettingsService = Depends(get_settings_service),
-) -> AssetDiscoveryResponse:
-    """Discover SEUs and production metric resources from RENERYO."""
-    config = settings_service.get_platform_config()
-    if config.platform_type != "reneryo":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Asset discovery is available only for RENERYO profiles.",
-        )
-    if not config.api_url or not config.api_key:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="RENERYO api_url and api_key must be configured before discovery.",
-        )
-
-    extra = config.extra_settings if isinstance(config.extra_settings, dict) else {}
-    adapter = ReneryoAdapter(
-        api_url=config.api_url,
-        api_key=config.api_key,
-        auth_type=str(extra.get("auth_type", "bearer")),
-        api_format=str(extra.get("api_format", "native") or "native"),
+) -> AssetMappingsResponse:
+    """Return profile-scoped asset mappings for settings/wizard UI."""
+    return AssetMappingsResponse(
         asset_mappings=settings_service.get_asset_mappings(),
     )
 
+
+@router.post("/config/assets", response_model=AssetMappingsResponse)
+def post_config_assets(
+    payload: AssetMappingsRequest,
+    settings_service: SettingsService = Depends(get_settings_service),
+) -> AssetMappingsResponse:
+    """Persist profile-scoped asset mappings for all platform types."""
+    return _persist_asset_mappings(payload, settings_service)
+
+
+@router.get("/assets/discover", response_model=AssetDiscoveryResponse)
+async def discover_assets(
+    settings_service: SettingsService = Depends(get_settings_service),
+    adapter_factory: AdapterFactory = Depends(get_adapter_factory),
+) -> AssetDiscoveryResponse:
+    """Discover assets through active adapter's list_assets() implementation."""
+    platform_type = _get_current_platform(settings_service)
+    adapter = adapter_factory.create()
+    discovered_assets: list[Asset] = []
+
     try:
         await adapter.initialize()
-
-        seus_payload = await adapter._retry_fetch(REAL_SEU_NAMES_ENDPOINT)
-        metric_names_payload = await adapter._retry_fetch(REAL_METRIC_NAMES_ENDPOINT)
-
-        seu_records = seus_payload.get("records", []) if isinstance(seus_payload, dict) else []
-        metric_records = (
-            metric_names_payload.get("records", [])
-            if isinstance(metric_names_payload, dict)
-            else []
-        )
-
-        metrics: list[MetricCandidate] = []
-        resources: dict[str, list[MetricResourceOption]] = {"oee": [], "scrap_rate": []}
-
-        for key in ("oee", "scrap_rate"):
-            metric_id, metric_name = _select_metric(metric_records, key)
-            metrics.append(MetricCandidate(key=key, id=metric_id, name=metric_name))
-            if not metric_id:
-                continue
-            response = await adapter._retry_fetch(
-                REAL_METRIC_RESOURCES_ENDPOINT,
-                {"metricId": metric_id},
-            )
-            resource_records = response.get("records", []) if isinstance(response, dict) else []
-            resources[key] = [
-                MetricResourceOption(
-                    id=str(item.get("id", "")),
-                    name=str(item.get("name", "")),
-                )
-                for item in resource_records
-                if item.get("id")
-            ]
-
-        seus = [
-            DiscoveredSeu(
-                id=str(item.get("id", "")),
-                name=str(item.get("name", "")),
-                energy_resource=str(item.get("energyResource", "")),
-            )
-            for item in seu_records
-            if item.get("id")
-        ]
-
-        return AssetDiscoveryResponse(
-            seus=seus,
-            metrics=metrics,
-            resources=resources,
-            existing_mappings=settings_service.get_asset_mappings(),
-        )
+        discovered_assets = await adapter.list_assets()
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"RENERYO discovery failed: {exc}",
+            detail=f"Asset discovery failed for '{platform_type}': {exc}",
         ) from exc
     finally:
-        await adapter.shutdown()
+        try:
+            await adapter.shutdown()
+        except Exception as exc:  # pragma: no cover - defensive shutdown path
+            logger.warning("Adapter shutdown after asset discovery failed: %s", exc)
+
+    items = [_serialize_asset(asset) for asset in discovered_assets if isinstance(asset, Asset)]
+    return AssetDiscoveryResponse(
+        platform_type=platform_type,
+        supports_discovery=_supports_discovery(platform_type),
+        assets=items,
+        existing_mappings=settings_service.get_asset_mappings(),
+    )

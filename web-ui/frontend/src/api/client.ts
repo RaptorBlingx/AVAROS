@@ -1,6 +1,8 @@
 import type {
   ActivateProfileResponse,
   AssetDiscoveryResponse,
+  AssetMappingItem,
+  AssetRecord,
   AssetMappingsResponse,
   BaselineResponse,
   CSVUploadResponse,
@@ -480,18 +482,106 @@ export function activateProfile(
 }
 
 export function discoverAssets(): Promise<AssetDiscoveryResponse> {
-  return request<AssetDiscoveryResponse>("/api/v1/assets/discover");
+  return request<Record<string, unknown>>("/api/v1/assets/discover").then(
+    normalizeDiscoveryResponse,
+  );
 }
 
-export function getAssetMappings(): Promise<AssetMappingsResponse> {
+async function requestAssetMappingsPrimary(): Promise<AssetMappingsResponse> {
+  return request<AssetMappingsResponse>("/api/v1/config/assets");
+}
+
+async function requestAssetMappingsLegacy(): Promise<AssetMappingsResponse> {
   return request<AssetMappingsResponse>("/api/v1/assets/mappings");
 }
 
-export function setAssetMappings(
+export async function getConfiguredAssets(): Promise<AssetMappingsResponse> {
+  try {
+    return await requestAssetMappingsPrimary();
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return requestAssetMappingsLegacy();
+    }
+    throw error;
+  }
+}
+
+export async function saveConfiguredAssets(
   assetMappings: AssetMappingsResponse["asset_mappings"],
 ): Promise<AssetMappingsResponse> {
-  return request<AssetMappingsResponse>("/api/v1/assets/mappings", {
-    method: "PUT",
-    body: { asset_mappings: assetMappings },
-  });
+  try {
+    return await request<AssetMappingsResponse>("/api/v1/config/assets", {
+      method: "POST",
+      body: { asset_mappings: assetMappings },
+    });
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return request<AssetMappingsResponse>("/api/v1/assets/mappings", {
+        method: "PUT",
+        body: { asset_mappings: assetMappings },
+      });
+    }
+    throw error;
+  }
+}
+
+// Backward-compatible aliases for existing callers.
+export const getAssetMappings = getConfiguredAssets;
+export const setAssetMappings = saveConfiguredAssets;
+
+type LegacySeu = {
+  id?: string;
+  name?: string;
+  energy_resource?: string;
+};
+
+type LegacyDiscovery = {
+  seus?: LegacySeu[];
+  existing_mappings?: Record<string, AssetMappingItem>;
+  platform_type?: string;
+  supports_discovery?: boolean;
+  assets?: AssetRecord[];
+};
+
+function normalizeDiscoveryResponse(
+  payload: Record<string, unknown>,
+): AssetDiscoveryResponse {
+  const data = payload as LegacyDiscovery;
+  const nativeAssets = Array.isArray(data.assets)
+    ? data.assets
+    : [];
+  if (nativeAssets.length > 0) {
+    return {
+      platform_type: (data.platform_type as AssetDiscoveryResponse["platform_type"]) ?? "mock",
+      supports_discovery: Boolean(data.supports_discovery),
+      assets: nativeAssets,
+      existing_mappings: data.existing_mappings ?? {},
+    };
+  }
+
+  const legacySeus = Array.isArray(data.seus) ? data.seus : [];
+  const assets: AssetRecord[] = legacySeus
+    .filter((item) => typeof item?.id === "string" && item.id.length > 0)
+    .map((item) => ({
+      asset_id: item.id as string,
+      display_name: (item.name as string) || (item.id as string),
+      asset_type: "seu",
+      aliases: [
+        ((item.name as string) || "").trim(),
+        (item.id as string).trim(),
+      ].filter(Boolean),
+      metadata: {
+        energy_resource: (item.energy_resource as string) || "",
+      },
+    }));
+
+  return {
+    platform_type: (data.platform_type as AssetDiscoveryResponse["platform_type"]) ?? "reneryo",
+    supports_discovery:
+      typeof data.supports_discovery === "boolean"
+        ? data.supports_discovery
+        : true,
+    assets,
+    existing_mappings: data.existing_mappings ?? {},
+  };
 }

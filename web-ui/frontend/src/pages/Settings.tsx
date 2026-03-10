@@ -9,6 +9,7 @@ import Tooltip from "../components/common/Tooltip";
 import IntentActivationSection from "../components/settings/IntentActivationSection";
 import IntentBindingsSection from "../components/settings/IntentBindingsSection";
 import EmissionFactorsSection from "../components/settings/EmissionFactorsSection";
+import AssetManagementSection from "../components/settings/AssetManagementSection";
 import MetricMappingsSection from "../components/settings/MetricMappingsSection";
 import PlatformConfigSection from "../components/settings/PlatformConfigSection";
 import SystemInfoSection from "../components/settings/SystemInfoSection";
@@ -108,6 +109,11 @@ export default function Settings() {
         title: "Intent Bindings",
         description: "Map non-metric intents (control/status/help) to your API endpoints.",
         selector: '[data-onboarding-target="settings-intent-bindings"]',
+      },
+      {
+        title: "Asset Management",
+        description: "Discover, add, edit, and save assets used by voice and adapters.",
+        selector: '[data-onboarding-target="settings-assets"]',
       },
       {
         title: "Intent Activation",
@@ -236,6 +242,18 @@ export default function Settings() {
         targetId="settings-intent-bindings"
       >
         <IntentBindingsSection
+          onNotify={notify}
+          refreshKey={profileRefreshKey}
+          activeProfile={activeProfileName}
+        />
+      </Section>
+
+      <Section
+        title="Assets"
+        helpText="Manage discovered or manually configured assets for all platform types."
+        targetId="settings-assets"
+      >
+        <AssetManagementSection
           onNotify={notify}
           refreshKey={profileRefreshKey}
           activeProfile={activeProfileName}
