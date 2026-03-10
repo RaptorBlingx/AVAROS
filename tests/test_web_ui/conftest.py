@@ -15,9 +15,6 @@ from typing import Generator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 # Ensure the web-ui package is importable by adding it to sys.path.
 _WEB_UI_DIR = str(Path(__file__).resolve().parents[2] / "web-ui")
@@ -27,37 +24,17 @@ if _WEB_UI_DIR not in sys.path:
 from main import app  # noqa: E402 — path must be inserted first
 from config import WEB_API_KEY  # noqa: E402
 from dependencies import get_settings_service  # noqa: E402
-from skill.services.settings import Base, SettingsService  # noqa: E402
+from skill.services.settings import SettingsService  # noqa: E402
+from tests.conftest import build_test_settings_service  # noqa: E402
 
 # Re-export so test modules can import from conftest if needed.
 TEST_API_KEY = WEB_API_KEY
 
 
-def _create_test_settings_service() -> SettingsService:
-    """Build a SettingsService backed by a thread-safe in-memory SQLite.
-
-    The default ``sqlite:///:memory:`` engine uses per-thread
-    connections, so tables created on the main thread are invisible
-    to the TestClient request thread.  ``StaticPool`` forces a single
-    shared connection, solving this problem.
-    """
-    svc = SettingsService()
-    engine = create_engine(
-        "sqlite:///:memory:",
-        poolclass=StaticPool,
-        connect_args={"check_same_thread": False},
-    )
-    svc._engine = engine
-    svc._session_factory = sessionmaker(bind=engine, expire_on_commit=False)
-    Base.metadata.create_all(engine)
-    svc._initialized = True
-    return svc
-
-
 @pytest.fixture()
 def settings_service() -> Generator[SettingsService, None, None]:
     """In-memory SettingsService, initialised and ready for one test."""
-    svc = _create_test_settings_service()
+    svc = build_test_settings_service()
     yield svc
     svc.close()
 

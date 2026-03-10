@@ -1,9 +1,52 @@
-"""
-Pytest configuration and shared fixtures for AVAROS tests
-"""
-import pytest
-from typing import Dict, Any
+"""Pytest configuration and shared fixtures for AVAROS tests."""
+
+from __future__ import annotations
+
 from datetime import datetime, timedelta
+from typing import Any, Dict
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from skill.services.settings import Base, SettingsService
+
+
+def build_test_settings_service(
+    database_url: str = "sqlite:///:memory:",
+) -> SettingsService:
+    """Create an initialised SettingsService for tests.
+
+    For in-memory SQLite the engine is wired with ``StaticPool`` so the
+    single connection is shared across threads (needed by FastAPI
+    TestClient).  For on-disk URLs the normal ``initialize()`` path is
+    used instead.
+
+    Args:
+        database_url: SQLAlchemy database URL.  Defaults to in-memory
+            SQLite.
+
+    Returns:
+        Ready-to-use SettingsService instance.  Caller is responsible
+        for calling ``close()`` when done.
+    """
+    if database_url == "sqlite:///:memory:":
+        svc = SettingsService()
+        engine = create_engine(
+            database_url,
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
+        svc._engine = engine
+        svc._session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+        Base.metadata.create_all(engine)
+        svc._initialized = True
+        return svc
+
+    svc = SettingsService(database_url=database_url)
+    svc.initialize()
+    return svc
 
 
 @pytest.fixture
