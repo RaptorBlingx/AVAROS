@@ -280,7 +280,7 @@ class TestReneryoAdapterQueryMethods:
 
 
 class TestReneryoAdapterListAssets:
-    """Tests for RENERYO SEU discovery mapping."""
+    """Tests for RENERYO asset discovery (SEUs + meters)."""
 
     @pytest.mark.asyncio
     async def test_list_assets_maps_seu_records_to_assets(
@@ -291,12 +291,13 @@ class TestReneryoAdapterListAssets:
         from unittest.mock import AsyncMock
 
         adapter._retry_fetch = AsyncMock(
-            return_value={
-                "records": [
+            side_effect=[
+                {"records": [
                     {"id": "seu-2", "name": "Line 2", "energyResource": "ELECTRIC"},
                     {"id": "seu-1", "name": "Line 1", "energyResource": "GAS"},
-                ],
-            }
+                ]},
+                {"records": []},
+            ]
         )
 
         assets = await adapter.list_assets()
@@ -305,6 +306,51 @@ class TestReneryoAdapterListAssets:
         assert assets[0].asset_type == "seu"
         assert assets[0].display_name == "Line 1"
         assert assets[0].metadata["energy_resource"] == "GAS"
+
+    @pytest.mark.asyncio
+    async def test_list_assets_discovers_meters(
+        self,
+        adapter: ReneryoAdapter,
+    ) -> None:
+        """Meter records should map to canonical Asset entries with type meter."""
+        from unittest.mock import AsyncMock
+
+        adapter._retry_fetch = AsyncMock(
+            side_effect=[
+                {"records": []},
+                {"records": [
+                    {"id": "meter-1", "name": "Main Meter"},
+                    {"id": "meter-2", "name": "Sub Meter"},
+                ]},
+            ]
+        )
+
+        assets = await adapter.list_assets()
+
+        assert len(assets) == 2
+        assert assets[0].asset_type == "meter"
+        assert assets[0].display_name == "Main Meter"
+
+    @pytest.mark.asyncio
+    async def test_list_assets_combines_seus_and_meters(
+        self,
+        adapter: ReneryoAdapter,
+    ) -> None:
+        """Both SEUs and meters appear in combined discovery result."""
+        from unittest.mock import AsyncMock
+
+        adapter._retry_fetch = AsyncMock(
+            side_effect=[
+                {"records": [{"id": "seu-1", "name": "SEU A", "energyResource": "ELECTRIC"}]},
+                {"records": [{"id": "meter-1", "name": "Meter A"}]},
+            ]
+        )
+
+        assets = await adapter.list_assets()
+
+        assert len(assets) == 2
+        types = {a.asset_type for a in assets}
+        assert types == {"seu", "meter"}
 
     @pytest.mark.asyncio
     async def test_list_assets_returns_empty_on_discovery_error(

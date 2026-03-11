@@ -380,11 +380,18 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
         return parse_raw_data_response(data, metric)
 
     async def list_assets(self) -> list[Asset]:
-        """Discover RENERYO SEUs and map them to canonical Asset objects."""
+        """Discover all RENERYO asset types (SEUs + meters)."""
+        assets: list[Asset] = []
+        assets.extend(await self._discover_seus())
+        assets.extend(await self._discover_meters())
+        return sorted(assets, key=lambda item: item.asset_id)
+
+    async def _discover_seus(self) -> list[Asset]:
+        """Discover RENERYO SEUs as canonical Asset objects."""
         try:
             payload = await self._retry_fetch(REAL_SEU_NAMES_ENDPOINT)
         except Exception as exc:
-            logger.warning("RENERYO asset discovery failed: %s", exc)
+            logger.warning("RENERYO SEU discovery failed: %s", exc)
             return []
 
         records = payload.get("records", []) if isinstance(payload, dict) else []
@@ -407,7 +414,36 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
                     metadata={"energy_resource": energy_resource},
                 ),
             )
-        return sorted(assets, key=lambda item: item.asset_id)
+        return assets
+
+    async def _discover_meters(self) -> list[Asset]:
+        """Discover RENERYO meters as canonical Asset objects."""
+        try:
+            payload = await self._retry_fetch(REAL_METER_ENDPOINT)
+        except Exception as exc:
+            logger.warning("RENERYO meter discovery failed: %s", exc)
+            return []
+
+        records = payload.get("records", []) if isinstance(payload, dict) else []
+        assets: list[Asset] = []
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            meter_id = str(record.get("id", "")).strip()
+            if not meter_id:
+                continue
+            display_name = str(record.get("name") or meter_id).strip()
+            aliases = self._build_asset_aliases(display_name, meter_id)
+            assets.append(
+                Asset(
+                    asset_id=meter_id,
+                    display_name=display_name,
+                    asset_type="meter",
+                    aliases=aliases,
+                    metadata={"source": "meter"},
+                ),
+            )
+        return assets
 
     # =========================================================================
     # Capability Discovery

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from dependencies import get_adapter_factory, get_settings_service
+from skill.adapters.base import ManufacturingAdapter
 from skill.adapters.factory import AdapterFactory
 from skill.domain.exceptions import ValidationError
 from skill.domain.models import Asset, CanonicalMetric
@@ -124,9 +125,9 @@ def _merge_generator_mapping(
     return total_resources
 
 
-def _supports_discovery(platform_type: str) -> bool:
-    """Return whether platform has live discovery support."""
-    return platform_type.lower() in {"reneryo", "mock"}
+def _supports_discovery(adapter: ManufacturingAdapter) -> bool:
+    """Return whether adapter supports live asset discovery (DEC-001)."""
+    return adapter.supports_asset_discovery()
 
 
 def _serialize_asset(asset: Asset) -> AssetItem:
@@ -236,7 +237,7 @@ async def discover_assets(
     items = [_serialize_asset(asset) for asset in discovered_assets if isinstance(asset, Asset)]
     return AssetDiscoveryResponse(
         platform_type=platform_type,
-        supports_discovery=_supports_discovery(platform_type),
+        supports_discovery=_supports_discovery(adapter),
         assets=items,
         existing_mappings=settings_service.get_asset_mappings(),
     )

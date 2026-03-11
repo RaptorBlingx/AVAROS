@@ -147,7 +147,7 @@ class CanonicalMetric(Enum):
         return units.get(self, "")
 
 
-_VALID_ASSET_TYPES = {"machine", "line", "sensor", "seu"}
+_VALID_ASSET_TYPES = {"machine", "line", "sensor", "seu", "meter"}
 
 
 @dataclass(frozen=True)

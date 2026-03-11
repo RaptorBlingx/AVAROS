@@ -54,6 +54,7 @@ def test_discover_assets_uses_adapter_factory_dependency(
     adapter = Mock()
     adapter.initialize = AsyncMock(return_value=None)
     adapter.shutdown = AsyncMock(return_value=None)
+    adapter.supports_asset_discovery = Mock(return_value=True)
     adapter.list_assets = AsyncMock(
         return_value=[
             Asset(

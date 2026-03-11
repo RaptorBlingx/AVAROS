@@ -222,6 +222,14 @@ class ManufacturingAdapter(ABC):
     async def list_assets(self) -> list[Asset]:
         """Return all assets available on this platform."""
         ...
+
+    def supports_asset_discovery(self) -> bool:
+        """Whether this adapter can discover assets from the platform.
+
+        Defaults to True because list_assets() is abstract.
+        Override to return False if the adapter cannot enumerate assets.
+        """
+        return True
     
     # =========================================================================
     # Capability Discovery
