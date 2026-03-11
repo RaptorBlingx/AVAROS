@@ -18,6 +18,15 @@ type MetricMappingsTableProps<TRow extends MetricMappingRow> = {
 
 const GROUPED_OPTIONS = groupMetricOptions();
 
+function SourceBadge({ source }: { source: string }) {
+  if (source !== "auto") return null;
+  return (
+    <span className="ml-1.5 inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+      auto
+    </span>
+  );
+}
+
 export default function MetricMappingsTable<TRow extends MetricMappingRow>({
   rows,
   errorsByRow,
@@ -26,97 +35,112 @@ export default function MetricMappingsTable<TRow extends MetricMappingRow>({
   onChange,
   renderActions,
 }: MetricMappingsTableProps<TRow>) {
-  const renderMetricSelect = (row: TRow) => (
-    <>
-      <select
-        value={row.canonical_metric}
-        disabled={readOnly}
-        onChange={(event) =>
-          onChange(
-            row.id,
-            "canonical_metric",
-            event.target.value as CanonicalMetricName,
-          )
-        }
-        className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-      >
-        {Object.entries(GROUPED_OPTIONS).map(([category, options]) => (
-          <optgroup key={category} label={category}>
-            {options
-              .filter(
-                (option) =>
-                  option.value === row.canonical_metric ||
-                  !usedMetrics.has(option.value),
+  const renderMetricSelect = (row: TRow) => {
+    const isAuto = "source" in row && (row as MetricMappingRow).source === "auto";
+    return (
+      <>
+        <div className="flex items-center">
+          <select
+            value={row.canonical_metric}
+            disabled={readOnly || isAuto}
+            onChange={(event) =>
+              onChange(
+                row.id,
+                "canonical_metric",
+                event.target.value as CanonicalMetricName,
               )
-              .map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-          </optgroup>
-        ))}
-      </select>
-      {errorsByRow[row.id]?.canonical_metric && (
-        <p className="m-0 mt-1 text-xs text-red-600">
-          {errorsByRow[row.id]?.canonical_metric}
-        </p>
-      )}
-    </>
-  );
+            }
+            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+          >
+            {Object.entries(GROUPED_OPTIONS).map(([category, options]) => (
+              <optgroup key={category} label={category}>
+                {options
+                  .filter(
+                    (option) =>
+                      option.value === row.canonical_metric ||
+                      !usedMetrics.has(option.value),
+                  )
+                  .map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+              </optgroup>
+            ))}
+          </select>
+          <SourceBadge source={"source" in row ? (row as MetricMappingRow).source : "manual"} />
+        </div>
+        {errorsByRow[row.id]?.canonical_metric && (
+          <p className="m-0 mt-1 text-xs text-red-600">
+            {errorsByRow[row.id]?.canonical_metric}
+          </p>
+        )}
+      </>
+    );
+  };
 
-  const renderEndpointInput = (row: TRow) => (
-    <>
-      <input
-        type="text"
-        value={row.endpoint}
-        disabled={readOnly}
-        onChange={(event) => onChange(row.id, "endpoint", event.target.value)}
-        placeholder="/api/v1/kpis/energy"
-        className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-      />
-      {errorsByRow[row.id]?.endpoint && (
-        <p className="m-0 mt-1 text-xs text-red-600">
-          {errorsByRow[row.id]?.endpoint}
-        </p>
-      )}
-    </>
-  );
+  const renderEndpointInput = (row: TRow) => {
+    const isAuto = "source" in row && (row as MetricMappingRow).source === "auto";
+    return (
+      <>
+        <input
+          type="text"
+          value={row.endpoint}
+          disabled={readOnly || isAuto}
+          onChange={(event) => onChange(row.id, "endpoint", event.target.value)}
+          placeholder="/api/v1/kpis/energy"
+          className={`w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 ${isAuto ? "opacity-70" : ""}`}
+        />
+        {errorsByRow[row.id]?.endpoint && (
+          <p className="m-0 mt-1 text-xs text-red-600">
+            {errorsByRow[row.id]?.endpoint}
+          </p>
+        )}
+      </>
+    );
+  };
 
-  const renderJsonPathInput = (row: TRow) => (
-    <>
-      <input
-        type="text"
-        value={row.json_path}
-        disabled={readOnly}
-        onChange={(event) => onChange(row.id, "json_path", event.target.value)}
-        placeholder="$.data.value"
-        className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-      />
-      {errorsByRow[row.id]?.json_path && (
-        <p className="m-0 mt-1 text-xs text-red-600">
-          {errorsByRow[row.id]?.json_path}
-        </p>
-      )}
-    </>
-  );
+  const renderJsonPathInput = (row: TRow) => {
+    const isAuto = "source" in row && (row as MetricMappingRow).source === "auto";
+    return (
+      <>
+        <input
+          type="text"
+          value={row.json_path}
+          disabled={readOnly || isAuto}
+          onChange={(event) => onChange(row.id, "json_path", event.target.value)}
+          placeholder="$.data.value"
+          className={`w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 ${isAuto ? "opacity-70" : ""}`}
+        />
+        {errorsByRow[row.id]?.json_path && (
+          <p className="m-0 mt-1 text-xs text-red-600">
+            {errorsByRow[row.id]?.json_path}
+          </p>
+        )}
+      </>
+    );
+  };
 
-  const renderUnitInput = (row: TRow) => (
-    <>
-      <input
-        type="text"
-        value={row.unit}
-        disabled={readOnly}
-        onChange={(event) => onChange(row.id, "unit", event.target.value)}
-        placeholder="kWh/unit"
-        className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-      />
-      {errorsByRow[row.id]?.unit && (
-        <p className="m-0 mt-1 text-xs text-red-600">
-          {errorsByRow[row.id]?.unit}
-        </p>
-      )}
-    </>
-  );
+  const renderUnitInput = (row: TRow) => {
+    const isAuto = "source" in row && (row as MetricMappingRow).source === "auto";
+    return (
+      <>
+        <input
+          type="text"
+          value={row.unit}
+          disabled={readOnly || isAuto}
+          onChange={(event) => onChange(row.id, "unit", event.target.value)}
+          placeholder="kWh/unit"
+          className={`w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 ${isAuto ? "opacity-70" : ""}`}
+        />
+        {errorsByRow[row.id]?.unit && (
+          <p className="m-0 mt-1 text-xs text-red-600">
+            {errorsByRow[row.id]?.unit}
+          </p>
+        )}
+      </>
+    );
+  };
 
   return (
     <div className="rounded-xl md:brand-surface">

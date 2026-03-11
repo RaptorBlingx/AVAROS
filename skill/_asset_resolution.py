@@ -38,8 +38,12 @@ def get_asset_registry(
         return cached_assets
 
     assets = _load_assets_from_adapter(skill)
-    if not assets:
-        assets = _load_assets_from_settings(skill, profile)
+    settings_assets = _load_assets_from_settings(skill, profile)
+    if settings_assets:
+        existing_ids = {a.asset_id for a in assets}
+        for sa in settings_assets:
+            if sa.asset_id not in existing_ids:
+                assets.append(sa)
 
     skill._asset_registry_cache = assets
     skill._asset_registry_profile = profile

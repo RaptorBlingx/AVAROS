@@ -41,6 +41,9 @@ class MetricMappingRequest(BaseModel):
     )
 
 
+MetricMappingSource = Literal["manual", "auto"]
+
+
 class MetricMappingResponse(BaseModel):
     """Metric mapping response object."""
 
@@ -63,6 +66,10 @@ class MetricMappingResponse(BaseModel):
     transform: str | None = Field(
         default=None,
         description="Optional transform instruction.",
+    )
+    source: MetricMappingSource = Field(
+        default="manual",
+        description="'auto' = derived from asset metric_resources, 'manual' = user-configured.",
     )
 
 

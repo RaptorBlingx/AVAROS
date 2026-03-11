@@ -9,6 +9,7 @@ type MetricMappingRowActionsProps = {
   isMockProfile: boolean;
   savingRowId: string | null;
   rowTestState: MetricTestState | undefined;
+  isAutoRow?: boolean;
   onSave: (rowId: string) => void;
   onTest: (rowId: string) => void;
   onRemove: (rowId: string) => void;
@@ -35,10 +36,19 @@ export default function MetricMappingRowActions({
   isMockProfile,
   savingRowId,
   rowTestState,
+  isAutoRow = false,
   onSave,
   onTest,
   onRemove,
 }: MetricMappingRowActionsProps) {
+  if (isAutoRow) {
+    return (
+      <span className="inline-flex items-center text-xs text-slate-400 dark:text-slate-500">
+        Managed by adapter
+      </span>
+    );
+  }
+
   const isTesting = rowTestState?.status === "loading";
   const testLabel = resolveTestLabel(rowTestState);
   const testTitle = resolveTestTitle(rowTestState);

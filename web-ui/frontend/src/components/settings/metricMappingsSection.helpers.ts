@@ -14,6 +14,7 @@ export const EMPTY_SETTINGS_ROW_DEFAULTS: Omit<
   json_path: "",
   unit: "",
   transform: "",
+  source: "manual",
 };
 
 export function createSettingsRow(mapping: MetricMapping): SettingsMetricRow {
@@ -24,6 +25,7 @@ export function createSettingsRow(mapping: MetricMapping): SettingsMetricRow {
     json_path: mapping.json_path,
     unit: mapping.unit,
     transform: mapping.transform ?? "",
+    source: mapping.source ?? "manual",
     persisted: true,
     originalMetric: mapping.canonical_metric,
   };

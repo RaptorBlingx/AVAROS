@@ -199,13 +199,13 @@ async def _write_batched(
         client: Initialized ReneryoClient.
         metric_id: Reneryo metric UUID.
         points: All data points for this metric/asset.
-        asset: Asset identifier for labels.
+        asset: Asset identifier (sent as label for per-asset differentiation).
         delay_s: Delay between batches.
 
     Returns:
         Resource ID from the first successful write.
     """
-    labels = [{"key": "asset", "value": asset}]
+    labels: list[dict[str, str]] = [{"key": "line", "value": asset}]
     resource_id = ""
 
     for batch_start in range(0, len(points), BATCH_SIZE):
@@ -273,9 +273,12 @@ async def _push_single_round(
             point = generate_single_metric(
                 profile, now, ref_start, asset,
             )
-            labels = [{"key": "asset", "value": asset}]
+            # NOTE: Reneryo has a bug where appending to labeled
+            # resources returns 500. Daemon writes with empty labels
+            # create a separate (unused) resource. This is a known
+            # limitation until Reneryo fixes the append bug.
             await client.write_values(
-                metric_id, "SCALAR", [point], labels
+                metric_id, "SCALAR", [point], []
             )
     logger.info("Daemon: pushed %d values at %s",
                 len(METRIC_PROFILES) * len(DEFAULT_ASSETS),

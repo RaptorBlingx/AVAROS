@@ -497,6 +497,15 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             AdapterError: If metric has no mapped endpoint.
         """
         if self._api_format == "native":
+            # Prefer metric-resource mapping when present (generator data)
+            if metric in REAL_SUPPORTED_METRICS and purpose in {"kpi", "trend", "compare", "raw"}:
+                resource_id = self._resolve_metric_resource_id(metric, asset_id)
+                if resource_id:
+                    encoded_resource_id = quote(resource_id, safe="")
+                    return REAL_METRIC_RESOURCE_VALUES_ENDPOINT.format(
+                        resource_id=encoded_resource_id,
+                    )
+
             if metric == CanonicalMetric.ENERGY_PER_UNIT:
                 if purpose in {"kpi", "trend"}:
                     seu_id = self._resolve_seu_id(asset_id)
@@ -513,14 +522,6 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
 
             if metric in REAL_ENERGY_METRICS:
                 return REAL_METER_ENDPOINT
-
-            if metric in REAL_SUPPORTED_METRICS and purpose in {"kpi", "trend", "compare", "raw"}:
-                resource_id = self._resolve_metric_resource_id(metric, asset_id)
-                if resource_id:
-                    encoded_resource_id = quote(resource_id, safe="")
-                    return REAL_METRIC_RESOURCE_VALUES_ENDPOINT.format(
-                        resource_id=encoded_resource_id,
-                    )
         endpoint = ENDPOINT_MAP.get(metric)
         if endpoint is None:
             raise AdapterError(

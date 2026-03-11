@@ -275,6 +275,7 @@ export default function MetricMappingsSection({
                     isMockProfile={isMockProfile}
                     savingRowId={savingRowId}
                     rowTestState={testStateByRow[row.id]}
+                    isAutoRow={row.source === "auto"}
                     onSave={(rowId) => {
                       void saveRow(rowId);
                     }}

@@ -79,7 +79,7 @@ export default function Settings() {
 
   const headerSubtitle = useMemo(
     () =>
-      "Manage platform config, voice/audio preferences, metric mappings, intent bindings, intents, and live system state.",
+      "Manage platform config, voice/audio preferences, metric & intent bindings, and live system state.",
     [],
   );
 
@@ -101,14 +101,9 @@ export default function Settings() {
         selector: '[data-onboarding-target="settings-voice-audio"]',
       },
       {
-        title: "Metric Mappings",
-        description: "Map canonical AVAROS metrics to your API fields.",
+        title: "Metric & Intent Bindings",
+        description: "Metric mappings (auto-derived or manual) and non-metric intent bindings.",
         selector: '[data-onboarding-target="settings-metric-mappings"]',
-      },
-      {
-        title: "Intent Bindings",
-        description: "Map non-metric intents (control/status/help) to your API endpoints.",
-        selector: '[data-onboarding-target="settings-intent-bindings"]',
       },
       {
         title: "Asset Management",
@@ -225,8 +220,8 @@ export default function Settings() {
       </Section>
 
       <Section
-        title="Metric Mappings"
-        helpText="Map canonical AVAROS metrics to your platform endpoint fields."
+        title="Metric & Intent Bindings"
+        helpText="Metric mappings (auto-derived or manual) and non-metric intent bindings for your platform."
         targetId="settings-metric-mappings"
       >
         <MetricMappingsSection
@@ -234,13 +229,10 @@ export default function Settings() {
           refreshKey={profileRefreshKey}
           activeProfile={activeProfileName}
         />
-      </Section>
-
-      <Section
-        title="Intent Bindings"
-        helpText="Map non-metric intents like control, status, and help to your platform APIs."
-        targetId="settings-intent-bindings"
-      >
+        <div className="my-4 border-t border-slate-200 dark:border-slate-700" />
+        <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+          Non-Metric Intent Bindings
+        </h3>
         <IntentBindingsSection
           onNotify={notify}
           refreshKey={profileRefreshKey}

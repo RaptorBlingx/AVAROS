@@ -257,7 +257,7 @@ class ReneryoClient:
         values: list[dict[str, Any]],
         labels: list[dict[str, str]],
     ) -> str:
-        """Write a single batch — no retry on 500 (caller handles split).
+        """Write a single batch with retry on transient 500s.
 
         Args:
             metric_id: The metric UUID.
@@ -273,7 +273,7 @@ class ReneryoClient:
             "POST",
             f"/u/measurement/metric/item/{metric_id}/values",
             json_data=payload,
-            retry_on_server_error=False,
+            retry_on_server_error=True,
         )
         return result.get("resourceId", "") if isinstance(result, dict) else ""
 

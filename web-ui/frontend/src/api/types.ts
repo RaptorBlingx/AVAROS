@@ -64,15 +64,18 @@ export type CanonicalMetricName =
   | "co2_total"
   | "co2_per_batch";
 
+export type MetricMappingSource = "manual" | "auto";
+
 export type MetricMapping = {
   canonical_metric: CanonicalMetricName;
   endpoint: string;
   json_path: string;
   unit: string;
   transform: string | null;
+  source: MetricMappingSource;
 };
 
-export type MetricMappingRequest = MetricMapping;
+export type MetricMappingRequest = Omit<MetricMapping, "source">;
 
 export type MetricMappingTestRequest = {
   base_url: string;

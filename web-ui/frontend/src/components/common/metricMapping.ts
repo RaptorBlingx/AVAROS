@@ -1,4 +1,4 @@
-import type { CanonicalMetricName } from "../../api/types";
+import type { CanonicalMetricName, MetricMappingSource } from "../../api/types";
 
 export type MetricOption = {
   value: CanonicalMetricName;
@@ -13,6 +13,7 @@ export type MetricMappingRow = {
   json_path: string;
   unit: string;
   transform: string;
+  source: MetricMappingSource;
 };
 
 export type MetricRowError = {

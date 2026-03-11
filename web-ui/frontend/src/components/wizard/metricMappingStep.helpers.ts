@@ -9,6 +9,7 @@ export const EMPTY_WIZARD_ROW_DEFAULTS: Omit<MetricMappingRow, "id" | "canonical
   json_path: "",
   unit: "",
   transform: "",
+  source: "manual",
 };
 
 export function createWizardRow(mapping: MetricMapping): MetricMappingRow {
@@ -19,6 +20,7 @@ export function createWizardRow(mapping: MetricMapping): MetricMappingRow {
     json_path: mapping.json_path,
     unit: mapping.unit,
     transform: mapping.transform ?? "",
+    source: mapping.source ?? "manual",
   };
 }
 
