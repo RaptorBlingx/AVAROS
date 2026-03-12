@@ -18,7 +18,10 @@ export type PlatformConfigRequest = {
   platform_type: PlatformType;
   api_url: string;
   api_key: string;
-  extra_settings: Record<string, string>;
+  extra_settings: {
+    auth_type?: "bearer" | "cookie" | "none";
+    [key: string]: string | number | boolean | null | undefined;
+  };
 };
 
 export type PlatformConfigResponse = {
@@ -81,7 +84,7 @@ export type MetricMappingTestRequest = {
   base_url: string;
   endpoint: string;
   json_path: string;
-  auth_type: "bearer" | "cookie";
+  auth_type: "bearer" | "cookie" | "none";
   auth_token: string;
 };
 

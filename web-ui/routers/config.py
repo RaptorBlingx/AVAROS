@@ -139,4 +139,15 @@ def _create_adapter_from_config(
             extra_settings=sanitize_extra_settings(payload.extra_settings),
         )
 
+    if payload.platform_type == "custom_rest":
+        from skill.adapters.generic_rest import GenericRestAdapter
+
+        return GenericRestAdapter(
+            api_url=payload.api_url,
+            api_key=payload.api_key,
+            timeout=payload.extra_settings.get("timeout", 30),
+            auth_type=payload.extra_settings.get("auth_type", "bearer"),
+            extra_settings=sanitize_extra_settings(payload.extra_settings),
+        )
+
     raise ValueError(f"Unknown platform type: {payload.platform_type}")

@@ -66,6 +66,12 @@ const MOCK_PROFILES: ProfileListResponse = {
       is_active: false,
       is_builtin: false,
     },
+    {
+      name: "custom-no-auth",
+      platform_type: "custom_rest",
+      is_active: false,
+      is_builtin: false,
+    },
   ],
   active_profile: "mock",
 };
@@ -86,6 +92,16 @@ const RENERYO_PROFILE_CONFIG: ProfileConfig = {
   api_url: "https://api.reneryo.com",
   api_key: "****abcd",
   extra_settings: { auth_type: "bearer" },
+  is_builtin: false,
+  is_active: false,
+};
+
+const CUSTOM_REST_NONE_PROFILE_CONFIG: ProfileConfig = {
+  name: "custom-no-auth",
+  platform_type: "custom_rest",
+  api_url: "https://custom.example.com",
+  api_key: "****",
+  extra_settings: { auth_type: "none" },
   is_builtin: false,
   is_active: false,
 };
@@ -117,6 +133,7 @@ describe("PlatformConfigSection with ProfileSelector", () => {
     mockGetProfile.mockImplementation(async (name: string) => {
       if (name === "mock") return MOCK_PROFILE_CONFIG;
       if (name === "my-reneryo") return RENERYO_PROFILE_CONFIG;
+      if (name === "custom-no-auth") return CUSTOM_REST_NONE_PROFILE_CONFIG;
       throw new Error(`Unknown profile: ${name}`);
     });
   });
@@ -227,6 +244,27 @@ describe("PlatformConfigSection with ProfileSelector", () => {
       const platformSelect = findPlatformSelect(container);
       expect(platformSelect).not.toBeNull();
       expect(platformSelect!.disabled).toBe(true);
+    });
+  });
+
+  it("preserves none auth type when switching to a no-auth profile", async () => {
+    render(<PlatformConfigSection onNotify={onNotify} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByTestId("profile-dropdown"), {
+      target: { value: "custom-no-auth" },
+    });
+
+    await waitFor(() => {
+      expect(mockGetProfile).toHaveBeenCalledWith("custom-no-auth");
+    });
+
+    await waitFor(() => {
+      const authSelect = screen.getByLabelText("Auth Type") as HTMLSelectElement;
+      expect(authSelect.value).toBe("none");
     });
   });
 });

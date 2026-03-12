@@ -341,6 +341,17 @@ class TestMetricMappingTestRequest:
                 auth_token="token",
             )
 
+    def test_none_auth_type_is_valid(self) -> None:
+        model = MetricMappingTestRequest(
+            base_url="https://api.example.com",
+            endpoint="/metrics/energy",
+            json_path="$.data.value",
+            auth_type="none",
+            auth_token="",
+        )
+
+        assert model.auth_type == "none"
+
 
 class TestMetricMappingTestResponse:
     """Tests for MetricMappingTestResponse serialisation."""

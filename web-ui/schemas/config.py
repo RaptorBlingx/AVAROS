@@ -56,7 +56,8 @@ class PlatformConfigRequest(BaseModel):
         if not parsed.scheme or not parsed.netloc:
             raise ValueError("api_url must be a valid URL")
 
-        if not self.api_key:
+        auth_type = str(self.extra_settings.get("auth_type", "bearer")).strip().lower()
+        if auth_type != "none" and not self.api_key:
             raise ValueError("api_key is required for non-mock platforms")
 
         return self
@@ -213,4 +214,3 @@ class DeleteProfileResponse(BaseModel):
     deleted_profile: str = Field(..., description="Name of the deleted profile.")
     active_profile: str = Field(..., description="Name of the active profile after deletion.")
     message: str = Field(..., description="Human-readable result message.")
-

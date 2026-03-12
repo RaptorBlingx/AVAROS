@@ -194,6 +194,23 @@ class TestCreatePlatformConfigValidation:
 
         assert response.status_code == 422
 
+    def test_allow_non_mock_without_api_key_when_auth_type_none(
+        self,
+        client: TestClient,
+    ) -> None:
+        """Non-mock platform with auth_type=none allows empty api_key."""
+        response = client.post(
+            "/api/v1/config/platform",
+            json={
+                "platform_type": "custom_rest",
+                "api_url": "https://api.example.com",
+                "api_key": "",
+                "extra_settings": {"auth_type": "none"},
+            },
+        )
+
+        assert response.status_code == 200
+
     def test_reject_invalid_url_format(
         self,
         client: TestClient,
@@ -484,15 +501,16 @@ class TestConnectionTest:
         assert isinstance(body["resources_discovered"], list)
         assert len(body["resources_discovered"]) > 0
 
-    def test_unknown_platform_returns_error(
+    def test_custom_rest_connection_does_not_fail_adapter_creation(
         self,
         client: TestClient,
     ) -> None:
-        """Unknown platform_type returns adapter creation error."""
+        """Custom REST path should create adapter without factory errors."""
         payload = {
             "platform_type": "custom_rest",
             "api_url": "https://example.com",
-            "api_key": "key",
+            "api_key": "",
+            "extra_settings": {"auth_type": "none"},
         }
         response = client.post(
             "/api/v1/config/platform/test",
@@ -500,8 +518,8 @@ class TestConnectionTest:
         )
 
         body = response.json()
-        assert body["success"] is False
-        assert body["error_code"] == "ADAPTER_CREATION_FAILED"
+        assert response.status_code == 200
+        assert body["error_code"] != "ADAPTER_CREATION_FAILED"
 
     def test_connection_test_does_not_save_config(
         self,
@@ -729,6 +747,23 @@ class TestAdapterFactoryAuthType:
         assert mock_adapter_class.call_count == 1
         assert mock_adapter_class.call_args.kwargs["native_seu_id"] == "SEU-123"
         assert "seu_id" not in mock_adapter_class.call_args.kwargs["extra_settings"]
+
+    def test_create_adapter_with_none_auth_passes_none_to_custom_rest_adapter(
+        self,
+    ) -> None:
+        """Factory forwards auth_type=none to GenericRestAdapter constructor."""
+        payload = PlatformConfigRequest(
+            platform_type="custom_rest",
+            api_url="https://api.example.com",
+            api_key="",
+            extra_settings={"auth_type": "none"},
+        )
+
+        with patch("skill.adapters.generic_rest.GenericRestAdapter") as mock_adapter_class:
+            _create_adapter_from_config(payload)
+
+        assert mock_adapter_class.call_count == 1
+        assert mock_adapter_class.call_args.kwargs["auth_type"] == "none"
 
 
 # ══════════════════════════════════════════════════════════

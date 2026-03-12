@@ -207,6 +207,8 @@ class ReneryoHttpMixin:
         Returns:
             Dict with the appropriate auth header.
         """
+        if self._auth_type == "none":
+            return {}
         if self._auth_type == "cookie":
             raw_cookie = (self._api_key or "").strip()
 

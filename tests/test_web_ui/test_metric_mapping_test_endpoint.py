@@ -207,6 +207,23 @@ class TestMetricMappingValidationEndpoint:
         _, headers, _ = fetch_mock.await_args.args
         assert headers["Cookie"] == "S=session-abc"
 
+    def test_test_mapping_none_auth_sends_no_headers(self, client: TestClient) -> None:
+        payload = {
+            "base_url": "https://api.example.com",
+            "endpoint": "/metrics/energy",
+            "json_path": "$.data.energy",
+            "auth_type": "none",
+            "auth_token": "",
+        }
+
+        fetch_mock = AsyncMock(return_value=(200, '{"data": {"energy": 1}}'))
+        with patch("services.metric_test_service._fetch_response", new=fetch_mock):
+            response = client.post("/api/v1/config/metrics/test", json=payload)
+
+        assert response.status_code == 200
+        _, headers, _ = fetch_mock.await_args.args
+        assert headers == {}
+
     def test_test_mapping_timeout_returns_error(self, client: TestClient) -> None:
         payload = {
             "base_url": "https://api.example.com",
