@@ -81,6 +81,8 @@ def _build_request_url(base_url: str, endpoint: str) -> str:
 
 def _build_auth_headers(auth_type: str, token: str) -> dict[str, str]:
     """Build outbound auth headers for mapping test request."""
+    if auth_type == "none":
+        return {}
     if auth_type == "cookie":
         # RENERYO session cookies are accepted as S=<token> in current deployment.
         return {"Cookie": f"S={token}"}

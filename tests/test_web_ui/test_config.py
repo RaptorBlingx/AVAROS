@@ -194,6 +194,21 @@ class TestCreatePlatformConfigValidation:
 
         assert response.status_code == 422
 
+    def test_allow_non_mock_without_api_key_when_auth_type_none(
+        self,
+        client: TestClient,
+    ) -> None:
+        """Non-mock platform with auth_type=none allows empty api_key."""
+        model = PlatformConfigRequest(
+            platform_type="custom_rest",
+            api_url="https://api.example.com",
+            api_key="",
+            extra_settings={"auth_type": "none"},
+        )
+
+        assert model.api_key == ""
+        assert model.extra_settings["auth_type"] == "none"
+
     def test_reject_invalid_url_format(
         self,
         client: TestClient,
@@ -783,6 +798,23 @@ class TestAdapterFactoryAuthType:
         kwargs = mock_adapter_class.call_args.kwargs
         assert kwargs["auth_type"] == "bearer"
         assert kwargs["timeout"] == 30
+
+    def test_create_adapter_with_none_auth_passes_none_to_custom_rest_adapter(
+        self,
+    ) -> None:
+        """Factory forwards auth_type=none to GenericRestAdapter constructor."""
+        payload = PlatformConfigRequest(
+            platform_type="custom_rest",
+            api_url="https://api.example.com",
+            api_key="",
+            extra_settings={"auth_type": "none"},
+        )
+
+        with patch("skill.adapters.generic_rest.GenericRestAdapter") as mock_adapter_class:
+            _create_adapter_from_config(payload)
+
+        assert mock_adapter_class.call_count == 1
+        assert mock_adapter_class.call_args.kwargs["auth_type"] == "none"
 
 
 # ══════════════════════════════════════════════════════════

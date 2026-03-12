@@ -81,7 +81,12 @@ export default function useMetricMappingTest({
         base_url: config.api_url,
         endpoint: row.endpoint.trim(),
         json_path: row.json_path.trim(),
-        auth_type: config.extra_settings.auth_type === "cookie" ? "cookie" : "bearer",
+        auth_type:
+          config.extra_settings.auth_type === "cookie"
+            ? "cookie"
+            : config.extra_settings.auth_type === "none"
+            ? "none"
+            : "bearer",
         auth_token: config.api_key,
       });
       if (response.success && typeof response.value === "number") {
@@ -116,4 +121,3 @@ export default function useMetricMappingTest({
     clearAllTestState,
   };
 }
-

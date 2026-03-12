@@ -222,6 +222,8 @@ class GenericRestHttpMixin:
 
     def _build_auth_headers(self) -> dict[str, str]:
         """Build auth headers for bearer or cookie auth."""
+        if self._auth_type == "none":
+            return {}
         if self._auth_type == "cookie":
             raw_cookie = (self._api_key or "").strip()
             if raw_cookie.lower().startswith("cookie:"):

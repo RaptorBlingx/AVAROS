@@ -402,3 +402,11 @@ def test_cookie_auth_sends_header() -> None:
     adapter._api_key = "session-id"
 
     assert adapter._build_auth_headers() == {"Cookie": "S=session-id"}
+
+
+def test_none_auth_sends_no_headers() -> None:
+    """No-auth mode should not send auth headers."""
+    adapter = _build_adapter({}, auth_type="none")
+    adapter._api_key = "unused"
+
+    assert adapter._build_auth_headers() == {}

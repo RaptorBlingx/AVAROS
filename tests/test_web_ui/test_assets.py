@@ -146,6 +146,26 @@ def test_config_assets_roundtrip_for_custom_rest_profile(
     assert get_response.json() == payload
 
 
+def test_config_assets_rejects_empty_asset_mapping(
+    client: TestClient,
+    settings_service: SettingsService,
+) -> None:
+    """Saving empty per-asset mappings should return HTTP 400."""
+    if settings_service.get_profile("custom") is None:
+        settings_service.create_profile(
+            "custom",
+            PlatformConfig(platform_type="custom_rest", api_url="https://api.example.com"),
+        )
+    settings_service.set_active_profile("custom")
+
+    response = client.post(
+        "/api/v1/config/assets",
+        json={"asset_mappings": {"line-1": {}}},
+    )
+    assert response.status_code == 400
+    assert "empty mapping" in response.json()["detail"].lower()
+
+
 def test_assets_router_has_no_reneryo_imports() -> None:
     """DEC-001: assets router must not import from skill.adapters.reneryo."""
     router_file = (
@@ -250,3 +270,25 @@ def test_import_generator_mapping_on_mock_profile_fails(
         json={"mapping": {"energy_per_unit": {"line-1": "uuid-1"}}},
     )
     assert response.status_code == 400
+
+
+def test_import_generator_mapping_rejects_unknown_metric_names(
+    client: TestClient,
+    settings_service: SettingsService,
+    reneryo_profile: None,
+) -> None:
+    """Unknown metric names should fail fast with HTTP 422."""
+    settings_service.set_asset_mappings({
+        "line-1": {"display_name": "Line 1"},
+    })
+
+    response = client.post(
+        "/api/v1/assets/import-generator-mapping",
+        json={"mapping": {"fake_metric": {"line-1": "uuid-x"}}},
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "Unknown metric names: fake_metric" in detail
+    assert "Valid metrics:" in detail
+    assert settings_service.get_asset_mappings() == {"line-1": {"display_name": "Line 1"}}

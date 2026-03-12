@@ -33,7 +33,7 @@ type StepNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 type WizardState = {
   currentStep: StepNumber;
   platformType: PlatformType | null;
-  authType: "api_key" | "cookie";
+  authType: "api_key" | "cookie" | "none";
   apiUrl: string;
   apiKey: string;
 };
@@ -45,7 +45,12 @@ function buildPayload(state: WizardState): PlatformConfigRequest {
     api_url: platformType === "mock" ? "" : state.apiUrl.trim(),
     api_key: platformType === "mock" ? "" : state.apiKey.trim(),
     extra_settings: {
-      auth_type: state.authType === "cookie" ? "cookie" : "bearer",
+      auth_type:
+        state.authType === "cookie"
+          ? "cookie"
+          : state.authType === "none"
+          ? "none"
+          : "bearer",
     },
   };
 }
@@ -72,7 +77,7 @@ function validateConnection(state: WizardState): string {
   if (!/^https?:\/\//i.test(url)) {
     return "URL must start with http:// or https://.";
   }
-  if (!key) {
+  if (state.authType !== "none" && !key) {
     return state.authType === "cookie"
       ? "Session cookie is required for this platform."
       : "API key is required for this platform.";

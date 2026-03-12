@@ -77,7 +77,7 @@ class MetricMappingListResponse(RootModel[list[MetricMappingResponse]]):
     """Array response wrapper for metric mappings list."""
 
 
-MetricAuthType = Literal["bearer", "cookie"]
+MetricAuthType = Literal["bearer", "cookie", "none"]
 
 
 class MetricMappingTestRequest(BaseModel):

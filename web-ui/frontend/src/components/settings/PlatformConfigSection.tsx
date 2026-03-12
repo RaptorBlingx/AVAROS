@@ -26,7 +26,27 @@ type PlatformConfigSectionProps = {
   onActiveProfileResolved?: (profileName: string) => void;
 };
 
-type AuthType = "api_key" | "cookie";
+type AuthType = "api_key" | "cookie" | "none";
+
+function toBackendAuthType(authType: AuthType): "bearer" | "cookie" | "none" {
+  if (authType === "cookie") {
+    return "cookie";
+  }
+  if (authType === "none") {
+    return "none";
+  }
+  return "bearer";
+}
+
+function fromBackendAuthType(authType: string | undefined): AuthType {
+  if (authType === "cookie") {
+    return "cookie";
+  }
+  if (authType === "none") {
+    return "none";
+  }
+  return "api_key";
+}
 
 function createPayload(config: {
   platformType: PlatformType;
@@ -39,7 +59,7 @@ function createPayload(config: {
     api_url: config.platformType === "mock" ? "" : config.apiUrl.trim(),
     api_key: config.platformType === "mock" ? "" : config.apiKey.trim(),
     extra_settings: {
-      auth_type: config.authType === "cookie" ? "cookie" : "bearer",
+      auth_type: toBackendAuthType(config.authType),
     },
   };
 }
@@ -59,7 +79,7 @@ function validate(config: {
   if (!/^https?:\/\//i.test(config.apiUrl.trim())) {
     return "API URL must start with http:// or https://.";
   }
-  if (!config.apiKey.trim()) {
+  if (config.authType !== "none" && !config.apiKey.trim()) {
     return config.authType === "cookie"
       ? "Session cookie is required."
       : "API key is required.";
@@ -106,9 +126,7 @@ export default function PlatformConfigSection({
     setPlatformType(profile.platform_type);
     setApiUrl(profile.api_url);
     setApiKey("");
-    setAuthType(
-      profile.extra_settings?.auth_type === "cookie" ? "cookie" : "api_key",
-    );
+    setAuthType(fromBackendAuthType(profile.extra_settings?.auth_type));
     setConfig({
       platform_type: profile.platform_type,
       api_url: profile.api_url,
@@ -128,9 +146,7 @@ export default function PlatformConfigSection({
       const data = await getPlatformConfig();
       setConfig(data);
       setPlatformType(data.platform_type);
-      setAuthType(
-        data.extra_settings?.auth_type === "cookie" ? "cookie" : "api_key",
-      );
+      setAuthType(fromBackendAuthType(data.extra_settings?.auth_type));
       setApiUrl(data.api_url);
       setApiKey("");
       setIsBuiltinProfile(data.platform_type === "mock");
@@ -330,28 +346,30 @@ export default function PlatformConfigSection({
               >
                 <option value="api_key">API Key</option>
                 <option value="cookie">Session Cookie</option>
+                <option value="none">No Authentication</option>
               </select>
             </label>
-
-            <label className="block md:col-span-2">
-              <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
-                {authType === "cookie" ? "Session Cookie Value" : "API Key"}
-              </span>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(event) => setApiKey(event.target.value)}
-                placeholder={
-                  editing
-                    ? authType === "cookie"
-                      ? "Paste session cookie value or full Cookie: S=..."
-                      : "Enter API key to update"
-                    : config?.api_key ?? "****"
-                }
-                disabled={!editing || saving || formLocked || isMock}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-              />
-            </label>
+            {authType !== "none" && (
+              <label className="block md:col-span-2">
+                <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
+                  {authType === "cookie" ? "Session Cookie Value" : "API Key"}
+                </span>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(event) => setApiKey(event.target.value)}
+                  placeholder={
+                    editing
+                      ? authType === "cookie"
+                        ? "Paste session cookie value or full Cookie: S=..."
+                        : "Enter API key to update"
+                      : config?.api_key ?? "****"
+                  }
+                  disabled={!editing || saving || formLocked || isMock}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                />
+              </label>
+            )}
           </div>
 
           {inlineError && (

@@ -167,4 +167,40 @@ describe("MetricMappingsSection mapping test action", () => {
       expect(screen.getAllByText("Test").length).toBeGreaterThan(0);
     });
   });
+
+  it("passes none auth type for no-auth platform config", async () => {
+    mockApi.getPlatformConfig.mockResolvedValue({
+      platform_type: "custom_rest",
+      api_url: "https://api.example.com",
+      api_key: "",
+      extra_settings: { auth_type: "none" },
+    });
+    mockApi.testMetricMapping.mockResolvedValue({
+      success: true,
+      value: 1,
+      raw_response_preview: '{"data":{"value":1}}',
+      error: null,
+    });
+
+    render(
+      <MetricMappingsSection onNotify={vi.fn()} refreshKey={0} activeProfile="custom-no-auth" />,
+    );
+
+    await waitFor(() => {
+      expect(mockApi.listMetricMappings).toHaveBeenCalledTimes(1);
+    });
+
+    const testButtons = screen.getAllByRole("button", {
+      name: /test mapping for energy_per_unit/i,
+    });
+    fireEvent.click(testButtons[0]);
+
+    await waitFor(() => {
+      expect(mockApi.testMetricMapping).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mockApi.testMetricMapping).toHaveBeenCalledWith(
+      expect.objectContaining({ auth_type: "none" }),
+    );
+  });
 });

@@ -666,6 +666,16 @@ class TestReneryoAuth:
         headers = adapter._build_auth_headers()
         assert headers == {"Cookie": "S=session-id; Path=/; Secure"}
 
+    def test_none_auth_headers(self) -> None:
+        """No-auth mode should not send auth headers."""
+        adapter = ReneryoAdapter(
+            api_url="https://api.test",
+            api_key="unused",
+            auth_type="none",
+        )
+        headers = adapter._build_auth_headers()
+        assert headers == {}
+
     def test_default_auth_type_is_bearer(self) -> None:
         """Default auth_type is 'bearer'."""
         adapter = ReneryoAdapter(api_url="url", api_key="key")

@@ -93,17 +93,20 @@ def _transform_generator_mapping(
     return per_asset
 
 
-def _warn_unknown_metrics(generator_mapping: dict[str, dict[str, str]]) -> None:
-    """Log unknown metric names to help operators catch typos."""
+def _reject_unknown_metrics(generator_mapping: dict[str, dict[str, str]]) -> None:
+    """Reject generator mappings containing non-canonical metric names."""
     unknown = sorted(
         metric_name
         for metric_name in generator_mapping
         if metric_name not in _CANONICAL_METRICS
     )
     if unknown:
-        logger.warning(
-            "Generator mapping contains unknown metrics: %s",
-            ", ".join(unknown),
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                f"Unknown metric names: {', '.join(unknown)}. "
+                f"Valid metrics: {', '.join(sorted(_CANONICAL_METRICS))}"
+            ),
         )
 
 
@@ -150,6 +153,7 @@ def _persist_asset_mappings(
 ) -> AssetMappingsResponse:
     """Save mappings via SettingsService (which handles bus notification)."""
     try:
+        _validate_asset_mappings(payload.asset_mappings)
         settings_service.set_asset_mappings(payload.asset_mappings)
     except ValidationError as exc:
         raise HTTPException(
@@ -159,6 +163,16 @@ def _persist_asset_mappings(
     return AssetMappingsResponse(
         asset_mappings=settings_service.get_asset_mappings(),
     )
+
+
+def _validate_asset_mappings(mappings: dict[str, Any]) -> None:
+    """Reject empty or structurally invalid asset mappings."""
+    for asset_id, mapping in mappings.items():
+        if not isinstance(mapping, dict) or not mapping:
+            raise ValidationError(
+                f"Asset '{asset_id}' has an empty mapping. "
+                "At minimum, provide a display_name.",
+            )
 
 
 @router.get("/assets/mappings", response_model=AssetMappingsResponse)
@@ -256,7 +270,7 @@ def import_generator_mapping(
     Existing asset mapping fields (display_name, aliases, etc.) are
     preserved — only ``metric_resources`` is updated/merged.
     """
-    _warn_unknown_metrics(payload.mapping)
+    _reject_unknown_metrics(payload.mapping)
     per_asset = _transform_generator_mapping(payload.mapping)
     if not per_asset:
         raise HTTPException(
