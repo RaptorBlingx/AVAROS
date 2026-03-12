@@ -77,11 +77,10 @@ describe("AssetManagementSection", () => {
     render(<AssetManagementSection mode="settings" platformType="custom_rest" />);
 
     await waitFor(() => {
-      expect(mockApi.getConfiguredAssets).toHaveBeenCalled();
+      expect(mockApi.discoverAssets).toHaveBeenCalled();
     });
 
     expect(screen.queryByRole("button", { name: "Discover Assets" })).toBeNull();
-    expect(mockApi.discoverAssets).not.toHaveBeenCalled();
   });
 
   it("shows Discover Assets button for mock when discovery is supported", async () => {

@@ -51,8 +51,8 @@ export default function AssetManagementSection({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const canAttemptDiscovery = resolvedPlatform === "reneryo" || resolvedPlatform === "mock";
-  const supportsDiscover = canAttemptDiscovery && (discovery?.supports_discovery ?? true);
+  const supportsDiscover = discovery?.supports_discovery ?? true;
+  const canAttemptDiscovery = supportsDiscover;
   const isMock = resolvedPlatform === "mock";
   const isCustomRest = resolvedPlatform === "custom_rest";
   const isReneryo = resolvedPlatform === "reneryo";
