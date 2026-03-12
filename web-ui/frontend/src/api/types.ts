@@ -119,7 +119,11 @@ export type IntentState = {
   intent_name: string;
   active: boolean;
   required_metrics: CanonicalMetricName[];
+  metrics_mapped: boolean;
+  category: IntentCategory;
 };
+
+export type IntentCategory = "kpi" | "action" | "system";
 
 export type IntentListResponse = IntentState[];
 

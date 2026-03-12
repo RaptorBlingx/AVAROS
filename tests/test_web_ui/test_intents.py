@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from skill.services.settings import (
+    INTENT_CATEGORIES,
     KNOWN_INTENTS,
     PlatformConfig,
     SettingsService,
@@ -67,6 +68,14 @@ class TestListIntents:
         for intent in data["intents"]:
             assert isinstance(intent["required_metrics"], list)
 
+    def test_list_intents_includes_category(
+        self, client: TestClient
+    ) -> None:
+        """Each intent payload includes category with valid value."""
+        data = client.get("/api/v1/config/intents").json()
+        for intent in data["intents"]:
+            assert intent["category"] in {"kpi", "action", "system"}
+
     def test_list_intents_metrics_mapped_false_by_default(
         self, client: TestClient
     ) -> None:
@@ -114,6 +123,15 @@ class TestListIntents:
         data = client.get("/api/v1/config/intents").json()
         names = {i["intent_name"] for i in data["intents"]}
         assert names == set(KNOWN_INTENTS)
+
+    def test_list_intents_categories_match_service_constant(
+        self, client: TestClient
+    ) -> None:
+        """Category values in API match INTENT_CATEGORIES map."""
+        data = client.get("/api/v1/config/intents").json()
+        by_name = {i["intent_name"]: i for i in data["intents"]}
+        for intent_name in KNOWN_INTENTS:
+            assert by_name[intent_name]["category"] == INTENT_CATEGORIES[intent_name]
 
 
 # ══════════════════════════════════════════════════════════
@@ -184,6 +202,16 @@ class TestToggleIntent:
             json={"active": True},
         ).json()
         assert data["metrics_mapped"] is True
+
+    def test_toggle_response_includes_category(
+        self, client: TestClient
+    ) -> None:
+        """Toggle response includes category field."""
+        data = client.put(
+            "/api/v1/config/intents/control.device.turn_on",
+            json={"active": True},
+        ).json()
+        assert data["category"] == "action"
 
     def test_toggle_unknown_intent_returns_422(
         self, client: TestClient

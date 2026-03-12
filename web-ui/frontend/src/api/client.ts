@@ -258,10 +258,17 @@ export async function getIntents(): Promise<IntentListResponse> {
   const response = await request<
     IntentListResponse | { intents: IntentState[] }
   >("/api/v1/config/intents");
+  const normalizeIntent = (intent: IntentState): IntentState => ({
+    ...intent,
+    category:
+      intent.category === "action" || intent.category === "system"
+        ? intent.category
+        : "kpi",
+  });
   if (Array.isArray(response)) {
-    return response;
+    return response.map(normalizeIntent);
   }
-  return response.intents ?? [];
+  return (response.intents ?? []).map(normalizeIntent);
 }
 
 export function setIntentActive(

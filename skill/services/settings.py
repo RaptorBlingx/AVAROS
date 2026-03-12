@@ -43,7 +43,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet
@@ -109,6 +109,40 @@ KNOWN_INTENTS: tuple[str, ...] = (
     "status.profile.show",
     "help.capabilities.list",
 )
+
+IntentCategory = Literal["kpi", "action", "system"]
+
+INTENT_CATEGORIES: dict[str, IntentCategory] = {
+    "kpi.energy.per_unit": "kpi",
+    "kpi.energy.total": "kpi",
+    "kpi.peak_demand": "kpi",
+    "kpi.peak_tariff_exposure": "kpi",
+    "kpi.oee": "kpi",
+    "kpi.scrap_rate": "kpi",
+    "kpi.rework_rate": "kpi",
+    "kpi.material_efficiency": "kpi",
+    "kpi.recycled_content": "kpi",
+    "kpi.supplier_lead_time": "kpi",
+    "kpi.supplier_defect_rate": "kpi",
+    "kpi.supplier_on_time": "kpi",
+    "kpi.supplier_co2_per_kg": "kpi",
+    "kpi.throughput": "kpi",
+    "kpi.cycle_time": "kpi",
+    "kpi.changeover_time": "kpi",
+    "kpi.co2.per_unit": "kpi",
+    "kpi.co2.total": "kpi",
+    "kpi.co2.per_batch": "kpi",
+    "compare.energy": "kpi",
+    "trend.scrap": "kpi",
+    "trend.energy": "kpi",
+    "anomaly.production.check": "kpi",
+    "whatif.temperature": "kpi",
+    "control.device.turn_on": "action",
+    "control.device.turn_off": "action",
+    "status.system.show": "system",
+    "status.profile.show": "system",
+    "help.capabilities.list": "system",
+}
 
 INTENT_METRIC_REQUIREMENTS: dict[str, list[CanonicalMetric]] = {
     "kpi.energy.per_unit": [CanonicalMetric.ENERGY_PER_UNIT],

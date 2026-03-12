@@ -979,6 +979,49 @@ class TestGetIntentMetricRequirements:
         assert result["anomaly.production.check"] == ["oee"]
 
 
+class TestIntentCategories:
+    """Tests for INTENT_CATEGORIES constant integrity."""
+
+    def test_all_known_intents_have_categories(self) -> None:
+        from skill.services.settings import INTENT_CATEGORIES, KNOWN_INTENTS
+
+        for intent in KNOWN_INTENTS:
+            assert intent in INTENT_CATEGORIES
+
+    def test_all_category_values_are_valid(self) -> None:
+        from skill.services.settings import INTENT_CATEGORIES
+
+        valid = {"kpi", "action", "system"}
+        assert set(INTENT_CATEGORIES.values()).issubset(valid)
+
+    def test_action_intents_are_categorized(self) -> None:
+        from skill.services.settings import INTENT_CATEGORIES
+
+        assert INTENT_CATEGORIES["control.device.turn_on"] == "action"
+        assert INTENT_CATEGORIES["control.device.turn_off"] == "action"
+
+    def test_system_intents_are_categorized(self) -> None:
+        from skill.services.settings import INTENT_CATEGORIES
+
+        assert INTENT_CATEGORIES["status.system.show"] == "system"
+        assert INTENT_CATEGORIES["status.profile.show"] == "system"
+        assert INTENT_CATEGORIES["help.capabilities.list"] == "system"
+
+    def test_all_other_intents_are_kpi(self) -> None:
+        from skill.services.settings import INTENT_CATEGORIES, KNOWN_INTENTS
+
+        non_kpi = {
+            "control.device.turn_on",
+            "control.device.turn_off",
+            "status.system.show",
+            "status.profile.show",
+            "help.capabilities.list",
+        }
+        for intent in KNOWN_INTENTS:
+            if intent not in non_kpi:
+                assert INTENT_CATEGORIES[intent] == "kpi"
+
+
 # ══════════════════════════════════════════════════════════
 # 16. Intent Activation — Isolation from Other Settings
 # ══════════════════════════════════════════════════════════

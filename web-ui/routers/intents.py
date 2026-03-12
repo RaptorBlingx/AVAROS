@@ -11,7 +11,7 @@ from schemas.intents import (
     IntentToggleRequest,
 )
 from skill.domain.exceptions import ValidationError
-from skill.services.settings import KNOWN_INTENTS, SettingsService
+from skill.services.settings import INTENT_CATEGORIES, KNOWN_INTENTS, SettingsService
 
 
 router = APIRouter(prefix="/api/v1/config", tags=["intents"])
@@ -41,6 +41,7 @@ def _build_intent_state(
         active=settings_service.is_intent_active(intent_name),
         required_metrics=required,
         metrics_mapped=all_mapped,
+        category=INTENT_CATEGORIES.get(intent_name, "kpi"),
     )
 
 
@@ -73,7 +74,7 @@ def toggle_intent(
         settings_service.set_intent_active(intent_name, payload.active)
     except ValidationError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=exc.message,
         ) from exc
 

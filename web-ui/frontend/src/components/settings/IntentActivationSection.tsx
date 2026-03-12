@@ -1,16 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-
-import {
-  getIntents,
-  listMetricMappings,
-  setIntentActive,
-  toFriendlyErrorMessage,
-} from "../../api/client";
-import type { IntentState, MetricMapping } from "../../api/types";
 import IntentActivationList from "../common/IntentActivationList";
 import EmptyState from "../common/EmptyState";
 import LoadingSpinner from "../common/LoadingSpinner";
-import type { IntentViewModel } from "../common/IntentActivationList";
+import useIntentActivation from "../../hooks/useIntentActivation";
 
 type IntentActivationSectionProps = {
   onNotify: (type: "success" | "error", message: string) => void;
@@ -23,93 +14,20 @@ export default function IntentActivationSection({
   refreshKey = 0,
   activeProfile = "mock",
 }: IntentActivationSectionProps) {
-  const [intents, setIntents] = useState<IntentState[]>([]);
-  const [mappedMetrics, setMappedMetrics] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
-  const [savingIntent, setSavingIntent] = useState<string | null>(null);
-  const [bulkAction, setBulkAction] = useState<"enable" | "disable" | null>(null);
-
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setSavingIntent(null);
-    setBulkAction(null);
-    try {
-      const [intentList, mappings] = await Promise.all([getIntents(), listMetricMappings()]);
-      setIntents(intentList);
-      setMappedMetrics(new Set(mappings.map((mapping: MetricMapping) => mapping.canonical_metric)));
-    } catch (error: unknown) {
-      onNotify("error", toFriendlyErrorMessage(error));
-    } finally {
-      setLoading(false);
-    }
-  }, [onNotify]);
-
-  useEffect(() => {
-    void loadData();
-  }, [loadData, refreshKey, activeProfile]);
-
-  const isMockProfile = useMemo(
-    () => activeProfile === "mock",
-    [activeProfile],
-  );
-
-  const intentView = useMemo<IntentViewModel[]>(
-    () =>
-      intents.map((intent) => ({
-        ...intent,
-        allMapped:
-          intent.required_metrics.length === 0 ||
-          intent.required_metrics.every((metric) => mappedMetrics.has(metric)),
-      })),
-    [intents, mappedMetrics],
-  );
-
-  const toggleIntent = useCallback(
-    async (intentName: string, nextValue: boolean) => {
-      if (isMockProfile) {
-        return;
-      }
-      setSavingIntent(intentName);
-      try {
-        const updated = await setIntentActive(intentName, nextValue);
-        setIntents((prev) =>
-          prev.map((intent) =>
-            intent.intent_name === intentName ? { ...intent, active: updated.active } : intent,
-          ),
-        );
-        onNotify("success", "Intent state updated.");
-      } catch (error: unknown) {
-        onNotify("error", toFriendlyErrorMessage(error));
-      } finally {
-        setSavingIntent(null);
-      }
-    },
-    [isMockProfile, onNotify],
-  );
-
-  const setAll = useCallback(
-    async (active: boolean) => {
-      if (isMockProfile) {
-        return;
-      }
-      if (intents.length === 0) return;
-      setBulkAction(active ? "enable" : "disable");
-      try {
-        for (const intent of intents) {
-          if (intent.active !== active) {
-            await setIntentActive(intent.intent_name, active);
-          }
-        }
-        setIntents((prev) => prev.map((intent) => ({ ...intent, active })));
-        onNotify("success", active ? "All intents enabled." : "All intents disabled.");
-      } catch (error: unknown) {
-        onNotify("error", toFriendlyErrorMessage(error));
-      } finally {
-        setBulkAction(null);
-      }
-    },
-    [isMockProfile, intents, onNotify],
-  );
+  const {
+    intentView,
+    loading,
+    savingIntent,
+    bulkAction,
+    isMockProfile,
+    loadData,
+    toggleIntent,
+    setAll,
+  } = useIntentActivation({
+    errorHandler: { mode: "notify", onNotify },
+    refreshKey,
+    activeProfile,
+  });
 
   return (
     <section className="space-y-3">

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -23,6 +25,10 @@ class IntentStateResponse(BaseModel):
     metrics_mapped: bool = Field(
         ...,
         description="True when all required metrics have stored mappings.",
+    )
+    category: Literal["kpi", "action", "system"] = Field(
+        default="kpi",
+        description="Intent category: kpi, action, or system.",
     )
 
 

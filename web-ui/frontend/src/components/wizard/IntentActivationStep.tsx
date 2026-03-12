@@ -1,18 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 
-import {
-  getIntents,
-  listMetricMappings,
-  setIntentActive,
-  toFriendlyErrorMessage,
-} from "../../api/client";
-import type { IntentState, MetricMapping } from "../../api/types";
 import Tooltip from "../common/Tooltip";
 import EmptyState from "../common/EmptyState";
 import ErrorMessage from "../common/ErrorMessage";
 import IntentActivationList from "../common/IntentActivationList";
 import LoadingSpinner from "../common/LoadingSpinner";
-import type { IntentViewModel } from "../common/IntentActivationList";
+import useIntentActivation from "../../hooks/useIntentActivation";
 
 type IntentActivationStepProps = {
   onComplete: () => void;
@@ -23,95 +16,19 @@ export default function IntentActivationStep({
   onComplete,
   onSkip,
 }: IntentActivationStepProps) {
-  const [intents, setIntents] = useState<IntentState[]>([]);
-  const [mappedMetrics, setMappedMetrics] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
-  const [savingIntent, setSavingIntent] = useState<string | null>(null);
-  const [bulkAction, setBulkAction] = useState<"enable" | "disable" | null>(
-    null,
-  );
   const [error, setError] = useState("");
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const [intentList, mappings] = await Promise.all([
-        getIntents(),
-        listMetricMappings(),
-      ]);
-      setIntents(intentList);
-      setMappedMetrics(
-        new Set(
-          mappings.map((mapping: MetricMapping) => mapping.canonical_metric),
-        ),
-      );
-    } catch (err: unknown) {
-      setError(toFriendlyErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
-
-  const intentStatus = useMemo<IntentViewModel[]>(
-    () =>
-      intents.map((intent) => ({
-        ...intent,
-        allMapped:
-          intent.required_metrics.length === 0 ||
-          intent.required_metrics.every((metric) => mappedMetrics.has(metric)),
-      })),
-    [intents, mappedMetrics],
-  );
-
-  const toggleIntent = useCallback(
-    async (intentName: string, nextValue: boolean) => {
-      setSavingIntent(intentName);
-      setError("");
-      try {
-        const updated = await setIntentActive(intentName, nextValue);
-        setIntents((prev) =>
-          prev.map((intent) =>
-            intent.intent_name === intentName
-              ? { ...intent, active: updated.active }
-              : intent,
-          ),
-        );
-      } catch (err: unknown) {
-        setError(toFriendlyErrorMessage(err));
-      } finally {
-        setSavingIntent(null);
-      }
-    },
-    [],
-  );
-
-  const setAll = useCallback(
-    async (active: boolean) => {
-      if (intents.length === 0) {
-        return;
-      }
-      setBulkAction(active ? "enable" : "disable");
-      setError("");
-      try {
-        for (const intent of intents) {
-          if (intent.active !== active) {
-            await setIntentActive(intent.intent_name, active);
-          }
-        }
-        setIntents((prev) => prev.map((intent) => ({ ...intent, active })));
-      } catch (err: unknown) {
-        setError(toFriendlyErrorMessage(err));
-      } finally {
-        setBulkAction(null);
-      }
-    },
-    [intents],
-  );
+  const {
+    intentView,
+    loading,
+    savingIntent,
+    bulkAction,
+    loadData,
+    toggleIntent,
+    setAll,
+  } = useIntentActivation({
+    errorHandler: { mode: "state", setError },
+  });
 
   return (
     <section className="space-y-4">
@@ -150,7 +67,7 @@ export default function IntentActivationStep({
               </div>
             )}
 
-            {intentStatus.length === 0 ? (
+            {intentView.length === 0 ? (
               <EmptyState
                 title="No intents available"
                 message="Intent list is empty. Retry after backend intent configuration is ready."
@@ -159,7 +76,7 @@ export default function IntentActivationStep({
               />
             ) : (
               <IntentActivationList
-                intents={intentStatus}
+                intents={intentView}
                 savingIntent={savingIntent}
                 bulkAction={bulkAction}
                 onEnableAll={() => void setAll(true)}
