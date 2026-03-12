@@ -26,6 +26,8 @@ services:
     environment:
       - AVAROS_LOG_LEVEL=${AVAROS_LOG_LEVEL:-INFO}
       - AVAROS_DATA_PATH=/data
+      - MESSAGEBUS_HOST=ovos_messagebus
+      - MESSAGEBUS_PORT=8181
       # Platform config comes from Web UI, NOT here
     volumes:
       - avaros-data:/data
@@ -33,6 +35,9 @@ services:
       - "${AVAROS_PORT:-8080}:8080"
     networks:
       - avaros-network
+    depends_on:
+      ovos_messagebus:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import skill; print('healthy')"]
       interval: 30s
@@ -44,21 +49,67 @@ services:
       - "com.avaros.description=Manufacturing KPI Voice Assistant"
 
   # =========================================================================
+  # OVOS Message Bus (required for ovos-core + HiveMind + AVAROS skill)
+  # =========================================================================
+  ovos_messagebus:
+    image: smartgic/ovos-messagebus:latest
+    container_name: avaros-messagebus
+    restart: unless-stopped
+    volumes:
+      - ./docker/ovos-messagebus.standalone.conf:/etc/xdg/mycroft/mycroft.conf:ro
+    networks:
+      - avaros-network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python3 -c \"import socket; s=socket.create_connection(('127.0.0.1',8181), timeout=2); s.close()\" || exit 1",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    labels:
+      - "com.avaros.service=ovos-messagebus"
+
+  # =========================================================================
   # OVOS Core (Voice Processing)
   # =========================================================================
   ovos-core:
     image: smartgic/ovos-core:latest
     container_name: avaros-ovos-core
     restart: unless-stopped
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+          python - <<'PY'
+          from pathlib import Path
+          patch_file = Path("/home/ovos/.venv/lib/python3.13/site-packages/ovos_commonqa/opm.py")
+          old = "PipelinePlugin.__init__(self, bus, config)"
+          new = "PipelinePlugin.__init__(self, config)"
+          if patch_file.exists():
+              text = patch_file.read_text()
+              if old in text:
+                  patch_file.write_text(text.replace(old, new))
+                  print(f"Patched ovos_commonqa compatibility in {patch_file}")
+          PY
+          exec /bin/bash /usr/local/bin/entrypoint.sh
     environment:
       - TZ=${TZ:-UTC}
+      - MESSAGEBUS_HOST=ovos_messagebus
+      - MESSAGEBUS_PORT=8181
     volumes:
       - ovos-config:/home/ovos/.config/mycroft
       - ./skill:/home/ovos/.local/share/mycroft/skills/avaros-skill
+      - ./docker/ovos-core.standalone.conf:/etc/xdg/mycroft/mycroft.conf:ro
     networks:
       - avaros-network
     depends_on:
-      - avaros
+      avaros:
+        condition: service_started
+      ovos_messagebus:
+        condition: service_healthy
     labels:
       - "com.avaros.service=ovos-core"
 
@@ -96,7 +147,7 @@ services:
     restart: unless-stopped
     environment:
       - HIVEMIND_MASTER_KEY=${HIVEMIND_MASTER_KEY:-}
-      - OVOS_BUS_HOST=avaros-ovos-core
+      - OVOS_BUS_HOST=ovos_messagebus
       - OVOS_BUS_PORT=8181
       - HIVEMIND_WS_PORT=5678
       - HIVEMIND_CLIENT_NAME=${HIVEMIND_CLIENT_NAME:-avaros-web-client}
@@ -111,7 +162,10 @@ services:
     networks:
       - avaros-network
     depends_on:
-      - ovos-core
+      ovos-core:
+        condition: service_started
+      ovos_messagebus:
+        condition: service_healthy
     healthcheck:
       test:
         [
