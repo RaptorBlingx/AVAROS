@@ -79,22 +79,9 @@ services:
     image: smartgic/ovos-core:latest
     container_name: avaros-ovos-core
     restart: unless-stopped
-    entrypoint:
-      - /bin/bash
-      - -c
-      - |
-          python - <<'PY'
-          from pathlib import Path
-          patch_file = Path("/home/ovos/.venv/lib/python3.13/site-packages/ovos_commonqa/opm.py")
-          old = "PipelinePlugin.__init__(self, bus, config)"
-          new = "PipelinePlugin.__init__(self, config)"
-          if patch_file.exists():
-              text = patch_file.read_text()
-              if old in text:
-                  patch_file.write_text(text.replace(old, new))
-                  print(f"Patched ovos_commonqa compatibility in {patch_file}")
-          PY
-          exec /bin/bash /usr/local/bin/entrypoint.sh
+    # NOTE: upstream ovos_commonqa has a PipelinePlugin.__init__ signature
+    # bug in some versions. If ovos-core crashes on startup, pin a known-good
+    # image tag instead of :latest. Do NOT monkey-patch container files.
     environment:
       - TZ=${TZ:-UTC}
       - MESSAGEBUS_HOST=ovos_messagebus
