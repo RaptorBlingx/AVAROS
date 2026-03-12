@@ -35,15 +35,19 @@ vi.mock("../../common/ThemeProvider", () => ({
 
 import {
   activateProfile,
+  createPlatformConfig,
   getProfile,
   getPlatformConfig,
   listProfiles,
+  testConnection,
 } from "../../../api/client";
 
 const mockGetPlatformConfig = vi.mocked(getPlatformConfig);
 const mockListProfiles = vi.mocked(listProfiles);
 const mockGetProfile = vi.mocked(getProfile);
 const mockActivateProfile = vi.mocked(activateProfile);
+const mockCreatePlatformConfig = vi.mocked(createPlatformConfig);
+const mockTestConnection = vi.mocked(testConnection);
 
 const DEFAULT_PLATFORM_CONFIG: PlatformConfigResponse = {
   platform_type: "mock",
@@ -130,6 +134,13 @@ describe("PlatformConfigSection with ProfileSelector", () => {
     onNotify = vi.fn() as typeof onNotify;
     mockGetPlatformConfig.mockResolvedValue(DEFAULT_PLATFORM_CONFIG);
     mockListProfiles.mockResolvedValue(MOCK_PROFILES);
+    mockCreatePlatformConfig.mockResolvedValue(DEFAULT_PLATFORM_CONFIG);
+    mockTestConnection.mockResolvedValue({
+      success: true,
+      message: "ok",
+      adapter_type: "custom_rest",
+      details: {},
+    });
     mockGetProfile.mockImplementation(async (name: string) => {
       if (name === "mock") return MOCK_PROFILE_CONFIG;
       if (name === "my-reneryo") return RENERYO_PROFILE_CONFIG;
@@ -266,5 +277,50 @@ describe("PlatformConfigSection with ProfileSelector", () => {
       const authSelect = screen.getByLabelText("Auth Type") as HTMLSelectElement;
       expect(authSelect.value).toBe("none");
     });
+  });
+
+  it("sends empty api_key on save and test when auth type is none", async () => {
+    render(<PlatformConfigSection onNotify={onNotify} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByTestId("profile-dropdown"), {
+      target: { value: "my-reneryo" },
+    });
+
+    await waitFor(() => {
+      expect(mockGetProfile).toHaveBeenCalledWith("my-reneryo");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Auth Type"), {
+      target: { value: "none" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Test Connection" }));
+    await waitFor(() => {
+      expect(mockTestConnection).toHaveBeenCalledTimes(1);
+    });
+    expect(mockTestConnection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        platform_type: "reneryo",
+        api_key: "",
+        extra_settings: expect.objectContaining({ auth_type: "none" }),
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() => {
+      expect(mockCreatePlatformConfig).toHaveBeenCalledTimes(1);
+    });
+    expect(mockCreatePlatformConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        platform_type: "reneryo",
+        api_key: "",
+        extra_settings: expect.objectContaining({ auth_type: "none" }),
+      }),
+    );
   });
 });

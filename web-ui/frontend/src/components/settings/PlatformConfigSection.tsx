@@ -54,10 +54,12 @@ function createPayload(config: {
   apiKey: string;
   authType: AuthType;
 }): PlatformConfigRequest {
+  const shouldSendEmptyApiKey =
+    config.platformType === "mock" || config.authType === "none";
   return {
     platform_type: config.platformType,
     api_url: config.platformType === "mock" ? "" : config.apiUrl.trim(),
-    api_key: config.platformType === "mock" ? "" : config.apiKey.trim(),
+    api_key: shouldSendEmptyApiKey ? "" : config.apiKey.trim(),
     extra_settings: {
       auth_type: toBackendAuthType(config.authType),
     },

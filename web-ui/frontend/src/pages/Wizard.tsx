@@ -38,12 +38,14 @@ type WizardState = {
   apiKey: string;
 };
 
-function buildPayload(state: WizardState): PlatformConfigRequest {
+export function buildPayload(state: WizardState): PlatformConfigRequest {
   const platformType = state.platformType ?? "mock";
+  const shouldSendEmptyApiKey =
+    platformType === "mock" || state.authType === "none";
   return {
     platform_type: platformType,
     api_url: platformType === "mock" ? "" : state.apiUrl.trim(),
-    api_key: platformType === "mock" ? "" : state.apiKey.trim(),
+    api_key: shouldSendEmptyApiKey ? "" : state.apiKey.trim(),
     extra_settings: {
       auth_type:
         state.authType === "cookie"
