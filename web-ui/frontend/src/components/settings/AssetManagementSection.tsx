@@ -51,7 +51,8 @@ export default function AssetManagementSection({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const supportsDiscover = resolvedPlatform === "reneryo" || resolvedPlatform === "mock";
+  const canAttemptDiscovery = resolvedPlatform === "reneryo" || resolvedPlatform === "mock";
+  const supportsDiscover = canAttemptDiscovery && (discovery?.supports_discovery ?? true);
   const isMock = resolvedPlatform === "mock";
   const isCustomRest = resolvedPlatform === "custom_rest";
   const isReneryo = resolvedPlatform === "reneryo";
@@ -83,7 +84,7 @@ export default function AssetManagementSection({
   }, []);
 
   const runDiscovery = useCallback(async () => {
-    if (!supportsDiscover) {
+    if (!canAttemptDiscovery) {
       return;
     }
     setDiscovering(true);
@@ -115,7 +116,7 @@ export default function AssetManagementSection({
     } finally {
       setDiscovering(false);
     }
-  }, [isReneryo, supportsDiscover]);
+  }, [canAttemptDiscovery, isReneryo]);
 
   useEffect(() => {
     void resolvePlatform();
@@ -126,12 +127,12 @@ export default function AssetManagementSection({
   }, [activeProfile, loadMappings, refreshKey, resolvedPlatform]);
 
   useEffect(() => {
-    if (supportsDiscover) {
+    if (canAttemptDiscovery) {
       void runDiscovery();
     } else {
       setDiscovery(null);
     }
-  }, [runDiscovery, supportsDiscover]);
+  }, [canAttemptDiscovery, runDiscovery]);
 
   const seuOptions = useMemo<AssetRecord[]>(
     () => (discovery?.assets ?? []).filter((asset) => asset.asset_type === "seu"),

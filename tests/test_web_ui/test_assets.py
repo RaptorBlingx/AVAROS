@@ -54,6 +54,7 @@ def test_discover_assets_uses_adapter_factory_dependency(
     adapter = Mock()
     adapter.initialize = AsyncMock(return_value=None)
     adapter.shutdown = AsyncMock(return_value=None)
+    adapter.supports_asset_discovery.return_value = True
     adapter.list_assets = AsyncMock(
         return_value=[
             Asset(
@@ -85,6 +86,33 @@ def test_discover_assets_uses_adapter_factory_dependency(
             "metadata": {},
         },
     ]
+
+
+def test_discover_assets_skips_live_discovery_when_adapter_disables_it(
+    client: TestClient,
+) -> None:
+    """Adapters without live discovery support should return empty assets."""
+    adapter = Mock()
+    adapter.initialize = AsyncMock(return_value=None)
+    adapter.shutdown = AsyncMock(return_value=None)
+    adapter.list_assets = AsyncMock(return_value=[])
+    adapter.supports_asset_discovery.return_value = False
+    factory = Mock()
+    factory.create.return_value = adapter
+
+    app.dependency_overrides[get_adapter_factory] = lambda: factory
+    try:
+        response = client.get("/api/v1/assets/discover")
+    finally:
+        app.dependency_overrides.pop(get_adapter_factory, None)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["supports_discovery"] is False
+    assert body["assets"] == []
+    adapter.initialize.assert_not_awaited()
+    adapter.list_assets.assert_not_awaited()
+    adapter.shutdown.assert_not_awaited()
 
 
 def test_config_assets_roundtrip_for_custom_rest_profile(

@@ -182,6 +182,11 @@ export default function PlatformConfigSection({
   }, [apiKey, apiUrl, authType, onNotify, platformType]);
 
   const handleReset = useCallback(async () => {
+    const confirmed = window.confirm(
+      "Reset platform configuration to mock? This will disconnect from your current platform.",
+    );
+    if (!confirmed) return;
+
     setSaving(true);
     setInlineError("");
     setTestResult(null);

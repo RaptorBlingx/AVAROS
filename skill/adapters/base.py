@@ -252,6 +252,10 @@ class ManufacturingAdapter(ABC):
         """
         # Default implementation - subclasses override
         return True
+
+    def supports_asset_discovery(self) -> bool:
+        """Return whether adapter supports live upstream asset discovery."""
+        return True
     
     def get_supported_metrics(self) -> list[CanonicalMetric]:
         """

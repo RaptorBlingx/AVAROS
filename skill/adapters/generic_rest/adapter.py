@@ -213,6 +213,10 @@ class GenericRestAdapter(
                 assets.append(asset)
         return assets
 
+    def supports_asset_discovery(self) -> bool:
+        """Generic REST adapter does not perform live asset discovery."""
+        return False
+
     def supports_capability(self, capability: str) -> bool:
         """Return True only when capability maps to a configured metric."""
         metric_name = self._normalize_metric_name(capability)
