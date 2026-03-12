@@ -72,4 +72,46 @@ describe("AssetManagementSection", () => {
     });
     expect(onNotify).toHaveBeenCalledWith("success", "Assets saved.");
   });
+
+  it("hides Discover Assets button for custom_rest", async () => {
+    render(<AssetManagementSection mode="settings" platformType="custom_rest" />);
+
+    await waitFor(() => {
+      expect(mockApi.getConfiguredAssets).toHaveBeenCalled();
+    });
+
+    expect(screen.queryByRole("button", { name: "Discover Assets" })).toBeNull();
+    expect(mockApi.discoverAssets).not.toHaveBeenCalled();
+  });
+
+  it("shows Discover Assets button for mock when discovery is supported", async () => {
+    mockApi.discoverAssets.mockResolvedValue({
+      platform_type: "mock",
+      supports_discovery: true,
+      assets: [],
+      existing_mappings: {},
+    });
+
+    render(<AssetManagementSection mode="settings" platformType="mock" />);
+
+    await waitFor(() => {
+      expect(mockApi.discoverAssets).toHaveBeenCalled();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Discover Assets" })).toBeTruthy();
+    });
+  });
+
+  it("keeps Discover Assets button visible after discovery fetch failure on mock", async () => {
+    mockApi.discoverAssets.mockRejectedValue(new Error("network down"));
+
+    render(<AssetManagementSection mode="settings" platformType="mock" />);
+
+    await waitFor(() => {
+      expect(mockApi.discoverAssets).toHaveBeenCalled();
+    });
+
+    expect(screen.getByRole("button", { name: "Discover Assets" })).toBeTruthy();
+  });
 });

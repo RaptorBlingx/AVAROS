@@ -35,6 +35,7 @@ vi.mock("../../common/ThemeProvider", () => ({
 
 import {
   activateProfile,
+  resetPlatformConfig,
   getProfile,
   getPlatformConfig,
   listProfiles,
@@ -44,6 +45,7 @@ const mockGetPlatformConfig = vi.mocked(getPlatformConfig);
 const mockListProfiles = vi.mocked(listProfiles);
 const mockGetProfile = vi.mocked(getProfile);
 const mockActivateProfile = vi.mocked(activateProfile);
+const mockResetPlatformConfig = vi.mocked(resetPlatformConfig);
 
 const DEFAULT_PLATFORM_CONFIG: PlatformConfigResponse = {
   platform_type: "mock",
@@ -119,6 +121,11 @@ describe("PlatformConfigSection with ProfileSelector", () => {
       if (name === "my-reneryo") return RENERYO_PROFILE_CONFIG;
       throw new Error(`Unknown profile: ${name}`);
     });
+    mockResetPlatformConfig.mockResolvedValue({
+      status: "reset",
+      platform_type: "mock",
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
   });
 
   it("renders profile selector and platform config form", async () => {
@@ -227,6 +234,34 @@ describe("PlatformConfigSection with ProfileSelector", () => {
       const platformSelect = findPlatformSelect(container);
       expect(platformSelect).not.toBeNull();
       expect(platformSelect!.disabled).toBe(true);
+    });
+  });
+
+  it("does not call reset when confirmation is cancelled", async () => {
+    vi.mocked(window.confirm).mockReturnValue(false);
+    render(<PlatformConfigSection onNotify={onNotify} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Reset")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText("Reset"));
+
+    expect(mockResetPlatformConfig).not.toHaveBeenCalled();
+  });
+
+  it("calls reset when confirmation is accepted", async () => {
+    vi.mocked(window.confirm).mockReturnValue(true);
+    render(<PlatformConfigSection onNotify={onNotify} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Reset")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText("Reset"));
+
+    await waitFor(() => {
+      expect(mockResetPlatformConfig).toHaveBeenCalledTimes(1);
     });
   });
 });

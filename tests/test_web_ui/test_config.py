@@ -484,24 +484,39 @@ class TestConnectionTest:
         assert isinstance(body["resources_discovered"], list)
         assert len(body["resources_discovered"]) > 0
 
-    def test_unknown_platform_returns_error(
+    def test_custom_rest_connection_returns_structured_result(
         self,
         client: TestClient,
     ) -> None:
-        """Unknown platform_type returns adapter creation error."""
+        """Custom REST connection test should not fail at adapter creation."""
         payload = {
             "platform_type": "custom_rest",
             "api_url": "https://example.com",
             "api_key": "key",
+            "extra_settings": {"auth_type": "bearer"},
         }
-        response = client.post(
-            "/api/v1/config/platform/test",
-            json=payload,
+        mock_result = ConnectionTestResult(
+            success=False,
+            latency_ms=21.0,
+            message="Connection failed",
+            adapter_name="Generic REST",
+            error_code="GENERIC_REST_CONNECTION_FAILED",
+            error_details="Connection refused",
         )
+        with patch("routers.config._create_adapter_from_config") as mock_factory:
+            mock_adapter = AsyncMock()
+            mock_adapter.test_connection.return_value = mock_result
+            mock_factory.return_value = mock_adapter
+
+            response = client.post(
+                "/api/v1/config/platform/test",
+                json=payload,
+            )
 
         body = response.json()
         assert body["success"] is False
-        assert body["error_code"] == "ADAPTER_CREATION_FAILED"
+        assert body["adapter_name"] == "Generic REST"
+        assert body["error_code"] == "GENERIC_REST_CONNECTION_FAILED"
 
     def test_connection_test_does_not_save_config(
         self,
@@ -729,6 +744,45 @@ class TestAdapterFactoryAuthType:
         assert mock_adapter_class.call_count == 1
         assert mock_adapter_class.call_args.kwargs["native_seu_id"] == "SEU-123"
         assert "seu_id" not in mock_adapter_class.call_args.kwargs["extra_settings"]
+
+    def test_create_adapter_for_custom_rest_uses_generic_rest_adapter(
+        self,
+    ) -> None:
+        """Factory should create GenericRestAdapter for custom_rest payload."""
+        payload = PlatformConfigRequest(
+            platform_type="custom_rest",
+            api_url="https://api.custom-rest.example.com",
+            api_key="token-value",
+            extra_settings={"auth_type": "cookie", "timeout": 45},
+        )
+
+        with patch("skill.adapters.generic_rest.GenericRestAdapter") as mock_adapter_class:
+            _create_adapter_from_config(payload)
+
+        assert mock_adapter_class.call_count == 1
+        kwargs = mock_adapter_class.call_args.kwargs
+        assert kwargs["api_url"] == "https://api.custom-rest.example.com"
+        assert kwargs["api_key"] == "token-value"
+        assert kwargs["auth_type"] == "cookie"
+        assert kwargs["timeout"] == 45
+
+    def test_create_adapter_for_custom_rest_defaults_timeout_and_auth_type(
+        self,
+    ) -> None:
+        """Custom REST adapter should default timeout/auth when unset."""
+        payload = PlatformConfigRequest(
+            platform_type="custom_rest",
+            api_url="https://api.custom-rest.example.com",
+            api_key="token-value",
+            extra_settings={},
+        )
+
+        with patch("skill.adapters.generic_rest.GenericRestAdapter") as mock_adapter_class:
+            _create_adapter_from_config(payload)
+
+        kwargs = mock_adapter_class.call_args.kwargs
+        assert kwargs["auth_type"] == "bearer"
+        assert kwargs["timeout"] == 30
 
 
 # ══════════════════════════════════════════════════════════

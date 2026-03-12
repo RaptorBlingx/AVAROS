@@ -311,6 +311,12 @@ def test_supports_capability_false_for_unmapped_metric() -> None:
     assert adapter.supports_capability("energy_per_unit") is False
 
 
+def test_supports_asset_discovery_returns_false() -> None:
+    """Generic REST adapter should not claim live asset discovery support."""
+    adapter = _build_adapter({})
+    assert adapter.supports_asset_discovery() is False
+
+
 @pytest.mark.asyncio
 async def test_list_assets_returns_assets_from_saved_mappings() -> None:
     """Asset list should be derived from SettingsService asset mappings."""

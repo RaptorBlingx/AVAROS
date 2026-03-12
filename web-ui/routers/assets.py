@@ -124,11 +124,6 @@ def _merge_generator_mapping(
     return total_resources
 
 
-def _supports_discovery(platform_type: str) -> bool:
-    """Return whether platform has live discovery support."""
-    return platform_type.lower() in {"reneryo", "mock"}
-
-
 def _serialize_asset(asset: Asset) -> AssetItem:
     """Convert domain Asset model to API transport model."""
     return AssetItem(
@@ -217,26 +212,28 @@ async def discover_assets(
     """
     platform_type = _get_current_platform(settings_service)
     adapter = adapter_factory.create()
+    supports_discovery = adapter.supports_asset_discovery()
     discovered_assets: list[Asset] = []
 
-    try:
-        await adapter.initialize()
-        discovered_assets = await adapter.list_assets()
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Asset discovery failed for '{platform_type}': {exc}",
-        ) from exc
-    finally:
+    if supports_discovery:
         try:
-            await adapter.shutdown()
-        except Exception as exc:  # pragma: no cover - defensive shutdown path
-            logger.warning("Adapter shutdown after asset discovery failed: %s", exc)
+            await adapter.initialize()
+            discovered_assets = await adapter.list_assets()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Asset discovery failed for '{platform_type}': {exc}",
+            ) from exc
+        finally:
+            try:
+                await adapter.shutdown()
+            except Exception as exc:  # pragma: no cover - defensive shutdown path
+                logger.warning("Adapter shutdown after asset discovery failed: %s", exc)
 
     items = [_serialize_asset(asset) for asset in discovered_assets if isinstance(asset, Asset)]
     return AssetDiscoveryResponse(
         platform_type=platform_type,
-        supports_discovery=_supports_discovery(platform_type),
+        supports_discovery=supports_discovery,
         assets=items,
         existing_mappings=settings_service.get_asset_mappings(),
     )
