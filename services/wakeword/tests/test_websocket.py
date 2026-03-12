@@ -71,15 +71,18 @@ class TestHealthEndpoint:
         # Assert
         assert response.json()["models_loaded"] == ["hey_avaros"]
 
-    def test_health_reports_custom_path_stem_as_label(self) -> None:
+    def test_health_reports_custom_path_stem_as_label(self, tmp_path: object) -> None:
         """Health derives label from WAKEWORD_MODEL_PATH filename stem."""
         # Arrange
         client = TestClient(app)
+        model_file = os.path.join(str(tmp_path), "hey_avaros.onnx")
+        with open(model_file, "wb") as f:
+            f.write(b"\x00")
 
         # Act
         with patch.dict(
             "os.environ",
-            {"WAKEWORD_MODEL_PATH": "/app/models/hey_avaros.onnx"},
+            {"WAKEWORD_MODEL_PATH": model_file},
             clear=False,
         ):
             response = client.get("/health")
@@ -219,20 +222,25 @@ class TestWebSocketEndpoint:
         assert kwargs["model_name"] == "hey_avaros"
         assert kwargs["display_name"] == "hey_avaros"
 
-    def test_websocket_uses_custom_path_stem_when_label_missing(self) -> None:
+    def test_websocket_uses_custom_path_stem_when_label_missing(
+        self, tmp_path: object,
+    ) -> None:
         """Custom-path mode uses stem as display name when label is absent."""
         # Arrange
         mock_detector = MagicMock()
         mock_detector.process_audio.return_value = None
         mock_detector.close.return_value = None
         client = TestClient(app)
+        model_file = os.path.join(str(tmp_path), "hey_avaros.onnx")
+        with open(model_file, "wb") as f:
+            f.write(b"\x00")
 
         # Act — env patch outermost so it is visible to ASGI thread
         with patch.dict(
             "os.environ",
             {
                 "WAKEWORD_MODEL": "hey_avaros",
-                "WAKEWORD_MODEL_PATH": "/app/models/hey_avaros.onnx",
+                "WAKEWORD_MODEL_PATH": model_file,
             },
             clear=False,
         ):
@@ -248,6 +256,7 @@ class TestWebSocketEndpoint:
         kwargs = detector_cls.call_args.kwargs
         assert kwargs["model_name"] == "hey_avaros"
         assert kwargs["display_name"] == "hey_avaros"
+        assert kwargs["custom_model_path"] == model_file
 
     def test_websocket_registry_load_and_label_are_separate(self) -> None:
         """Registry loading uses WAKEWORD_MODEL while response uses label."""
@@ -296,8 +305,8 @@ class TestWebSocketEndpoint:
 class TestStartupValidation:
     """Tests for lifespan startup validation of custom model paths."""
 
-    def test_startup_fails_when_custom_path_missing(self) -> None:
-        """Service refuses to start if WAKEWORD_MODEL_PATH points to missing file."""
+    def test_startup_falls_back_when_custom_path_missing(self) -> None:
+        """Service starts and falls back to registry when custom path is missing."""
         # Arrange
         env = {"WAKEWORD_MODEL_PATH": "/nonexistent/model.onnx"}
 
@@ -306,10 +315,9 @@ class TestStartupValidation:
             async with app.router.lifespan_context(app):
                 return
 
-        # Act & Assert
+        # Act & Assert — no exception (fallback path)
         with patch.dict("os.environ", env, clear=False):
-            with pytest.raises(SystemExit):
-                asyncio.run(_run_lifespan())
+            asyncio.run(_run_lifespan())
 
     def test_startup_succeeds_when_custom_path_exists(self, tmp_path: object) -> None:
         """Service starts when WAKEWORD_MODEL_PATH points to an existing file."""
@@ -331,21 +339,40 @@ class TestStartupValidation:
 class TestHealthMetadata:
     """Tests for enhanced runtime configuration in health output."""
 
-    def test_health_reports_custom_path_mode(self) -> None:
+    def test_health_reports_custom_path_mode(self, tmp_path: object) -> None:
         """Health shows model_mode='custom_path' when WAKEWORD_MODEL_PATH set."""
         # Arrange
         client = TestClient(app)
+        model_file = os.path.join(str(tmp_path), "hey_avaros.onnx")
+        with open(model_file, "wb") as f:
+            f.write(b"\x00")
 
         # Act
         with patch.dict(
             "os.environ",
-            {"WAKEWORD_MODEL_PATH": "/app/models/hey_avaros.onnx"},
+            {"WAKEWORD_MODEL_PATH": model_file},
             clear=False,
         ):
             response = client.get("/health")
 
         # Assert
         assert response.json()["model_mode"] == "custom_path"
+
+    def test_health_reports_registry_mode_when_custom_path_missing(self) -> None:
+        """Invalid custom model path is treated as registry mode."""
+        # Arrange
+        client = TestClient(app)
+
+        # Act
+        with patch.dict(
+            "os.environ",
+            {"WAKEWORD_MODEL_PATH": "/nonexistent/model.onnx"},
+            clear=False,
+        ):
+            response = client.get("/health")
+
+        # Assert
+        assert response.json()["model_mode"] == "registry"
 
     def test_health_reports_registry_mode(self) -> None:
         """Health shows model_mode='registry' when no custom path set."""

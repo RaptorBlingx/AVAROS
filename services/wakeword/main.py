@@ -44,6 +44,7 @@ logger = logging.getLogger("avaros-wakeword")
 MAX_WS_CLOSE_REASON_BYTES = 120
 _THRESHOLD_LOCK = threading.Lock()
 _SESSION_THRESHOLDS: dict[str, float] = {}
+_FALLBACK_MODEL_NAME = "hey_jarvis"
 
 
 # ── Startup validation ──────────────────────────────────
@@ -52,26 +53,75 @@ _SESSION_THRESHOLDS: dict[str, float] = {}
 @asynccontextmanager
 async def lifespan(application: FastAPI):  # noqa: ANN201
     """Validate model config on startup; no teardown needed."""
+    configured_model = _model_name()
     custom_path = _custom_model_path()
+    active_model = configured_model
+    active_custom_path: str | None = None
+    forced_fallback_model = False
+
     if custom_path:
-        if not os.path.isfile(custom_path):
-            logger.critical(
-                "WAKEWORD_MODEL_PATH='%s' does not exist.", custom_path,
+        if os.path.isfile(custom_path):
+            active_custom_path = custom_path
+            logger.info(
+                "Custom model validated: %s (label=%s)",
+                active_custom_path,
+                _model_label(
+                    model_name=active_model,
+                    custom_model_path=active_custom_path,
+                ),
             )
-            raise SystemExit(1)
-        logger.info(
-            "Custom model validated: %s (label=%s)",
-            custom_path,
-            _model_label(),
-        )
-    else:
-        model = _model_name()
+        else:
+            logger.warning(
+                "WAKEWORD_MODEL_PATH='%s' does not exist; "
+                "falling back to registry model '%s'.",
+                custom_path,
+                configured_model,
+            )
+
+    if active_custom_path is None:
         try:
-            _resolve_model_path(model)
-            logger.info("Model '%s' validated in openWakeWord registry.", model)
+            _resolve_model_path(active_model)
+            logger.info(
+                "Model '%s' validated in openWakeWord registry.",
+                active_model,
+            )
         except ValueError as exc:
-            logger.critical("Startup validation failed: %s", exc)
-            raise SystemExit(1) from exc
+            if active_model != _FALLBACK_MODEL_NAME:
+                try:
+                    _resolve_model_path(_FALLBACK_MODEL_NAME)
+                    logger.warning(
+                        "Configured model '%s' is unavailable (%s); "
+                        "falling back to '%s'.",
+                        active_model,
+                        exc,
+                        _FALLBACK_MODEL_NAME,
+                    )
+                    active_model = _FALLBACK_MODEL_NAME
+                    forced_fallback_model = True
+                except ValueError as fallback_exc:
+                    logger.critical(
+                        "Startup validation failed: %s (fallback '%s' "
+                        "also failed: %s)",
+                        exc,
+                        _FALLBACK_MODEL_NAME,
+                        fallback_exc,
+                    )
+                    raise SystemExit(1) from fallback_exc
+            else:
+                logger.critical("Startup validation failed: %s", exc)
+                raise SystemExit(1) from exc
+
+    if forced_fallback_model:
+        active_label = _FALLBACK_MODEL_NAME
+    else:
+        active_label = _model_label(
+            model_name=active_model,
+            custom_model_path=active_custom_path,
+        )
+
+    application.state.wakeword_model_name = active_model
+    application.state.wakeword_model_label = active_label
+    application.state.wakeword_custom_model_path = active_custom_path
     yield
 
 
@@ -91,7 +141,11 @@ def _custom_model_path() -> str | None:
     return os.environ.get("WAKEWORD_MODEL_PATH") or None
 
 
-def _model_label() -> str:
+def _model_label(
+    *,
+    model_name: str | None = None,
+    custom_model_path: str | None = None,
+) -> str:
     """Return the display label for the active model.
 
     Priority: ``WAKEWORD_MODEL_LABEL`` env var > filename stem of
@@ -103,10 +157,30 @@ def _model_label() -> str:
     label = os.environ.get("WAKEWORD_MODEL_LABEL")
     if label:
         return label
-    custom_path = _custom_model_path()
+    custom_path = custom_model_path if custom_model_path is not None else _custom_model_path()
     if custom_path:
         return os.path.splitext(os.path.basename(custom_path))[0]
-    return _model_name()
+    return model_name or _model_name()
+
+
+def _runtime_model_config(application: FastAPI) -> tuple[str, str, str | None]:
+    """Return active model config, preferring startup-resolved state."""
+    state = application.state
+    if hasattr(state, "wakeword_model_name"):
+        model_name = state.wakeword_model_name
+        custom_model_path = state.wakeword_custom_model_path
+        model_label = state.wakeword_model_label
+        return model_name, model_label, custom_model_path
+
+    model_name = _model_name()
+    custom_model_path = _custom_model_path()
+    if custom_model_path and not os.path.isfile(custom_model_path):
+        custom_model_path = None
+    model_label = _model_label(
+        model_name=model_name,
+        custom_model_path=custom_model_path,
+    )
+    return model_name, model_label, custom_model_path
 
 
 def _threshold() -> float:
@@ -199,6 +273,8 @@ def health() -> dict[str, Any]:
         ``model_mode``, runtime threshold fields, and
         ``confirmation_frames``.
     """
+    model_name, model_label, custom_model_path = _runtime_model_config(app)
+
     active_thresholds = _active_session_thresholds()
     configured_threshold = _threshold()
 
@@ -217,9 +293,10 @@ def health() -> dict[str, Any]:
 
     return {
         "status": "ok",
-        "models_loaded": [_model_label()],
+        "models_loaded": [model_label],
         "version": SERVICE_VERSION,
-        "model_mode": "custom_path" if _custom_model_path() else "registry",
+        "model_mode": "custom_path" if custom_model_path else "registry",
+        "model_name": model_name,
         "configured_threshold": configured_threshold,
         "threshold": runtime_threshold,
         "threshold_source": threshold_source,
@@ -248,13 +325,14 @@ async def ws_detect(websocket: WebSocket) -> None:
     await websocket.accept()
     logger.info("WebSocket connected: %s", websocket.client)
     session_id = str(id(websocket))
+    model_name, model_label, custom_model_path = _runtime_model_config(app)
 
     try:
         detector = WakeWordDetector(
-            model_name=_model_name(),
-            display_name=_model_label(),
+            model_name=model_name,
+            display_name=model_label,
             threshold=_threshold(),
-            custom_model_path=_custom_model_path(),
+            custom_model_path=custom_model_path,
             confirmation_frames=_confirmation_frames(),
         )
         _register_session(session_id, detector)
