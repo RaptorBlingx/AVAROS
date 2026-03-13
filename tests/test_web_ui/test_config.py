@@ -815,7 +815,7 @@ class TestAdapterFactoryAuthType:
 
         kwargs = mock_adapter_class.call_args.kwargs
         assert kwargs["auth_type"] == "bearer"
-        assert kwargs["timeout"] == 30
+        assert kwargs["timeout"] == 10
 
     def test_create_adapter_with_none_auth_passes_none_to_custom_rest_adapter(
         self,

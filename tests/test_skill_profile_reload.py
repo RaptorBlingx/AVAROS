@@ -513,6 +513,7 @@ class TestAssetResolutionFromUtterance:
         """Noisy compare slots should not override configured defaults."""
         skill = _make_skill()
         skill.settings_service = Mock()
+        skill._get_asset_registry = Mock(return_value=[])
         skill.settings_service.get_asset_mappings.return_value = {
             "Line-1": {},
             "Line-2": {},
@@ -530,6 +531,7 @@ class TestAssetResolutionFromUtterance:
         """No asset mention should default to first configured asset id."""
         skill = _make_skill()
         skill.settings_service = Mock()
+        skill._get_asset_registry = Mock(return_value=[])
         skill.settings_service.get_asset_mappings.return_value = {
             "Line-3": {},
             "Line-1": {},

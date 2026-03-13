@@ -225,7 +225,7 @@ def extract_line_assets_from_text(self, text: str) -> list[str]:
     ]
 
 
-_NOISE_WORDS = frozenset({"to", "too", "for", "on", "line"})
+_NOISE_WORDS = frozenset({"to", "too", "for", "on", "line", "trend"})
 _NOISE_SLOT_WORDS = frozenset(
     {
         "a",

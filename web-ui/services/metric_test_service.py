@@ -11,15 +11,12 @@ from urllib.parse import urlsplit
 import aiohttp
 
 from schemas.metrics import MetricMappingTestRequest, MetricMappingTestResponse
+from skill.clients.cookie_utils import normalize_cookie_header_value
 
 REQUEST_TIMEOUT_SECONDS = 10
 RESPONSE_PREVIEW_LIMIT = 500
 MAX_RESPONSE_BYTES = 1_048_576
 _JSON_PATH_TOKEN_PATTERN = re.compile(r"([^.\[\]]+)|\[(\d+|\*)\]")
-_UUID_TOKEN_PATTERN = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-)
 
 
 class _JsonPathResolutionError(ValueError):
@@ -88,23 +85,7 @@ def _build_auth_headers(auth_type: str, token: str) -> dict[str, str]:
     if auth_type == "none":
         return {}
     if auth_type == "cookie":
-        raw_cookie = token.strip()
-        if raw_cookie.lower().startswith("cookie:"):
-            return {"Cookie": raw_cookie.split(":", 1)[1].strip()}
-        if raw_cookie.startswith("S=") or ";" in raw_cookie:
-            return {"Cookie": raw_cookie}
-        if "=" in raw_cookie:
-            cookie_name = raw_cookie.split("=", 1)[0].strip()
-            if (
-                cookie_name
-                and cookie_name[0].isalpha()
-                and len(cookie_name) <= 32
-                and all(ch.isalnum() or ch in "_-.$" for ch in cookie_name)
-            ):
-                return {"Cookie": raw_cookie}
-        if _UUID_TOKEN_PATTERN.fullmatch(raw_cookie):
-            return {"Cookie": f"JSESSIONID={raw_cookie}; S={raw_cookie}"}
-        return {"Cookie": f"S={raw_cookie}"}
+        return {"Cookie": normalize_cookie_header_value(token)}
     return {"Authorization": f"Bearer {token}"}
 
 

@@ -1202,7 +1202,7 @@ class TestReneryoParsers:
     async def test_trend_empty_response_raises(
         self, initialized_adapter: ReneryoAdapter,
     ) -> None:
-        """Empty trend response raises RENERYO_INVALID_RESPONSE."""
+        """Empty trend response raises EMPTY_RESPONSE."""
         from aioresponses import aioresponses
 
         with aioresponses() as mocked:
@@ -1214,7 +1214,7 @@ class TestReneryoParsers:
                 await initialized_adapter.get_trend(
                     CanonicalMetric.SCRAP_RATE, "Line-1", TimePeriod.last_week(),
                 )
-            assert exc_info.value.code == "RENERYO_INVALID_RESPONSE"
+            assert exc_info.value.code == "EMPTY_RESPONSE"
 
     @pytest.mark.asyncio
     async def test_comparison_empty_response_raises(

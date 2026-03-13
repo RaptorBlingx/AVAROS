@@ -190,7 +190,7 @@ def test_trend_energy_falls_back_to_last_week_when_today_is_empty():
     skill.dispatcher.get_trend.side_effect = [
         AdapterError(
             message="Empty trend response for energy_per_unit",
-            code="RENERYO_INVALID_RESPONSE",
+            code="EMPTY_RESPONSE",
             platform="reneryo",
         ),
         Mock(),
@@ -213,12 +213,12 @@ def test_trend_energy_falls_back_to_kpi_when_trend_unavailable():
     skill.dispatcher.get_trend.side_effect = [
         AdapterError(
             message="Empty trend response for energy_per_unit",
-            code="RENERYO_INVALID_RESPONSE",
+            code="EMPTY_RESPONSE",
             platform="reneryo",
         ),
         AdapterError(
             message="Empty trend response for energy_per_unit",
-            code="RENERYO_INVALID_RESPONSE",
+            code="EMPTY_RESPONSE",
             platform="reneryo",
         ),
     ]

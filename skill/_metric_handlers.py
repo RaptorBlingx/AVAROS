@@ -88,7 +88,7 @@ def _query_trend_with_period_fallback(
             granularity=granularity,
         )
     except AdapterError as exc:
-        if exc.code != "RENERYO_INVALID_RESPONSE" or "Empty trend response" not in str(exc):
+        if exc.code != "EMPTY_RESPONSE":
             raise
         if period.duration_days >= 2:
             raise
@@ -244,7 +244,7 @@ def handle_trend_energy(skill: "AVAROSSkill", message) -> None:
             skill.speak(response)
             return
         except AdapterError as exc:
-            if exc.code != "RENERYO_INVALID_RESPONSE" or "Empty trend response" not in str(exc):
+            if exc.code != "EMPTY_RESPONSE":
                 raise
 
         # Last-resort UX fallback: if trend points are unavailable, still return
