@@ -15,6 +15,7 @@ from services.wakeword.detector import (
     DEFAULT_CONFIRMATION_FRAMES,
     DetectionEvent,
     WakeWordDetector,
+    _ensure_openwakeword_assets,
     _resolve_model_path,
 )
 
@@ -117,6 +118,30 @@ class TestResolveModelPath:
         # Arrange & Act & Assert
         with pytest.raises(ValueError, match="not found"):
             _resolve_model_path("nonexistent_model_xyz")
+
+
+class TestEnsureOpenWakewordAssets:
+    """Tests for local cache model path resolution."""
+
+    def test_downloads_model_when_missing(self) -> None:
+        """Missing model file triggers an explicit download attempt."""
+        with patch(
+            "services.wakeword.detector._resolve_model_path",
+            return_value="/pkg/resources/models/hey_jarvis_v0.1.tflite",
+        ), patch(
+            "services.wakeword.detector._ensure_preprocessing_assets",
+        ), patch(
+            "services.wakeword.detector.os.path.exists",
+            side_effect=[False, True],
+        ), patch(
+            "openwakeword.utils.download_models",
+        ) as mock_download:
+            path = _ensure_openwakeword_assets("hey_jarvis")
+
+        assert path == "/pkg/resources/models/hey_jarvis_v0.1.tflite"
+        mock_download.assert_called_once_with(
+            target_directory="/pkg/resources/models"
+        )
 
 
 # ── WakeWordDetector with mock model ─────────────────────

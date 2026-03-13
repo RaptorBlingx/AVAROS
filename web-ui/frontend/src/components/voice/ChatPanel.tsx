@@ -9,6 +9,7 @@ type ChatPanelProps = {
   isProcessing: boolean;
   isConnected: boolean;
   canReplay: boolean;
+  wakeWordLabel: string;
   primaryAction?: ReactNode;
   onSendText: (text: string) => Promise<void>;
   onReplayResponse: (text: string) => void;
@@ -20,6 +21,7 @@ export default function ChatPanel({
   isProcessing,
   isConnected,
   canReplay,
+  wakeWordLabel,
   primaryAction,
   onSendText,
   onReplayResponse,
@@ -37,6 +39,7 @@ export default function ChatPanel({
         messages={messages}
         isProcessing={isProcessing}
         canReplay={canReplay}
+        wakeWordLabel={wakeWordLabel}
         onReplay={onReplayResponse}
         onClear={onClearConversation}
       />
@@ -48,4 +51,3 @@ export default function ChatPanel({
     </section>
   );
 }
-

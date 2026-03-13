@@ -65,6 +65,17 @@ interface EncryptedEnvelope {
 type MessageCallback = (msg: OVOSMessage) => void;
 type StateCallback = (state: ConnectionState) => void;
 
+const OVOS_INTENT_PIPELINE = [
+  "converse",
+  "padatious_high",
+  "adapt_high",
+  "fallback_high",
+  "adapt_medium",
+  "fallback_medium",
+  "adapt_low",
+  "fallback_low",
+] as const;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -295,6 +306,8 @@ export class HiveMindService {
         session: {
           session_id,
           site_id: "default",
+          lang,
+          pipeline: [...OVOS_INTENT_PIPELINE],
         },
       },
     };
@@ -465,6 +478,7 @@ export class HiveMindService {
           context: {},
           active_skills: [],
           utterance_states: {},
+          pipeline: [...OVOS_INTENT_PIPELINE],
         },
       },
     };

@@ -249,6 +249,31 @@ class TestListMetricMappings:
         names = {m["canonical_metric"] for m in items}
         assert names == {"energy_per_unit", "scrap_rate"}
 
+    def test_list_auto_mappings_include_units_for_all_derived_metrics(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """Auto-derived mappings should include non-empty unit defaults."""
+        settings_service.set_asset_mappings({
+            "Line-1": {
+                "metric_resources": {
+                    "peak_tariff_exposure": "res-peak",
+                    "supplier_co2_per_kg": "res-supplier-co2",
+                },
+            },
+        })
+
+        response = client.get("/api/v1/config/metrics")
+
+        assert response.status_code == 200
+        items = response.json()
+        by_metric = {item["canonical_metric"]: item for item in items}
+        assert by_metric["peak_tariff_exposure"]["source"] == "auto"
+        assert by_metric["peak_tariff_exposure"]["unit"] == "%"
+        assert by_metric["supplier_co2_per_kg"]["source"] == "auto"
+        assert by_metric["supplier_co2_per_kg"]["unit"] == "kg CO₂/kg"
+
     def test_list_response_has_correct_structure(
         self,
         client: TestClient,

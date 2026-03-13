@@ -73,7 +73,7 @@ describe("AssetMappingStep platform rendering", () => {
     expect(
       screen.getByText(/These are demo assets\. Connect a real platform/i),
     ).toBeTruthy();
-    expect(screen.getByText("Line 1")).toBeTruthy();
+    expect(await screen.findByText("Line 1")).toBeTruthy();
     expect(screen.queryByText("Add Asset")).toBeNull();
   });
 });

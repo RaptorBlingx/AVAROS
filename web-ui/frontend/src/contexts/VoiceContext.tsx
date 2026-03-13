@@ -39,6 +39,7 @@ function normalizeTranscriptForIntent(raw: string): string {
   text = text.replace(/°/g, " degrees");
   text = text.replace(/\bwhat if (you|u)\b/gi, "what if we");
   text = text.replace(/\btrain\b/gi, "trend");
+  text = text.replace(/\bsnergy\b/gi, "energy");
   text = text.replace(/\bv\s*s\b/gi, "vs");
   text = text.replace(/\bverse us\b/gi, "versus");
   text = text.replace(/\bverses\b/gi, "versus");
@@ -51,7 +52,7 @@ function normalizeTranscriptForIntent(raw: string): string {
     "which is more efficient",
   );
   text = text.replace(
-    /\bcompare\b.+\b(energy|power)\b.+\b(vs|versus|and|or)\b.+/gi,
+    /\bcompare\b(?![^.]*\bbetween\b).+\b(energy|power)\b.+\b(vs|versus|and|or)\b.+/gi,
     "compare energy",
   );
   text = text.replace(
@@ -136,7 +137,17 @@ function isIncompleteIntentText(raw: string): boolean {
 
 const WAKE_WORD_ARM_MS = 10000;
 const WAKE_WORD_PROMPT = "How can I help you?";
-const WAKE_WORD_PROMPT_COOLDOWN_MS = 5000;
+const WAKE_WORD_POST_SESSION_COOLDOWN_MS = 2000;
+const WAKE_WORD_CAPTURE_TIMEOUT_MS = 10000;
+const SPEAK_EVENT_DEDUP_MS = 1200;
+
+type WakeInteractionPhase =
+  | "idle"
+  | "prompting"
+  | "capturing"
+  | "awaiting_response"
+  | "speaking_response"
+  | "cooldown";
 
 /** Ignore STT results that match the last TTS utterance (avoids acoustic feedback loop). */
 function isOwnPromptEcho(
@@ -195,11 +206,17 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const [ttsRate, setTTSRateState] = useState(1.0);
   const [ttsVolume, setTTSVolumeState] = useState(1.0);
   const isSpeakingRef = useRef(false);
-  const wakeWordPromptCooldownUntilRef = useRef(0);
   const lastTtsUtteranceRef = useRef("");
   const pauseDetectionRef = useRef<(() => void) | null>(null);
   const resumeDetectionRef = useRef<(() => void) | null>(null);
-  const wakeWordPausedRef = useRef(false);
+  const wakeWordDetectionPausedRef = useRef(false);
+  const wakeWordSessionPhaseRef = useRef<WakeInteractionPhase>("idle");
+  const wakeWordSessionCooldownUntilRef = useRef(0);
+  const wakeWordCaptureTimeoutRef = useRef<number | null>(null);
+  const lastBusSpeakRef = useRef<{ text: string; at: number }>({
+    text: "",
+    at: 0,
+  });
 
   const sttSupported = isSpeechRecognitionSupported();
   const ttsSupported = isSpeechSynthesisSupported();
@@ -230,9 +247,60 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const isWakeWordCommandWindowOpen = useCallback(() => {
     return Date.now() < wakeWordArmedUntilRef.current;
   }, []);
+  const setWakeWordSessionPhase = useCallback((phase: WakeInteractionPhase) => {
+    wakeWordSessionPhaseRef.current = phase;
+  }, []);
+  const clearWakeWordCaptureTimeout = useCallback(() => {
+    if (wakeWordCaptureTimeoutRef.current !== null) {
+      window.clearTimeout(wakeWordCaptureTimeoutRef.current);
+      wakeWordCaptureTimeoutRef.current = null;
+    }
+  }, []);
+  const resumeWakeWordDetection = useCallback(() => {
+    if (!wakeWordDetectionPausedRef.current) return;
+    wakeWordDetectionPausedRef.current = false;
+    resumeDetectionRef.current?.();
+  }, []);
+  const finishWakeWordSession = useCallback(
+    (cooldownMs = WAKE_WORD_POST_SESSION_COOLDOWN_MS) => {
+      clearWakeWordCaptureTimeout();
+      clearWakeWordCommandWindow();
+      wakeWordSessionCooldownUntilRef.current = Date.now() + cooldownMs;
+      setWakeWordSessionPhase("cooldown");
+      sttRef.current?.stop();
+      setInterimTranscript("");
+      setFinalTranscript("");
+      setVoiceState("idle");
+      window.setTimeout(() => {
+        if (wakeWordSessionPhaseRef.current !== "cooldown") return;
+        if (Date.now() < wakeWordSessionCooldownUntilRef.current) return;
+        setWakeWordSessionPhase("idle");
+        resumeWakeWordDetection();
+      }, cooldownMs);
+    },
+    [
+      clearWakeWordCaptureTimeout,
+      clearWakeWordCommandWindow,
+      resumeWakeWordDetection,
+      setWakeWordSessionPhase,
+    ],
+  );
   const startWakeWordCommandCapture = useCallback(async () => {
+    if (wakeWordSessionPhaseRef.current !== "prompting") return;
     const stt = sttRef.current;
-    if (!stt) return;
+    if (!stt) {
+      finishWakeWordSession();
+      return;
+    }
+
+    armWakeWordCommandWindow();
+    setWakeWordSessionPhase("capturing");
+    clearWakeWordCaptureTimeout();
+    wakeWordCaptureTimeoutRef.current = window.setTimeout(() => {
+      if (wakeWordSessionPhaseRef.current === "capturing") {
+        finishWakeWordSession();
+      }
+    }, WAKE_WORD_CAPTURE_TIMEOUT_MS);
 
     // Avoid InvalidStateError when recognition is already active.
     if (stt.getState() === "listening") {
@@ -246,15 +314,21 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     } catch {
       // Web Speech start can race after stop/speak; retry once shortly.
       window.setTimeout(() => {
-        void stt.start().catch(() => undefined);
+        if (wakeWordSessionPhaseRef.current !== "capturing") return;
+        void stt.start().catch(() => {
+          finishWakeWordSession();
+        });
         setVoiceState("listening");
       }, 220);
     }
-  }, []);
+  }, [
+    armWakeWordCommandWindow,
+    clearWakeWordCaptureTimeout,
+    finishWakeWordSession,
+    setWakeWordSessionPhase,
+  ]);
   const promptWakeWordReady = useCallback(async () => {
     if (!ttsRef.current) return;
-    wakeWordPromptCooldownUntilRef.current =
-      Date.now() + WAKE_WORD_PROMPT_COOLDOWN_MS;
     lastTtsUtteranceRef.current = WAKE_WORD_PROMPT;
     try {
       await ttsRef.current.speak(WAKE_WORD_PROMPT);
@@ -267,44 +341,43 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       await ttsRef.current.speak(WAKE_WORD_PROMPT);
     }
   }, []);
-  const triggerWakeWordPrompt = useCallback(() => {
-    if (Date.now() < wakeWordPromptCooldownUntilRef.current) return;
-    if (isSpeakingRef.current) return;
-
-    setWakeWordDetectedAt(Date.now());
-    armWakeWordCommandWindow();
-    setFinalTranscript("");
-    setInterimTranscript("");
-    setVoiceState("listening");
-    void promptWakeWordReady().catch(() => undefined);
-  }, [armWakeWordCommandWindow, promptWakeWordReady]);
   // ── Wake word detection ────────────────────────────
   const onWakeWordDetected = useCallback(() => {
     if (isSpeakingRef.current) {
       return;
     }
-    if (Date.now() < wakeWordPromptCooldownUntilRef.current) {
+    if (wakeWordSessionPhaseRef.current !== "idle") {
+      return;
+    }
+    if (Date.now() < wakeWordSessionCooldownUntilRef.current) {
       return;
     }
     metricsRef.current.reset();
     metricsRef.current.mark("wake_word_detected");
+    setWakeWordSessionPhase("prompting");
     setWakeWordDetectedAt(Date.now());
-    armWakeWordCommandWindow();
     setInterimTranscript("");
     setFinalTranscript("");
     sttRef.current?.stop();
     // Pause wake-word detection during the interaction cycle to prevent
     // re-triggers from TTS echo or ambient sound.
-    pauseDetectionRef.current?.();
-    wakeWordPausedRef.current = true;
+    if (!wakeWordDetectionPausedRef.current) {
+      pauseDetectionRef.current?.();
+      wakeWordDetectionPausedRef.current = true;
+    }
     void promptWakeWordReady()
-      .catch(() => undefined)
+      .catch(() => {
+        finishWakeWordSession();
+      })
       .finally(() => {
-        void startWakeWordCommandCapture();
+        if (wakeWordSessionPhaseRef.current === "prompting") {
+          void startWakeWordCommandCapture();
+        }
       });
   }, [
-    armWakeWordCommandWindow,
+    finishWakeWordSession,
     promptWakeWordReady,
+    setWakeWordSessionPhase,
     startWakeWordCommandCapture,
   ]);
 
@@ -314,6 +387,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     wakeWordSensitivity,
     setWakeWordSensitivity,
     isModelLoading,
+    wakeWordLabel,
     voiceMode,
     setVoiceMode,
     pauseDetection,
@@ -343,24 +417,24 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   }, [isWakeWordArmed, clearWakeWordCommandWindow]);
 
   useEffect(() => {
-    if (voiceMode !== "wake-word") {
-      clearWakeWordCommandWindow();
-    }
-  }, [voiceMode, clearWakeWordCommandWindow]);
+    if (voiceMode === "wake-word") return;
+    clearWakeWordCaptureTimeout();
+    clearWakeWordCommandWindow();
+    wakeWordSessionCooldownUntilRef.current = 0;
+    setWakeWordSessionPhase("idle");
+    wakeWordDetectionPausedRef.current = false;
+  }, [
+    voiceMode,
+    clearWakeWordCaptureTimeout,
+    clearWakeWordCommandWindow,
+    setWakeWordSessionPhase,
+  ]);
 
-  // Resume wake-word detection after the full interaction cycle completes.
-  // Uses a 1 s debounce to skip the brief idle gap between the TTS prompt
-  // ending and STT command capture starting.
   useEffect(() => {
-    if (voiceState !== "idle" || !wakeWordPausedRef.current || !wakeWordEnabled) return;
-    const timer = setTimeout(() => {
-      if (wakeWordPausedRef.current) {
-        wakeWordPausedRef.current = false;
-        resumeDetectionRef.current?.();
-      }
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [voiceState, wakeWordEnabled]);
+    return () => {
+      clearWakeWordCaptureTimeout();
+    };
+  }, [clearWakeWordCaptureTimeout]);
 
   // ── Initialize STT / TTS ───────────────────────────
   useEffect(() => {
@@ -432,21 +506,31 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         let transcript = result.transcript;
         if (voiceMode === "wake-word") {
           if (isOwnPromptEcho(transcript, lastTtsUtteranceRef.current)) return;
+          if (wakeWordSessionPhaseRef.current !== "capturing") {
+            setFinalTranscript("");
+            setInterimTranscript("");
+            setVoiceState("idle");
+            return;
+          }
           // In wake-word mode, STT is only active during the command window
           // (after the backend openWakeWord detected the wake phrase).
           // Accept the transcript as a command — no text-based wake word
           // parsing needed (the backend already validated detection).
           if (isWakeWordCommandWindowOpen()) {
             clearWakeWordCommandWindow();
+            clearWakeWordCaptureTimeout();
+            setWakeWordSessionPhase("awaiting_response");
           } else {
             // STT fired outside the command window — discard.
-            setFinalTranscript("");
-            setInterimTranscript("");
-            setVoiceState("idle");
+            finishWakeWordSession();
             return;
           }
         }
         if (!transcript.trim() || isLikelyNoiseUtterance(transcript)) {
+          if (voiceMode === "wake-word") {
+            finishWakeWordSession();
+            return;
+          }
           setFinalTranscript("");
           setInterimTranscript("");
           setVoiceState("idle");
@@ -484,7 +568,13 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
       // Safety guard: in wake-word mode, ignore any STT tail activity
       // unless we're inside the explicit post-wake command window.
-      if (voiceMode === "wake-word" && !isWakeWordCommandWindowOpen()) {
+      if (
+        voiceMode === "wake-word" &&
+        (
+          wakeWordSessionPhaseRef.current !== "capturing"
+          || !isWakeWordCommandWindowOpen()
+        )
+      ) {
         setFinalTranscript("");
         setInterimTranscript("");
         setVoiceState("idle");
@@ -496,6 +586,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       if (!final && interim) {
         if (voiceMode === "wake-word") {
           clearWakeWordCommandWindow();
+          clearWakeWordCaptureTimeout();
+          setWakeWordSessionPhase("awaiting_response");
         }
         setFinalTranscript(interim);
         setInterimTranscript("");
@@ -505,6 +597,10 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
       // Nothing recognized: do not stay stuck in "processing".
       if (!final) {
+        if (voiceMode === "wake-word") {
+          finishWakeWordSession();
+          return;
+        }
         setVoiceState("idle");
         return;
       }
@@ -523,6 +619,9 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     voiceMode,
     isWakeWordCommandWindowOpen,
     clearWakeWordCommandWindow,
+    clearWakeWordCaptureTimeout,
+    finishWakeWordSession,
+    setWakeWordSessionPhase,
   ]);
 
   // ── Wire TTS events ────────────────────────────────
@@ -544,20 +643,32 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
           metricsRef.current.mark("tts_completed");
           metricsRef.current.toConsoleLog();
           setVoiceState("idle");
+          if (wakeWordSessionPhaseRef.current === "speaking_response") {
+            finishWakeWordSession();
+          }
         }
       }
     });
   }, [
-    ttsSupported,
-    voiceMode,
+    finishWakeWordSession,
   ]);
 
   // ── Auto-send final transcript to HiveMind ─────────
   useEffect(() => {
     const transcript = finalTranscript.trim();
-    if (!transcript || !isConnected) return;
+    if (!transcript) return;
+    if (!isConnected) {
+      if (voiceMode === "wake-word") {
+        finishWakeWordSession();
+      }
+      return;
+    }
     const normalizedTranscript = normalizeTranscriptForIntent(transcript);
     if (isIncompleteIntentText(normalizedTranscript)) {
+      if (voiceMode === "wake-word") {
+        finishWakeWordSession();
+        return;
+      }
       setVoiceState("idle");
       return;
     }
@@ -574,25 +685,49 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       .catch(() => {
         if (cancelled) return;
         setVoiceState("error");
+        if (voiceMode === "wake-word") {
+          finishWakeWordSession();
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [finalTranscript, isConnected, sendUtterance]);
+  }, [
+    finalTranscript,
+    finishWakeWordSession,
+    isConnected,
+    sendUtterance,
+    voiceMode,
+  ]);
 
   // ── Auto-speak HiveMind responses ──────────────────
   useEffect(() => {
     return on("speak", (msg) => {
       metricsRef.current.mark("response_received");
       const text = (msg.data.utterance as string | undefined) ?? "";
-      if (text && ttsRef.current) {
-        lastTtsUtteranceRef.current = text;
+      const normalized = text.trim();
+      if (normalized && ttsRef.current) {
+        if (
+          voiceMode === "wake-word" &&
+          wakeWordSessionPhaseRef.current === "awaiting_response"
+        ) {
+          setWakeWordSessionPhase("speaking_response");
+        }
+        const now = Date.now();
+        if (
+          lastBusSpeakRef.current.text === normalized &&
+          now - lastBusSpeakRef.current.at < SPEAK_EVENT_DEDUP_MS
+        ) {
+          return;
+        }
+        lastBusSpeakRef.current = { text: normalized, at: now };
+        lastTtsUtteranceRef.current = normalized;
         metricsRef.current.mark("tts_started");
-        void ttsRef.current.speak(text);
+        void ttsRef.current.speak(normalized);
       }
     });
-  }, [on]);
+  }, [on, setWakeWordSessionPhase, voiceMode]);
 
   // ── Actions ────────────────────────────────────────
 
@@ -615,13 +750,22 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   }, []);
 
   const cancelCurrentQuery = useCallback(() => {
+    if (voiceMode === "wake-word" && wakeWordSessionPhaseRef.current !== "idle") {
+      finishWakeWordSession(0);
+    }
     sttRef.current?.stop();
     ttsRef.current?.stop();
+    clearWakeWordCaptureTimeout();
     clearWakeWordCommandWindow();
     setInterimTranscript("");
     setFinalTranscript("");
     setVoiceState("idle");
-  }, [clearWakeWordCommandWindow]);
+  }, [
+    clearWakeWordCaptureTimeout,
+    clearWakeWordCommandWindow,
+    finishWakeWordSession,
+    voiceMode,
+  ]);
 
   const clearQuery = useCallback(() => {
     setInterimTranscript("");
@@ -690,6 +834,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       wakeWordSensitivity,
       setWakeWordSensitivity,
       isModelLoading,
+      wakeWordLabel,
       setVoiceMode,
       setLanguage,
       availableVoices,
@@ -722,6 +867,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       wakeWordSensitivity,
       setWakeWordSensitivity,
       isModelLoading,
+      wakeWordLabel,
       setVoiceMode,
       setLanguage,
       availableVoices,

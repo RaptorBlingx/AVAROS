@@ -404,6 +404,17 @@ def test_cookie_auth_sends_header() -> None:
     assert adapter._build_auth_headers() == {"Cookie": "S=session-id"}
 
 
+def test_cookie_auth_uuid_token_sends_dual_cookie_names() -> None:
+    """Bare UUID cookie token should include JSESSIONID and S variants."""
+    adapter = _build_adapter({}, auth_type="cookie")
+    token = "4efd58f5-c712-4c0d-b329-001122334455"
+    adapter._api_key = token
+
+    assert adapter._build_auth_headers() == {
+        "Cookie": f"JSESSIONID={token}; S={token}",
+    }
+
+
 def test_none_auth_sends_no_headers() -> None:
     """No-auth mode should not send auth headers."""
     adapter = _build_adapter({}, auth_type="none")

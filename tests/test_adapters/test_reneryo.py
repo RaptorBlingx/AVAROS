@@ -656,6 +656,20 @@ class TestReneryoAuth:
         headers = adapter._build_auth_headers()
         assert headers == {"Cookie": "S=abc+def="}
 
+    def test_cookie_auth_headers_long_value_with_equals_is_wrapped_with_s(self) -> None:
+        """Long token values ending with '=' are treated as raw cookie values."""
+        raw_token = (
+            "4efd58f5-c712-4c0d-b329-329da0fc8f2e."
+            "15lraeYHLMKZIU9Ve8np00eiFWYXn8NZ3vIjaPXebLw="
+        )
+        adapter = ReneryoAdapter(
+            api_url="https://api.test",
+            api_key=raw_token,
+            auth_type="cookie",
+        )
+        headers = adapter._build_auth_headers()
+        assert headers == {"Cookie": f"S={raw_token}"}
+
     def test_cookie_auth_headers_accept_full_cookie_header(self) -> None:
         """Cookie auth accepts full Cookie header input."""
         adapter = ReneryoAdapter(
@@ -665,6 +679,17 @@ class TestReneryoAuth:
         )
         headers = adapter._build_auth_headers()
         assert headers == {"Cookie": "S=session-id; Path=/; Secure"}
+
+    def test_cookie_auth_headers_uuid_token_sends_dual_cookie_names(self) -> None:
+        """Bare UUID cookie token sends both JSESSIONID and S variants."""
+        token = "4efd58f5-c712-4c0d-b329-001122334455"
+        adapter = ReneryoAdapter(
+            api_url="https://api.test",
+            api_key=token,
+            auth_type="cookie",
+        )
+        headers = adapter._build_auth_headers()
+        assert headers == {"Cookie": f"JSESSIONID={token}; S={token}"}
 
     def test_none_auth_headers(self) -> None:
         """No-auth mode should not send auth headers."""
@@ -1388,6 +1413,71 @@ class TestMetricResourceIntegration:
         assert params.get("count") == "100"
 
     @pytest.mark.asyncio
+    async def test_get_kpi_metric_resource_retries_with_last_month_window(self) -> None:
+        """KPI retries once with last-month window when initial range is empty."""
+        from unittest.mock import AsyncMock
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="key",
+            api_format="native",
+            asset_mappings={
+                "line_1": {
+                    "metric_resources": {"oee": "res-oee-uuid"},
+                },
+            },
+        )
+        adapter._session = object()
+        adapter._retry_fetch = AsyncMock(side_effect=[
+            {"records": []},
+            {"records": [{"value": 83.2, "datetime": "2026-03-01T00:30:00Z"}]},
+        ])
+
+        result = await adapter.get_kpi(
+            CanonicalMetric.OEE, "line_1", TimePeriod.today(),
+        )
+
+        assert result.value == 83.2
+        assert adapter._retry_fetch.call_count == 2
+        first_params = adapter._retry_fetch.call_args_list[0][0][1]
+        second_params = adapter._retry_fetch.call_args_list[1][0][1]
+        assert "datetimeMin" in first_params
+        assert "datetimeMax" in first_params
+        assert second_params.get("period") == "RAW"
+        assert second_params.get("count") == "100"
+        assert "datetimeMin" in second_params
+        assert "datetimeMax" in second_params
+
+    @pytest.mark.asyncio
+    async def test_get_kpi_metric_resource_raises_data_not_found_when_empty(self) -> None:
+        """Empty metric-resource responses after fallback raise data-not-found error."""
+        from unittest.mock import AsyncMock
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="key",
+            api_format="native",
+            asset_mappings={
+                "line_1": {
+                    "metric_resources": {"oee": "res-oee-uuid"},
+                },
+            },
+        )
+        adapter._session = object()
+        adapter._retry_fetch = AsyncMock(side_effect=[
+            {"records": []},
+            {"records": []},
+        ])
+
+        with pytest.raises(AdapterError) as exc_info:
+            await adapter.get_kpi(
+                CanonicalMetric.OEE, "line_1", TimePeriod.today(),
+            )
+
+        assert exc_info.value.code == "RENERYO_METRIC_DATA_NOT_FOUND"
+        assert "I couldn't find recent oee data" in exc_info.value.user_message
+
+    @pytest.mark.asyncio
     async def test_get_trend_metric_resource_returns_all_points(self) -> None:
         """get_trend() for GAUGE metric resource returns non-empty time series."""
         from unittest.mock import AsyncMock
@@ -1966,6 +2056,37 @@ class TestCompareMetricResource:
             params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("params", {})
             assert params.get("period") == "RAW"
             assert params.get("count") == "100"
+
+    @pytest.mark.asyncio
+    async def test_compare_metric_resource_retries_latest_when_first_window_empty(self) -> None:
+        """Metric-resource compare should retry once when first range has no records."""
+        from unittest.mock import AsyncMock
+
+        adapter = ReneryoAdapter(
+            api_url="https://reneryo.example.com",
+            api_key="key",
+            api_format="native",
+            asset_mappings={
+                "line_1": {"metric_resources": {"oee": "res-1"}},
+                "line_2": {"metric_resources": {"oee": "res-2"}},
+            },
+        )
+        adapter._session = object()
+        adapter._retry_fetch = AsyncMock(side_effect=[
+            {"records": []},
+            {"records": [{"value": 84.0, "datetime": "2026-03-01T00:30:00Z"}]},
+            {"records": [{"value": 90.0, "datetime": "2026-03-01T00:30:00Z"}]},
+        ])
+
+        result = await adapter.compare(
+            CanonicalMetric.OEE,
+            ["line_1", "line_2"],
+            TimePeriod.today(),
+        )
+
+        assert adapter._retry_fetch.call_count == 3
+        assert result.winner_id == "line_2"
+        assert [item.value for item in result.items] == [90.0, 84.0]
 
     @pytest.mark.asyncio
     async def test_compare_seu_still_uses_single_fetch(self) -> None:

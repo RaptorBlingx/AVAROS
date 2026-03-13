@@ -15,7 +15,11 @@ from schemas.metrics import MetricMappingTestRequest, MetricMappingTestResponse
 REQUEST_TIMEOUT_SECONDS = 10
 RESPONSE_PREVIEW_LIMIT = 500
 MAX_RESPONSE_BYTES = 1_048_576
-_JSON_PATH_TOKEN_PATTERN = re.compile(r"([^.\[\]]+)|\[(\d+)\]")
+_JSON_PATH_TOKEN_PATTERN = re.compile(r"([^.\[\]]+)|\[(\d+|\*)\]")
+_UUID_TOKEN_PATTERN = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+)
 
 
 class _JsonPathResolutionError(ValueError):
@@ -84,8 +88,23 @@ def _build_auth_headers(auth_type: str, token: str) -> dict[str, str]:
     if auth_type == "none":
         return {}
     if auth_type == "cookie":
-        # RENERYO session cookies are accepted as S=<token> in current deployment.
-        return {"Cookie": f"S={token}"}
+        raw_cookie = token.strip()
+        if raw_cookie.lower().startswith("cookie:"):
+            return {"Cookie": raw_cookie.split(":", 1)[1].strip()}
+        if raw_cookie.startswith("S=") or ";" in raw_cookie:
+            return {"Cookie": raw_cookie}
+        if "=" in raw_cookie:
+            cookie_name = raw_cookie.split("=", 1)[0].strip()
+            if (
+                cookie_name
+                and cookie_name[0].isalpha()
+                and len(cookie_name) <= 32
+                and all(ch.isalnum() or ch in "_-.$" for ch in cookie_name)
+            ):
+                return {"Cookie": raw_cookie}
+        if _UUID_TOKEN_PATTERN.fullmatch(raw_cookie):
+            return {"Cookie": f"JSESSIONID={raw_cookie}; S={raw_cookie}"}
+        return {"Cookie": f"S={raw_cookie}"}
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -100,13 +119,28 @@ def _resolve_json_path(payload: Any, json_path: str) -> Any:
     current: Any = payload
     for key_token, index_token in _JSON_PATH_TOKEN_PATTERN.findall(path[2:]):
         if key_token:
-            if not isinstance(current, dict) or key_token not in current:
-                raise _JsonPathResolutionError(path)
-            current = current[key_token]
+            if isinstance(current, dict):
+                if key_token not in current:
+                    raise _JsonPathResolutionError(path)
+                current = current[key_token]
+                continue
+
+            if isinstance(current, list):
+                resolved_items: list[Any] = []
+                for item in current:
+                    if not isinstance(item, dict) or key_token not in item:
+                        raise _JsonPathResolutionError(path)
+                    resolved_items.append(item[key_token])
+                current = resolved_items
+                continue
+
+            raise _JsonPathResolutionError(path)
             continue
 
         if not isinstance(current, list):
             raise _JsonPathResolutionError(path)
+        if index_token == "*":
+            continue
         index = int(index_token)
         if index >= len(current):
             raise _JsonPathResolutionError(path)
@@ -119,6 +153,13 @@ def _to_float(value: Any) -> float:
     """Convert extracted JSONPath value to float if numeric."""
     if isinstance(value, bool):
         raise ValueError("boolean is not numeric")
+    if isinstance(value, list):
+        for item in value:
+            try:
+                return _to_float(item)
+            except ValueError:
+                continue
+        raise ValueError("array does not contain numeric values")
     return float(value)
 
 

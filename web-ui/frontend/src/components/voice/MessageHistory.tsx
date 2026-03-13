@@ -6,6 +6,7 @@ type MessageHistoryProps = {
   messages: Message[];
   isProcessing: boolean;
   canReplay: boolean;
+  wakeWordLabel: string;
   onReplay: (text: string) => void;
   onClear: () => void;
 };
@@ -23,6 +24,7 @@ export default function MessageHistory({
   messages,
   isProcessing,
   canReplay,
+  wakeWordLabel,
   onReplay,
   onClear,
 }: MessageHistoryProps) {
@@ -136,7 +138,7 @@ export default function MessageHistory({
             <p className="voice-chat-history__empty-icon" aria-hidden="true">
               💬
             </p>
-            <p>Say &quot;Hey Jarvis&quot; or type a question below.</p>
+            <p>Say &quot;{wakeWordLabel || "Hey Avaros"}&quot; or type a question below.</p>
           </div>
         ) : (
           messages.map((message) => (

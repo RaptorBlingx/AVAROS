@@ -23,6 +23,7 @@ export default function VoiceSettingsSection({
     wakeWordState,
     setWakeWordSensitivity,
     isModelLoading,
+    wakeWordLabel,
     setLanguage,
     availableVoices,
     setTTSVoice,
@@ -36,6 +37,10 @@ export default function VoiceSettingsSection({
     requestMicPermission,
   } = useVoice();
   const settings = useVoiceSettings();
+  const wakeWordDisplay = useMemo(
+    () => wakeWordLabel || "Hey Avaros",
+    [wakeWordLabel],
+  );
 
   const didApplyInitialSettings = useRef(false);
   const wakeWordTestTimerRef = useRef<number | null>(null);
@@ -47,7 +52,7 @@ export default function VoiceSettingsSection({
   }>({
     running: false,
     tone: "neutral",
-    message: "Run wake-word test for 10 seconds, then say \"Hey Jarvis\".",
+    message: `Run wake-word test for 10 seconds, then say "${wakeWordDisplay}".`,
   });
 
   const voicesByLanguage = useMemo(() => {
@@ -287,7 +292,7 @@ export default function VoiceSettingsSection({
     setWakeWordTestStatus({
       running: true,
       tone: "neutral",
-      message: "Listening for 10 seconds. Say \"Hey Jarvis\" clearly.",
+      message: `Listening for 10 seconds. Say "${wakeWordDisplay}" clearly.`,
     });
 
     wakeWordTestTimerRef.current = window.setTimeout(() => {
@@ -299,7 +304,7 @@ export default function VoiceSettingsSection({
       setWakeWordTestStatus({
         running: false,
         tone: "warning",
-        message: "Not detected. Try saying \"Hey Jarvis\" clearly.",
+        message: `Not detected. Try saying "${wakeWordDisplay}" clearly.`,
       });
     }, 10000);
   }, [
@@ -307,6 +312,7 @@ export default function VoiceSettingsSection({
     settings.wakeWordEnabled,
     setVoiceMode,
     voiceMode,
+    wakeWordDisplay,
     wakeWordTestStatus.running,
   ]);
 
@@ -375,7 +381,7 @@ export default function VoiceSettingsSection({
               {
                 mode: "wake-word" as VoiceMode,
                 label: "Wake Word",
-                description: "Say \"Hey Jarvis\" to activate — mic stays on",
+                description: `Say "${wakeWordDisplay}" to activate — mic stays on`,
               },
               {
                 mode: "push-to-talk" as VoiceMode,

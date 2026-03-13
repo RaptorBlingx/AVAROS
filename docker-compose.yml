@@ -26,6 +26,7 @@ services:
     environment:
       - AVAROS_LOG_LEVEL=${AVAROS_LOG_LEVEL:-INFO}
       - AVAROS_DATA_PATH=/data
+      - AVAROS_DATABASE_URL=sqlite:////data/avaros.db
       - MESSAGEBUS_HOST=ovos_messagebus
       - MESSAGEBUS_PORT=8181
       # Platform config comes from Web UI, NOT here
@@ -38,6 +39,8 @@ services:
     depends_on:
       ovos_messagebus:
         condition: service_healthy
+      ovos-core:
+        condition: service_started
     healthcheck:
       test: ["CMD", "python", "-c", "import skill; print('healthy')"]
       interval: 30s
@@ -76,7 +79,7 @@ services:
   # OVOS Core (Voice Processing)
   # =========================================================================
   ovos-core:
-    image: smartgic/ovos-core:latest
+    image: smartgic/ovos-core:0.1.0
     container_name: avaros-ovos-core
     restart: unless-stopped
     # NOTE: upstream ovos_commonqa has a PipelinePlugin.__init__ signature
@@ -88,13 +91,10 @@ services:
       - MESSAGEBUS_PORT=8181
     volumes:
       - ovos-config:/home/ovos/.config/mycroft
-      - ./skill:/home/ovos/.local/share/mycroft/skills/avaros-skill
       - ./docker/ovos-core.standalone.conf:/etc/xdg/mycroft/mycroft.conf:ro
     networks:
       - avaros-network
     depends_on:
-      avaros:
-        condition: service_started
       ovos_messagebus:
         condition: service_healthy
     labels:

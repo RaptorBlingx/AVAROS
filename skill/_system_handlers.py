@@ -81,9 +81,6 @@ def handle_status_system_show(skill: "AVAROSSkill", message: Message) -> None:
     """Handle generic system status request."""
 
     def _execute() -> None:
-        if not skill._require_intent_binding("status.system.show"):
-            return
-
         active_profile = skill._resolve_active_profile()
         power_state = skill._get_power_state()
         platform = "mock"
@@ -112,9 +109,6 @@ def handle_status_profile_show(skill: "AVAROSSkill", message: Message) -> None:
     """Handle profile/config status request."""
 
     def _execute() -> None:
-        if not skill._require_intent_binding("status.profile.show"):
-            return
-
         profile = skill._resolve_active_profile()
         platform = "mock"
         if skill.settings_service is not None:
@@ -131,9 +125,6 @@ def handle_help_capabilities_list(skill: "AVAROSSkill", message: Message) -> Non
     """Handle capability/help request for generic + KPI intents."""
 
     def _execute() -> None:
-        if not skill._require_intent_binding("help.capabilities.list"):
-            return
-
         skill.speak(
             "I can report KPIs, compare and trend metrics, check anomalies, run what if simulations, "
             "and handle generic commands like turn on, turn off, and show status."

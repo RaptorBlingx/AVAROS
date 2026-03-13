@@ -68,6 +68,7 @@ export interface UseWakeWordResult {
   wakeWordSensitivity: number;
   setWakeWordSensitivity: (value: number) => void;
   isModelLoading: boolean;
+  wakeWordLabel: string;
   voiceMode: VoiceMode;
   setVoiceMode: (mode: VoiceMode) => Promise<void>;
   /** True when the backend openWakeWord service is being used. */
@@ -102,6 +103,7 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
   const [wakeWordState, setWakeWordState] = useState<WakeWordState>("idle");
   const [wakeWordSensitivity, setWakeWordSensitivityState] = useState(0.15);
   const [isModelLoading, setIsModelLoading] = useState(false);
+  const [wakeWordLabel, setWakeWordLabel] = useState("Hey Avaros");
   const [voiceMode, setVoiceModeState] = useState<VoiceMode>(getInitialVoiceMode);
   const [isBackendWakeWord, setIsBackendWakeWord] = useState(false);
 
@@ -132,6 +134,9 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
         ? new BackendWakeWordService({ wsUrl: configuredUrl })
         : new BackendWakeWordService();
     }
+    void backendWakeWordRef.current
+      .refreshWakeWordLabel()
+      .then((label) => setWakeWordLabel(label));
 
     ensureVoiceModeService();
 
@@ -162,7 +167,10 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
       );
     });
 
-    const unsubDetected = bww.onDetected((payload) => onDetected(payload));
+    const unsubDetected = bww.onDetected((payload) => {
+      setWakeWordLabel(bww.getWakeWordLabel());
+      onDetected(payload);
+    });
 
     return () => {
       unsubState();
@@ -210,6 +218,7 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
     wakeWordSensitivity,
     setWakeWordSensitivity,
     isModelLoading,
+    wakeWordLabel,
     voiceMode,
     setVoiceMode,
     isBackendWakeWord,

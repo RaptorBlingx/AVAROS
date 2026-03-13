@@ -23,6 +23,7 @@ if __package__:
     from .detector import (
         DEFAULT_CONFIRMATION_FRAMES,
         WakeWordDetector,
+        _ensure_openwakeword_assets,
         _resolve_model_path,
     )
 else:
@@ -30,6 +31,7 @@ else:
     from detector import (  # type: ignore[no-redef]
         DEFAULT_CONFIRMATION_FRAMES,
         WakeWordDetector,
+        _ensure_openwakeword_assets,
         _resolve_model_path,
     )
 
@@ -45,6 +47,12 @@ MAX_WS_CLOSE_REASON_BYTES = 120
 _THRESHOLD_LOCK = threading.Lock()
 _SESSION_THRESHOLDS: dict[str, float] = {}
 _FALLBACK_MODEL_NAME = "hey_jarvis"
+
+
+def _preload_registry_assets_enabled() -> bool:
+    """Return whether registry model assets should be preloaded at startup."""
+    raw = os.environ.get("WAKEWORD_PRELOAD_MODELS", "0").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 # ── Startup validation ──────────────────────────────────
@@ -79,8 +87,13 @@ async def lifespan(application: FastAPI):  # noqa: ANN201
             )
 
     if active_custom_path is None:
+        resolver = (
+            _ensure_openwakeword_assets
+            if _preload_registry_assets_enabled()
+            else _resolve_model_path
+        )
         try:
-            _resolve_model_path(active_model)
+            resolver(active_model)
             logger.info(
                 "Model '%s' validated in openWakeWord registry.",
                 active_model,
@@ -88,7 +101,7 @@ async def lifespan(application: FastAPI):  # noqa: ANN201
         except ValueError as exc:
             if active_model != _FALLBACK_MODEL_NAME:
                 try:
-                    _resolve_model_path(_FALLBACK_MODEL_NAME)
+                    resolver(_FALLBACK_MODEL_NAME)
                     logger.warning(
                         "Configured model '%s' is unavailable (%s); "
                         "falling back to '%s'.",
@@ -133,7 +146,7 @@ app = FastAPI(title="avaros-wakeword", version=SERVICE_VERSION, lifespan=lifespa
 
 def _model_name() -> str:
     """Return the configured wake-word model name."""
-    return os.environ.get("WAKEWORD_MODEL", "hey_jarvis")
+    return os.environ.get("WAKEWORD_MODEL", "hey_avaros")
 
 
 def _custom_model_path() -> str | None:

@@ -25,7 +25,10 @@ docker compose -f docker/docker-compose.avaros.yml up avaros-wakeword
 | `WAKEWORD_THRESHOLD` | `0.5` | Detection confidence threshold (0.0–1.0) |
 | `WAKEWORD_MODEL_PATH` | *(unset)* | Absolute path to a custom `.onnx`/`.tflite` model file. When set, bypasses the openWakeWord registry. |
 | `WAKEWORD_MODEL_LABEL` | *(derived)* | Display label for the active model. Defaults to filename stem of `WAKEWORD_MODEL_PATH` or the `WAKEWORD_MODEL` value. |
+| `WAKEWORD_PRELOAD_MODELS` | `0` | When `1`, preload registry model files at service startup to avoid first-connection download delay. |
 | `WAKEWORD_CONFIRMATION_FRAMES` | `3` | Consecutive above-threshold frames required before emitting a detection event. At 80 ms/frame, 3 = 240 ms sustained confidence. |
+
+If `WAKEWORD_MODEL_PATH` is configured but the file does not exist, service startup falls back to the registry model. If that model is unavailable, it falls back to `hey_jarvis`.
 
 ### Available Models
 

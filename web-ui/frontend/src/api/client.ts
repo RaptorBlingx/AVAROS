@@ -14,6 +14,7 @@ import type {
   EmissionFactorPresetResponse,
   EmissionFactorRequest,
   EmissionFactorResponse,
+  GeneratorMappingResponse,
   HealthResponse,
   IntentBinding,
   IntentBindingRequest,
@@ -504,6 +505,15 @@ export function saveConfiguredAssets(
   return request<AssetMappingsResponse>("/api/v1/config/assets", {
     method: "POST",
     body: { asset_mappings: assetMappings },
+  });
+}
+
+export function importGeneratorMapping(
+  mapping: Record<string, Record<string, string>>,
+): Promise<GeneratorMappingResponse> {
+  return request<GeneratorMappingResponse>("/api/v1/assets/import-generator-mapping", {
+    method: "POST",
+    body: { mapping },
   });
 }
 

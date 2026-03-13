@@ -14,7 +14,10 @@ import asyncio
 import time
 from datetime import datetime, timedelta, timezone
 
-import aiohttp
+try:
+    import aiohttp
+except ModuleNotFoundError:  # pragma: no cover - optional in minimal OVOS images
+    aiohttp = None  # type: ignore[assignment]
 
 from skill.domain.results import ConnectionTestResult
 

@@ -15,6 +15,7 @@ export interface Message {
 
 const MAX_MESSAGES = 50;
 const PROCESSING_GUARD_TIMEOUT_MS = 15000;
+const SPEAK_EVENT_DEDUP_MS = 1200;
 
 function createMessageId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -42,6 +43,10 @@ export function useConversation(): {
   const [isProcessing, setIsProcessing] = useState(false);
   const lastTranscriptRef = useRef("");
   const pendingInputModeRef = useRef<ConversationInputMode>("text");
+  const lastAssistantSpeakRef = useRef<{ text: string; at: number }>({
+    text: "",
+    at: 0,
+  });
 
   const appendMessage = useCallback((message: Message) => {
     setMessages((prev) => trimToRecent([...prev, message]));
@@ -85,8 +90,17 @@ export function useConversation(): {
   useEffect(() => {
     return on("speak", (msg) => {
       const text = (msg.data.utterance as string | undefined) ?? "";
-      if (text.trim()) {
-        addAvarosResponse(text);
+      const normalized = text.trim();
+      if (normalized) {
+        const now = Date.now();
+        if (
+          lastAssistantSpeakRef.current.text === normalized &&
+          now - lastAssistantSpeakRef.current.at < SPEAK_EVENT_DEDUP_MS
+        ) {
+          return;
+        }
+        lastAssistantSpeakRef.current = { text: normalized, at: now };
+        addAvarosResponse(normalized);
       }
     });
   }, [on, addAvarosResponse]);
@@ -136,4 +150,3 @@ export function useConversation(): {
     ],
   );
 }
-

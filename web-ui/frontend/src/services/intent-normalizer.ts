@@ -11,6 +11,7 @@ export function normalizeUtteranceForIntent(raw: string): string {
   text = text.replace(/°/g, " degrees");
   text = text.replace(/\bwhat if (you|u)\b/gi, "what if we");
   text = text.replace(/\btrain\b/gi, "trend");
+  text = text.replace(/\bsnergy\b/gi, "energy");
   text = text.replace(
     /\b(energy|scrap|waste|oee|production)\s+turn\b/gi,
     "$1 trend",

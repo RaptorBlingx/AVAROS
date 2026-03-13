@@ -10,9 +10,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from urllib.parse import unquote
 
-import aiohttp
+try:
+    import aiohttp
+except ModuleNotFoundError:  # pragma: no cover - optional in minimal OVOS images
+    aiohttp = None  # type: ignore[assignment]
 
 from skill.domain.exceptions import AdapterError
 
@@ -21,6 +25,10 @@ logger = logging.getLogger(__name__)
 # Retry configuration
 MAX_RETRIES = 3
 BACKOFF_FACTORS = (0.5, 1.0, 2.0)
+_UUID_TOKEN_PATTERN = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+)
 
 
 class ReneryoHttpMixin:
@@ -222,6 +230,22 @@ class ReneryoHttpMixin:
             # forward as-is; otherwise treat input as the value of S cookie.
             if decoded_cookie.startswith("S=") or ";" in decoded_cookie:
                 return {"Cookie": decoded_cookie}
+
+            # Accept common single cookie-pair inputs like "JSESSIONID=...".
+            if "=" in decoded_cookie:
+                cookie_name = decoded_cookie.split("=", 1)[0].strip()
+                if (
+                    cookie_name
+                    and cookie_name[0].isalpha()
+                    and len(cookie_name) <= 32
+                    and all(ch.isalnum() or ch in "_-.$" for ch in cookie_name)
+                ):
+                    return {"Cookie": decoded_cookie}
+
+            # Some RENERYO environments expect JSESSIONID instead of S.
+            # If a bare UUID token is provided, send both variants.
+            if _UUID_TOKEN_PATTERN.fullmatch(decoded_cookie):
+                return {"Cookie": f"JSESSIONID={decoded_cookie}; S={decoded_cookie}"}
 
             return {"Cookie": f"S={decoded_cookie}"}
         return {"Authorization": f"Bearer {self._api_key}"}

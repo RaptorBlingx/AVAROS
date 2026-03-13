@@ -5,7 +5,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-import aiohttp
+try:
+    import aiohttp
+except ModuleNotFoundError:  # pragma: no cover - optional in minimal OVOS images
+    aiohttp = None  # type: ignore[assignment]
 
 from skill.adapters.base import ManufacturingAdapter
 from skill.adapters.generic_rest._config_mixin import GenericRestConfigMixin

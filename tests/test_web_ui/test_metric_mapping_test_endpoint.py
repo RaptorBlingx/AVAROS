@@ -72,6 +72,32 @@ class TestMetricMappingValidationEndpoint:
         assert body["success"] is False
         assert body["error"] == "JSONPath did not resolve to a value"
 
+    def test_test_mapping_supports_wildcard_array_json_path(self, client: TestClient) -> None:
+        payload = {
+            "base_url": "https://api.example.com",
+            "endpoint": "/metrics/energy",
+            "json_path": "$.records[*].value",
+            "auth_type": "bearer",
+            "auth_token": "token-123",
+        }
+
+        with patch(
+            "services.metric_test_service._fetch_response",
+            new=AsyncMock(
+                return_value=(
+                    200,
+                    '{"records": [{"value": 81.5}, {"value": 82.0}]}',
+                ),
+            ),
+        ):
+            response = client.post("/api/v1/config/metrics/test", json=payload)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["success"] is True
+        assert body["value"] == 81.5
+        assert body["error"] is None
+
     def test_test_mapping_rejects_absolute_endpoint_url(self, client: TestClient) -> None:
         payload = {
             "base_url": "https://api.example.com",
@@ -206,6 +232,53 @@ class TestMetricMappingValidationEndpoint:
         assert response.status_code == 200
         _, headers, _ = fetch_mock.await_args.args
         assert headers["Cookie"] == "S=session-abc"
+
+    def test_test_mapping_cookie_auth_uuid_token_sends_dual_cookie_names(
+        self,
+        client: TestClient,
+    ) -> None:
+        payload = {
+            "base_url": "https://api.example.com",
+            "endpoint": "/metrics/energy",
+            "json_path": "$.data.energy",
+            "auth_type": "cookie",
+            "auth_token": "4efd58f5-c712-4c0d-b329-001122334455",
+        }
+
+        fetch_mock = AsyncMock(return_value=(200, '{"data": {"energy": 1}}'))
+        with patch("services.metric_test_service._fetch_response", new=fetch_mock):
+            response = client.post("/api/v1/config/metrics/test", json=payload)
+
+        assert response.status_code == 200
+        _, headers, _ = fetch_mock.await_args.args
+        assert headers["Cookie"] == (
+            "JSESSIONID=4efd58f5-c712-4c0d-b329-001122334455; "
+            "S=4efd58f5-c712-4c0d-b329-001122334455"
+        )
+
+    def test_test_mapping_cookie_auth_long_value_with_equals_wraps_s(
+        self,
+        client: TestClient,
+    ) -> None:
+        token = (
+            "4efd58f5-c712-4c0d-b329-329da0fc8f2e."
+            "15lraeYHLMKZIU9Ve8np00eiFWYXn8NZ3vIjaPXebLw="
+        )
+        payload = {
+            "base_url": "https://api.example.com",
+            "endpoint": "/metrics/energy",
+            "json_path": "$.data.energy",
+            "auth_type": "cookie",
+            "auth_token": token,
+        }
+
+        fetch_mock = AsyncMock(return_value=(200, '{"data": {"energy": 1}}'))
+        with patch("services.metric_test_service._fetch_response", new=fetch_mock):
+            response = client.post("/api/v1/config/metrics/test", json=payload)
+
+        assert response.status_code == 200
+        _, headers, _ = fetch_mock.await_args.args
+        assert headers["Cookie"] == f"S={token}"
 
     def test_test_mapping_none_auth_sends_no_headers(self, client: TestClient) -> None:
         payload = {
