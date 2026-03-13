@@ -20,6 +20,8 @@ type RegistrationRow = {
   displayName: string;
   assetType: "line" | "machine" | "sensor";
   aliases: string;
+  isExisting: boolean;
+  existingAssetId: string | null;
 };
 
 type AssetRegistrationStepProps = {
@@ -74,6 +76,8 @@ function toRegistrationRows(
     displayName: toDisplayName(assetId, item.display_name),
     assetType: inferAssetType(assetId, item.asset_type),
     aliases: aliasesToCsv(item.aliases),
+    isExisting: true,
+    existingAssetId: assetId,
   }));
   return rows.length > 0
     ? rows
@@ -84,6 +88,8 @@ function toRegistrationRows(
           displayName: "",
           assetType: "machine",
           aliases: "",
+          isExisting: false,
+          existingAssetId: null,
         },
       ];
 }
@@ -130,6 +136,8 @@ export default function AssetRegistrationStep({
           displayName: asset.display_name || asset.asset_id,
           assetType: inferAssetType(candidateId, asset.asset_type),
           aliases: aliasesToCsv(asset.aliases),
+          isExisting: false,
+          existingAssetId: null,
         });
       }
 
@@ -180,6 +188,8 @@ export default function AssetRegistrationStep({
         displayName: "",
         assetType: "machine",
         aliases: "",
+        isExisting: false,
+        existingAssetId: null,
       },
     ]);
   }, []);
@@ -196,6 +206,8 @@ export default function AssetRegistrationStep({
               displayName: "",
               assetType: "machine",
               aliases: "",
+              isExisting: false,
+              existingAssetId: null,
             },
           ];
     });
@@ -245,13 +257,14 @@ export default function AssetRegistrationStep({
       const payload = rows.reduce<Record<string, AssetMappingItem>>(
         (acc, row) => {
           const resolvedId = row.assetId.trim() || toAssetId(row.displayName);
-          if (!resolvedId) {
+          const targetId = row.existingAssetId ?? resolvedId;
+          if (!targetId) {
             return acc;
           }
-          const previous = storedMappings[resolvedId] ?? {};
-          acc[resolvedId] = {
+          const previous = storedMappings[targetId] ?? {};
+          acc[targetId] = {
             ...previous,
-            display_name: row.displayName.trim() || resolvedId,
+            display_name: row.displayName.trim() || targetId,
             asset_type: row.assetType,
             aliases: csvToAliases(row.aliases),
           };
@@ -316,6 +329,9 @@ export default function AssetRegistrationStep({
             <p className="m-0 text-xs text-slate-500 dark:text-slate-400">
               Aliases improve voice matching, for example: "line one, first line, l1".
             </p>
+            <p className="m-0 text-xs text-slate-500 dark:text-slate-400">
+              Existing Asset IDs are immutable. Add a new row to register a new asset ID.
+            </p>
 
             {rows.map((row, index) => (
               <div
@@ -326,10 +342,12 @@ export default function AssetRegistrationStep({
                   type="text"
                   value={row.assetId}
                   placeholder="asset-id"
+                  disabled={row.isExisting}
+                  title={row.isExisting ? "Asset ID is immutable after creation." : undefined}
                   onChange={(event) =>
                     updateRow(index, "assetId", event.target.value)
                   }
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900"
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900"
                 />
                 <input
                   type="text"

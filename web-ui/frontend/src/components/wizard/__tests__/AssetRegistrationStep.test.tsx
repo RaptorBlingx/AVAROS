@@ -70,6 +70,10 @@ describe("AssetRegistrationStep", () => {
     expect(screen.getByDisplayValue("Line 1")).toBeTruthy();
     expect(screen.getByDisplayValue("line-2")).toBeTruthy();
     expect(screen.getByDisplayValue("Line 2")).toBeTruthy();
+    const existingAssetIdInput = screen.getByDisplayValue("line-1") as HTMLInputElement;
+    const suggestedAssetIdInput = screen.getByDisplayValue("line-2") as HTMLInputElement;
+    expect(existingAssetIdInput.disabled).toBe(true);
+    expect(suggestedAssetIdInput.disabled).toBe(false);
     expect(
       screen.queryByRole("button", { name: "Import Mapping" }),
     ).toBeNull();

@@ -136,6 +136,18 @@ function resolveHealthUrl(wsUrl: string): string | null {
   }
 }
 
+function isSameOriginUrl(rawUrl: string): boolean {
+  if (typeof window === "undefined") {
+    return true;
+  }
+  try {
+    const parsed = new URL(rawUrl, window.location.href);
+    return parsed.origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 function toDisplayWakeWordLabel(raw: string): string {
   const cleaned = raw
     .trim()
@@ -325,7 +337,7 @@ export class BackendWakeWordService {
 
   async refreshWakeWordLabel(): Promise<string> {
     const healthUrl = resolveHealthUrl(this.config.wsUrl);
-    if (!healthUrl) {
+    if (!healthUrl || !isSameOriginUrl(healthUrl)) {
       return this.wakeWordLabel;
     }
     try {
