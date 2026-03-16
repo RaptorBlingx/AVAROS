@@ -66,10 +66,14 @@ describe("PlatformSetupStep", () => {
     expect(screen.getByRole("button", { name: "Use RENERYO" })).toBeTruthy();
   });
 
+  it("always renders the Mock preset action", () => {
+    renderStep();
+    expect(screen.getByRole("button", { name: "Use Mock" })).toBeTruthy();
+  });
+
   it("triggers preset callback when RENERYO action is clicked", () => {
     const { onUseReneryoQuickAction } = renderStep();
     fireEvent.click(screen.getByRole("button", { name: "Use RENERYO" }));
     expect(onUseReneryoQuickAction).toHaveBeenCalledTimes(1);
   });
 });
-

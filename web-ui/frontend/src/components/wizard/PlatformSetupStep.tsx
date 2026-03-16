@@ -55,9 +55,6 @@ export default function PlatformSetupStep({
   onTestConnection,
   onSaveAndContinue,
 }: PlatformSetupStepProps) {
-  const showMockQuickAction =
-    import.meta.env.DEV ||
-    import.meta.env.VITE_ENABLE_DEV_QUICK_ACTIONS === "true";
   const resolvedPlatform = platformType ?? "custom_rest";
   const isMock = resolvedPlatform === "mock";
   const isReneryo = resolvedPlatform === "reneryo";
@@ -127,10 +124,10 @@ export default function PlatformSetupStep({
             }`}
           >
             <p className="m-0 text-sm font-semibold text-slate-900 dark:text-slate-100">
-              Connect via API
+              Connect Your Platform
             </p>
             <p className="m-0 mt-1 text-sm text-slate-600 dark:text-slate-300">
-              Primary production path. Connect to your platform API endpoint.
+              Main production path. Connect any non-mock infrastructure through its API.
             </p>
           </button>
 
@@ -142,6 +139,17 @@ export default function PlatformSetupStep({
               <button
                 type="button"
                 className={`rounded-lg px-3 py-2 text-sm font-semibold ${
+                  isMock
+                    ? "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"
+                    : "btn-brand-subtle"
+                }`}
+                onClick={onUseMockQuickAction}
+              >
+                Use Mock
+              </button>
+              <button
+                type="button"
+                className={`rounded-lg px-3 py-2 text-sm font-semibold ${
                   isReneryo
                     ? "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"
                     : "btn-brand-subtle"
@@ -150,19 +158,6 @@ export default function PlatformSetupStep({
               >
                 Use RENERYO
               </button>
-              {showMockQuickAction && (
-                <button
-                  type="button"
-                  className={`rounded-lg px-3 py-2 text-sm font-semibold ${
-                    isMock
-                      ? "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"
-                      : "btn-brand-subtle"
-                  }`}
-                  onClick={onUseMockQuickAction}
-                >
-                  Use Mock
-                </button>
-              )}
             </div>
           </div>
         </div>

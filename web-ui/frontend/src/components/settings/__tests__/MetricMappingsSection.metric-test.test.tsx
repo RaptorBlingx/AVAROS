@@ -100,13 +100,58 @@ describe("MetricMappingsSection mapping test action", () => {
     expect(updatedButtons[0].getAttribute("title")).toBe("Value: 42.5");
   });
 
-  it("shows error icon and tooltip when mapping test fails", async () => {
+  it("shows retry state and surfaces error when mapping test fails", async () => {
+    const onNotify = vi.fn();
     mockApi.testMetricMapping.mockResolvedValue({
       success: false,
       value: null,
       raw_response_preview: "{}",
       error: "JSONPath did not resolve to a value",
     });
+
+    render(
+      <MetricMappingsSection onNotify={onNotify} refreshKey={0} activeProfile="reneryo" />,
+    );
+
+    await waitFor(() => {
+      expect(mockApi.listMetricMappings).toHaveBeenCalledTimes(1);
+    });
+
+    const testButtons = screen.getAllByRole("button", {
+      name: /test mapping for energy_per_unit/i,
+    });
+    fireEvent.click(testButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Retry").length).toBeGreaterThan(0);
+    });
+
+    const updatedButtons = screen.getAllByRole("button", {
+      name: /test mapping for energy_per_unit/i,
+    });
+    expect(updatedButtons[0].getAttribute("title")).toBe(
+      "JSONPath did not resolve to a value",
+    );
+    expect(onNotify).toHaveBeenCalledWith(
+      "error",
+      "JSONPath did not resolve to a value",
+    );
+  });
+
+  it("re-runs mapping test when retry is clicked", async () => {
+    mockApi.testMetricMapping
+      .mockResolvedValueOnce({
+        success: false,
+        value: null,
+        raw_response_preview: "{}",
+        error: "Connection failed",
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        value: 11.7,
+        raw_response_preview: '{"value":11.7}',
+        error: null,
+      });
 
     render(
       <MetricMappingsSection onNotify={vi.fn()} refreshKey={0} activeProfile="reneryo" />,
@@ -122,15 +167,20 @@ describe("MetricMappingsSection mapping test action", () => {
     fireEvent.click(testButtons[0]);
 
     await waitFor(() => {
-      expect(screen.getAllByText("✕").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("Retry").length).toBeGreaterThan(0);
     });
 
-    const updatedButtons = screen.getAllByRole("button", {
+    const retryButtons = screen.getAllByRole("button", {
       name: /test mapping for energy_per_unit/i,
     });
-    expect(updatedButtons[0].getAttribute("title")).toBe(
-      "JSONPath did not resolve to a value",
-    );
+    fireEvent.click(retryButtons[0]);
+
+    await waitFor(() => {
+      expect(mockApi.testMetricMapping).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText("✓").length).toBeGreaterThan(0);
+    });
   });
 
   it("resets mapping test state when endpoint is edited", async () => {

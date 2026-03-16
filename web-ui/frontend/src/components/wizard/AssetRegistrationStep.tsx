@@ -36,6 +36,8 @@ const ASSET_TYPES: RegistrationRow["assetType"][] = [
   "sensor",
 ];
 const LINE_ASSET_ID_PATTERN = /^line[-_ ]?\d+$/i;
+const UUID_ASSET_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function createRowId(seed?: string): string {
   const base = seed ? seed.replace(/[^a-zA-Z0-9_-]/g, "") : "asset";
@@ -116,6 +118,19 @@ function createEmptyRow(): RegistrationRow {
   };
 }
 
+function isLikelyTechnicalSeuAsset(assetId: string): boolean {
+  return UUID_ASSET_ID_PATTERN.test((assetId || "").trim());
+}
+
+function toReneryoRegistrationRows(
+  rows: RegistrationRow[],
+): RegistrationRow[] {
+  const logicalRows = rows.filter(
+    (row) => !isLikelyTechnicalSeuAsset(row.assetId),
+  );
+  return logicalRows.length > 0 ? logicalRows : [createEmptyRow()];
+}
+
 export default function AssetRegistrationStep({
   platformType,
   onComplete,
@@ -140,7 +155,11 @@ export default function AssetRegistrationStep({
       const existingMappings = mappingsResponse.asset_mappings;
       const registrationRows = toRegistrationRows(existingMappings);
       setStoredMappings(existingMappings);
-      setRows(platformType === "reneryo" ? [] : registrationRows);
+      setRows(
+        platformType === "reneryo"
+          ? toReneryoRegistrationRows(registrationRows)
+          : registrationRows,
+      );
       setShowSuggestions(false);
       setLoading(false);
 
@@ -184,11 +203,14 @@ export default function AssetRegistrationStep({
         }
 
         if (platformType === "reneryo") {
-          setRows(suggestedRows.length > 0 ? suggestedRows : [createEmptyRow()]);
           setShowSuggestions(false);
           if (discoverySource !== "adapter") {
             setDiscoveryNotice(
-              "Live RENERYO discovery is unavailable. Only live RENERYO assets are shown.",
+              "Live RENERYO discovery is unavailable. Showing registered logical assets only.",
+            );
+          } else if (suggestedRows.length > 0) {
+            setDiscoveryNotice(
+              "Live RENERYO resources were discovered. Use Resource Linking to validate and map them; logical assets stay in this list.",
             );
           }
           return;

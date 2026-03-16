@@ -181,6 +181,21 @@ export function buildDashboardStatusCards(
 ): DashboardStatusCard[] {
   const boolText = (value: boolean): string => (value ? "Yes" : "No");
   const iconClass = "h-4 w-4";
+  const liveState = (status.live_connection_state ?? "unknown").toLowerCase();
+  const liveConnectionLabel =
+    liveState === "healthy"
+      ? "Verified"
+      : liveState === "auth_failed"
+        ? "Auth Failed"
+        : liveState === "unreachable"
+          ? "Unreachable"
+          : liveState === "misconfigured"
+            ? "Misconfigured"
+            : liveState === "unconfigured"
+              ? "Not Configured"
+              : "Unknown";
+  const liveConnectionTone: DashboardStatusCard["tone"] =
+    liveState === "healthy" ? "good" : "warning";
 
   return [
     {
@@ -236,6 +251,29 @@ export function buildDashboardStatusCards(
       ),
       tone: "info",
       helpText: "Configured platform profile type for API communication.",
+    },
+    {
+      label: "Live Connection",
+      value: liveConnectionLabel,
+      icon: (
+        <svg
+          className={iconClass}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
+          <path
+            d="M4 12a8 8 0 0116 0M7 12a5 5 0 0110 0M10 12a2 2 0 014 0"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+          <circle cx="12" cy="16" r="1.5" fill="currentColor" stroke="none" />
+        </svg>
+      ),
+      tone: liveConnectionTone,
+      helpText:
+        status.live_connection_message ||
+        "Latest live platform verification result.",
     },
     {
       label: "Loaded Intents",

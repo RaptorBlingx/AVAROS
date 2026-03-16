@@ -57,10 +57,16 @@ export default function SystemInfoSection({ onNotify }: SystemInfoSectionProps) 
           onRetry={() => void loadStatus()}
         />
       ) : status ? (
-        <div className="reveal-in reveal-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="reveal-in reveal-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="brand-surface rounded-xl p-4">
             <p className="m-0 text-xs font-semibold uppercase text-slate-500">Active Adapter</p>
             <p className="m-0 mt-2 text-base font-semibold text-slate-900">{status.active_adapter}</p>
+          </div>
+          <div className="brand-surface rounded-xl p-4">
+            <p className="m-0 text-xs font-semibold uppercase text-slate-500">Live Connection</p>
+            <p className="m-0 mt-2 text-base font-semibold text-slate-900">
+              {(status.live_connection_state ?? "unknown").replaceAll("_", " ")}
+            </p>
           </div>
           <div className="brand-surface rounded-xl p-4">
             <p className="m-0 text-xs font-semibold uppercase text-slate-500">Loaded Intents</p>

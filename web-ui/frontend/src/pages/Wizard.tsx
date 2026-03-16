@@ -39,6 +39,69 @@ type WizardState = {
   apiKey: string;
 };
 
+const WIZARD_DRAFT_STORAGE_KEY = "avaros_wizard_draft_v1";
+
+type WizardDraft = Pick<
+  WizardState,
+  "currentStep" | "platformType" | "authType" | "apiUrl" | "apiKey"
+>;
+
+function readWizardDraft(): WizardDraft | null {
+  try {
+    const raw = sessionStorage.getItem(WIZARD_DRAFT_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as Partial<WizardDraft>;
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      typeof parsed.platformType !== "string" ||
+      typeof parsed.authType !== "string"
+    ) {
+      return null;
+    }
+    const currentStep =
+      typeof parsed.currentStep === "number" &&
+      parsed.currentStep >= 1 &&
+      parsed.currentStep <= 6
+        ? (parsed.currentStep as StepNumber)
+        : 1;
+    return {
+      currentStep,
+      platformType: parsed.platformType as PlatformType,
+      authType: parsed.authType as WizardState["authType"],
+      apiUrl: String(parsed.apiUrl ?? ""),
+      apiKey: String(parsed.apiKey ?? ""),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeWizardDraft(state: WizardState): void {
+  const draft: WizardDraft = {
+    currentStep: state.currentStep,
+    platformType: state.platformType,
+    authType: state.authType,
+    apiUrl: state.apiUrl,
+    apiKey: state.apiKey,
+  };
+  sessionStorage.setItem(WIZARD_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+}
+
+function clearWizardDraft(): void {
+  sessionStorage.removeItem(WIZARD_DRAFT_STORAGE_KEY);
+}
+
+function getReneryoPreset(): { apiUrl: string; apiKey: string } {
+  const env = import.meta.env as Record<string, string | undefined>;
+  return {
+    apiUrl: String(env.VITE_RENERYO_PRESET_URL ?? "").trim(),
+    apiKey: String(env.VITE_RENERYO_PRESET_COOKIE ?? "").trim(),
+  };
+}
+
 function normalizePlatformTypeForProfile(
   platformType: PlatformType,
   activeProfileName: string,
@@ -202,17 +265,25 @@ export default function Wizard() {
         activeProfile,
       );
       const resolvedAuthType = fromBackendAuthType(config.extra_settings?.auth_type);
+      const draft = readWizardDraft();
       setActiveProfileName(activeProfile);
-      setState((prev) => ({
-        ...prev,
-        platformType: normalizedPlatformType,
-        authType:
-          normalizedPlatformType === "reneryo" && resolvedAuthType !== "none"
-            ? "cookie"
-            : resolvedAuthType,
-        apiUrl: config.api_url,
-        apiKey: "",
-      }));
+      if (draft) {
+        setState((prev) => ({
+          ...prev,
+          ...draft,
+        }));
+      } else {
+        setState((prev) => ({
+          ...prev,
+          platformType: normalizedPlatformType,
+          authType:
+            normalizedPlatformType === "reneryo" && resolvedAuthType !== "none"
+              ? "cookie"
+              : resolvedAuthType,
+          apiUrl: config.api_url,
+          apiKey: "",
+        }));
+      }
     } catch (error: unknown) {
       setStatusError(toFriendlyErrorMessage(error));
     } finally {
@@ -227,6 +298,10 @@ export default function Wizard() {
   useEffect(() => {
     setHeaderError("");
   }, [state.currentStep]);
+
+  useEffect(() => {
+    writeWizardDraft(state);
+  }, [state]);
 
   useEffect(() => {
     const onRerun = (event: Event) => {
@@ -305,10 +380,28 @@ export default function Wizard() {
   ]);
 
   const handlePlatformChange = useCallback((platformType: PlatformType) => {
+    const reneryoPreset = getReneryoPreset();
     setState((prev) => ({
       ...prev,
       platformType,
-      authType: platformType === "reneryo" ? "cookie" : prev.authType,
+      authType:
+        platformType === "reneryo"
+          ? "cookie"
+          : platformType === "mock"
+            ? "api_key"
+            : prev.authType,
+      apiUrl:
+        platformType === "reneryo"
+          ? reneryoPreset.apiUrl || prev.apiUrl
+          : platformType === "mock"
+            ? ""
+            : prev.apiUrl,
+      apiKey:
+        platformType === "reneryo"
+          ? reneryoPreset.apiKey || prev.apiKey
+          : platformType === "mock"
+            ? ""
+            : prev.apiKey,
     }));
     setHeaderError("");
     setFormError("");
@@ -380,6 +473,7 @@ export default function Wizard() {
       setSuccessStatus(latestStatus);
       markStepComplete(5);
       goToStep(6);
+      clearWizardDraft();
     } catch (error: unknown) {
       setFormError(toFriendlyErrorMessage(error));
     }
@@ -469,6 +563,7 @@ export default function Wizard() {
           ) {
             enableDashboardBypass();
           }
+          clearWizardDraft();
           navigate("/", { replace: true });
         }}
       />

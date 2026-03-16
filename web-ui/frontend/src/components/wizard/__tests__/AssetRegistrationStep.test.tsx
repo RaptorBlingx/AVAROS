@@ -56,7 +56,7 @@ describe("AssetRegistrationStep", () => {
     });
   });
 
-  it("shows only live discovered rows when platform is reneryo", async () => {
+  it("shows registered logical rows for reneryo and keeps discovery as guidance only", async () => {
     render(
       <AssetRegistrationStep
         platformType="reneryo"
@@ -70,11 +70,11 @@ describe("AssetRegistrationStep", () => {
     });
 
     expect(mockApi.discoverAssets).toHaveBeenCalledTimes(1);
-    expect(screen.getByDisplayValue("line-2")).toBeTruthy();
-    expect(screen.getByDisplayValue("Line 2")).toBeTruthy();
-    const suggestedAssetIdInput = screen.getByDisplayValue("line-2") as HTMLInputElement;
-    expect(suggestedAssetIdInput.disabled).toBe(false);
-    expect(screen.queryByDisplayValue("line-1")).toBeNull();
+    expect(screen.getByDisplayValue("line-1")).toBeTruthy();
+    expect(screen.queryByDisplayValue("line-2")).toBeNull();
+    expect(
+      screen.getByText(/Use Resource Linking to validate and map them/i),
+    ).toBeTruthy();
     expect(
       screen.queryByRole("button", { name: "Import Mapping" }),
     ).toBeNull();
@@ -151,7 +151,7 @@ describe("AssetRegistrationStep", () => {
     expect(
       screen.getByText(/Live RENERYO discovery is unavailable/i),
     ).toBeTruthy();
-    expect(screen.queryByDisplayValue("line-1")).toBeNull();
+    expect(screen.getByDisplayValue("line-1")).toBeTruthy();
     expect(
       screen.queryByText(/Discovered assets were pre-filled/i),
     ).toBeNull();
@@ -178,38 +178,28 @@ describe("AssetRegistrationStep", () => {
     });
     expect(mockApi.saveConfiguredAssets).toHaveBeenCalledWith({
       "line-1": {
+        display_name: "Line 1",
         asset_type: "line",
         aliases: ["line one"],
-      },
-      "line-2": {
-        aliases: ["line two"],
-        asset_type: "line",
-        display_name: "Line 2",
       },
     });
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
 
-  it("strips long auto-prefilled aliases from reneryo discovery rows", async () => {
-    mockApi.discoverAssets.mockResolvedValue({
-      platform_type: "reneryo",
-      supports_discovery: true,
-      discovery_source: "adapter",
-      assets: [
-        {
-          asset_id: "00b4057f-59bc-4fe2-9eda-ad904f21b689",
-          display_name: "Seu Lorem Ipsum is simply dummy text",
-          asset_type: "machine",
-          aliases: [
-            "00b4057f-59bc-4fe2-9eda-ad904f21b689",
-            "seu lorem ipsum is simply dummy text",
-          ],
-          metadata: {},
+  it("hides technical seu UUID rows from primary reneryo registration list", async () => {
+    mockApi.getConfiguredAssets.mockResolvedValue({
+      asset_mappings: {
+        "line-1": {
+          display_name: "Line 1",
+          asset_type: "line",
+          aliases: ["line one"],
         },
-      ],
-      registered_assets: [],
-      discovery_error: "",
-      existing_mappings: {},
+        "00b4057f-59bc-4fe2-9eda-ad904f21b689": {
+          display_name: "Seu 4 for reporting",
+          asset_type: "machine",
+          aliases: ["seu 4 for reporting"],
+        },
+      },
     });
 
     render(
@@ -221,18 +211,29 @@ describe("AssetRegistrationStep", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue("00b4057f-59bc-4fe2-9eda-ad904f21b689")).toBeTruthy();
+      expect(screen.getByDisplayValue("line-1")).toBeTruthy();
     });
 
-    const aliasesInput = screen.getByPlaceholderText(
-      "Aliases (comma-separated)",
-    ) as HTMLInputElement;
-    expect(aliasesInput.value).toBe("");
+    expect(
+      screen.queryByDisplayValue("00b4057f-59bc-4fe2-9eda-ad904f21b689"),
+    ).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Save & Continue" }));
 
     await waitFor(() => {
       expect(mockApi.saveConfiguredAssets).toHaveBeenCalledTimes(1);
+    });
+    expect(mockApi.saveConfiguredAssets).toHaveBeenCalledWith({
+      "line-1": {
+        display_name: "Line 1",
+        asset_type: "line",
+        aliases: ["line one"],
+      },
+      "00b4057f-59bc-4fe2-9eda-ad904f21b689": {
+        display_name: "Seu 4 for reporting",
+        asset_type: "machine",
+        aliases: ["seu 4 for reporting"],
+      },
     });
   });
 });

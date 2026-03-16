@@ -10,6 +10,11 @@ export type SystemStatusResponse = {
   loaded_intents: number;
   database_connected: boolean;
   version: string;
+  live_connection_state?: string;
+  live_connection_verified?: boolean;
+  live_connection_message?: string;
+  live_connection_error_code?: string;
+  live_connection_checked_at?: string | null;
 };
 
 export type PlatformType = "mock" | "reneryo" | "custom_rest";

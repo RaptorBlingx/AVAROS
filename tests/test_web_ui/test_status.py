@@ -33,6 +33,8 @@ class TestStatusUnconfigured:
         assert body["configured"] is False
         assert body["active_adapter"] == "mock"
         assert body["platform_type"] == "mock"
+        assert body["live_connection_state"] == "healthy"
+        assert body["live_connection_verified"] is True
 
     def test_status_database_connected_true(self, client: TestClient) -> None:
         """In-memory SQLite counts as connected database."""
@@ -77,6 +79,14 @@ class TestStatusConfigured:
         assert body["configured"] is True
         assert body["active_adapter"] == "reneryo"
         assert body["platform_type"] == "reneryo"
+        assert body["live_connection_state"] in {
+            "healthy",
+            "auth_failed",
+            "unreachable",
+            "misconfigured",
+            "unknown",
+        }
+        assert isinstance(body["live_connection_verified"], bool)
 
     def test_status_returns_mock_after_config_deleted(
         self,
@@ -130,6 +140,11 @@ class TestStatusResponseShape:
         "loaded_intents",
         "database_connected",
         "version",
+        "live_connection_state",
+        "live_connection_verified",
+        "live_connection_message",
+        "live_connection_error_code",
+        "live_connection_checked_at",
     }
 
     def test_status_response_keys(self, client: TestClient) -> None:

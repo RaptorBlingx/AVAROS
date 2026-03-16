@@ -50,6 +50,11 @@ describe("Dashboard KPI summary", () => {
       loaded_intents: 12,
       database_connected: true,
       version: "1.0.0",
+      live_connection_state: "healthy",
+      live_connection_verified: true,
+      live_connection_message: "Connection verified.",
+      live_connection_error_code: "",
+      live_connection_checked_at: "2026-03-16T12:00:00Z",
     });
   });
 
@@ -138,5 +143,55 @@ describe("Dashboard KPI summary", () => {
     expect(screen.getByText("70 %")).toBeTruthy();
     expect(screen.getByText("1100 kg")).toBeTruthy();
     expect(screen.getByText("+16.0% vs baseline")).toBeTruthy();
+  });
+
+  it("hides KPI cards when reneryo live connection is not verified", async () => {
+    vi.mocked(getStatus).mockResolvedValue({
+      configured: true,
+      active_adapter: "reneryo",
+      platform_type: "reneryo",
+      loaded_intents: 12,
+      database_connected: true,
+      version: "1.0.0",
+      live_connection_state: "auth_failed",
+      live_connection_verified: false,
+      live_connection_message: "RENERYO authentication failed.",
+      live_connection_error_code: "RENERYO_AUTH_FAILED",
+      live_connection_checked_at: "2026-03-16T12:10:00Z",
+    });
+    vi.mocked(getSiteProgress).mockResolvedValue({
+      site_id: "pilot-1",
+      baselines_count: 3,
+      targets_met: 2,
+      targets_total: 3,
+      progress: [
+        {
+          metric: "energy_per_unit",
+          site_id: "pilot-1",
+          baseline_value: 50,
+          current_value: 42,
+          target_percent: 8,
+          improvement_percent: 16,
+          target_met: true,
+          unit: "kWh/unit",
+          baseline_date: "2026-02-01T00:00:00Z",
+          current_date: "2026-03-01T00:00:00Z",
+          direction: "improving",
+        },
+      ],
+    });
+
+    renderDashboard();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Live KPI cards are hidden until RENERYO connection is verified.",
+        ),
+      ).toBeTruthy();
+    });
+
+    expect(screen.queryByText("42 kWh/unit")).toBeNull();
+    expect(getSiteProgress).not.toHaveBeenCalled();
   });
 });

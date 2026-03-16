@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockApi = vi.hoisted(() => ({
   discoverAssets: vi.fn(),
+  getAssetLinkingSummary: vi.fn(),
   getConfiguredAssets: vi.fn(),
   getPlatformConfig: vi.fn(),
   saveConfiguredAssets: vi.fn(),
@@ -15,9 +18,14 @@ vi.mock("../../../api/client", () => mockApi);
 
 import AssetManagementSection from "../AssetManagementSection";
 
+function renderWithRouter(node: ReactNode) {
+  return render(<MemoryRouter>{node}</MemoryRouter>);
+}
+
 describe("AssetManagementSection", () => {
   beforeEach(() => {
     mockApi.discoverAssets.mockReset();
+    mockApi.getAssetLinkingSummary.mockReset();
     mockApi.getConfiguredAssets.mockReset();
     mockApi.getPlatformConfig.mockReset();
     mockApi.saveConfiguredAssets.mockReset();
@@ -33,11 +41,22 @@ describe("AssetManagementSection", () => {
       discovery_error: "",
       existing_mappings: {},
     });
+    mockApi.getAssetLinkingSummary.mockResolvedValue({
+      platform_type: "reneryo",
+      supports_discovery: true,
+      discovery_source: "adapter",
+      discovery_error: "",
+      canonical_metrics: [],
+      imported_assets: [],
+      unlinked_assets: [],
+      discovered_assets: [],
+      metric_coverage: [],
+    });
   });
 
   it("saves manual custom_rest assets via /api/v1/config/assets client call", async () => {
     const onNotify = vi.fn();
-    render(
+    renderWithRouter(
       <AssetManagementSection
         mode="settings"
         platformType="custom_rest"
@@ -77,7 +96,7 @@ describe("AssetManagementSection", () => {
   });
 
   it("hides Discover Assets button for custom_rest when discovery is unsupported", async () => {
-    render(<AssetManagementSection mode="settings" platformType="custom_rest" />);
+    renderWithRouter(<AssetManagementSection mode="settings" platformType="custom_rest" />);
 
     await waitFor(() => {
       expect(mockApi.discoverAssets).toHaveBeenCalled();
@@ -99,7 +118,7 @@ describe("AssetManagementSection", () => {
       existing_mappings: {},
     });
 
-    render(<AssetManagementSection mode="settings" platformType="mock" />);
+    renderWithRouter(<AssetManagementSection mode="settings" platformType="mock" />);
 
     await waitFor(() => {
       expect(mockApi.discoverAssets).toHaveBeenCalled();
@@ -113,7 +132,7 @@ describe("AssetManagementSection", () => {
   it("keeps Discover Assets button visible after discovery fetch failure on mock", async () => {
     mockApi.discoverAssets.mockRejectedValue(new Error("network down"));
 
-    render(<AssetManagementSection mode="settings" platformType="mock" />);
+    renderWithRouter(<AssetManagementSection mode="settings" platformType="mock" />);
 
     await waitFor(() => {
       expect(mockApi.discoverAssets).toHaveBeenCalled();

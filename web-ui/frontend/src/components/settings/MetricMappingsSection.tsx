@@ -61,6 +61,9 @@ export default function MetricMappingsSection({
   } = useMetricMappingTest({
     disabled: isMockProfile,
     resolveRow,
+    onError: (message) => {
+      onNotify("error", message);
+    },
   });
 
   const loadMappings = useCallback(async () => {

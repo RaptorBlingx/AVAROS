@@ -78,6 +78,9 @@ export default function MetricMappingStep({
     clearAllTestState,
   } = useMetricMappingTest({
     resolveRow,
+    onError: (message) => {
+      setFormError(message);
+    },
   });
 
   const loadMappings = useCallback(async () => {
