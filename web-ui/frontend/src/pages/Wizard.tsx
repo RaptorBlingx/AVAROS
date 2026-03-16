@@ -3,7 +3,9 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 
 import {
   createPlatformConfig,
+  getPlatformConfig,
   getStatus,
+  listProfiles,
   testConnection,
   toFriendlyErrorMessage,
 } from "../api/client";
@@ -37,8 +39,34 @@ type WizardState = {
   apiKey: string;
 };
 
-function buildPayload(state: WizardState): PlatformConfigRequest {
-  const platformType = state.platformType;
+function normalizePlatformTypeForProfile(
+  platformType: PlatformType,
+  activeProfileName: string,
+): PlatformType {
+  if (activeProfileName.trim().toLowerCase() === "reneryo") {
+    return "reneryo";
+  }
+  return platformType;
+}
+
+function fromBackendAuthType(authType: string | undefined): WizardState["authType"] {
+  if (authType === "cookie") {
+    return "cookie";
+  }
+  if (authType === "none") {
+    return "none";
+  }
+  return "api_key";
+}
+
+function buildPayload(
+  state: WizardState,
+  activeProfileName: string,
+): PlatformConfigRequest {
+  const platformType = normalizePlatformTypeForProfile(
+    state.platformType,
+    activeProfileName,
+  );
   return {
     platform_type: platformType,
     api_url: platformType === "mock" ? "" : state.apiUrl.trim(),
@@ -64,8 +92,15 @@ function enableDashboardBypass(): void {
   );
 }
 
-function validateConnection(state: WizardState): string {
-  if (state.platformType === "mock") {
+function validateConnection(
+  state: WizardState,
+  activeProfileName: string,
+): string {
+  const platformType = normalizePlatformTypeForProfile(
+    state.platformType,
+    activeProfileName,
+  );
+  if (platformType === "mock") {
     return "";
   }
   const url = state.apiUrl.trim();
@@ -97,6 +132,7 @@ export default function Wizard() {
     apiKey: "",
   });
   const [status, setStatus] = useState<SystemStatusResponse | null>(null);
+  const [activeProfileName, setActiveProfileName] = useState("");
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [statusError, setStatusError] = useState("");
   const [formError, setFormError] = useState("");
@@ -150,12 +186,33 @@ export default function Wizard() {
     setLoadingStatus(true);
     setStatusError("");
     try {
-      const data = await getStatus();
+      const [data, config, profiles] = await Promise.all([
+        getStatus(),
+        getPlatformConfig(),
+        listProfiles(),
+      ]);
       if (data.configured && !forceWizard) {
         navigate("/", { replace: true });
         return;
       }
       setStatus(data);
+      const activeProfile = profiles.active_profile ?? "";
+      const normalizedPlatformType = normalizePlatformTypeForProfile(
+        config.platform_type,
+        activeProfile,
+      );
+      const resolvedAuthType = fromBackendAuthType(config.extra_settings?.auth_type);
+      setActiveProfileName(activeProfile);
+      setState((prev) => ({
+        ...prev,
+        platformType: normalizedPlatformType,
+        authType:
+          normalizedPlatformType === "reneryo" && resolvedAuthType !== "none"
+            ? "cookie"
+            : resolvedAuthType,
+        apiUrl: config.api_url,
+        apiKey: "",
+      }));
     } catch (error: unknown) {
       setStatusError(toFriendlyErrorMessage(error));
     } finally {
@@ -248,7 +305,11 @@ export default function Wizard() {
   ]);
 
   const handlePlatformChange = useCallback((platformType: PlatformType) => {
-    setState((prev) => ({ ...prev, platformType }));
+    setState((prev) => ({
+      ...prev,
+      platformType,
+      authType: platformType === "reneryo" ? "cookie" : prev.authType,
+    }));
     setHeaderError("");
     setFormError("");
     setTestError("");
@@ -256,7 +317,7 @@ export default function Wizard() {
   }, []);
 
   const handleTestConnection = useCallback(async () => {
-    const validationError = validateConnection(state);
+    const validationError = validateConnection(state, activeProfileName);
     setFormError(validationError);
     setTestError("");
     setTestResult(null);
@@ -265,17 +326,17 @@ export default function Wizard() {
     }
     setIsTesting(true);
     try {
-      const result = await testConnection(buildPayload(state));
+      const result = await testConnection(buildPayload(state, activeProfileName));
       setTestResult(result);
     } catch (error: unknown) {
       setTestError(toFriendlyErrorMessage(error));
     } finally {
       setIsTesting(false);
     }
-  }, [state]);
+  }, [activeProfileName, state]);
 
   const handleSaveConnection = useCallback(async () => {
-    const validationError = validateConnection(state);
+    const validationError = validateConnection(state, activeProfileName);
     setFormError(validationError);
     setTestError("");
     if (validationError) {
@@ -284,7 +345,7 @@ export default function Wizard() {
 
     setIsSaving(true);
     try {
-      await createPlatformConfig(buildPayload(state));
+      await createPlatformConfig(buildPayload(state, activeProfileName));
       markStepComplete(1);
       goToStep(2);
     } catch (error: unknown) {
@@ -292,7 +353,7 @@ export default function Wizard() {
     } finally {
       setIsSaving(false);
     }
-  }, [goToStep, markStepComplete, state]);
+  }, [activeProfileName, goToStep, markStepComplete, state]);
 
   const handleAssetRegistrationStepComplete = useCallback(() => {
     markStepComplete(2);
@@ -381,6 +442,7 @@ export default function Wizard() {
     if (state.currentStep === 4) {
       return (
         <MetricMappingStep
+          platformType={state.platformType}
           onComplete={handleMetricStepComplete}
           onSkip={handleMetricStepComplete}
         />
@@ -390,6 +452,7 @@ export default function Wizard() {
     if (state.currentStep === 5) {
       return (
         <IntentActivationStep
+          activeProfile={state.platformType}
           onComplete={() => void finalizeWizard()}
           onSkip={() => void finalizeWizard()}
         />

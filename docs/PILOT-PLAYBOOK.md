@@ -200,47 +200,29 @@ You should see the AVAROS Web UI. If this is the first time, the First-Run Wizar
 
 The Web UI wizard guides you through initial setup in 6 steps.
 
-### Step 1: Welcome
+### Step 1: Platform Setup
 
-The welcome screen introduces AVAROS and explains what the wizard will configure. Click **Next** to continue.
+Configure the production data source in a single step:
 
-### Step 2: Platform Selection
-
-Select your manufacturing data platform:
-
-| Option | When to Use |
-|--------|-------------|
-| **Demo Mode** | Testing without external connections |
-| **RENERYO** | Production deployment with RENERYO energy monitoring |
-
-Select **RENERYO** for pilot deployment. Click **Next**.
-
-### Step 3: RENERYO Credentials
-
-Enter your RENERYO API connection details:
-
-| Field | What to Enter |
-|-------|---------------|
-| API URL | The base URL of your RENERYO instance (e.g., `https://reneryo.artibilim.com`) |
-| Authentication | API key (entered in the **API Key** field) |
+1. Keep **Connect via API** as the primary path.
+2. For RENERYO pilot deployments, click **Use RENERYO** preset.
+3. Set your RENERYO base URL.
+4. Set **Auth Type = Session Cookie** and paste the current session cookie value.
+5. Click **Test Connection**, then **Save & Continue**.
 
 > **Note:** Credentials are encrypted before storage using Fernet encryption. They are never stored in plain text.
 
-### Step 4: Test Connection
+### Step 2: Asset Registration
 
-Click **Test Connection**. The system will:
-1. Attempt to connect to the RENERYO API
-2. Verify authentication
-3. Discover available meters and metrics
+Define the factory assets users will reference in voice and KPI queries (for example `Line-1`, `Line-2`, `Assembly-Area`).
 
-**Expected result:** Green status indicator with a list of discovered meters.
+### Step 3: Resource Linking
 
-**If the test fails:**
-- Verify the API URL is correct and reachable from the server
-- Check that your credentials are valid
-- Ensure the server can reach the RENERYO API (check firewall rules)
+Link registered assets to platform resources.
+- For RENERYO: link assets to discovered resources and/or import generator mapping JSON.
+- For custom REST: configure endpoint templates.
 
-### Step 5: Metric Mapping
+### Step 4: Metric Mapping
 
 Map RENERYO metrics to AVAROS canonical metric names:
 
@@ -253,7 +235,7 @@ Map RENERYO metrics to AVAROS canonical metric names:
 
 Only mapped metrics will be available for voice queries and KPI tracking.
 
-### Step 6: Intent Activation
+### Step 5: Intent Activation
 
 Enable or disable individual voice commands:
 
@@ -269,6 +251,10 @@ Enable or disable individual voice commands:
 | What-if simulation | Enabled | Simulate parameter changes |
 
 Disable intents that are not relevant to your site. Click **Save** to finish the wizard.
+
+### Step 6: Success
+
+Confirm the summary screen and continue to the dashboard.
 
 ---
 

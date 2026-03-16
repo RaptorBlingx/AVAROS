@@ -10,8 +10,9 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  ActivateProfileResponse,
   PlatformConfigResponse,
-  ProfileConfig,
+  ProfileDetailResponse,
   ProfileListResponse,
 } from "../../../api/types";
 import PlatformConfigSection from "../PlatformConfigSection";
@@ -35,6 +36,7 @@ vi.mock("../../common/ThemeProvider", () => ({
 
 import {
   activateProfile,
+  createPlatformConfig,
   resetPlatformConfig,
   getProfile,
   getPlatformConfig,
@@ -42,6 +44,7 @@ import {
 } from "../../../api/client";
 
 const mockGetPlatformConfig = vi.mocked(getPlatformConfig);
+const mockCreatePlatformConfig = vi.mocked(createPlatformConfig);
 const mockListProfiles = vi.mocked(listProfiles);
 const mockGetProfile = vi.mocked(getProfile);
 const mockActivateProfile = vi.mocked(activateProfile);
@@ -78,7 +81,7 @@ const MOCK_PROFILES: ProfileListResponse = {
   active_profile: "mock",
 };
 
-const MOCK_PROFILE_CONFIG: ProfileConfig = {
+const MOCK_PROFILE_CONFIG: ProfileDetailResponse = {
   name: "mock",
   platform_type: "mock",
   api_url: "",
@@ -88,7 +91,7 @@ const MOCK_PROFILE_CONFIG: ProfileConfig = {
   is_active: true,
 };
 
-const RENERYO_PROFILE_CONFIG: ProfileConfig = {
+const RENERYO_PROFILE_CONFIG: ProfileDetailResponse = {
   name: "my-reneryo",
   platform_type: "reneryo",
   api_url: "https://api.reneryo.com",
@@ -98,7 +101,7 @@ const RENERYO_PROFILE_CONFIG: ProfileConfig = {
   is_active: false,
 };
 
-const CUSTOM_REST_NONE_PROFILE_CONFIG: ProfileConfig = {
+const CUSTOM_REST_NONE_PROFILE_CONFIG: ProfileDetailResponse = {
   name: "custom-no-auth",
   platform_type: "custom_rest",
   api_url: "https://custom.example.com",
@@ -142,6 +145,7 @@ describe("PlatformConfigSection with ProfileSelector", () => {
       status: "reset",
       platform_type: "mock",
     });
+    mockCreatePlatformConfig.mockResolvedValue(DEFAULT_PLATFORM_CONFIG);
     vi.spyOn(window, "confirm").mockReturnValue(true);
   });
 
@@ -193,9 +197,12 @@ describe("PlatformConfigSection with ProfileSelector", () => {
   });
 
   it("shows Edit button for non-builtin active profile after switch", async () => {
-    const activatedConfig: ProfileConfig = {
-      ...RENERYO_PROFILE_CONFIG,
-      is_active: true,
+    const activatedConfig: ActivateProfileResponse = {
+      status: "activated",
+      active_profile: "my-reneryo",
+      adapter_type: "reneryo",
+      message: "Adapter reloaded successfully",
+      voice_reloaded: true,
     };
     mockActivateProfile.mockResolvedValue(activatedConfig);
 
@@ -301,5 +308,77 @@ describe("PlatformConfigSection with ProfileSelector", () => {
       const authSelect = screen.getByLabelText("Auth Type") as HTMLSelectElement;
       expect(authSelect.value).toBe("none");
     });
+  });
+
+  it("normalizes save payload to reneryo for active reneryo profile", async () => {
+    const driftedReneryoConfig: PlatformConfigResponse = {
+      platform_type: "custom_rest",
+      api_url: "http://10.33.10.110:30377/",
+      api_key: "****abcd",
+      extra_settings: { auth_type: "cookie" },
+    };
+    const reneryoProfileList: ProfileListResponse = {
+      profiles: [
+        {
+          name: "mock",
+          platform_type: "mock",
+          is_active: false,
+          is_builtin: true,
+        },
+        {
+          name: "reneryo",
+          platform_type: "custom_rest",
+          is_active: true,
+          is_builtin: false,
+        },
+      ],
+      active_profile: "reneryo",
+    };
+
+    mockGetPlatformConfig.mockResolvedValue(driftedReneryoConfig);
+    mockListProfiles.mockResolvedValue(reneryoProfileList);
+    mockGetProfile.mockResolvedValue({
+      ...MOCK_PROFILE_CONFIG,
+      name: "reneryo",
+      platform_type: "custom_rest",
+      api_url: "http://10.33.10.110:30377/",
+      is_builtin: false,
+      is_active: true,
+      extra_settings: { auth_type: "cookie" },
+    });
+    mockCreatePlatformConfig.mockResolvedValue({
+      ...driftedReneryoConfig,
+      platform_type: "reneryo",
+    });
+
+    const { container } = render(<PlatformConfigSection onNotify={onNotify} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Edit")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText("Edit"));
+
+    await waitFor(() => {
+      const platformSelect = findPlatformSelect(container);
+      expect(platformSelect).not.toBeNull();
+      expect(platformSelect!.value).toBe("reneryo");
+      expect(platformSelect!.disabled).toBe(true);
+    });
+
+    const secretInput = screen.getByPlaceholderText(
+      "Paste session cookie value or full Cookie: S=...",
+    ) as HTMLInputElement;
+    fireEvent.change(secretInput, { target: { value: "S=session-cookie" } });
+
+    fireEvent.click(screen.getByText("Save Changes"));
+
+    await waitFor(() => {
+      expect(mockCreatePlatformConfig).toHaveBeenCalledTimes(1);
+    });
+
+    const payload = mockCreatePlatformConfig.mock.calls[0][0];
+    expect(payload.platform_type).toBe("reneryo");
+    expect(payload.extra_settings.auth_type).toBe("cookie");
   });
 });

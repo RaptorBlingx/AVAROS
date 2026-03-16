@@ -270,7 +270,7 @@ export type VoiceConfigResponse = {
 
 export type ProfileMetadata = {
   name: string;
-  platform_type: string;
+  platform_type: PlatformType;
   is_builtin: boolean;
   is_active: boolean;
 };
@@ -282,7 +282,7 @@ export type ProfileListResponse = {
 
 export type ProfileDetailResponse = {
   name: string;
-  platform_type: string;
+  platform_type: PlatformType;
   api_url: string;
   api_key: string;
   extra_settings: Record<string, string>;
@@ -292,14 +292,14 @@ export type ProfileDetailResponse = {
 
 export type CreateProfileRequest = {
   name: string;
-  platform_type: string;
+  platform_type: PlatformType;
   api_url: string;
   api_key: string;
   extra_settings: Record<string, string>;
 };
 
 export type UpdateProfileRequest = {
-  platform_type: string;
+  platform_type: PlatformType;
   api_url: string;
   api_key: string;
   extra_settings: Record<string, string>;
@@ -353,13 +353,44 @@ export type AssetRecord = {
 export type AssetDiscoveryResponse = {
   platform_type: PlatformType;
   supports_discovery: boolean;
+  discovery_source: "adapter" | "registered" | "none";
   assets: AssetRecord[];
+  registered_assets: AssetRecord[];
+  discovery_error: string;
   existing_mappings: Record<string, AssetMappingItem>;
 };
 
-export type ProfileConfig = {
-  platform_type: string;
-  api_url: string;
-  api_key: string;
-  extra_settings: Record<string, any>;
+export type AssetLinkSource = "imported" | "registered" | "discovered";
+
+export type AssetLinkingItem = {
+  asset_id: string;
+  display_name: string;
+  asset_type: "machine" | "line" | "sensor" | "seu";
+  aliases: string[];
+  source: AssetLinkSource;
+  linked_metrics: CanonicalMetricName[];
+  missing_metrics: CanonicalMetricName[];
+  linked_metric_count: number;
+  total_metrics: number;
 };
+
+export type MetricCoverageItem = {
+  metric_name: CanonicalMetricName;
+  linked_assets: number;
+  total_assets: number;
+  missing_assets: string[];
+};
+
+export type AssetLinkingSummaryResponse = {
+  platform_type: PlatformType;
+  supports_discovery: boolean;
+  discovery_source: "adapter" | "registered" | "none";
+  discovery_error: string;
+  canonical_metrics: CanonicalMetricName[];
+  imported_assets: AssetLinkingItem[];
+  unlinked_assets: AssetLinkingItem[];
+  discovered_assets: AssetLinkingItem[];
+  metric_coverage: MetricCoverageItem[];
+};
+
+export type ProfileConfig = ProfileDetailResponse;

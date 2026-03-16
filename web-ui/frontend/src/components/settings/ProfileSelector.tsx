@@ -11,7 +11,7 @@ import {
 import type {
   CreateProfileRequest,
   PlatformType,
-  ProfileConfig,
+  ProfileDetailResponse,
   ProfileMetadata,
 } from "../../api/types";
 import LoadingSpinner from "../common/LoadingSpinner";
@@ -19,7 +19,7 @@ import { useTheme } from "../common/ThemeProvider";
 
 export type ProfileSelectorProps = {
   refreshKey?: number;
-  onProfileChange: (config: ProfileConfig) => void;
+  onProfileChange: (config: ProfileDetailResponse) => void;
   onNotify: (type: "success" | "error", message: string) => void;
   onProfileSwitch?: (profileName: string, voiceReloaded: boolean) => void;
   onActiveProfileResolved?: (profileName: string) => void;
@@ -157,6 +157,9 @@ export default function ProfileSelector({
       const payload: CreateProfileRequest = {
         name: trimmed,
         platform_type: newPlatformType,
+        api_url: "",
+        api_key: "",
+        extra_settings: {},
       };
       await apiCreateProfile(payload);
       setNewName("");

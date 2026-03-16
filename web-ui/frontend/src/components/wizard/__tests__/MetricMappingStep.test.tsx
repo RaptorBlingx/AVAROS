@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockApi = vi.hoisted(() => ({
   createMetricMapping: vi.fn(),
   deleteMetricMapping: vi.fn(),
+  getAssetLinkingSummary: vi.fn(),
   listMetricMappings: vi.fn(),
   toFriendlyErrorMessage: vi.fn((error: unknown) =>
     error instanceof Error ? error.message : "error",
@@ -31,6 +32,7 @@ describe("MetricMappingStep", () => {
   beforeEach(() => {
     mockApi.createMetricMapping.mockReset();
     mockApi.deleteMetricMapping.mockReset();
+    mockApi.getAssetLinkingSummary.mockReset();
     mockApi.listMetricMappings.mockReset();
     mockApi.updateMetricMapping.mockReset();
 
@@ -46,6 +48,16 @@ describe("MetricMappingStep", () => {
     ]);
     mockApi.createMetricMapping.mockResolvedValue({});
     mockApi.deleteMetricMapping.mockResolvedValue(undefined);
+    mockApi.getAssetLinkingSummary.mockResolvedValue({
+      metric_coverage: [
+        {
+          metric_name: "changeover_time",
+          linked_assets: 1,
+          total_assets: 1,
+          missing_assets: [],
+        },
+      ],
+    });
   });
 
   it("falls back to create when update returns metric mapping not found", async () => {
@@ -79,6 +91,28 @@ describe("MetricMappingStep", () => {
       unit: "min",
       transform: null,
     });
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders read-only reneryo coverage summary and continues", async () => {
+    const onComplete = vi.fn();
+    render(
+      <MetricMappingStep
+        platformType="reneryo"
+        onComplete={onComplete}
+        onSkip={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(mockApi.getAssetLinkingSummary).toHaveBeenCalledTimes(1);
+    });
+
+    expect(screen.getByText("changeover_time")).toBeTruthy();
+    expect(screen.getByText("Linked assets: 1/1")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Add Mapping" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
 });

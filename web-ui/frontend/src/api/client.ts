@@ -1,5 +1,6 @@
 import type {
   ActivateProfileResponse,
+  AssetLinkingSummaryResponse,
   AssetDiscoveryResponse,
   AssetMappingItem,
   AssetRecord,
@@ -31,7 +32,6 @@ import type {
   ProductionRecordRequest,
   ProductionRecordResponse,
   ProductionSummaryResponse,
-  ProfileConfig,
   ProfileDetailResponse,
   ProfileListResponse,
   SiteProgressResponse,
@@ -44,6 +44,27 @@ import type {
 const API_BASE_URL = "";
 const API_KEY_STORAGE_KEY = "avaros_api_key";
 export const DEFAULT_SITE_ID = "pilot-1";
+const CANONICAL_METRIC_NAMES: CanonicalMetricName[] = [
+  "energy_per_unit",
+  "energy_total",
+  "peak_demand",
+  "peak_tariff_exposure",
+  "scrap_rate",
+  "rework_rate",
+  "material_efficiency",
+  "recycled_content",
+  "supplier_lead_time",
+  "supplier_defect_rate",
+  "supplier_on_time",
+  "supplier_co2_per_kg",
+  "oee",
+  "throughput",
+  "cycle_time",
+  "changeover_time",
+  "co2_per_unit",
+  "co2_total",
+  "co2_per_batch",
+];
 
 /**
  * Get the stored API key from localStorage.
@@ -495,6 +516,17 @@ export function discoverAssets(): Promise<AssetDiscoveryResponse> {
   );
 }
 
+export function getAssetLinkingSummary(): Promise<AssetLinkingSummaryResponse> {
+  return request<AssetLinkingSummaryResponse>("/api/v1/assets/linking-summary").catch(
+    async (error: unknown) => {
+      if (!(error instanceof ApiError) || error.status !== 404) {
+        throw error;
+      }
+      return buildLegacyAssetLinkingSummary();
+    },
+  );
+}
+
 export function getConfiguredAssets(): Promise<AssetMappingsResponse> {
   return request<AssetMappingsResponse>("/api/v1/config/assets");
 }
@@ -533,20 +565,35 @@ type LegacyDiscovery = {
   platform_type?: string;
   supports_discovery?: boolean;
   assets?: AssetRecord[];
+  registered_assets?: AssetRecord[];
+  discovery_source?: "adapter" | "registered" | "none";
+  discovery_error?: string;
 };
 
 function normalizeDiscoveryResponse(
   payload: Record<string, unknown>,
 ): AssetDiscoveryResponse {
   const data = payload as LegacyDiscovery;
-  const nativeAssets = Array.isArray(data.assets)
-    ? data.assets
-    : [];
-  if (nativeAssets.length > 0) {
+  const isLegacySeuPayload = Array.isArray(data.seus);
+  if (!isLegacySeuPayload) {
+    const nativeAssets = Array.isArray(data.assets) ? data.assets : [];
+    const registeredAssets = Array.isArray(data.registered_assets)
+      ? data.registered_assets
+      : [];
+    const inferredSource =
+      nativeAssets.length > 0
+        ? "adapter"
+        : registeredAssets.length > 0
+        ? "registered"
+        : "none";
     return {
-      platform_type: (data.platform_type as AssetDiscoveryResponse["platform_type"]) ?? "mock",
+      platform_type:
+        (data.platform_type as AssetDiscoveryResponse["platform_type"]) ?? "mock",
       supports_discovery: Boolean(data.supports_discovery),
+      discovery_source: data.discovery_source ?? inferredSource,
       assets: nativeAssets,
+      registered_assets: registeredAssets,
+      discovery_error: String(data.discovery_error ?? ""),
       existing_mappings: data.existing_mappings ?? {},
     };
   }
@@ -568,12 +615,144 @@ function normalizeDiscoveryResponse(
     }));
 
   return {
-    platform_type: (data.platform_type as AssetDiscoveryResponse["platform_type"]) ?? "reneryo",
+    platform_type:
+      (data.platform_type as AssetDiscoveryResponse["platform_type"]) ?? "reneryo",
     supports_discovery:
       typeof data.supports_discovery === "boolean"
         ? data.supports_discovery
         : true,
+    discovery_source: assets.length > 0 ? "adapter" : "none",
     assets,
+    registered_assets: [],
+    discovery_error: String(data.discovery_error ?? ""),
     existing_mappings: data.existing_mappings ?? {},
+  };
+}
+
+function normalizeMetricResources(
+  value: unknown,
+): Partial<Record<CanonicalMetricName, string>> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const output: Partial<Record<CanonicalMetricName, string>> = {};
+  for (const [metricName, resourceId] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
+    if (!CANONICAL_METRIC_NAMES.includes(metricName as CanonicalMetricName)) {
+      continue;
+    }
+    const resource = String(resourceId ?? "").trim();
+    if (!resource) {
+      continue;
+    }
+    output[metricName as CanonicalMetricName] = resource;
+  }
+  return output;
+}
+
+function normalizeAssetType(value: unknown): "machine" | "line" | "sensor" | "seu" {
+  if (value === "line" || value === "sensor" || value === "seu") {
+    return value;
+  }
+  return "machine";
+}
+
+function normalizeAliases(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((alias) => String(alias ?? "").trim())
+    .filter((alias) => alias.length > 0);
+}
+
+function normalizeAssetKey(assetId: string): string {
+  return assetId.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+async function buildLegacyAssetLinkingSummary(): Promise<AssetLinkingSummaryResponse> {
+  const [mappingsResponse, discovery] = await Promise.all([
+    getConfiguredAssets(),
+    discoverAssets().catch(() => null),
+  ]);
+
+  const mappings = mappingsResponse.asset_mappings ?? {};
+  const importedAssets: AssetLinkingSummaryResponse["imported_assets"] = [];
+  const unlinkedAssets: AssetLinkingSummaryResponse["unlinked_assets"] = [];
+
+  for (const assetId of Object.keys(mappings).sort()) {
+    const mapping = mappings[assetId] ?? {};
+    const normalizedResources = normalizeMetricResources(mapping.metric_resources);
+    const linkedMetrics = Object.keys(normalizedResources).sort() as CanonicalMetricName[];
+    const missingMetrics = CANONICAL_METRIC_NAMES.filter(
+      (metric) => !linkedMetrics.includes(metric),
+    );
+
+    const item = {
+      asset_id: assetId,
+      display_name: String(mapping.display_name ?? assetId),
+      asset_type: normalizeAssetType(mapping.asset_type),
+      aliases: normalizeAliases(mapping.aliases),
+      source: linkedMetrics.length > 0 ? "imported" : "registered",
+      linked_metrics: linkedMetrics,
+      missing_metrics: missingMetrics,
+      linked_metric_count: linkedMetrics.length,
+      total_metrics: CANONICAL_METRIC_NAMES.length,
+    } as const;
+
+    if (linkedMetrics.length > 0) {
+      importedAssets.push(item);
+    } else {
+      unlinkedAssets.push(item);
+    }
+  }
+
+  const existingKeys = new Set(
+    [...importedAssets, ...unlinkedAssets].map((item) =>
+      normalizeAssetKey(item.asset_id),
+    ),
+  );
+  const discoveredAssets: AssetLinkingSummaryResponse["discovered_assets"] = (
+    discovery?.assets ?? []
+  )
+    .filter((asset) => !existingKeys.has(normalizeAssetKey(asset.asset_id)))
+    .map((asset) => ({
+      asset_id: asset.asset_id,
+      display_name: asset.display_name || asset.asset_id,
+      asset_type: normalizeAssetType(asset.asset_type),
+      aliases: normalizeAliases(asset.aliases),
+      source: "discovered" as const,
+      linked_metrics: [],
+      missing_metrics: CANONICAL_METRIC_NAMES,
+      linked_metric_count: 0,
+      total_metrics: CANONICAL_METRIC_NAMES.length,
+    }));
+
+  const metricCoverage = CANONICAL_METRIC_NAMES.map((metric) => {
+    const linkedAssets = importedAssets.filter((item) =>
+      item.linked_metrics.includes(metric),
+    );
+    const missingAssets = importedAssets
+      .filter((item) => !item.linked_metrics.includes(metric))
+      .map((item) => item.asset_id);
+    return {
+      metric_name: metric,
+      linked_assets: linkedAssets.length,
+      total_assets: importedAssets.length,
+      missing_assets: missingAssets,
+    };
+  });
+
+  return {
+    platform_type: discovery?.platform_type ?? "custom_rest",
+    supports_discovery: discovery?.supports_discovery ?? false,
+    discovery_source: discovery?.discovery_source ?? "registered",
+    discovery_error: discovery?.discovery_error ?? "",
+    canonical_metrics: CANONICAL_METRIC_NAMES,
+    imported_assets: importedAssets,
+    unlinked_assets: unlinkedAssets,
+    discovered_assets: discoveredAssets,
+    metric_coverage: metricCoverage,
   };
 }

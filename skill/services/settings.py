@@ -1160,6 +1160,7 @@ class SettingsService(ProfileMixin):
             regenerate_asset_entities_for_all_locales(
                 assets=assets,
                 locale_root=self._locale_root_path(),
+                use_mock_defaults=profile == self.BUILTIN_MOCK_PROFILE,
             )
             logger.info(
                 "Regenerated asset entity files for profile '%s' (%d assets)",
