@@ -37,7 +37,9 @@ def test_discover_assets_returns_generic_schema_on_mock(
     body = response.json()
     assert body["platform_type"] == "mock"
     assert isinstance(body["supports_discovery"], bool)
+    assert body["discovery_source"] in {"adapter", "registered", "none"}
     assert isinstance(body["assets"], list)
+    assert isinstance(body["registered_assets"], list)
     assert len(body["assets"]) > 0
     assert set(body["assets"][0].keys()) >= {
         "asset_id",
@@ -86,6 +88,8 @@ def test_discover_assets_uses_adapter_factory_dependency(
             "metadata": {},
         },
     ]
+    assert body["discovery_source"] == "adapter"
+    assert isinstance(body["registered_assets"], list)
 
 
 def test_discover_assets_skips_live_discovery_when_adapter_disables_it(
@@ -110,9 +114,52 @@ def test_discover_assets_skips_live_discovery_when_adapter_disables_it(
     body = response.json()
     assert body["supports_discovery"] is False
     assert body["assets"] == []
+    assert body["discovery_source"] in {"registered", "none"}
+    assert isinstance(body["registered_assets"], list)
     adapter.initialize.assert_not_awaited()
     adapter.list_assets.assert_not_awaited()
     adapter.shutdown.assert_not_awaited()
+
+
+def test_discover_assets_marks_registered_source_when_saved_assets_exist(
+    client: TestClient,
+    settings_service: SettingsService,
+) -> None:
+    """Discovery response should identify registered fallback when adapter cannot discover."""
+    if settings_service.get_profile("custom") is None:
+        settings_service.create_profile(
+            "custom",
+            PlatformConfig(platform_type="custom_rest", api_url="https://api.example.com"),
+        )
+    settings_service.set_active_profile("custom")
+    settings_service.set_asset_mappings(
+        {
+            "line-1": {
+                "display_name": "Line 1",
+                "asset_type": "line",
+                "aliases": ["line one"],
+            },
+        },
+    )
+
+    adapter = Mock()
+    adapter.initialize = AsyncMock(return_value=None)
+    adapter.shutdown = AsyncMock(return_value=None)
+    adapter.list_assets = AsyncMock(return_value=[])
+    adapter.supports_asset_discovery.return_value = False
+    factory = Mock()
+    factory.create.return_value = adapter
+
+    app.dependency_overrides[get_adapter_factory] = lambda: factory
+    try:
+        response = client.get("/api/v1/assets/discover")
+    finally:
+        app.dependency_overrides.pop(get_adapter_factory, None)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["discovery_source"] == "registered"
+    assert body["registered_assets"][0]["asset_id"] == "line-1"
 
 
 def test_config_assets_roundtrip_for_custom_rest_profile(
@@ -331,3 +378,112 @@ def test_config_assets_preserves_existing_metric_resources_when_missing_in_paylo
     assert line1["seu_id"] == "new-seu"
     assert line1["metric_resources"]["oee"] == "uuid-oee-1"
     assert line1["metric_resources"]["energy_total"] == "uuid-energy-1"
+
+
+def test_asset_linking_summary_splits_imported_and_unlinked_assets(
+    client: TestClient,
+    settings_service: SettingsService,
+    reneryo_profile: None,
+) -> None:
+    """Linking summary should expose imported/unlinked grouping and coverage."""
+    settings_service.set_asset_mappings(
+        {
+            "Line-1": {
+                "display_name": "Line 1",
+                "asset_type": "line",
+                "aliases": ["line one"],
+                "metric_resources": {
+                    "energy_total": "uuid-energy-1",
+                    "oee": "uuid-oee-1",
+                },
+            },
+            "Line-2": {
+                "display_name": "Line 2",
+                "asset_type": "line",
+                "aliases": ["line two"],
+            },
+        },
+    )
+
+    adapter = Mock()
+    adapter.initialize = AsyncMock(return_value=None)
+    adapter.shutdown = AsyncMock(return_value=None)
+    adapter.list_assets = AsyncMock(return_value=[])
+    adapter.supports_asset_discovery.return_value = False
+    factory = Mock()
+    factory.create.return_value = adapter
+
+    app.dependency_overrides[get_adapter_factory] = lambda: factory
+    try:
+        response = client.get("/api/v1/assets/linking-summary")
+    finally:
+        app.dependency_overrides.pop(get_adapter_factory, None)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["platform_type"] == "reneryo"
+    assert body["discovery_source"] == "registered"
+    assert body["supports_discovery"] is False
+    assert [item["asset_id"] for item in body["imported_assets"]] == ["Line-1"]
+    assert [item["asset_id"] for item in body["unlinked_assets"]] == ["Line-2"]
+    assert body["discovered_assets"] == []
+
+    metric_coverage = {item["metric_name"]: item for item in body["metric_coverage"]}
+    assert metric_coverage["energy_total"]["linked_assets"] == 1
+    assert metric_coverage["energy_total"]["total_assets"] == 1
+    assert metric_coverage["oee"]["linked_assets"] == 1
+    assert metric_coverage["scrap_rate"]["linked_assets"] == 0
+    assert metric_coverage["scrap_rate"]["missing_assets"] == ["Line-1"]
+
+
+def test_asset_linking_summary_includes_only_non_mapped_discovered_assets(
+    client: TestClient,
+    settings_service: SettingsService,
+    reneryo_profile: None,
+) -> None:
+    """Discovered list should exclude assets that are already in saved mappings."""
+    settings_service.set_asset_mappings(
+        {
+            "Line-1": {
+                "display_name": "Line 1",
+                "asset_type": "line",
+                "aliases": ["line one"],
+                "metric_resources": {"oee": "uuid-oee-1"},
+            },
+        },
+    )
+
+    adapter = Mock()
+    adapter.initialize = AsyncMock(return_value=None)
+    adapter.shutdown = AsyncMock(return_value=None)
+    adapter.supports_asset_discovery.return_value = True
+    adapter.list_assets = AsyncMock(
+        return_value=[
+            Asset(
+                asset_id="line_1",
+                display_name="Line 1",
+                asset_type="line",
+                aliases=["line one"],
+            ),
+            Asset(
+                asset_id="seu-abc",
+                display_name="SEU ABC",
+                asset_type="seu",
+                aliases=["seu abc"],
+            ),
+        ],
+    )
+    factory = Mock()
+    factory.create.return_value = adapter
+
+    app.dependency_overrides[get_adapter_factory] = lambda: factory
+    try:
+        response = client.get("/api/v1/assets/linking-summary")
+    finally:
+        app.dependency_overrides.pop(get_adapter_factory, None)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["supports_discovery"] is True
+    assert body["discovery_source"] == "adapter"
+    assert [item["asset_id"] for item in body["discovered_assets"]] == ["seu-abc"]

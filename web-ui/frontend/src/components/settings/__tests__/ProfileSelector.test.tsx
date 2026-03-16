@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   ActivateProfileResponse,
+  DeleteProfileResponse,
   ProfileDetailResponse,
   ProfileListResponse,
 } from "../../../api/types";
@@ -264,7 +265,13 @@ describe("ProfileSelector", () => {
   });
 
   it("calls deleteProfile with confirmation on delete", async () => {
-    mockDeleteProfile.mockResolvedValue(undefined);
+    const deleteResponse: DeleteProfileResponse = {
+      status: "deleted",
+      deleted_profile: "my-reneryo",
+      active_profile: "mock",
+      message: "Profile deleted",
+    };
+    mockDeleteProfile.mockResolvedValue(deleteResponse);
     vi.spyOn(window, "confirm").mockReturnValue(true);
 
     render(
@@ -372,7 +379,7 @@ describe("ProfileSelector", () => {
   });
 
   it("creates profile with valid name", async () => {
-    const newConfig: ProfileConfig = {
+    const newConfig: ProfileDetailResponse = {
       name: "new-profile",
       platform_type: "reneryo",
       api_url: "",
@@ -412,6 +419,9 @@ describe("ProfileSelector", () => {
       expect(mockCreateProfile).toHaveBeenCalledWith({
         name: "new-profile",
         platform_type: "reneryo",
+        api_url: "",
+        api_key: "",
+        extra_settings: {},
       });
       expect(onNotify).toHaveBeenCalledWith(
         "success",

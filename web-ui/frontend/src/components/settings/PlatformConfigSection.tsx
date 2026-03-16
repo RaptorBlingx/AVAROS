@@ -28,6 +28,16 @@ type PlatformConfigSectionProps = {
 
 type AuthType = "api_key" | "cookie" | "none";
 
+function normalizePlatformTypeForProfile(
+  platformType: PlatformType,
+  profileName: string,
+): PlatformType {
+  if (profileName.trim().toLowerCase() === "reneryo") {
+    return "reneryo";
+  }
+  return platformType;
+}
+
 function toBackendAuthType(authType: AuthType): "bearer" | "cookie" | "none" {
   if (authType === "cookie") {
     return "cookie";
@@ -53,11 +63,19 @@ function createPayload(config: {
   apiUrl: string;
   apiKey: string;
   authType: AuthType;
+  activeProfileName: string;
 }): PlatformConfigRequest {
+  const effectivePlatformType = normalizePlatformTypeForProfile(
+    config.platformType,
+    config.activeProfileName,
+  );
   return {
-    platform_type: config.platformType,
-    api_url: config.platformType === "mock" ? "" : config.apiUrl.trim(),
-    api_key: config.platformType === "mock" ? "" : config.apiKey.trim(),
+    platform_type: effectivePlatformType,
+    api_url: effectivePlatformType === "mock" ? "" : config.apiUrl.trim(),
+    api_key:
+      effectivePlatformType === "mock" || config.authType === "none"
+        ? ""
+        : config.apiKey.trim(),
     extra_settings: {
       auth_type: toBackendAuthType(config.authType),
     },
@@ -69,8 +87,13 @@ function validate(config: {
   apiUrl: string;
   apiKey: string;
   authType: AuthType;
+  activeProfileName: string;
 }): string {
-  if (config.platformType === "mock") {
+  const effectivePlatformType = normalizePlatformTypeForProfile(
+    config.platformType,
+    config.activeProfileName,
+  );
+  if (effectivePlatformType === "mock") {
     return "";
   }
   if (!config.apiUrl.trim()) {
@@ -107,23 +130,35 @@ export default function PlatformConfigSection({
   );
   const [inlineError, setInlineError] = useState("");
   const [isBuiltinProfile, setIsBuiltinProfile] = useState(false);
+  const [activeProfileName, setActiveProfileName] = useState("");
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
 
-  const isMock = useMemo(() => platformType === "mock", [platformType]);
+  const effectivePlatformType = useMemo(
+    () => normalizePlatformTypeForProfile(platformType, activeProfileName),
+    [activeProfileName, platformType],
+  );
+  const isMock = useMemo(() => effectivePlatformType === "mock", [effectivePlatformType]);
+  const isPinnedReneryoProfile = useMemo(
+    () => activeProfileName.trim().toLowerCase() === "reneryo",
+    [activeProfileName],
+  );
   const adapterTarget = useMemo(
     () =>
-      platformType === "reneryo"
+      effectivePlatformType === "reneryo"
         ? "RENERYO"
-        : platformType === "custom_rest"
+        : effectivePlatformType === "custom_rest"
         ? "Custom REST"
         : "Mock",
-    [platformType],
+    [effectivePlatformType],
   );
 
   const formLocked = isBuiltinProfile;
 
   const handleProfileChange = useCallback((profile: ProfileDetailResponse) => {
-    setPlatformType(profile.platform_type);
+    setActiveProfileName(profile.name);
+    setPlatformType(
+      normalizePlatformTypeForProfile(profile.platform_type, profile.name),
+    );
     setApiUrl(profile.api_url);
     setApiKey("");
     setAuthType(fromBackendAuthType(profile.extra_settings?.auth_type));
@@ -162,12 +197,19 @@ export default function PlatformConfigSection({
     void loadConfig();
   }, [loadConfig]);
 
+  useEffect(() => {
+    if (isPinnedReneryoProfile && platformType !== "reneryo") {
+      setPlatformType("reneryo");
+    }
+  }, [isPinnedReneryoProfile, platformType]);
+
   const handleSave = useCallback(async () => {
     const validationError = validate({
       platformType,
       apiUrl,
       apiKey,
       authType,
+      activeProfileName,
     });
     setInlineError(validationError);
     setTestResult(null);
@@ -181,6 +223,7 @@ export default function PlatformConfigSection({
         apiUrl,
         apiKey,
         authType,
+        activeProfileName,
       });
       const saved = await createPlatformConfig(payload);
       setConfig(saved);
@@ -195,7 +238,7 @@ export default function PlatformConfigSection({
     } finally {
       setSaving(false);
     }
-  }, [apiKey, apiUrl, authType, onNotify, platformType]);
+  }, [activeProfileName, apiKey, apiUrl, authType, onNotify, platformType]);
 
   const handleReset = useCallback(async () => {
     const confirmed = window.confirm(
@@ -228,6 +271,7 @@ export default function PlatformConfigSection({
       apiUrl,
       apiKey: isMock ? "" : apiKey,
       authType,
+      activeProfileName,
     });
     setInlineError(validationError);
     setTestResult(null);
@@ -241,6 +285,7 @@ export default function PlatformConfigSection({
         apiUrl,
         apiKey,
         authType,
+        activeProfileName,
       });
       const result = await testConnection(payload);
       setTestResult(result);
@@ -252,7 +297,12 @@ export default function PlatformConfigSection({
     } finally {
       setTesting(false);
     }
-  }, [apiKey, apiUrl, authType, isMock, onNotify, platformType]);
+  }, [activeProfileName, apiKey, apiUrl, authType, isMock, onNotify, platformType]);
+
+  const handleActiveProfileResolved = useCallback((profileName: string) => {
+    setActiveProfileName(profileName);
+    onActiveProfileResolved?.(profileName);
+  }, [onActiveProfileResolved]);
 
   return (
     <section className="space-y-3">
@@ -261,7 +311,7 @@ export default function PlatformConfigSection({
         onProfileChange={handleProfileChange}
         onNotify={onNotify}
         onProfileSwitch={onProfileSwitch}
-        onActiveProfileResolved={onActiveProfileResolved}
+        onActiveProfileResolved={handleActiveProfileResolved}
       />
 
       <header className="flex items-center justify-end gap-2">
@@ -306,17 +356,22 @@ export default function PlatformConfigSection({
                 Platform
               </span>
               <select
-                value={platformType}
+                value={effectivePlatformType}
                 onChange={(event) =>
                   setPlatformType(event.target.value as PlatformType)
                 }
-                disabled={!editing || saving || formLocked}
+                disabled={!editing || saving || formLocked || isPinnedReneryoProfile}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               >
                 <option value="mock">Mock</option>
                 <option value="reneryo">RENERYO</option>
                 <option value="custom_rest">Custom REST</option>
               </select>
+              {isPinnedReneryoProfile && (
+                <p className="mt-1 text-xs text-slate-500">
+                  The <code>reneryo</code> profile is pinned to the RENERYO adapter.
+                </p>
+              )}
             </label>
 
             <label className="block">

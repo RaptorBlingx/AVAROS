@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockApi = vi.hoisted(() => ({
+  getAssetLinkingSummary: vi.fn(),
   getConfiguredAssets: vi.fn(),
   importGeneratorMapping: vi.fn(),
   saveConfiguredAssets: vi.fn(),
@@ -16,6 +17,7 @@ import AssetResourceLinkingStep from "../AssetResourceLinkingStep";
 
 describe("AssetResourceLinkingStep", () => {
   beforeEach(() => {
+    mockApi.getAssetLinkingSummary.mockReset();
     mockApi.getConfiguredAssets.mockReset();
     mockApi.importGeneratorMapping.mockReset();
     mockApi.saveConfiguredAssets.mockReset();
@@ -63,6 +65,49 @@ describe("AssetResourceLinkingStep", () => {
         },
       },
     });
+    mockApi.getAssetLinkingSummary.mockResolvedValue({
+      platform_type: "reneryo",
+      supports_discovery: true,
+      discovery_source: "registered",
+      discovery_error: "",
+      canonical_metrics: [
+        "energy_per_unit",
+        "energy_total",
+        "peak_demand",
+        "peak_tariff_exposure",
+        "scrap_rate",
+        "rework_rate",
+        "material_efficiency",
+        "recycled_content",
+        "supplier_lead_time",
+        "supplier_defect_rate",
+        "supplier_on_time",
+        "supplier_co2_per_kg",
+        "oee",
+        "throughput",
+        "cycle_time",
+        "changeover_time",
+        "co2_per_unit",
+        "co2_total",
+        "co2_per_batch",
+      ],
+      imported_assets: [
+        {
+          asset_id: "line-1",
+          display_name: "Line 1",
+          asset_type: "line",
+          aliases: ["line one"],
+          source: "imported",
+          linked_metrics: ["energy_total"],
+          missing_metrics: ["oee"],
+          linked_metric_count: 1,
+          total_metrics: 19,
+        },
+      ],
+      unlinked_assets: [],
+      discovered_assets: [],
+      metric_coverage: [],
+    });
   });
 
   it("saves endpoint template links for custom_rest", async () => {
@@ -108,6 +153,113 @@ describe("AssetResourceLinkingStep", () => {
 
   it("shows reneryo metric coverage and imports generator mapping", async () => {
     const onComplete = vi.fn();
+    mockApi.getAssetLinkingSummary
+      .mockResolvedValueOnce({
+        platform_type: "reneryo",
+        supports_discovery: true,
+        discovery_source: "registered",
+        discovery_error: "",
+        canonical_metrics: [
+          "energy_per_unit",
+          "energy_total",
+          "peak_demand",
+          "peak_tariff_exposure",
+          "scrap_rate",
+          "rework_rate",
+          "material_efficiency",
+          "recycled_content",
+          "supplier_lead_time",
+          "supplier_defect_rate",
+          "supplier_on_time",
+          "supplier_co2_per_kg",
+          "oee",
+          "throughput",
+          "cycle_time",
+          "changeover_time",
+          "co2_per_unit",
+          "co2_total",
+          "co2_per_batch",
+        ],
+        imported_assets: [
+          {
+            asset_id: "line-1",
+            display_name: "Line 1",
+            asset_type: "line",
+            aliases: ["line one"],
+            source: "imported",
+            linked_metrics: ["energy_total"],
+            missing_metrics: ["oee"],
+            linked_metric_count: 1,
+            total_metrics: 19,
+          },
+        ],
+        unlinked_assets: [],
+        discovered_assets: [],
+        metric_coverage: [],
+      })
+      .mockResolvedValueOnce({
+        platform_type: "reneryo",
+        supports_discovery: true,
+        discovery_source: "registered",
+        discovery_error: "",
+        canonical_metrics: [
+          "energy_per_unit",
+          "energy_total",
+          "peak_demand",
+          "peak_tariff_exposure",
+          "scrap_rate",
+          "rework_rate",
+          "material_efficiency",
+          "recycled_content",
+          "supplier_lead_time",
+          "supplier_defect_rate",
+          "supplier_on_time",
+          "supplier_co2_per_kg",
+          "oee",
+          "throughput",
+          "cycle_time",
+          "changeover_time",
+          "co2_per_unit",
+          "co2_total",
+          "co2_per_batch",
+        ],
+        imported_assets: [
+          {
+            asset_id: "line-1",
+            display_name: "Line 1",
+            asset_type: "line",
+            aliases: ["line one"],
+            source: "imported",
+            linked_metrics: [
+              "energy_per_unit",
+              "energy_total",
+              "peak_demand",
+              "peak_tariff_exposure",
+              "scrap_rate",
+              "rework_rate",
+              "material_efficiency",
+              "recycled_content",
+              "supplier_lead_time",
+              "supplier_defect_rate",
+              "supplier_on_time",
+              "supplier_co2_per_kg",
+              "oee",
+              "throughput",
+              "cycle_time",
+              "changeover_time",
+              "co2_per_unit",
+              "co2_total",
+              "co2_per_batch",
+            ],
+            missing_metrics: [],
+            linked_metric_count: 19,
+            total_metrics: 19,
+          },
+        ],
+        unlinked_assets: [],
+        discovered_assets: [],
+        metric_coverage: [],
+      });
     render(
       <AssetResourceLinkingStep
         platformType="reneryo"
@@ -117,7 +269,7 @@ describe("AssetResourceLinkingStep", () => {
     );
 
     await waitFor(() => {
-      expect(mockApi.getConfiguredAssets).toHaveBeenCalledTimes(1);
+      expect(mockApi.getAssetLinkingSummary).toHaveBeenCalledTimes(1);
     });
     expect(screen.getByText("1/19 metrics linked")).toBeTruthy();
     expect(screen.getByText("Partial")).toBeTruthy();
@@ -132,6 +284,9 @@ describe("AssetResourceLinkingStep", () => {
 
     await waitFor(() => {
       expect(mockApi.importGeneratorMapping).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(mockApi.getAssetLinkingSummary).toHaveBeenCalledTimes(2);
     });
     expect(mockApi.importGeneratorMapping).toHaveBeenCalledWith({
       energy_total: { "line-1": "uuid-1" },

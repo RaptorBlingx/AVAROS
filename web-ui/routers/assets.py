@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -18,6 +19,7 @@ from skill.services.settings import SettingsService
 router = APIRouter(prefix="/api/v1", tags=["assets"])
 logger = logging.getLogger(__name__)
 _CANONICAL_METRICS = {metric.value for metric in CanonicalMetric}
+_SORTED_CANONICAL_METRICS = sorted(_CANONICAL_METRICS)
 
 
 class AssetItem(BaseModel):
@@ -35,7 +37,10 @@ class AssetDiscoveryResponse(BaseModel):
 
     platform_type: str
     supports_discovery: bool
+    discovery_source: Literal["adapter", "registered", "none"] = "none"
     assets: list[AssetItem] = Field(default_factory=list)
+    registered_assets: list[AssetItem] = Field(default_factory=list)
+    discovery_error: str = ""
     existing_mappings: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
@@ -68,6 +73,43 @@ class GeneratorMappingResponse(BaseModel):
     imported_metrics: int
     imported_resources: int
     asset_mappings: dict[str, dict[str, Any]]
+
+
+class AssetLinkingItem(BaseModel):
+    """Asset-level resource-linking status for wizard steps."""
+
+    asset_id: str
+    display_name: str
+    asset_type: str
+    aliases: list[str] = Field(default_factory=list)
+    source: Literal["imported", "registered", "discovered"]
+    linked_metrics: list[str] = Field(default_factory=list)
+    missing_metrics: list[str] = Field(default_factory=list)
+    linked_metric_count: int = 0
+    total_metrics: int = 0
+
+
+class MetricCoverageItem(BaseModel):
+    """Coverage summary for a canonical metric across imported assets."""
+
+    metric_name: str
+    linked_assets: int
+    total_assets: int
+    missing_assets: list[str] = Field(default_factory=list)
+
+
+class AssetLinkingSummaryResponse(BaseModel):
+    """Aggregated linking truth used by wizard Step 3/4/5."""
+
+    platform_type: str
+    supports_discovery: bool
+    discovery_source: Literal["adapter", "registered", "none"] = "none"
+    discovery_error: str = ""
+    canonical_metrics: list[str] = Field(default_factory=list)
+    imported_assets: list[AssetLinkingItem] = Field(default_factory=list)
+    unlinked_assets: list[AssetLinkingItem] = Field(default_factory=list)
+    discovered_assets: list[AssetLinkingItem] = Field(default_factory=list)
+    metric_coverage: list[MetricCoverageItem] = Field(default_factory=list)
 
 
 def _transform_generator_mapping(
@@ -136,6 +178,157 @@ def _serialize_asset(asset: Asset) -> AssetItem:
         aliases=asset.aliases,
         metadata=asset.metadata,
     )
+
+
+def _normalize_asset_key(value: str) -> str:
+    """Normalize asset keys for cross-source dedupe."""
+    return "".join(ch for ch in (value or "").lower() if ch.isalnum())
+
+
+def _normalize_aliases(raw: Any) -> list[str]:
+    """Normalize aliases into non-empty trimmed list."""
+    if not isinstance(raw, list):
+        return []
+    aliases: list[str] = []
+    for alias in raw:
+        normalized = str(alias).strip()
+        if normalized:
+            aliases.append(normalized)
+    return aliases
+
+
+def _normalize_metric_resources(mapping: dict[str, Any]) -> dict[str, str]:
+    """Return canonical metric->resource mapping with non-empty values."""
+    raw_resources = mapping.get("metric_resources", {})
+    if not isinstance(raw_resources, dict):
+        return {}
+    normalized: dict[str, str] = {}
+    for metric_name, resource_id in raw_resources.items():
+        if metric_name not in _CANONICAL_METRICS:
+            continue
+        resource = str(resource_id).strip()
+        if resource:
+            normalized[metric_name] = resource
+    return normalized
+
+
+def _build_asset_linking_item(
+    *,
+    asset_id: str,
+    display_name: str,
+    asset_type: str,
+    aliases: list[str],
+    source: Literal["imported", "registered", "discovered"],
+    linked_metrics: list[str],
+) -> AssetLinkingItem:
+    """Build a linking item with derived missing/coverage fields."""
+    linked_sorted = sorted(set(linked_metrics))
+    missing = [metric for metric in _SORTED_CANONICAL_METRICS if metric not in linked_sorted]
+    return AssetLinkingItem(
+        asset_id=asset_id,
+        display_name=display_name,
+        asset_type=asset_type,
+        aliases=aliases,
+        source=source,
+        linked_metrics=linked_sorted,
+        missing_metrics=missing,
+        linked_metric_count=len(linked_sorted),
+        total_metrics=len(_SORTED_CANONICAL_METRICS),
+    )
+
+
+def _build_mapping_linking_groups(
+    mappings: dict[str, dict[str, Any]],
+) -> tuple[list[AssetLinkingItem], list[AssetLinkingItem]]:
+    """Split stored mappings into imported vs unlinked groups."""
+    imported: list[AssetLinkingItem] = []
+    unlinked: list[AssetLinkingItem] = []
+    for asset_id in sorted(mappings.keys()):
+        mapping = mappings.get(asset_id, {})
+        if not isinstance(mapping, dict):
+            continue
+        linked_metrics = list(_normalize_metric_resources(mapping).keys())
+        item = _build_asset_linking_item(
+            asset_id=asset_id,
+            display_name=str(mapping.get("display_name") or asset_id),
+            asset_type=str(mapping.get("asset_type") or "machine"),
+            aliases=_normalize_aliases(mapping.get("aliases")),
+            source="imported" if linked_metrics else "registered",
+            linked_metrics=linked_metrics,
+        )
+        if linked_metrics:
+            imported.append(item)
+        else:
+            unlinked.append(item)
+    return imported, unlinked
+
+
+def _build_metric_coverage(
+    imported_assets: list[AssetLinkingItem],
+) -> list[MetricCoverageItem]:
+    """Build per-metric coverage over imported assets."""
+    total_assets = len(imported_assets)
+    if total_assets == 0:
+        return [
+            MetricCoverageItem(
+                metric_name=metric_name,
+                linked_assets=0,
+                total_assets=0,
+                missing_assets=[],
+            )
+            for metric_name in _SORTED_CANONICAL_METRICS
+        ]
+
+    coverage: list[MetricCoverageItem] = []
+    for metric_name in _SORTED_CANONICAL_METRICS:
+        linked_assets = [
+            asset.asset_id
+            for asset in imported_assets
+            if metric_name in asset.linked_metrics
+        ]
+        missing_assets = [
+            asset.asset_id
+            for asset in imported_assets
+            if metric_name not in asset.linked_metrics
+        ]
+        coverage.append(
+            MetricCoverageItem(
+                metric_name=metric_name,
+                linked_assets=len(linked_assets),
+                total_assets=total_assets,
+                missing_assets=missing_assets,
+            ),
+        )
+    return coverage
+
+
+def _build_discovered_linking_items(
+    discovered_assets: list[Asset],
+    existing_asset_ids: set[str],
+) -> list[AssetLinkingItem]:
+    """Convert adapter-discovered assets into deduplicated diagnostic items."""
+    items: list[AssetLinkingItem] = []
+    seen: set[str] = set()
+    for discovered in discovered_assets:
+        if not isinstance(discovered, Asset):
+            continue
+        normalized = _normalize_asset_key(discovered.asset_id)
+        if not normalized:
+            continue
+        if normalized in existing_asset_ids or normalized in seen:
+            continue
+        seen.add(normalized)
+        items.append(
+            _build_asset_linking_item(
+                asset_id=discovered.asset_id,
+                display_name=discovered.display_name,
+                asset_type=discovered.asset_type,
+                aliases=discovered.aliases,
+                source="discovered",
+                linked_metrics=[],
+            ),
+        )
+    return items
 
 
 def _get_current_platform(settings_service: SettingsService) -> str:
@@ -208,6 +401,35 @@ def _merge_with_existing_metric_resources(
     return merged
 
 
+def _serialize_registered_assets(
+    mappings: dict[str, dict[str, Any]],
+) -> list[AssetItem]:
+    """Convert stored asset mapping rows to AssetItem list."""
+    items: list[AssetItem] = []
+    for asset_id in sorted(mappings.keys()):
+        mapping = mappings.get(asset_id, {})
+        if not isinstance(mapping, dict):
+            continue
+        aliases_raw = mapping.get("aliases", [])
+        aliases = (
+            [str(alias).strip() for alias in aliases_raw if str(alias).strip()]
+            if isinstance(aliases_raw, list)
+            else []
+        )
+        metadata_raw = mapping.get("metadata", {})
+        metadata = metadata_raw if isinstance(metadata_raw, dict) else {}
+        items.append(
+            AssetItem(
+                asset_id=asset_id,
+                display_name=str(mapping.get("display_name") or asset_id),
+                asset_type=str(mapping.get("asset_type") or "machine"),
+                aliases=aliases,
+                metadata=metadata,
+            ),
+        )
+    return items
+
+
 @router.get("/assets/mappings", response_model=AssetMappingsResponse)
 def get_asset_mappings(
     settings_service: SettingsService = Depends(get_settings_service),
@@ -258,9 +480,14 @@ async def discover_assets(
     becomes a hot path, consider caching the adapter across requests.
     """
     platform_type = _get_current_platform(settings_service)
+    existing_mappings = settings_service.get_asset_mappings()
+    registered_assets = _serialize_registered_assets(existing_mappings)
     adapter = adapter_factory.create()
     supports_discovery = adapter.supports_asset_discovery()
     discovered_assets: list[Asset] = []
+    discovery_source: Literal["adapter", "registered", "none"] = (
+        "registered" if registered_assets else "none"
+    )
 
     if supports_discovery:
         try:
@@ -278,11 +505,74 @@ async def discover_assets(
                 logger.warning("Adapter shutdown after asset discovery failed: %s", exc)
 
     items = [_serialize_asset(asset) for asset in discovered_assets if isinstance(asset, Asset)]
+    if items:
+        discovery_source = "adapter"
     return AssetDiscoveryResponse(
         platform_type=platform_type,
         supports_discovery=supports_discovery,
+        discovery_source=discovery_source,
         assets=items,
-        existing_mappings=settings_service.get_asset_mappings(),
+        registered_assets=registered_assets,
+        existing_mappings=existing_mappings,
+    )
+
+
+@router.get("/assets/linking-summary", response_model=AssetLinkingSummaryResponse)
+async def get_asset_linking_summary(
+    settings_service: SettingsService = Depends(get_settings_service),
+    adapter_factory: AdapterFactory = Depends(get_adapter_factory),
+) -> AssetLinkingSummaryResponse:
+    """Return a unified RENERYO-friendly linking summary for wizard steps."""
+    platform_type = _get_current_platform(settings_service)
+    mappings = settings_service.get_asset_mappings()
+    imported_assets, unlinked_assets = _build_mapping_linking_groups(mappings)
+    metric_coverage = _build_metric_coverage(imported_assets)
+
+    supports_discovery = False
+    discovery_source: Literal["adapter", "registered", "none"] = (
+        "registered" if imported_assets or unlinked_assets else "none"
+    )
+    discovery_error = ""
+    discovered_items: list[AssetLinkingItem] = []
+
+    adapter = adapter_factory.create()
+    supports_discovery = adapter.supports_asset_discovery()
+    if supports_discovery:
+        try:
+            await asyncio.wait_for(adapter.initialize(), timeout=5.0)
+            discovered_assets = await asyncio.wait_for(
+                adapter.list_assets(),
+                timeout=12.0,
+            )
+            existing_asset_ids = {
+                _normalize_asset_key(asset.asset_id)
+                for asset in imported_assets + unlinked_assets
+            }
+            discovered_items = _build_discovered_linking_items(
+                discovered_assets if isinstance(discovered_assets, list) else [],
+                existing_asset_ids,
+            )
+            if discovered_items:
+                discovery_source = "adapter"
+        except Exception as exc:  # noqa: BLE001 - endpoint degrades by design
+            discovery_error = str(exc)
+            logger.warning("Asset linking summary discovery failed: %s", exc)
+        finally:
+            try:
+                await asyncio.wait_for(adapter.shutdown(), timeout=5.0)
+            except Exception as exc:  # pragma: no cover - defensive cleanup
+                logger.warning("Adapter shutdown for linking summary failed: %s", exc)
+
+    return AssetLinkingSummaryResponse(
+        platform_type=platform_type,
+        supports_discovery=supports_discovery,
+        discovery_source=discovery_source,
+        discovery_error=discovery_error,
+        canonical_metrics=_SORTED_CANONICAL_METRICS,
+        imported_assets=imported_assets,
+        unlinked_assets=unlinked_assets,
+        discovered_assets=discovered_items,
+        metric_coverage=metric_coverage,
     )
 
 

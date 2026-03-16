@@ -27,7 +27,10 @@ describe("AssetManagementSection", () => {
     mockApi.discoverAssets.mockResolvedValue({
       platform_type: "custom_rest",
       supports_discovery: false,
+      discovery_source: "none",
       assets: [],
+      registered_assets: [],
+      discovery_error: "",
       existing_mappings: {},
     });
   });
@@ -73,22 +76,26 @@ describe("AssetManagementSection", () => {
     expect(onNotify).toHaveBeenCalledWith("success", "Assets saved.");
   });
 
-  it("hides Discover Assets button for custom_rest", async () => {
+  it("hides Discover Assets button for custom_rest when discovery is unsupported", async () => {
     render(<AssetManagementSection mode="settings" platformType="custom_rest" />);
 
     await waitFor(() => {
-      expect(mockApi.getConfiguredAssets).toHaveBeenCalled();
+      expect(mockApi.discoverAssets).toHaveBeenCalled();
     });
 
-    expect(screen.queryByRole("button", { name: "Discover Assets" })).toBeNull();
-    expect(mockApi.discoverAssets).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Discover Assets" })).toBeNull();
+    });
   });
 
   it("shows Discover Assets button for mock when discovery is supported", async () => {
     mockApi.discoverAssets.mockResolvedValue({
       platform_type: "mock",
       supports_discovery: true,
+      discovery_source: "adapter",
       assets: [],
+      registered_assets: [],
+      discovery_error: "",
       existing_mappings: {},
     });
 

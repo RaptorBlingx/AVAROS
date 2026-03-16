@@ -61,15 +61,32 @@ def test_regenerate_asset_entities_deduplicates_entries(tmp_path: Path) -> None:
     assert lines.count("line 1") == 1
 
 
-def test_regenerate_asset_entities_empty_assets_falls_back_to_mock_defaults(
+def test_regenerate_asset_entities_empty_assets_writes_empty_files_for_non_mock(
     tmp_path: Path,
 ) -> None:
-    """Empty asset input should still produce non-empty mock-backed files."""
+    """Empty asset input should not inject mock assets by default."""
     locale_dir = tmp_path / "en-us"
 
     regenerate_asset_entities([], locale_dir)
 
     lines = _read_lines(locale_dir / "asset.entity")
+    assert lines == []
+
+
+def test_regenerate_asset_entities_for_all_locales_with_mock_defaults(
+    tmp_path: Path,
+) -> None:
+    """Mock profile regeneration should still seed demo assets."""
+    locale_root = tmp_path / "locale"
+    (locale_root / "en-us").mkdir(parents=True)
+
+    regenerate_asset_entities_for_all_locales(
+        assets=[],
+        locale_root=locale_root,
+        use_mock_defaults=True,
+    )
+
+    lines = _read_lines(locale_root / "en-us" / "asset.entity")
     assert lines
     assert "line-1" in lines
     assert "line 1" in lines
@@ -131,4 +148,3 @@ def test_set_asset_mappings_triggers_entity_regeneration(
         lines = _read_lines(locale_root / locale / "asset.entity")
         assert "line 1" in lines
         assert "production line 1" in lines
-

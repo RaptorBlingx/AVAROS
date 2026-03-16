@@ -256,10 +256,10 @@ Closes P1-L05
 - [x] Platform configuration CRUD API
 - [x] Metric mapping CRUD API
 - [x] React frontend shell (Vite + TypeScript)
-- [x] First-run wizard (3-step MVP)
+- [x] First-run wizard (6-step onboarding flow)
 - [ ] DocuBoT integration (RAG for procedures/specs)
 - [ ] PREVENTION service (anomaly detection)
-- [ ] RENERYO adapter implementation
+- [x] RENERYO adapter implementation
 
 ### Phase 3: Production Hardening (Planned)
 - [ ] Multi-platform adapters (additional energy management systems)

@@ -55,7 +55,7 @@ export default function PlatformSetupStep({
   onTestConnection,
   onSaveAndContinue,
 }: PlatformSetupStepProps) {
-  const showDevQuickActions =
+  const showMockQuickAction =
     import.meta.env.DEV ||
     import.meta.env.VITE_ENABLE_DEV_QUICK_ACTIONS === "true";
   const resolvedPlatform = platformType ?? "custom_rest";
@@ -134,12 +134,23 @@ export default function PlatformSetupStep({
             </p>
           </button>
 
-          {showDevQuickActions && (
-            <div className="rounded-xl border border-dashed border-slate-300 p-3 dark:border-slate-600">
-              <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                Developer Quick Actions
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
+          <div className="rounded-xl border border-dashed border-slate-300 p-3 dark:border-slate-600">
+            <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+              Integration Presets
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className={`rounded-lg px-3 py-2 text-sm font-semibold ${
+                  isReneryo
+                    ? "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"
+                    : "btn-brand-subtle"
+                }`}
+                onClick={onUseReneryoQuickAction}
+              >
+                Use RENERYO
+              </button>
+              {showMockQuickAction && (
                 <button
                   type="button"
                   className={`rounded-lg px-3 py-2 text-sm font-semibold ${
@@ -151,20 +162,9 @@ export default function PlatformSetupStep({
                 >
                   Use Mock
                 </button>
-                <button
-                  type="button"
-                  className={`rounded-lg px-3 py-2 text-sm font-semibold ${
-                    isReneryo
-                      ? "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"
-                      : "btn-brand-subtle"
-                  }`}
-                  onClick={onUseReneryoQuickAction}
-                >
-                  Use RENERYO
-                </button>
-              </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
         {isMock ? (

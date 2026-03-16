@@ -273,11 +273,19 @@ class AVAROSSkill(FallbackSkill):
             self._ensure_runtime_services()
             self._reload_adapter(profile_name)
         except Exception as exc:
+            if self._allow_mock_fallback(profile_name):
+                self.log.error(
+                    "Profile switch reload failed for '%s': %s — falling back to mock",
+                    profile_name or "unknown",
+                    exc,
+                )
+                self._force_mock_fallback()
+                return
             self.log.error(
-                "Profile switch reload failed: %s — falling back to mock",
+                "Profile switch reload failed for '%s': %s — keeping current adapter",
+                profile_name or "unknown",
                 exc,
             )
-            self._force_mock_fallback()
 
     def _handle_asset_entities_updated(self, message: Message) -> None:
         """Refresh loaded entity files after dynamic regeneration."""
@@ -358,6 +366,14 @@ class AVAROSSkill(FallbackSkill):
         self._loaded_platform = "mock"
         self.log.info("Forced MockAdapter fallback")
 
+    def _allow_mock_fallback(self, profile_name: str) -> bool:
+        """Allow mock fallback only when requested profile is mock-like."""
+        normalized_profile = str(profile_name or "").strip().lower()
+        if normalized_profile and normalized_profile not in {"mock", "demo"}:
+            return False
+        expected_platform = self._expected_platform_for_profile(profile_name)
+        return expected_platform in {"", "mock", "demo"}
+
     def _expected_platform_for_profile(self, profile_name: str) -> str:
         if self.settings_service is None:
             return "mock"
@@ -431,8 +447,6 @@ class AVAROSSkill(FallbackSkill):
                 if self.settings_service is not None:
                     profile = self.settings_service.get_active_profile_name()
                     self._reload_adapter(profile)
-                else:
-                    self._force_mock_fallback()
             except Exception as exc:
                 self.log.warning("Dispatcher recovery failed: %s", exc)
 

@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
 
 import {
+  getAssetLinkingSummary,
   getConfiguredAssets,
   importGeneratorMapping,
   saveConfiguredAssets,
   toFriendlyErrorMessage,
 } from "../../api/client";
-import type { AssetMappingItem, PlatformType } from "../../api/types";
+import type {
+  AssetLinkingItem,
+  AssetLinkingSummaryResponse,
+  AssetMappingItem,
+  PlatformType,
+} from "../../api/types";
 import Tooltip from "../common/Tooltip";
 
 type AssetResourceLinkingStepProps = {
@@ -23,28 +29,6 @@ type LinkingRow = {
   endpointTemplate: string;
   metricResources: Record<string, string>;
 };
-
-const CANONICAL_METRICS = [
-  "energy_per_unit",
-  "energy_total",
-  "peak_demand",
-  "peak_tariff_exposure",
-  "scrap_rate",
-  "rework_rate",
-  "material_efficiency",
-  "recycled_content",
-  "supplier_lead_time",
-  "supplier_defect_rate",
-  "supplier_on_time",
-  "supplier_co2_per_kg",
-  "oee",
-  "throughput",
-  "cycle_time",
-  "changeover_time",
-  "co2_per_unit",
-  "co2_total",
-  "co2_per_batch",
-] as const;
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -132,18 +116,6 @@ function toRows(mappings: Record<string, AssetMappingItem>): LinkingRow[] {
   });
 }
 
-function getMetricCoverage(metricResources: Record<string, string>): {
-  linkedCount: number;
-  missingMetrics: string[];
-} {
-  const linkedCount = CANONICAL_METRICS.reduce(
-    (count, metric) => (metricResources[metric] ? count + 1 : count),
-    0,
-  );
-  const missingMetrics = CANONICAL_METRICS.filter((metric) => !metricResources[metric]);
-  return { linkedCount, missingMetrics };
-}
-
 export default function AssetResourceLinkingStep({
   platformType,
   onComplete,
@@ -164,11 +136,20 @@ export default function AssetResourceLinkingStep({
   const [generatorInput, setGeneratorInput] = useState("");
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState("");
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [reneryoSummary, setReneryoSummary] = useState<AssetLinkingSummaryResponse | null>(
+    null,
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
+      if (isReneryo) {
+        const summary = await getAssetLinkingSummary();
+        setReneryoSummary(summary);
+        return;
+      }
       const mappingsResponse = await getConfiguredAssets();
       const mappings = mappingsResponse.asset_mappings;
       setStoredMappings(mappings);
@@ -178,7 +159,7 @@ export default function AssetResourceLinkingStep({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isReneryo]);
 
   useEffect(() => {
     void load();
@@ -220,17 +201,16 @@ export default function AssetResourceLinkingStep({
     try {
       const mapping = parseGeneratorMappingInput(generatorInput);
       const response = await importGeneratorMapping(mapping);
-      setStoredMappings(response.asset_mappings);
-      setRows(toRows(response.asset_mappings));
       setImportMessage(
         `Imported ${response.imported_resources} metric-resource links across ${Object.keys(response.asset_mappings).length} assets.`,
       );
+      await load();
     } catch (err: unknown) {
       setError(toFriendlyErrorMessage(err));
     } finally {
       setImporting(false);
     }
-  }, [generatorInput]);
+  }, [generatorInput, load]);
 
   const saveAndContinue = useCallback(async () => {
     if (isMock || isReneryo) {
@@ -263,28 +243,95 @@ export default function AssetResourceLinkingStep({
     }
   }, [isMock, isReneryo, onComplete, rows, storedMappings]);
 
+  const reneryoImportedAssets = useMemo(
+    () => reneryoSummary?.imported_assets ?? [],
+    [reneryoSummary],
+  );
+  const reneryoUnlinkedAssets = useMemo(
+    () => reneryoSummary?.unlinked_assets ?? [],
+    [reneryoSummary],
+  );
+  const reneryoDiscoveredAssets = useMemo(
+    () => reneryoSummary?.discovered_assets ?? [],
+    [reneryoSummary],
+  );
+
   const linkedCount = useMemo(
     () =>
-      rows.filter((row) => {
-        if (isCustomRest) {
-          return row.endpointTemplate.trim().length > 0;
-        }
-        if (isReneryo) {
-          return getMetricCoverage(row.metricResources).linkedCount > 0;
-        }
-        return true;
-      }).length,
-    [isCustomRest, isReneryo, rows],
+      isReneryo
+        ? reneryoImportedAssets.length
+        : rows.filter((row) => {
+            if (isCustomRest) {
+              return row.endpointTemplate.trim().length > 0;
+            }
+            return true;
+          }).length,
+    [isCustomRest, isReneryo, reneryoImportedAssets.length, rows],
   );
 
   const fullyMappedReneryoAssets = useMemo(
-    () =>
-      rows.filter(
-        (row) =>
-          getMetricCoverage(row.metricResources).linkedCount >= CANONICAL_METRICS.length,
-      ).length,
-    [rows],
+    () => reneryoImportedAssets.filter(
+      (asset) => asset.linked_metric_count >= asset.total_metrics,
+    ).length,
+    [reneryoImportedAssets],
   );
+
+  const diagnosticCount = useMemo(
+    () => reneryoUnlinkedAssets.length + reneryoDiscoveredAssets.length,
+    [reneryoDiscoveredAssets.length, reneryoUnlinkedAssets.length],
+  );
+
+  const renderReneryoAssetCard = useCallback((asset: AssetLinkingItem) => {
+    const statusLabel =
+      asset.linked_metric_count >= asset.total_metrics
+        ? "Ready"
+        : asset.linked_metric_count > 0
+          ? "Partial"
+          : "Missing";
+    const statusClass =
+      statusLabel === "Ready"
+        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+        : statusLabel === "Partial"
+          ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+          : "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300";
+
+    return (
+      <div
+        key={`${asset.source}-${asset.asset_id}`}
+        className="grid gap-2 rounded-xl border border-slate-300 bg-white p-3 dark:border-slate-600 dark:bg-slate-800 md:grid-cols-5"
+      >
+        <div className="md:col-span-2">
+          <p className="m-0 text-xs uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">
+            Asset
+          </p>
+          <p className="m-0 text-sm font-semibold text-slate-900 dark:text-slate-100">
+            {asset.display_name}
+          </p>
+          <p className="m-0 text-xs text-slate-500 dark:text-slate-400">
+            {asset.asset_id} · {asset.asset_type}
+          </p>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:border-slate-600 dark:bg-slate-900/50 dark:text-slate-200 md:col-span-2">
+          {asset.linked_metric_count}/{asset.total_metrics} metrics linked
+          {asset.missing_metrics.length > 0 && (
+            <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Missing: {asset.missing_metrics.slice(0, 4).join(", ")}
+              {asset.missing_metrics.length > 4
+                ? ` +${asset.missing_metrics.length - 4} more`
+                : ""}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center">
+          <span
+            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass}`}
+          >
+            {statusLabel}
+          </span>
+        </div>
+      </div>
+    );
+  }, []);
 
   return (
     <section className="space-y-4">
@@ -323,14 +370,18 @@ export default function AssetResourceLinkingStep({
           </div>
         ) : (
           <>
-            {!isMock && (
+            {!isMock && !isReneryo && (
               <div className="mb-3 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
                 Linked assets: {linkedCount}/{rows.length}
-                {isReneryo && (
-                  <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
-                    Full coverage: {fullyMappedReneryoAssets}/{rows.length}
-                  </span>
-                )}
+              </div>
+            )}
+
+            {isReneryo && (
+              <div className="mb-3 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
+                Imported assets with metric resources: {linkedCount}
+                <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
+                  Full coverage: {fullyMappedReneryoAssets}/{reneryoImportedAssets.length || 0}
+                </span>
               </div>
             )}
 
@@ -385,33 +436,71 @@ export default function AssetResourceLinkingStep({
                     {importMessage}
                   </div>
                 )}
+                {reneryoSummary?.discovery_error && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-900/30 dark:text-amber-200">
+                    Live discovery warning: {reneryoSummary.discovery_error}
+                  </div>
+                )}
               </div>
             )}
 
-            {rows.length === 0 ? (
+            {isReneryo ? (
+              <div className="space-y-4">
+                {reneryoImportedAssets.length === 0 ? (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-900/30 dark:text-amber-200">
+                    No imported metric-resource links found yet. Import `mapping_output.json` to continue with KPI-ready assets.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="m-0 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">
+                      Imported Mapping Assets
+                    </p>
+                    <div className="space-y-3">
+                      {reneryoImportedAssets.map((asset) => renderReneryoAssetCard(asset))}
+                    </div>
+                  </div>
+                )}
+
+                {diagnosticCount > 0 && (
+                  <div className="space-y-2 rounded-xl border border-slate-300 bg-white p-3 dark:border-slate-600 dark:bg-slate-800">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="m-0 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">
+                        Developer Diagnostics
+                      </p>
+                      <button
+                        type="button"
+                        className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
+                        onClick={() => setShowDiagnostics((prev) => !prev)}
+                      >
+                        {showDiagnostics
+                          ? "Hide Diagnostics"
+                          : `Show Diagnostics (${diagnosticCount})`}
+                      </button>
+                    </div>
+                    <p className="m-0 text-xs text-slate-500 dark:text-slate-400">
+                      Optional troubleshooting list. These rows are excluded from KPI readiness.
+                    </p>
+                    {showDiagnostics && (
+                      <div className="space-y-3">
+                        {reneryoUnlinkedAssets.map((asset) => renderReneryoAssetCard(asset))}
+                        {reneryoDiscoveredAssets.map((asset) => renderReneryoAssetCard(asset))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : rows.length === 0 ? (
               <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-900/30 dark:text-amber-200">
                 No assets found. Go back and register assets first, or skip this step.
               </div>
             ) : (
               <div className="space-y-3">
                 {rows.map((row, index) => {
-                  const coverage = getMetricCoverage(row.metricResources);
                   const isCustomRestConfigured = row.endpointTemplate.trim().length > 0;
-                  const statusLabel =
-                    isCustomRest
-                      ? isCustomRestConfigured
-                        ? "Configured"
-                        : "Pending"
-                      : coverage.linkedCount >= CANONICAL_METRICS.length
-                      ? "Ready"
-                      : coverage.linkedCount > 0
-                      ? "Partial"
-                      : "Missing";
+                  const statusLabel = isCustomRestConfigured ? "Configured" : "Pending";
                   const statusClass =
-                    statusLabel === "Ready" || statusLabel === "Configured"
+                    isCustomRestConfigured
                       ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
-                    : statusLabel === "Partial"
-                      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
                       : "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300";
 
                   return (
@@ -431,29 +520,15 @@ export default function AssetResourceLinkingStep({
                         </p>
                       </div>
 
-                      {isCustomRest ? (
-                        <input
-                          type="text"
-                          value={row.endpointTemplate}
-                          placeholder="/api/metrics/{asset_id}"
-                          onChange={(event) =>
-                            updateEndpointTemplate(index, event.target.value)
-                          }
-                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900 md:col-span-2"
-                        />
-                      ) : (
-                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:border-slate-600 dark:bg-slate-900/50 dark:text-slate-200 md:col-span-2">
-                          {coverage.linkedCount}/{CANONICAL_METRICS.length} metrics linked
-                          {isReneryo && coverage.missingMetrics.length > 0 && (
-                            <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
-                              Missing: {coverage.missingMetrics.slice(0, 4).join(", ")}
-                              {coverage.missingMetrics.length > 4
-                                ? ` +${coverage.missingMetrics.length - 4} more`
-                                : ""}
-                            </p>
-                          )}
-                        </div>
-                      )}
+                      <input
+                        type="text"
+                        value={row.endpointTemplate}
+                        placeholder="/api/metrics/{asset_id}"
+                        onChange={(event) =>
+                          updateEndpointTemplate(index, event.target.value)
+                        }
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900 md:col-span-2"
+                      />
 
                       <div className="flex items-center">
                         <span

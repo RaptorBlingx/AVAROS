@@ -23,6 +23,22 @@ router = APIRouter(prefix="/api/v1/config", tags=["config"])
 logger = logging.getLogger(__name__)
 
 
+def _resolve_effective_platform_type(
+    payload: PlatformConfigRequest,
+    settings_service: SettingsService,
+) -> str:
+    """Return platform type, repairing known profile drift cases."""
+    active_profile = settings_service.get_active_profile_name().strip().lower()
+    if active_profile == "reneryo" and payload.platform_type != "reneryo":
+        logger.warning(
+            "Normalizing platform_type to reneryo for active profile 'reneryo' "
+            "(received=%s)",
+            payload.platform_type,
+        )
+        return "reneryo"
+    return payload.platform_type
+
+
 def _mask_api_key(api_key: str) -> str:
     """Mask key as ****XXXX; for short keys return ****."""
     if len(api_key) <= 4:
@@ -47,8 +63,9 @@ async def upsert_platform_config(
     adapter_factory: AdapterFactory = Depends(get_adapter_factory),
 ) -> PlatformConfigResponse:
     """Create or update platform configuration and hot-reload adapter."""
+    platform_type = _resolve_effective_platform_type(payload, settings_service)
     config = PlatformConfig(
-        platform_type=payload.platform_type,
+        platform_type=platform_type,
         api_url=payload.api_url,
         api_key=payload.api_key,
         extra_settings=sanitize_extra_settings(payload.extra_settings),

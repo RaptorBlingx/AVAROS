@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
+  getAssetLinkingSummary,
   getIntents,
   listMetricMappings,
   setIntentActive,
@@ -84,21 +85,40 @@ export default function useIntentActivation({
     setBulkAction(null);
     if (errorHandler.mode === "state") errorHandler.setError("");
     try {
-      const [intentList, mappings] = await Promise.all([
-        getIntents(),
-        listMetricMappings(),
-      ]);
+      const intentList = await getIntents();
+      const isReneryoProfile = activeProfile === "reneryo";
+      let mapped = new Set<string>();
+
+      if (isReneryoProfile) {
+        try {
+          const summary = await getAssetLinkingSummary();
+          mapped = new Set(
+            summary.metric_coverage
+              .filter((item) => item.linked_assets > 0)
+              .map((item) => item.metric_name),
+          );
+        } catch {
+          const mappings = await listMetricMappings();
+          mapped = new Set(
+            mappings.map((m: MetricMapping) => m.canonical_metric),
+          );
+        }
+      } else {
+        const mappings = await listMetricMappings();
+        mapped = new Set(
+          mappings.map((m: MetricMapping) => m.canonical_metric),
+        );
+      }
+
       setIntents(intentList);
-      setMappedMetrics(
-        new Set(mappings.map((m: MetricMapping) => m.canonical_metric)),
-      );
+      setMappedMetrics(mapped);
     } catch (err: unknown) {
       reportError(toFriendlyErrorMessage(err));
     } finally {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportError]);
+  }, [activeProfile, reportError]);
 
   useEffect(() => {
     void loadData();

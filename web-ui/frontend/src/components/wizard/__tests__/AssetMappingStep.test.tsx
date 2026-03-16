@@ -26,6 +26,7 @@ describe("AssetMappingStep platform rendering", () => {
     mockApi.discoverAssets.mockResolvedValue({
       platform_type: "mock",
       supports_discovery: true,
+      discovery_source: "adapter",
       assets: [
         {
           asset_id: "Line-1",
@@ -35,6 +36,8 @@ describe("AssetMappingStep platform rendering", () => {
           metadata: {},
         },
       ],
+      registered_assets: [],
+      discovery_error: "",
       existing_mappings: {},
     });
   });

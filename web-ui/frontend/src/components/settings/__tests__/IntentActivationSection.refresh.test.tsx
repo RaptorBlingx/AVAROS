@@ -4,6 +4,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockApi = vi.hoisted(() => ({
+  getAssetLinkingSummary: vi.fn(),
   getIntents: vi.fn(),
   listMetricMappings: vi.fn(),
   setIntentActive: vi.fn(),
@@ -21,6 +22,7 @@ import IntentActivationSection from "../IntentActivationSection";
 describe("IntentActivationSection profile refresh", () => {
   beforeEach(() => {
     mockApi.getIntents.mockReset();
+    mockApi.getAssetLinkingSummary.mockReset();
     mockApi.listMetricMappings.mockReset();
     mockApi.setIntentActive.mockReset();
 
@@ -33,6 +35,16 @@ describe("IntentActivationSection profile refresh", () => {
         category: "kpi",
       },
     ]);
+    mockApi.getAssetLinkingSummary.mockResolvedValue({
+      metric_coverage: [
+        {
+          metric_name: "oee",
+          linked_assets: 1,
+          total_assets: 1,
+          missing_assets: [],
+        },
+      ],
+    });
     mockApi.listMetricMappings.mockResolvedValue([
       {
         canonical_metric: "oee",
@@ -52,7 +64,7 @@ describe("IntentActivationSection profile refresh", () => {
 
     await waitFor(() => {
       expect(mockApi.getIntents).toHaveBeenCalledTimes(1);
-      expect(mockApi.listMetricMappings).toHaveBeenCalledTimes(1);
+      expect(mockApi.getAssetLinkingSummary).toHaveBeenCalledTimes(1);
     });
 
     rerender(
@@ -61,7 +73,7 @@ describe("IntentActivationSection profile refresh", () => {
 
     await waitFor(() => {
       expect(mockApi.getIntents).toHaveBeenCalledTimes(2);
-      expect(mockApi.listMetricMappings).toHaveBeenCalledTimes(2);
+      expect(mockApi.getAssetLinkingSummary).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -116,15 +128,16 @@ describe("IntentActivationSection profile refresh", () => {
         category: "system",
       },
     ]);
-    mockApi.listMetricMappings.mockResolvedValue([
-      {
-        canonical_metric: "oee",
-        endpoint: "/api/oee",
-        json_path: "$.value",
-        unit: "%",
-        transform: null,
-      },
-    ]);
+    mockApi.getAssetLinkingSummary.mockResolvedValue({
+      metric_coverage: [
+        {
+          metric_name: "oee",
+          linked_assets: 1,
+          total_assets: 1,
+          missing_assets: [],
+        },
+      ],
+    });
     mockApi.setIntentActive.mockResolvedValue({
       intent_name: "kpi.oee",
       active: true,
@@ -139,7 +152,7 @@ describe("IntentActivationSection profile refresh", () => {
     );
 
     await waitFor(() => {
-      expect(mockApi.getIntents).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("button", { name: "Enable All" })).toBeTruthy();
     });
 
     screen.getByRole("button", { name: "Enable All" }).click();

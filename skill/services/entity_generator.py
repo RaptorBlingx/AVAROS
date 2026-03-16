@@ -12,11 +12,11 @@ _ENTITY_FILES = ("asset.entity", "asset_a.entity", "asset_b.entity")
 
 def regenerate_asset_entities(assets: list[Asset], locale_dir: Path) -> None:
     """Generate OVOS asset entity files for one locale directory."""
-    normalized_assets = assets if assets else _default_mock_assets()
+    normalized_assets = assets
     entries = _normalized_entries(normalized_assets)
-    if not entries:
-        entries = _normalized_entries(_default_mock_assets())
-    content = "\n".join(entries) + "\n"
+    content = "\n".join(entries)
+    if content:
+        content = f"{content}\n"
 
     locale_path = Path(locale_dir)
     locale_path.mkdir(parents=True, exist_ok=True)
@@ -27,15 +27,18 @@ def regenerate_asset_entities(assets: list[Asset], locale_dir: Path) -> None:
 def regenerate_asset_entities_for_all_locales(
     assets: list[Asset],
     locale_root: Path,
+    *,
+    use_mock_defaults: bool = False,
 ) -> None:
     """Generate asset entity files for all locale subdirectories."""
     root = Path(locale_root)
     if not root.exists():
         return
 
+    normalized_assets = assets if assets else (_default_mock_assets() if use_mock_defaults else [])
     locale_dirs = sorted(path for path in root.iterdir() if path.is_dir())
     for locale_dir in locale_dirs:
-        regenerate_asset_entities(assets, locale_dir)
+        regenerate_asset_entities(normalized_assets, locale_dir)
 
 
 def _normalized_entries(assets: list[Asset]) -> list[str]:

@@ -8,11 +8,13 @@ import LoadingSpinner from "../common/LoadingSpinner";
 import useIntentActivation from "../../hooks/useIntentActivation";
 
 type IntentActivationStepProps = {
+  activeProfile?: string;
   onComplete: () => void;
   onSkip: () => void;
 };
 
 export default function IntentActivationStep({
+  activeProfile = "mock",
   onComplete,
   onSkip,
 }: IntentActivationStepProps) {
@@ -28,6 +30,7 @@ export default function IntentActivationStep({
     setAll,
   } = useIntentActivation({
     errorHandler: { mode: "state", setError },
+    activeProfile,
   });
 
   return (

@@ -67,6 +67,26 @@ function inferAssetType(
   return "machine";
 }
 
+function sanitizePrefilledAliases(aliases: unknown): string {
+  if (!Array.isArray(aliases)) {
+    return "";
+  }
+  const unique = new Set<string>();
+  const valid = aliases
+    .map((alias) => (typeof alias === "string" ? alias.trim() : ""))
+    .filter((alias) => alias.length > 0 && alias.length <= 32)
+    .filter((alias) => {
+      const normalized = alias.toLowerCase();
+      if (unique.has(normalized)) {
+        return false;
+      }
+      unique.add(normalized);
+      return true;
+    })
+    .slice(0, 5);
+  return aliasesToCsv(valid);
+}
+
 function toRegistrationRows(
   mappings: Record<string, AssetMappingItem>,
 ): RegistrationRow[] {
@@ -81,17 +101,19 @@ function toRegistrationRows(
   }));
   return rows.length > 0
     ? rows
-    : [
-        {
-          rowId: createRowId(),
-          assetId: "",
-          displayName: "",
-          assetType: "machine",
-          aliases: "",
-          isExisting: false,
-          existingAssetId: null,
-        },
-      ];
+    : [createEmptyRow()];
+}
+
+function createEmptyRow(): RegistrationRow {
+  return {
+    rowId: createRowId(),
+    assetId: "",
+    displayName: "",
+    assetType: "machine",
+    aliases: "",
+    isExisting: false,
+    existingAssetId: null,
+  };
 }
 
 export default function AssetRegistrationStep({
@@ -107,58 +129,98 @@ export default function AssetRegistrationStep({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [discoveryNotice, setDiscoveryNotice] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
+    setDiscoveryNotice("");
     try {
       const mappingsResponse = await getConfiguredAssets();
       const existingMappings = mappingsResponse.asset_mappings;
       const registrationRows = toRegistrationRows(existingMappings);
       setStoredMappings(existingMappings);
+      setRows(platformType === "reneryo" ? [] : registrationRows);
+      setShowSuggestions(false);
+      setLoading(false);
 
-      const discovery = await discoverAssets().catch(() => null);
-      const existingIds = new Set(
-        registrationRows.map((row) => row.assetId.toLowerCase()),
-      );
-      const suggestedRows: RegistrationRow[] = [];
-      const discoveredAssets = discovery?.assets ?? [];
-      for (const asset of discoveredAssets) {
-        const candidateId =
-          toAssetId(asset.asset_id) || toAssetId(asset.display_name);
-        if (!candidateId || existingIds.has(candidateId.toLowerCase())) {
-          continue;
+      void (async () => {
+        const discovery = await discoverAssets().catch(() => null);
+        const discoverySource = discovery?.discovery_source ?? "none";
+
+        if (!discovery) {
+          if (platformType === "reneryo") {
+            setDiscoveryNotice(
+              "Live RENERYO discovery is unavailable. Showing registered assets only.",
+            );
+          }
+          return;
         }
-        existingIds.add(candidateId.toLowerCase());
-        suggestedRows.push({
-          rowId: createRowId(candidateId),
-          assetId: candidateId,
-          displayName: asset.display_name || asset.asset_id,
-          assetType: inferAssetType(candidateId, asset.asset_type),
-          aliases: aliasesToCsv(asset.aliases),
-          isExisting: false,
-          existingAssetId: null,
+
+        const discoveredAssets = discovery.assets ?? [];
+        const suggestedRows: RegistrationRow[] = [];
+        const existingIds = new Set<string>();
+        if (platformType !== "reneryo") {
+          for (const row of registrationRows) {
+            existingIds.add(row.assetId.toLowerCase());
+          }
+        }
+        for (const asset of discoveredAssets) {
+          const candidateId =
+            toAssetId(asset.asset_id) || toAssetId(asset.display_name);
+          if (!candidateId || existingIds.has(candidateId.toLowerCase())) {
+            continue;
+          }
+          existingIds.add(candidateId.toLowerCase());
+          suggestedRows.push({
+            rowId: createRowId(candidateId),
+            assetId: candidateId,
+            displayName: asset.display_name || asset.asset_id,
+            assetType: inferAssetType(candidateId, asset.asset_type),
+            aliases: sanitizePrefilledAliases(asset.aliases),
+            isExisting: false,
+            existingAssetId: null,
+          });
+        }
+
+        if (platformType === "reneryo") {
+          setRows(suggestedRows.length > 0 ? suggestedRows : [createEmptyRow()]);
+          setShowSuggestions(false);
+          if (discoverySource !== "adapter") {
+            setDiscoveryNotice(
+              "Live RENERYO discovery is unavailable. Only live RENERYO assets are shown.",
+            );
+          }
+          return;
+        }
+
+        setRows((prev) => {
+          const prevIds = new Set(
+            prev.map((row) => row.assetId.trim().toLowerCase()).filter(Boolean),
+          );
+          const newRows = suggestedRows.filter(
+            (row) => !prevIds.has(row.assetId.toLowerCase()),
+          );
+          const hasOnlySeedRow =
+            prev.length === 1 &&
+            !prev[0].assetId.trim() &&
+            !prev[0].displayName.trim() &&
+            !prev[0].aliases.trim();
+          if (hasOnlySeedRow && newRows.length > 0) {
+            return newRows;
+          }
+          return [...prev, ...newRows];
         });
-      }
 
-      const hasOnlySeedRow =
-        registrationRows.length === 1 &&
-        !registrationRows[0].assetId.trim() &&
-        !registrationRows[0].displayName.trim() &&
-        !registrationRows[0].aliases.trim();
-
-      setRows(
-        hasOnlySeedRow && suggestedRows.length > 0
-          ? suggestedRows
-          : [...registrationRows, ...suggestedRows],
-      );
-      setShowSuggestions(suggestedRows.length > 0);
+        setShowSuggestions(
+          discoverySource === "adapter" && suggestedRows.length > 0,
+        );
+      })();
     } catch (err: unknown) {
       setError(toFriendlyErrorMessage(err));
-    } finally {
       setLoading(false);
     }
-  }, []);
+  }, [platformType]);
 
   useEffect(() => {
     void load();
@@ -197,19 +259,7 @@ export default function AssetRegistrationStep({
   const deleteRow = useCallback((index: number) => {
     setRows((prev) => {
       const next = prev.filter((_, rowIndex) => rowIndex !== index);
-      return next.length > 0
-        ? next
-        : [
-            {
-              rowId: createRowId(),
-              assetId: "",
-              displayName: "",
-              assetType: "machine",
-              aliases: "",
-              isExisting: false,
-              existingAssetId: null,
-            },
-          ];
+      return next.length > 0 ? next : [createEmptyRow()];
     });
   }, []);
 
@@ -272,6 +322,13 @@ export default function AssetRegistrationStep({
         },
         {},
       );
+      if (platformType === "reneryo") {
+        for (const [assetId, mapping] of Object.entries(storedMappings)) {
+          if (!(assetId in payload)) {
+            payload[assetId] = mapping;
+          }
+        }
+      }
       const response = await saveConfiguredAssets(payload);
       setStoredMappings(response.asset_mappings);
       onComplete();
@@ -280,7 +337,7 @@ export default function AssetRegistrationStep({
     } finally {
       setSaving(false);
     }
-  }, [onComplete, rows, storedMappings, validationError]);
+  }, [onComplete, platformType, rows, storedMappings, validationError]);
 
   const subtitle =
     platformType === "mock"
@@ -311,6 +368,11 @@ export default function AssetRegistrationStep({
         {showSuggestions && (
           <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/40 dark:bg-sky-900/30 dark:text-sky-200">
             Discovered assets were pre-filled. Review names and aliases before continuing.
+          </div>
+        )}
+        {!showSuggestions && discoveryNotice && (
+          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-900/30 dark:text-amber-200">
+            {discoveryNotice}
           </div>
         )}
 

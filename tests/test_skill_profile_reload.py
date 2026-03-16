@@ -5,7 +5,8 @@ lazy profile mismatch detection, and event registration.
 
 Test scenarios:
     - Profile switch via message bus → adapter reloaded
-    - Reload failure → MockAdapter fallback (DEC-005)
+    - Reload failure on non-mock profile → keep current adapter
+    - Reload failure on mock profile → MockAdapter fallback (DEC-005)
     - Lazy reload on profile mismatch → automatic recovery
     - No mismatch → no reload
     - SettingsService None → lazy check skipped safely
@@ -87,9 +88,14 @@ class TestHandleProfileSwitch:
             "Profile switch event received: '%s'", "demo",
         )
 
-    def test_handle_profile_switch_failure_falls_back_to_mock(self):
-        """When reload raises, skill falls back to MockAdapter (DEC-005)."""
+    def test_handle_profile_switch_failure_keeps_non_mock_runtime(self):
+        """When non-mock reload fails, skill keeps current runtime adapter."""
         skill = _initialized_skill()
+        skill._loaded_profile = "reneryo"
+        skill._loaded_platform = "reneryo"
+        original_dispatcher = skill.dispatcher
+        skill.settings_service = Mock()
+        skill.settings_service.get_profile.return_value = Mock(platform_type="reneryo")
 
         skill.adapter_factory.reload = AsyncMock(
             side_effect=RuntimeError("connection refused"),
@@ -98,12 +104,31 @@ class TestHandleProfileSwitch:
         # Act
         skill._handle_profile_switch(_make_message("reneryo"))
 
-        # Assert: MockAdapter fallback
-        assert skill._loaded_profile == "mock"
-        assert isinstance(
-            skill.dispatcher._adapter, MockAdapter,
+        # Assert: runtime stays on the last loaded adapter/profile
+        assert skill._loaded_profile == "reneryo"
+        assert skill._loaded_platform == "reneryo"
+        assert skill.dispatcher is original_dispatcher
+        skill.log.error.assert_any_call(
+            "Profile switch reload failed for '%s': %s — keeping current adapter",
+            "reneryo",
+            skill.adapter_factory.reload.side_effect,
         )
-        skill.log.error.assert_called_once()
+
+    def test_handle_profile_switch_failure_on_mock_falls_back_to_mock(self):
+        """Mock profile reload failures should still force mock fallback."""
+        skill = _initialized_skill()
+        skill.settings_service = Mock()
+        skill.settings_service.get_profile.return_value = Mock(platform_type="mock")
+        skill._loaded_profile = "reneryo"
+
+        skill.adapter_factory.reload = AsyncMock(
+            side_effect=RuntimeError("mock reload failed"),
+        )
+
+        skill._handle_profile_switch(_make_message("mock"))
+
+        assert skill._loaded_profile == "mock"
+        assert isinstance(skill.dispatcher._adapter, MockAdapter)
 
     def test_handle_profile_switch_recovers_missing_factory(self):
         """When adapter_factory is missing, runtime recovery recreates it."""
