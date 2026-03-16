@@ -30,6 +30,23 @@ type MetricMappingStepProps = {
   onSkip: () => void;
 };
 
+function isMetricMappingNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const maybeStatus = (error as { status?: unknown }).status;
+  if (maybeStatus === 404) {
+    return true;
+  }
+
+  const message =
+    error instanceof Error
+      ? error.message
+      : String((error as { message?: unknown }).message ?? "");
+  return message.toLowerCase().includes("metric mapping not found");
+}
+
 export default function MetricMappingStep({
   onComplete,
   onSkip,
@@ -43,6 +60,7 @@ export default function MetricMappingStep({
 
   const usedMetrics = useMemo(() => new Set(rows.map((row) => row.canonical_metric)), [rows]);
   const unMappedMetrics = useMemo(() => METRIC_OPTIONS.filter((option) => !usedMetrics.has(option.value)), [usedMetrics]);
+  const canAddRow = unMappedMetrics.length > 0;
 
   const resolveRow = useCallback((rowId: string) => rows.find((row) => row.id === rowId), [rows]);
 
@@ -116,8 +134,7 @@ export default function MetricMappingStep({
 
   const addRow = useCallback(() => {
     setFormError("");
-    if (unMappedMetrics.length === 0) {
-      setFormError("All canonical metrics are already mapped.");
+    if (!canAddRow) {
       return;
     }
     const metric = unMappedMetrics[0].value;
@@ -129,7 +146,7 @@ export default function MetricMappingStep({
         ...EMPTY_WIZARD_ROW_DEFAULTS,
       },
     ]);
-  }, [unMappedMetrics]);
+  }, [canAddRow, unMappedMetrics]);
 
   const removeRow = useCallback((id: string) => {
     setRows((prev) => prev.filter((row) => row.id !== id));
@@ -191,7 +208,14 @@ export default function MetricMappingStep({
         if (!existingByMetric[row.canonical_metric]) {
           await createMetricMapping(payload);
         } else {
-          await updateMetricMapping(row.canonical_metric, payload);
+          try {
+            await updateMetricMapping(row.canonical_metric, payload);
+          } catch (error: unknown) {
+            if (!isMetricMappingNotFoundError(error)) {
+              throw error;
+            }
+            await createMetricMapping(payload);
+          }
         }
       }
 
@@ -213,7 +237,7 @@ export default function MetricMappingStep({
     <section className="space-y-4">
       <header className="brand-hero rounded-2xl p-6 backdrop-blur-sm">
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">
-          Step 5 of 7
+          Step 4 of 6
         </p>
         <div className="mt-2 inline-flex items-center gap-2">
           <h2 className="m-0 text-2xl font-semibold text-slate-900 dark:text-slate-100">
@@ -266,8 +290,10 @@ export default function MetricMappingStep({
             <div className="mt-4 flex flex-wrap gap-3">
               <button
                 type="button"
-                className="btn-brand-subtle inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold"
+                className="btn-brand-subtle inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
                 onClick={addRow}
+                disabled={saving || !canAddRow}
+                title={canAddRow ? undefined : "All canonical metrics are already mapped."}
               >
                 Add Mapping
               </button>

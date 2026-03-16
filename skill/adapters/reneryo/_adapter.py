@@ -16,7 +16,10 @@ import logging
 from urllib.parse import quote
 from typing import TYPE_CHECKING
 
-import aiohttp
+try:
+    import aiohttp
+except ModuleNotFoundError:  # pragma: no cover - optional in minimal OVOS images
+    aiohttp = None  # type: ignore[assignment]
 
 from skill.adapters.base import ManufacturingAdapter
 from skill.adapters.reneryo._endpoints import (
@@ -179,7 +182,12 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
                 if self._is_seu_endpoint(endpoint):
                     data = normalize_seu_values_to_kpi(data)
                 elif self._is_metric_resource_endpoint(endpoint):
-                    data = normalize_metric_resource_to_kpi(data)
+                    data = await self._normalize_metric_resource_kpi_with_fallback(
+                        data=data,
+                        endpoint=endpoint,
+                        metric=metric,
+                        asset_id=asset_id,
+                    )
                 else:
                     data = normalize_meter_to_kpi(data, asset_id)
             except KeyError as exc:
@@ -193,6 +201,55 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
                     ),
                 ) from exc
         return parse_kpi_response(data, metric, asset_id, period)
+
+    async def _normalize_metric_resource_kpi_with_fallback(
+        self,
+        *,
+        data: dict | list,
+        endpoint: str,
+        metric: CanonicalMetric,
+        asset_id: str,
+    ) -> dict:
+        """Normalize metric-resource KPI and fallback to latest when range is empty.
+
+        RENERYO metric resource queries include a datetime window. In some
+        deployments the requested window (for example ``today``) may be empty
+        even though historical values exist. For KPI queries we retry once
+        without datetime bounds and use the latest available record.
+        """
+        try:
+            return normalize_metric_resource_to_kpi(data)
+        except KeyError:
+            fallback_params = self._build_query_params(
+                period=TimePeriod.last_month(),
+                is_metric_resource=True,
+            )
+            fallback_data = await self._retry_fetch(endpoint, fallback_params)
+            if not is_native_format(fallback_data):
+                raise AdapterError(
+                    message=(
+                        "Metric resource fallback returned non-native payload "
+                        f"for metric {metric.value}, asset {asset_id}"
+                    ),
+                    code="RENERYO_INVALID_RESPONSE",
+                    platform="reneryo",
+                )
+            try:
+                return normalize_metric_resource_to_kpi(fallback_data)
+            except KeyError as exc:
+                metric_label = metric.value.replace("_", " ")
+                raise AdapterError(
+                    message=(
+                        f"No metric resource records for metric={metric.value} "
+                        f"asset={asset_id}"
+                    ),
+                    code="RENERYO_METRIC_DATA_NOT_FOUND",
+                    platform="reneryo",
+                    user_message=(
+                        f"I couldn't find recent {metric_label} data for {asset_id}. "
+                        "Try another asset name or a different time range."
+                    ),
+                ) from exc
 
     async def compare(
         self,
@@ -630,7 +687,12 @@ class ReneryoAdapter(ReneryoConnectionTestMixin, ReneryoHttpMixin, Manufacturing
             )
             data = await self._retry_fetch(endpoint, params)
             if is_native_format(data):
-                kpi = normalize_metric_resource_to_kpi(data)
+                kpi = await self._normalize_metric_resource_kpi_with_fallback(
+                    data=data,
+                    endpoint=endpoint,
+                    metric=metric,
+                    asset_id=asset_id,
+                )
                 items.append({
                     "asset_id": asset_id,
                     "value": kpi["value"],

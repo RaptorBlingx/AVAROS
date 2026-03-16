@@ -167,7 +167,7 @@ describe("BackendWakeWordService", () => {
     });
 
     it("test_default_sensitivity", () => {
-      expect(service.getSensitivity()).toBe(0.5);
+      expect(service.getSensitivity()).toBe(0.15);
     });
 
     it("test_model_not_loaded_initially", () => {
@@ -176,6 +176,57 @@ describe("BackendWakeWordService", () => {
 
     it("test_not_available_initially", () => {
       expect(service.isAvailable()).toBe(false);
+    });
+  });
+
+  describe("refreshWakeWordLabel()", () => {
+    it("test_skips_cross_origin_health_fetch", async () => {
+      vi.stubGlobal("window", {
+        location: {
+          href: "http://localhost:5173/",
+          origin: "http://localhost:5173",
+        },
+      });
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const localService = new BackendWakeWordService({
+        wsUrl: "ws://localhost:9999/ws/detect",
+      });
+
+      const label = await localService.refreshWakeWordLabel();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(label).toBe("Hey Avaros");
+
+      localService.dispose();
+    });
+
+    it("test_fetches_label_from_same_origin_health_endpoint", async () => {
+      vi.stubGlobal("window", {
+        location: {
+          href: "http://localhost:5173/",
+          origin: "http://localhost:5173",
+        },
+      });
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ models_loaded: ["hey_jarvis"] }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const localService = new BackendWakeWordService({
+        wsUrl: "ws://localhost:5173/wakeword/ws/detect",
+      });
+
+      const label = await localService.refreshWakeWordLabel();
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://localhost:5173/wakeword/health",
+        { method: "GET" },
+      );
+      expect(label).toBe("Hey Jarvis");
+      expect(localService.getWakeWordLabel()).toBe("Hey Jarvis");
+
+      localService.dispose();
     });
   });
 

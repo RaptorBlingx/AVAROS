@@ -9,24 +9,6 @@ type ModeMeta = {
   tooltip: string;
 };
 
-const MODES: ModeMeta[] = [
-  {
-    mode: "wake-word",
-    label: "Wake Word",
-    tooltip: "Hands-free. Say \"Hey Jarvis\" to start.",
-  },
-  {
-    mode: "push-to-talk",
-    label: "PTT",
-    tooltip: "Press mic button when speaking.",
-  },
-  {
-    mode: "text",
-    label: "Text",
-    tooltip: "Keyboard mode. Audio capture is stopped.",
-  },
-];
-
 export default function ModeToggle() {
   const {
     voiceMode,
@@ -35,10 +17,28 @@ export default function ModeToggle() {
     stopSpeaking,
     wakeWordState,
     isModelLoading,
+    wakeWordLabel,
     micPermission,
     requestMicPermission,
   } = useVoice();
-  const selectedMode = MODES.find((item) => item.mode === voiceMode) ?? MODES[0];
+  const modes: ModeMeta[] = [
+    {
+      mode: "wake-word",
+      label: "Wake Word",
+      tooltip: `Hands-free. Say "${wakeWordLabel}" to start.`,
+    },
+    {
+      mode: "push-to-talk",
+      label: "PTT",
+      tooltip: "Press mic button when speaking.",
+    },
+    {
+      mode: "text",
+      label: "Text",
+      tooltip: "Keyboard mode. Audio capture is stopped.",
+    },
+  ];
+  const selectedMode = modes.find((item) => item.mode === voiceMode) ?? modes[0];
   const wakeWordUnsupported = wakeWordState === "unsupported";
   const wakeWordError = wakeWordState === "error";
   const isWakeWordMode = voiceMode === "wake-word";
@@ -94,7 +94,7 @@ export default function ModeToggle() {
   return (
     <div className="voice-chat-toggle-wrap">
       <div className="voice-chat-toggle" role="tablist" aria-label="Voice mode">
-        {MODES.map((item) => (
+        {modes.map((item) => (
           <button
             key={item.mode}
             type="button"

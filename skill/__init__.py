@@ -2,9 +2,16 @@
 from __future__ import annotations
 
 import asyncio
+import sys
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 from collections.abc import Coroutine
 from typing import TYPE_CHECKING, Any, Callable, List
+
+# Allow OVOS SkillManager to import this package from a skill directory where the
+# module name is not literally "skill" (standalone docker-compose mode).
+if __name__ != "skill":
+    sys.modules.setdefault("skill", sys.modules[__name__])
 
 from ovos_workshop.decorators import fallback_handler
 from ovos_workshop.skills import FallbackSkill
@@ -115,6 +122,9 @@ class AVAROSSkill(FallbackSkill):
         self._is_initialized: bool = False
         self._asset_registry_profile: str = ""
         self._asset_registry_cache: list[Any] | None = None
+        self._registered_intent_files: set[str] = set()
+        self._registered_entity_files: set[str] = set()
+        self._bus_event_handlers_registered: bool = False
 
         super().__init__(*args, **kwargs)
 
@@ -163,9 +173,11 @@ class AVAROSSkill(FallbackSkill):
         self._loaded_platform = adapter.platform_name.lower()
         self._register_intent_handlers()
 
-        self.bus.on("avaros.profile.activated", self._handle_profile_switch)
-        self.bus.on("avaros.entities.updated", self._handle_asset_entities_updated)
-        self.bus.on("intent_failure", self._handle_intent_failure)
+        if not self._bus_event_handlers_registered:
+            self.bus.on("avaros.profile.activated", self._handle_profile_switch)
+            self.bus.on("avaros.entities.updated", self._handle_asset_entities_updated)
+            self.bus.on("intent_failure", self._handle_intent_failure)
+            self._bus_event_handlers_registered = True
         self.log.info(
             "AVAROS skill initialized with adapter: %s (profile='%s')",
             type(adapter).__name__,
@@ -173,31 +185,52 @@ class AVAROSSkill(FallbackSkill):
         )
         self._is_initialized = True
 
-    def _register_intent_handlers(self) -> None:
-        """Register intent files at runtime using data-driven mappings."""
+    def _register_intent_handlers(self, *, force: bool = False) -> int:
+        """Register intent files at runtime using data-driven mappings.
+
+        Returns:
+            Number of freshly-registered intent files.
+        """
         intent_service = getattr(self, "intent_service", None)
         if intent_service is not None and getattr(intent_service, "_bus", None) is None:
             bus = getattr(self, "bus", None)
             if bus is not None:
                 intent_service.set_bus(bus)
 
+        if force:
+            self._registered_intent_files.clear()
+
+        registered_count = 0
+
         def _register(intent_file: str, handler) -> None:
+            nonlocal registered_count
+            if not force and intent_file in self._registered_intent_files:
+                return
             try:
                 self.register_intent_file(intent_file, handler)
             except RuntimeError as exc:
                 if "bus not set" not in str(exc):
                     raise
                 self.log.warning("Intent registration skipped without bus: %s", intent_file)
+                return
+            self._registered_intent_files.add(intent_file)
+            registered_count += 1
 
-        self._register_entity_files()
+        self._register_entity_files(force=force)
         for intent_name in INTENT_METRIC_MAP:
             _register(f"{intent_name}.intent", self._handle_generic_kpi)
         for intent_file, handler_name in NON_KPI_INTENT_MAP:
             _register(intent_file, getattr(self, handler_name))
+        return registered_count
 
-    def _register_entity_files(self) -> None:
+    def _register_entity_files(self, *, force: bool = False) -> None:
         """Register dynamic asset entity files used by intent slots."""
+        if force:
+            self._registered_entity_files.clear()
+
         for entity_file in ("asset.entity", "asset_a.entity", "asset_b.entity"):
+            if not force and entity_file in self._registered_entity_files:
+                continue
             try:
                 self.register_entity_file(entity_file)
             except RuntimeError as exc:
@@ -207,6 +240,8 @@ class AVAROSSkill(FallbackSkill):
                     "Entity registration skipped without bus: %s",
                     entity_file,
                 )
+                continue
+            self._registered_entity_files.add(entity_file)
 
     def _handle_generic_kpi(self, message: Message) -> None:
         """Generic KPI handler that maps intent name to canonical metric."""
@@ -253,7 +288,7 @@ class AVAROSSkill(FallbackSkill):
         )
         self._asset_registry_cache = None
         self._asset_registry_profile = ""
-        self._register_entity_files()
+        self._register_entity_files(force=True)
 
     def _reload_adapter(self, profile_name: str) -> None:
         """Reload adapter and rebuild QueryDispatcher for active profile."""
@@ -417,6 +452,13 @@ class AVAROSSkill(FallbackSkill):
             self.log.error("Error in %s: %s", handler_name, exc, exc_info=True)
             self.speak(exc.user_message)
             return None
+        except FutureTimeoutError as exc:
+            self.log.error("Timeout in %s: %s", handler_name, exc, exc_info=True)
+            self.speak(
+                "The data platform did not respond in time. "
+                "Please check the platform connection and try again.",
+            )
+            return None
         except Exception as exc:
             self.log.error("Error in %s: %s", handler_name, exc, exc_info=True)
             self.speak("Sorry, I encountered an error. Please try again.")
@@ -440,6 +482,9 @@ class AVAROSSkill(FallbackSkill):
             self.log.warning("Adapter shutdown during stop() failed: %s", exc)
         finally:
             self._is_initialized = False
+            self._registered_intent_files.clear()
+            self._registered_entity_files.clear()
+            self._bus_event_handlers_registered = False
 
 def create_skill():
     return AVAROSSkill()

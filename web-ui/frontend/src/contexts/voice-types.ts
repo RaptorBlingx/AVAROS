@@ -43,6 +43,7 @@ export interface VoiceContextValue {
   wakeWordSensitivity: number;
   setWakeWordSensitivity: (value: number) => void;
   isModelLoading: boolean;
+  wakeWordLabel: string;
 
   setVoiceMode: (mode: VoiceMode) => Promise<void>;
   setLanguage: (lang: string) => void;

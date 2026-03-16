@@ -12,6 +12,11 @@ from skill._asset_resolution import (
 from skill.domain.models import Asset, CanonicalMetric, TimePeriod
 from skill._intent_resolver import resolve_intent_name as _resolve_intent_name
 from skill._metric_resolver import resolve_metric_from_utterance as _resolve_metric_from_utterance
+from skill._slot_resolution import (  # noqa: F401 — re-exported for __init__.py
+    extract_line_assets_from_text,
+    resolve_asset_id,
+    resolve_compare_assets,
+)
 
 if TYPE_CHECKING:
     from ovos_bus_client.message import Message
@@ -198,61 +203,6 @@ def canonicalize_asset_id(
         raw_asset,
         raise_on_unknown=raise_on_unknown,
     )
-
-
-def extract_line_assets_from_text(self, text: str) -> list[str]:
-    """Extract spoken line assets from utterance text (e.g., line two)."""
-    if not text:
-        return []
-
-    matches = re.findall(
-        r"\bline\s+(1|2|3|4|5|one|two|three|four|five|to|too)\b",
-        text.lower(),
-    )
-    return [self._canonicalize_asset_id(f"line {value}") for value in matches]
-
-
-_NOISE_WORDS = frozenset({"to", "too", "for", "on", "line"})
-
-
-def resolve_asset_id(self, message: Message, default: str = "default") -> str:
-    """Resolve asset_id using slot first, then utterance fallback parsing."""
-    data = getattr(message, "data", {}) or {}
-    slot_value = str(data.get("asset", "")).strip()
-    if slot_value and slot_value.lower() not in _NOISE_WORDS:
-        slot_asset = self._canonicalize_asset_id(
-            slot_value,
-            raise_on_unknown=True,
-        )
-        return slot_asset
-
-    utterance_text = self._extract_utterance_text(message)
-    utterance_assets = self._extract_line_assets_from_text(utterance_text)
-    if utterance_assets:
-        return utterance_assets[0]
-
-    alias_match = self._canonicalize_asset_id(utterance_text)
-    if alias_match and alias_match != utterance_text:
-        return alias_match
-
-    return default
-
-
-def resolve_compare_assets(self, message: Message) -> tuple[str, str]:
-    """Resolve comparison assets with utterance fallback for line references."""
-    data = getattr(message, "data", {}) or {}
-    asset_a = self._canonicalize_asset_id(str(data.get("asset_a", "")))
-    asset_b = self._canonicalize_asset_id(str(data.get("asset_b", "")))
-    if asset_a and asset_b:
-        return asset_a, asset_b
-
-    utterance_assets = self._extract_line_assets_from_text(
-        self._extract_utterance_text(message)
-    )
-    if len(utterance_assets) >= 2:
-        return utterance_assets[0], utterance_assets[1]
-
-    return asset_a or "Asset-1", asset_b or "Asset-2"
 
 
 def is_anomaly_query(self, utterance: str) -> bool:

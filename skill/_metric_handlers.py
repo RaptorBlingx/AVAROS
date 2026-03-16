@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from skill.domain.exceptions import AdapterError
 from skill.domain.models import CanonicalMetric
 from skill.domain.results import AnomalyResult, ComparisonResult, KPIResult, TrendResult, WhatIfResult
 
@@ -68,6 +69,45 @@ def _resolve_and_validate_metric(skill: "AVAROSSkill", message) -> CanonicalMetr
         return None
 
     return metric
+
+
+def _query_trend_with_period_fallback(
+    skill: "AVAROSSkill",
+    *,
+    metric: CanonicalMetric,
+    asset_id: str,
+    period,
+    granularity: str,
+):
+    """Query trend and widen period once when narrow-range response is empty."""
+    try:
+        return skill.dispatcher.get_trend(
+            metric=metric,
+            asset_id=asset_id,
+            period=period,
+            granularity=granularity,
+        )
+    except AdapterError as exc:
+        if exc.code != "EMPTY_RESPONSE":
+            raise
+        if period.duration_days >= 2:
+            raise
+
+        fallback_period = skill._parse_period("last week")
+        fallback_granularity = "daily" if granularity == "hourly" else granularity
+        logger.info(
+            "Trend fallback: metric=%s asset=%s period=%s -> %s",
+            metric.value,
+            asset_id,
+            period.display_name,
+            fallback_period.display_name,
+        )
+        return skill.dispatcher.get_trend(
+            metric=metric,
+            asset_id=asset_id,
+            period=fallback_period,
+            granularity=fallback_granularity,
+        )
 
 
 def dispatch_kpi_for_metric(
@@ -143,7 +183,8 @@ def handle_trend_scrap(skill: "AVAROSSkill", message) -> None:
         period = skill._parse_period(message.data.get("period", "last week"))
         granularity = message.data.get("granularity", "daily")
 
-        result: TrendResult = skill.dispatcher.get_trend(
+        result: TrendResult = _query_trend_with_period_fallback(
+            skill,
             metric=CanonicalMetric.SCRAP_RATE,
             asset_id=asset_id,
             period=period,
@@ -168,7 +209,8 @@ def handle_trend_metric(skill: "AVAROSSkill", message) -> None:
         period = skill._parse_period(data.get("period", "last week"))
         granularity = data.get("granularity", "daily")
 
-        result: TrendResult = skill.dispatcher.get_trend(
+        result: TrendResult = _query_trend_with_period_fallback(
+            skill,
             metric=metric,
             asset_id=asset_id,
             period=period,
@@ -190,16 +232,32 @@ def handle_trend_energy(skill: "AVAROSSkill", message) -> None:
         granularity = message.data.get("granularity", "daily")
         if period.duration_days < 2 and granularity == "daily":
             granularity = "hourly"
+        try:
+            result: TrendResult = _query_trend_with_period_fallback(
+                skill,
+                metric=CanonicalMetric.ENERGY_PER_UNIT,
+                asset_id=asset_id,
+                period=period,
+                granularity=granularity,
+            )
+            response = skill.response_builder.format_trend_result(result)
+            skill.speak(response)
+            return
+        except AdapterError as exc:
+            if exc.code != "EMPTY_RESPONSE":
+                raise
 
-        result: TrendResult = skill.dispatcher.get_trend(
+        # Last-resort UX fallback: if trend points are unavailable, still return
+        # the current energy KPI so the command stays useful.
+        kpi_result: KPIResult = skill.dispatcher.get_kpi(
             metric=CanonicalMetric.ENERGY_PER_UNIT,
             asset_id=asset_id,
-            period=period,
-            granularity=granularity,
+            period=skill._parse_period("today"),
         )
-
-        response = skill.response_builder.format_trend_result(result)
-        skill.speak(response)
+        kpi_response = skill.response_builder.format_kpi_result(kpi_result)
+        skill.speak(
+            f"I couldn't find enough trend points for {period.display_name}. {kpi_response}",
+        )
 
     skill._safe_dispatch("handle_trend_energy", _execute)
 

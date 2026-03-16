@@ -151,10 +151,19 @@ def _persist_asset_mappings(
     payload: AssetMappingsRequest,
     settings_service: SettingsService,
 ) -> AssetMappingsResponse:
-    """Save mappings via SettingsService (which handles bus notification)."""
+    """Save mappings via SettingsService (which handles bus notification).
+
+    Preserve previously imported ``metric_resources`` when UI payloads
+    update only registration/linking fields (for example ``seu_id``).
+    """
     try:
         _validate_asset_mappings(payload.asset_mappings)
-        settings_service.set_asset_mappings(payload.asset_mappings)
+        existing = settings_service.get_asset_mappings()
+        merged = _merge_with_existing_metric_resources(
+            incoming=payload.asset_mappings,
+            existing=existing,
+        )
+        settings_service.set_asset_mappings(merged)
     except ValidationError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -173,6 +182,30 @@ def _validate_asset_mappings(mappings: dict[str, Any]) -> None:
                 f"Asset '{asset_id}' has an empty mapping. "
                 "At minimum, provide a display_name.",
             )
+
+
+def _merge_with_existing_metric_resources(
+    *,
+    incoming: dict[str, dict[str, Any]],
+    existing: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Merge incoming mappings while preserving existing metric resources.
+
+    Frontend asset editors may submit asset rows without ``metric_resources``.
+    Without this merge, imported generator mappings are unintentionally lost.
+    """
+    merged: dict[str, dict[str, Any]] = {}
+    for asset_id, incoming_mapping in incoming.items():
+        current = existing.get(asset_id, {})
+        next_mapping = dict(incoming_mapping)
+
+        if "metric_resources" not in next_mapping:
+            existing_resources = current.get("metric_resources")
+            if isinstance(existing_resources, dict) and existing_resources:
+                next_mapping["metric_resources"] = dict(existing_resources)
+
+        merged[asset_id] = next_mapping
+    return merged
 
 
 @router.get("/assets/mappings", response_model=AssetMappingsResponse)

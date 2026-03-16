@@ -13,13 +13,12 @@ import type {
   PlatformType,
   SystemStatusResponse,
 } from "../api/types";
-import AssetMappingStep from "../components/wizard/AssetMappingStep";
-import ConnectionSetupStep from "../components/wizard/ConnectionSetupStep";
+import AssetRegistrationStep from "../components/wizard/AssetRegistrationStep";
+import AssetResourceLinkingStep from "../components/wizard/AssetResourceLinkingStep";
 import IntentActivationStep from "../components/wizard/IntentActivationStep";
 import MetricMappingStep from "../components/wizard/MetricMappingStep";
-import PlatformSelectStep from "../components/wizard/PlatformSelectStep";
+import PlatformSetupStep from "../components/wizard/PlatformSetupStep";
 import SuccessScreen from "../components/wizard/SuccessScreen";
-import WelcomeStep from "../components/wizard/WelcomeStep";
 import OnboardingOverlay from "../components/common/OnboardingOverlay";
 import Tooltip from "../components/common/Tooltip";
 import {
@@ -28,22 +27,25 @@ import {
   type OnboardingRerunDetail,
 } from "../components/common/onboarding";
 
-type StepNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+type StepNumber = 1 | 2 | 3 | 4 | 5 | 6;
 
 type WizardState = {
   currentStep: StepNumber;
-  platformType: PlatformType | null;
+  platformType: PlatformType;
   authType: "api_key" | "cookie" | "none";
   apiUrl: string;
   apiKey: string;
 };
 
 function buildPayload(state: WizardState): PlatformConfigRequest {
-  const platformType = state.platformType ?? "mock";
+  const platformType = state.platformType;
   return {
     platform_type: platformType,
     api_url: platformType === "mock" ? "" : state.apiUrl.trim(),
-    api_key: platformType === "mock" ? "" : state.apiKey.trim(),
+    api_key:
+      platformType === "mock" || state.authType === "none"
+        ? ""
+        : state.apiKey.trim(),
     extra_settings: {
       auth_type:
         state.authType === "cookie"
@@ -63,9 +65,6 @@ function enableDashboardBypass(): void {
 }
 
 function validateConnection(state: WizardState): string {
-  if (!state.platformType) {
-    return "Please select a platform first.";
-  }
   if (state.platformType === "mock") {
     return "";
   }
@@ -92,7 +91,7 @@ export default function Wizard() {
 
   const [state, setState] = useState<WizardState>({
     currentStep: 1,
-    platformType: null,
+    platformType: "custom_rest",
     authType: "api_key",
     apiUrl: "",
     apiKey: "",
@@ -184,21 +183,19 @@ export default function Wizard() {
   }, []);
 
   const stepLabel = useMemo(() => {
-    if (state.currentStep === 1) return "Setup";
-    if (state.currentStep === 2) return "Platform Selection";
-    if (state.currentStep === 3) return "Connection Setup";
-    if (state.currentStep === 4) return "Asset Mapping";
-    if (state.currentStep === 5) return "Metric Mapping";
-    if (state.currentStep === 6) return "Intent Activation";
+    if (state.currentStep === 1) return "Platform Setup";
+    if (state.currentStep === 2) return "Asset Registration";
+    if (state.currentStep === 3) return "Resource Linking";
+    if (state.currentStep === 4) return "Metric Mapping";
+    if (state.currentStep === 5) return "Intent Activation";
     return "Complete";
   }, [state.currentStep]);
 
   const stepItems = useMemo(
     () => [
-      "Get Started",
-      "Platform",
-      "Connection",
-      "Asset Mapping",
+      "Platform Setup",
+      "Asset Registration",
+      "Resource Linking",
       "Metric Mapping",
       "Intent Activation",
       "Success",
@@ -217,50 +214,36 @@ export default function Wizard() {
   const goForwardStep = useCallback(() => {
     setHeaderError("");
 
-    if (state.currentStep === 7) {
+    if (state.currentStep === 6) {
       return;
     }
 
     if (state.currentStep === 1) {
-      markStepComplete(1);
-      goToStep(2);
+      triggerBlockedNext("Complete platform setup in this step to continue.");
       return;
     }
 
     if (state.currentStep === 2) {
-      if (!state.platformType) {
-        triggerBlockedNext("Select a platform to continue.");
-        return;
-      }
-      markStepComplete(2);
-      goToStep(3);
+      triggerBlockedNext("Complete or skip asset registration to continue.");
       return;
     }
 
     if (state.currentStep === 3) {
-      triggerBlockedNext("Complete connection setup in this step to continue.");
+      triggerBlockedNext("Complete or skip resource linking to continue.");
       return;
     }
 
     if (state.currentStep === 4) {
-      triggerBlockedNext("Complete or skip asset mapping to continue.");
-      return;
-    }
-
-    if (state.currentStep === 5) {
       triggerBlockedNext("Complete or skip metric mapping to continue.");
       return;
     }
 
-    if (state.currentStep === 6) {
+    if (state.currentStep === 5) {
       triggerBlockedNext("Complete or skip intent activation to continue.");
       return;
     }
   }, [
-    goToStep,
-    markStepComplete,
     state.currentStep,
-    state.platformType,
     triggerBlockedNext,
   ]);
 
@@ -271,16 +254,6 @@ export default function Wizard() {
     setTestError("");
     setTestResult(null);
   }, []);
-
-  const handlePlatformConfirm = useCallback(() => {
-    setHeaderError("");
-    if (!state.platformType) {
-      triggerBlockedNext("Select a platform to continue.");
-      return;
-    }
-    markStepComplete(2);
-    goToStep(3);
-  }, [goToStep, markStepComplete, state.platformType, triggerBlockedNext]);
 
   const handleTestConnection = useCallback(async () => {
     const validationError = validateConnection(state);
@@ -312,8 +285,8 @@ export default function Wizard() {
     setIsSaving(true);
     try {
       await createPlatformConfig(buildPayload(state));
-      markStepComplete(3);
-      goToStep(4);
+      markStepComplete(1);
+      goToStep(2);
     } catch (error: unknown) {
       setFormError(toFriendlyErrorMessage(error));
     } finally {
@@ -321,14 +294,19 @@ export default function Wizard() {
     }
   }, [goToStep, markStepComplete, state]);
 
-  const handleAssetStepComplete = useCallback(() => {
-    markStepComplete(4);
-    goToStep(5);
+  const handleAssetRegistrationStepComplete = useCallback(() => {
+    markStepComplete(2);
+    goToStep(3);
+  }, [goToStep, markStepComplete]);
+
+  const handleResourceLinkingStepComplete = useCallback(() => {
+    markStepComplete(3);
+    goToStep(4);
   }, [goToStep, markStepComplete]);
 
   const handleMetricStepComplete = useCallback(() => {
-    markStepComplete(5);
-    goToStep(6);
+    markStepComplete(4);
+    goToStep(5);
   }, [goToStep, markStepComplete]);
 
   const finalizeWizard = useCallback(async () => {
@@ -339,8 +317,8 @@ export default function Wizard() {
         enableDashboardBypass();
       }
       setSuccessStatus(latestStatus);
-      markStepComplete(6);
-      goToStep(7);
+      markStepComplete(5);
+      goToStep(6);
     } catch (error: unknown) {
       setFormError(toFriendlyErrorMessage(error));
     }
@@ -349,29 +327,11 @@ export default function Wizard() {
   const content = useMemo(() => {
     if (state.currentStep === 1) {
       return (
-        <WelcomeStep
+        <PlatformSetupStep
           status={status}
-          loading={loadingStatus}
-          error={statusError}
-          onNext={goForwardStep}
-        />
-      );
-    }
-
-    if (state.currentStep === 2) {
-      return (
-        <PlatformSelectStep
-          value={state.platformType}
-          onChange={handlePlatformChange}
-          onConfirm={handlePlatformConfirm}
-        />
-      );
-    }
-
-    if (state.currentStep === 3) {
-      return (
-        <ConnectionSetupStep
-          platformType={state.platformType ?? "mock"}
+          statusLoading={loadingStatus}
+          statusError={statusError}
+          platformType={state.platformType}
           authType={state.authType}
           apiUrl={state.apiUrl}
           apiKey={state.apiKey}
@@ -380,6 +340,9 @@ export default function Wizard() {
           testError={testError}
           isTesting={isTesting}
           isSaving={isSaving}
+          onChooseExternalApi={() => handlePlatformChange("custom_rest")}
+          onUseMockQuickAction={() => handlePlatformChange("mock")}
+          onUseReneryoQuickAction={() => handlePlatformChange("reneryo")}
           onAuthTypeChange={(value) =>
             setState((prev) => ({ ...prev, authType: value }))
           }
@@ -390,22 +353,32 @@ export default function Wizard() {
             setState((prev) => ({ ...prev, apiKey: value }))
           }
           onTestConnection={handleTestConnection}
-          onSave={handleSaveConnection}
+          onSaveAndContinue={handleSaveConnection}
+        />
+      );
+    }
+
+    if (state.currentStep === 2) {
+      return (
+        <AssetRegistrationStep
+          platformType={state.platformType}
+          onComplete={handleAssetRegistrationStepComplete}
+          onSkip={handleAssetRegistrationStepComplete}
+        />
+      );
+    }
+
+    if (state.currentStep === 3) {
+      return (
+        <AssetResourceLinkingStep
+          platformType={state.platformType}
+          onComplete={handleResourceLinkingStepComplete}
+          onSkip={handleResourceLinkingStepComplete}
         />
       );
     }
 
     if (state.currentStep === 4) {
-      return (
-        <AssetMappingStep
-          platformType={state.platformType}
-          onComplete={handleAssetStepComplete}
-          onSkip={handleAssetStepComplete}
-        />
-      );
-    }
-
-    if (state.currentStep === 5) {
       return (
         <MetricMappingStep
           onComplete={handleMetricStepComplete}
@@ -414,7 +387,7 @@ export default function Wizard() {
       );
     }
 
-    if (state.currentStep === 6) {
+    if (state.currentStep === 5) {
       return (
         <IntentActivationStep
           onComplete={() => void finalizeWizard()}
@@ -440,11 +413,10 @@ export default function Wizard() {
   }, [
     finalizeWizard,
     formError,
-    goForwardStep,
-    handleAssetStepComplete,
+    handleAssetRegistrationStepComplete,
     handleMetricStepComplete,
     handlePlatformChange,
-    handlePlatformConfirm,
+    handleResourceLinkingStepComplete,
     handleSaveConnection,
     handleTestConnection,
     isSaving,
@@ -482,7 +454,7 @@ export default function Wizard() {
           </p>
           <div className="flex items-center gap-2">
             <p className="m-0 text-xs font-medium text-slate-500 dark:text-slate-400">
-              {state.currentStep} / 7
+              {state.currentStep} / 6
             </p>
             <button
               type="button"
@@ -496,7 +468,7 @@ export default function Wizard() {
               ref={nextButtonRef}
               type="button"
               onClick={goForwardStep}
-              disabled={state.currentStep === 7}
+              disabled={state.currentStep === 6}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
                 nextBlocked
                   ? "border border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-500 dark:bg-rose-900/40 dark:text-rose-200"

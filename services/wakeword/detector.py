@@ -161,6 +161,16 @@ def _ensure_openwakeword_assets(model_name: str) -> str:
     _ensure_preprocessing_assets()
 
     if not os.path.exists(model_path):
+        try:
+            from openwakeword.utils import download_models
+
+            download_models(target_directory=os.path.dirname(model_path))
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(
+                f"Failed to download wakeword model '{model_name}': {exc}"
+            ) from exc
+
+    if not os.path.exists(model_path):
         raise ValueError(f"Model file missing after download: {model_path}")
 
     return model_path

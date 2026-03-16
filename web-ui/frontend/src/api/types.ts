@@ -336,6 +336,12 @@ export type AssetMappingsResponse = {
   asset_mappings: Record<string, AssetMappingItem>;
 };
 
+export type GeneratorMappingResponse = {
+  imported_metrics: number;
+  imported_resources: number;
+  asset_mappings: Record<string, AssetMappingItem>;
+};
+
 export type AssetRecord = {
   asset_id: string;
   display_name: string;

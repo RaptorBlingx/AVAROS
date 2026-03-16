@@ -9,6 +9,7 @@ const mockVoice = vi.hoisted(() => ({
   voiceMode: "push-to-talk" as string,
   setVoiceMode: vi.fn().mockResolvedValue(undefined),
   wakeWordState: "idle" as string,
+  wakeWordLabel: "Hey Avaros",
   setWakeWordSensitivity: vi.fn(),
   isModelLoading: false,
   setLanguage: vi.fn(),

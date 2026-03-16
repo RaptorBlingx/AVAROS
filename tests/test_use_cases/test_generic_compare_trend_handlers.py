@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import Mock
 
 from skill import AVAROSSkill
+from skill.domain.exceptions import AdapterError
 from skill.domain.models import CanonicalMetric, TimePeriod
 
 
@@ -180,6 +181,58 @@ def test_old_trend_energy_intent_still_works():
 
     called_metric = skill.dispatcher.get_trend.call_args.kwargs["metric"]
     assert called_metric is CanonicalMetric.ENERGY_PER_UNIT
+
+
+def test_trend_energy_falls_back_to_last_week_when_today_is_empty():
+    """Empty today trend should retry automatically with last-week period."""
+    skill = _make_skill()
+    skill._parse_period = Mock(side_effect=lambda value: TimePeriod.from_natural_language(str(value)))
+    skill.dispatcher.get_trend.side_effect = [
+        AdapterError(
+            message="Empty trend response for energy_per_unit",
+            code="EMPTY_RESPONSE",
+            platform="reneryo",
+        ),
+        Mock(),
+    ]
+    skill.response_builder.format_trend_result.return_value = "ok"
+
+    skill.handle_trend_energy(_message(period="today"))
+
+    assert skill.dispatcher.get_trend.call_count == 2
+    first_period = skill.dispatcher.get_trend.call_args_list[0].kwargs["period"]
+    second_period = skill.dispatcher.get_trend.call_args_list[1].kwargs["period"]
+    assert first_period.display_name == "today"
+    assert second_period.display_name == "last week"
+
+
+def test_trend_energy_falls_back_to_kpi_when_trend_unavailable():
+    """When trend remains empty, handler should return current KPI instead of generic error."""
+    skill = _make_skill()
+    skill._parse_period = Mock(side_effect=lambda value: TimePeriod.from_natural_language(str(value)))
+    skill.dispatcher.get_trend.side_effect = [
+        AdapterError(
+            message="Empty trend response for energy_per_unit",
+            code="EMPTY_RESPONSE",
+            platform="reneryo",
+        ),
+        AdapterError(
+            message="Empty trend response for energy_per_unit",
+            code="EMPTY_RESPONSE",
+            platform="reneryo",
+        ),
+    ]
+    kpi_result = Mock()
+    skill.dispatcher.get_kpi.return_value = kpi_result
+    skill.response_builder.format_kpi_result.return_value = "Energy per unit for Line-1 is 2.35 kWh/unit today."
+
+    skill.handle_trend_energy(_message(period="today"))
+
+    skill.dispatcher.get_kpi.assert_called_once()
+    skill.response_builder.format_kpi_result.assert_called_once_with(kpi_result)
+    spoken = skill.speak.call_args.args[0]
+    assert "couldn't find enough trend points" in spoken
+    assert "Energy per unit for Line-1 is 2.35 kWh/unit today." in spoken
 
 
 def test_old_trend_scrap_intent_still_works():

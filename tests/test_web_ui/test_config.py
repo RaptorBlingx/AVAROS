@@ -153,6 +153,24 @@ class TestCreatePlatformConfig:
         assert response.status_code == 200
         assert response.json()["api_url"] == "https://api.reneryo-v2.example.com"
 
+    def test_create_config_triggers_adapter_reload(
+        self,
+        client: TestClient,
+        valid_reneryo_payload: dict[str, Any],
+    ) -> None:
+        """Saving platform config should hot-reload the active adapter."""
+        with patch(
+            "routers.config.AdapterFactory.reload",
+            new_callable=AsyncMock,
+        ) as mock_reload:
+            response = client.post(
+                "/api/v1/config/platform",
+                json=valid_reneryo_payload,
+            )
+
+        assert response.status_code == 200
+        mock_reload.assert_awaited_once()
+
 
 # ══════════════════════════════════════════════════════════
 # POST validation errors
@@ -797,7 +815,7 @@ class TestAdapterFactoryAuthType:
 
         kwargs = mock_adapter_class.call_args.kwargs
         assert kwargs["auth_type"] == "bearer"
-        assert kwargs["timeout"] == 30
+        assert kwargs["timeout"] == 10
 
     def test_create_adapter_with_none_auth_passes_none_to_custom_rest_adapter(
         self,

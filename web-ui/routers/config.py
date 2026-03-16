@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends
 
-from dependencies import get_settings_service
+from dependencies import get_adapter_factory, get_settings_service
 from schemas.config import (
     ConnectionTestResponse,
     PlatformConfigRequest,
@@ -13,10 +15,12 @@ from schemas.config import (
     sanitize_extra_settings,
 )
 from skill.adapters.base import ManufacturingAdapter
+from skill.adapters.factory import AdapterFactory
 from skill.services.settings import PlatformConfig, SettingsService
 
 
 router = APIRouter(prefix="/api/v1/config", tags=["config"])
+logger = logging.getLogger(__name__)
 
 
 def _mask_api_key(api_key: str) -> str:
@@ -37,11 +41,12 @@ def _to_response(config: PlatformConfig) -> PlatformConfigResponse:
 
 
 @router.post("/platform", response_model=PlatformConfigResponse)
-def upsert_platform_config(
+async def upsert_platform_config(
     payload: PlatformConfigRequest,
     settings_service: SettingsService = Depends(get_settings_service),
+    adapter_factory: AdapterFactory = Depends(get_adapter_factory),
 ) -> PlatformConfigResponse:
-    """Create or update platform configuration."""
+    """Create or update platform configuration and hot-reload adapter."""
     config = PlatformConfig(
         platform_type=payload.platform_type,
         api_url=payload.api_url,
@@ -49,6 +54,16 @@ def upsert_platform_config(
         extra_settings=sanitize_extra_settings(payload.extra_settings),
     )
     settings_service.update_platform_config(config)
+
+    # Keep voice runtime in sync with freshly saved platform settings.
+    try:
+        await adapter_factory.reload()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Platform config saved but adapter reload failed: %s",
+            exc,
+        )
+
     return _to_response(settings_service.get_platform_config())
 
 
@@ -145,7 +160,7 @@ def _create_adapter_from_config(
         return GenericRestAdapter(
             api_url=payload.api_url,
             api_key=payload.api_key,
-            timeout=payload.extra_settings.get("timeout", 30),
+            timeout=payload.extra_settings.get("timeout", 10),
             auth_type=payload.extra_settings.get("auth_type", "bearer"),
             extra_settings=sanitize_extra_settings(payload.extra_settings),
         )

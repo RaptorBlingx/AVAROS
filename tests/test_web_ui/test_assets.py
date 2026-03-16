@@ -292,3 +292,42 @@ def test_import_generator_mapping_rejects_unknown_metric_names(
     assert "Unknown metric names: fake_metric" in detail
     assert "Valid metrics:" in detail
     assert settings_service.get_asset_mappings() == {"line-1": {"display_name": "Line 1"}}
+
+
+def test_config_assets_preserves_existing_metric_resources_when_missing_in_payload(
+    client: TestClient,
+    settings_service: SettingsService,
+    reneryo_profile: None,
+) -> None:
+    """Saving UI rows without metric_resources must not wipe imported mappings."""
+    settings_service.set_asset_mappings({
+        "Line-1": {
+            "display_name": "Line-1",
+            "asset_type": "seu",
+            "aliases": [],
+            "seu_id": "old-seu",
+            "metric_resources": {
+                "oee": "uuid-oee-1",
+                "energy_total": "uuid-energy-1",
+            },
+        },
+    })
+
+    response = client.post(
+        "/api/v1/config/assets",
+        json={
+            "asset_mappings": {
+                "Line-1": {
+                    "display_name": "Line-1",
+                    "asset_type": "seu",
+                    "aliases": [],
+                    "seu_id": "new-seu",
+                },
+            },
+        },
+    )
+    assert response.status_code == 200
+    line1 = response.json()["asset_mappings"]["Line-1"]
+    assert line1["seu_id"] == "new-seu"
+    assert line1["metric_resources"]["oee"] == "uuid-oee-1"
+    assert line1["metric_resources"]["energy_total"] == "uuid-energy-1"

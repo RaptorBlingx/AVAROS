@@ -82,6 +82,17 @@ def test_resolve_asset_id_raises_when_slot_present_but_unknown() -> None:
         skill._resolve_asset_id(_message(asset="Unknown line", utterance="energy for unknown line"))
 
 
+def test_resolve_asset_id_ignores_noisy_slot_and_uses_utterance() -> None:
+    """Noisy parser slot should not block utterance-based line extraction."""
+    skill = _build_skill()
+
+    resolved = skill._resolve_asset_id(
+        _message(asset="what is the", utterance="what is oee for line one"),
+    )
+
+    assert resolved == "Line-1"
+
+
 def test_list_assets_handler_speaks_formatted_asset_list() -> None:
     """List-assets handler should format and speak discovered assets."""
     skill = _build_skill()

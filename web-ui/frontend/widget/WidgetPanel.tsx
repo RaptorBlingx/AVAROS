@@ -64,7 +64,7 @@ function buildStateLabel(
 }
 
 function buildModeHint(mode: WidgetMode): string {
-  if (mode === "wake-word") return "Say 'Hey Jarvis' to activate.";
+  if (mode === "wake-word") return "Say 'Hey Avaros' to activate.";
   if (mode === "push-to-talk") return "Press the mic button when speaking.";
   return "Keyboard mode. Audio capture is stopped.";
 }
@@ -378,7 +378,7 @@ export function WidgetPanel({
                 >
                   💬
                 </p>
-                <p>Say &quot;Hey Jarvis&quot; or type a question below.</p>
+                <p>Say &quot;Hey Avaros&quot; or type a question below.</p>
               </div>
             ) : (
               messages.map((message) => (

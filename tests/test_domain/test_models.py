@@ -39,6 +39,7 @@ class TestCanonicalMetric:
         for metric in CanonicalMetric:
             assert metric.default_unit is not None
             assert isinstance(metric.default_unit, str)
+            assert metric.default_unit.strip() != ""
     
     def test_all_metrics_have_display_name(self):
         """Every metric should have a human-readable display name."""
@@ -106,6 +107,8 @@ class TestCanonicalMetric:
         assert CanonicalMetric.THROUGHPUT.default_unit == "units/hr"
         assert CanonicalMetric.CYCLE_TIME.default_unit == "sec"
         assert CanonicalMetric.CO2_TOTAL.default_unit == "kg CO₂-eq"
+        assert CanonicalMetric.PEAK_TARIFF_EXPOSURE.default_unit == "%"
+        assert CanonicalMetric.SUPPLIER_CO2_PER_KG.default_unit == "kg CO₂/kg"
 
 
 class TestAsset:

@@ -29,7 +29,8 @@ type VoiceWidgetProps = {
   position?: WidgetPosition;
 };
 
-const RESPONSE_FALLBACK_TIMEOUT_MS = 12000;
+const RESPONSE_FALLBACK_TIMEOUT_MS = 50000;
+const RESPONSE_PROCESSING_TIMEOUT_MS = 70000;
 const VOICE_MODE_STORAGE_KEY = "avaros-voice-mode";
 
 export default function VoiceWidget({
@@ -43,6 +44,7 @@ export default function VoiceWidget({
     wakeWordDetectedAt,
     wakeWordState,
     isModelLoading,
+    wakeWordLabel,
     micPermission,
     startListening,
     stopListening,
@@ -227,6 +229,10 @@ export default function VoiceWidget({
       return;
     }
 
+    const timeoutMs = isProcessing
+      ? RESPONSE_PROCESSING_TIMEOUT_MS
+      : RESPONSE_FALLBACK_TIMEOUT_MS;
+
     const timer = window.setTimeout(() => {
       // Guard against stale timeout callback when response already arrived.
       if (!awaitingResponseRef.current || lastResponseRef.current) {
@@ -243,11 +249,12 @@ export default function VoiceWidget({
       setLocalError("");
       addAvarosResponse(fallbackText);
       speakAssistantFallback(fallbackText);
-    }, RESPONSE_FALLBACK_TIMEOUT_MS);
+    }, timeoutMs);
 
     return () => window.clearTimeout(timer);
   }, [
     awaitingResponse,
+    isProcessing,
     addAvarosResponse,
     cancelCurrentQuery,
     speakAssistantFallback,
@@ -659,6 +666,7 @@ export default function VoiceWidget({
             isProcessing={isConversationProcessing}
             isConnected={isConnected && voiceEnabled}
             canReplay={ttsSupported}
+            wakeWordLabel={wakeWordLabel}
             onSendText={handleSendText}
             onReplayResponse={handleReplayMessage}
             onClearConversation={clearConversation}

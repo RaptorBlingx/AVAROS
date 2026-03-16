@@ -16,6 +16,7 @@ Test scenarios:
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
@@ -214,6 +215,37 @@ class TestBusListenerRegistration:
             skill._handle_intent_failure,
         )
 
+    def test_register_intent_handlers_is_idempotent_without_force(self):
+        """Repeated registration calls should not duplicate intent files."""
+        skill = _initialized_skill()
+        register_intent_file = Mock()
+        skill.register_entity_file = Mock()
+        skill.register_intent_file = register_intent_file
+        skill._registered_intent_files.clear()
+        skill._registered_entity_files.clear()
+
+        first_count = skill._register_intent_handlers()
+        second_count = skill._register_intent_handlers()
+
+        assert first_count > 0
+        assert second_count == 0
+        assert register_intent_file.call_count == first_count
+
+    def test_register_intent_handlers_force_replays_registration(self):
+        """Force mode should intentionally replay all intent registrations."""
+        skill = _initialized_skill()
+        register_intent_file = Mock()
+        skill.register_entity_file = Mock()
+        skill.register_intent_file = register_intent_file
+        skill._registered_intent_files.clear()
+        skill._registered_entity_files.clear()
+
+        first_count = skill._register_intent_handlers()
+        second_count = skill._register_intent_handlers(force=True)
+
+        assert first_count > 0
+        assert second_count == first_count
+        assert register_intent_file.call_count == first_count + second_count
 
 # ══════════════════════════════════════════════════════════
 # Force Mock Fallback
@@ -267,6 +299,22 @@ class TestSafeDispatchProfileCheck:
         assert result is None
         skill.speak.assert_called_once_with(
             "AVAROS is still initializing. Please try again.",
+        )
+
+    def test_safe_dispatch_timeout_speaks_platform_timeout_message(self):
+        """Future timeout should produce a clear user-facing timeout hint."""
+        skill = _initialized_skill()
+        skill.speak = Mock()
+
+        result = skill._safe_dispatch(
+            "test_timeout",
+            lambda: (_ for _ in ()).throw(FutureTimeoutError()),
+        )
+
+        assert result is None
+        skill.speak.assert_called_once_with(
+            "The data platform did not respond in time. "
+            "Please check the platform connection and try again.",
         )
 
     def test_safe_dispatch_recovers_dispatcher_when_missing(self):
@@ -443,6 +491,57 @@ class TestAssetResolutionFromUtterance:
 
         assert skill._resolve_compare_assets(msg) == ("Line-1", "Line-2")
 
+    def test_resolve_compare_assets_defaults_to_configured_assets(self):
+        """Uses configured asset mappings when compare slots are missing."""
+        skill = _make_skill()
+        skill.settings_service = Mock()
+        skill.settings_service.get_asset_mappings.return_value = {
+            "Line-2": {},
+            "Line-1": {},
+            "Line-3": {},
+        }
+        msg = Mock()
+        msg.data = {
+            "utterance": "compare energy",
+            "asset_a": "",
+            "asset_b": "",
+        }
+
+        assert skill._resolve_compare_assets(msg) == ("Line-1", "Line-2")
+
+    def test_resolve_compare_assets_ignores_noisy_slots(self):
+        """Noisy compare slots should not override configured defaults."""
+        skill = _make_skill()
+        skill.settings_service = Mock()
+        skill._get_asset_registry = Mock(return_value=[])
+        skill.settings_service.get_asset_mappings.return_value = {
+            "Line-1": {},
+            "Line-2": {},
+        }
+        msg = Mock()
+        msg.data = {
+            "utterance": "compare energy",
+            "asset_a": "compare energy",
+            "asset_b": "trend",
+        }
+
+        assert skill._resolve_compare_assets(msg) == ("Line-1", "Line-2")
+
+    def test_resolve_asset_id_defaults_to_first_configured_asset(self):
+        """No asset mention should default to first configured asset id."""
+        skill = _make_skill()
+        skill.settings_service = Mock()
+        skill._get_asset_registry = Mock(return_value=[])
+        skill.settings_service.get_asset_mappings.return_value = {
+            "Line-3": {},
+            "Line-1": {},
+            "Line-2": {},
+        }
+        msg = Mock()
+        msg.data = {"utterance": "show energy trend today", "asset": ""}
+
+        assert skill._resolve_asset_id(msg) == "Line-1"
+
 
 class TestWhatIfAmountParsing:
     """Tests for robust amount parsing in what-if temperature intent."""
@@ -513,6 +612,53 @@ class TestNonMetricIntentBindings:
 
         assert result is True
         skill.settings_service.get_intent_binding.assert_not_called()
+
+    def test_system_status_handler_is_built_in_without_binding(self):
+        """System status intent should respond without requiring a binding."""
+        skill = _initialized_skill()
+        skill.settings_service = Mock()
+        skill.settings_service.get_active_profile_name.return_value = "reneryo"
+        skill.settings_service.get_profile.return_value = Mock(platform_type="reneryo")
+        skill._require_intent_binding = Mock(return_value=False)
+        skill.speak = Mock()
+
+        msg = Mock()
+        msg.data = {"utterance": "show system status"}
+        skill.handle_status_system_show(msg)
+
+        skill._require_intent_binding.assert_not_called()
+        skill.speak.assert_called_once()
+
+    def test_system_profile_handler_is_built_in_without_binding(self):
+        """Profile status intent should respond without requiring a binding."""
+        skill = _initialized_skill()
+        skill.settings_service = Mock()
+        skill.settings_service.get_active_profile_name.return_value = "reneryo"
+        skill.settings_service.get_profile.return_value = Mock(platform_type="reneryo")
+        skill._require_intent_binding = Mock(return_value=False)
+        skill.speak = Mock()
+
+        msg = Mock()
+        msg.data = {"utterance": "show profile status"}
+        skill.handle_status_profile_show(msg)
+
+        skill._require_intent_binding.assert_not_called()
+        skill.speak.assert_called_once()
+
+    def test_help_capabilities_handler_is_built_in_without_binding(self):
+        """Capabilities help intent should respond without requiring a binding."""
+        skill = _initialized_skill()
+        skill.settings_service = Mock()
+        skill.settings_service.get_active_profile_name.return_value = "reneryo"
+        skill._require_intent_binding = Mock(return_value=False)
+        skill.speak = Mock()
+
+        msg = Mock()
+        msg.data = {"utterance": "what can you do"}
+        skill.handle_help_capabilities_list(msg)
+
+        skill._require_intent_binding.assert_not_called()
+        skill.speak.assert_called_once()
 
 
 class TestMetricFallback:

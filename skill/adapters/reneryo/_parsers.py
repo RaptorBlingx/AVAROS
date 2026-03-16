@@ -89,7 +89,7 @@ def parse_trend_response(
     if not data:
         raise AdapterError(
             message=f"Empty trend response for {metric.value}",
-            code="RENERYO_INVALID_RESPONSE",
+            code="EMPTY_RESPONSE",
             platform="reneryo",
             user_message=(
                 "I could not find trend data for that period. "

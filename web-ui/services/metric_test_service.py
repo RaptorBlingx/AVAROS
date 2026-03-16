@@ -11,11 +11,12 @@ from urllib.parse import urlsplit
 import aiohttp
 
 from schemas.metrics import MetricMappingTestRequest, MetricMappingTestResponse
+from skill.clients.cookie_utils import normalize_cookie_header_value
 
 REQUEST_TIMEOUT_SECONDS = 10
 RESPONSE_PREVIEW_LIMIT = 500
 MAX_RESPONSE_BYTES = 1_048_576
-_JSON_PATH_TOKEN_PATTERN = re.compile(r"([^.\[\]]+)|\[(\d+)\]")
+_JSON_PATH_TOKEN_PATTERN = re.compile(r"([^.\[\]]+)|\[(\d+|\*)\]")
 
 
 class _JsonPathResolutionError(ValueError):
@@ -84,8 +85,7 @@ def _build_auth_headers(auth_type: str, token: str) -> dict[str, str]:
     if auth_type == "none":
         return {}
     if auth_type == "cookie":
-        # RENERYO session cookies are accepted as S=<token> in current deployment.
-        return {"Cookie": f"S={token}"}
+        return {"Cookie": normalize_cookie_header_value(token)}
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -100,13 +100,28 @@ def _resolve_json_path(payload: Any, json_path: str) -> Any:
     current: Any = payload
     for key_token, index_token in _JSON_PATH_TOKEN_PATTERN.findall(path[2:]):
         if key_token:
-            if not isinstance(current, dict) or key_token not in current:
-                raise _JsonPathResolutionError(path)
-            current = current[key_token]
+            if isinstance(current, dict):
+                if key_token not in current:
+                    raise _JsonPathResolutionError(path)
+                current = current[key_token]
+                continue
+
+            if isinstance(current, list):
+                resolved_items: list[Any] = []
+                for item in current:
+                    if not isinstance(item, dict) or key_token not in item:
+                        raise _JsonPathResolutionError(path)
+                    resolved_items.append(item[key_token])
+                current = resolved_items
+                continue
+
+            raise _JsonPathResolutionError(path)
             continue
 
         if not isinstance(current, list):
             raise _JsonPathResolutionError(path)
+        if index_token == "*":
+            continue
         index = int(index_token)
         if index >= len(current):
             raise _JsonPathResolutionError(path)
@@ -119,6 +134,13 @@ def _to_float(value: Any) -> float:
     """Convert extracted JSONPath value to float if numeric."""
     if isinstance(value, bool):
         raise ValueError("boolean is not numeric")
+    if isinstance(value, list):
+        for item in value:
+            try:
+                return _to_float(item)
+            except ValueError:
+                continue
+        raise ValueError("array does not contain numeric values")
     return float(value)
 
 

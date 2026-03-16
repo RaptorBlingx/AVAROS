@@ -52,6 +52,11 @@ export interface BackendWakeWordConfig {
   sensitivity: number;
 }
 
+interface WakeWordHealthResponse {
+  models_loaded?: string[];
+  model_name?: string;
+}
+
 type VoidCallback = () => void;
 type StateCallback = (state: BackendWakeWordState) => void;
 
@@ -117,6 +122,47 @@ function resolveDefaultWsUrl(): string {
   return "ws://localhost:9999/ws/detect";
 }
 
+function resolveHealthUrl(wsUrl: string): string | null {
+  try {
+    const base =
+      typeof window !== "undefined" ? window.location.href : "http://localhost";
+    const parsed = new URL(wsUrl, base);
+    if (parsed.protocol === "ws:") parsed.protocol = "http:";
+    if (parsed.protocol === "wss:") parsed.protocol = "https:";
+    parsed.pathname = parsed.pathname.replace(/\/ws\/detect$/, "/health");
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function isSameOriginUrl(rawUrl: string): boolean {
+  if (typeof window === "undefined") {
+    return true;
+  }
+  try {
+    const parsed = new URL(rawUrl, window.location.href);
+    return parsed.origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
+function toDisplayWakeWordLabel(raw: string): string {
+  const cleaned = raw
+    .trim()
+    .replace(/^hey[\s_-]+/i, "")
+    .replace(/[_-]+/g, " ");
+  if (!cleaned) {
+    return "Hey Avaros";
+  }
+  const title = cleaned
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+  return `Hey ${title}`;
+}
+
 // ── Service ────────────────────────────────────────────
 
 /**
@@ -148,6 +194,7 @@ export class BackendWakeWordService {
   private _spResampleRatio = 1;
   private _spBuffer: Int16Array = new Int16Array(0);
   private _spOffset = 0;
+  private wakeWordLabel = "Hey Avaros";
 
   constructor(config?: Partial<BackendWakeWordConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -284,6 +331,33 @@ export class BackendWakeWordService {
     return this.config.wsUrl;
   }
 
+  getWakeWordLabel(): string {
+    return this.wakeWordLabel;
+  }
+
+  async refreshWakeWordLabel(): Promise<string> {
+    const healthUrl = resolveHealthUrl(this.config.wsUrl);
+    if (!healthUrl || !isSameOriginUrl(healthUrl)) {
+      return this.wakeWordLabel;
+    }
+    try {
+      const response = await fetch(healthUrl, { method: "GET" });
+      if (!response.ok) {
+        return this.wakeWordLabel;
+      }
+      const payload = (await response.json()) as WakeWordHealthResponse;
+      const rawLabel =
+        payload.models_loaded?.[0] ?? payload.model_name ?? "";
+      if (!rawLabel) {
+        return this.wakeWordLabel;
+      }
+      this.wakeWordLabel = toDisplayWakeWordLabel(rawLabel);
+      return this.wakeWordLabel;
+    } catch {
+      return this.wakeWordLabel;
+    }
+  }
+
   // ── WebSocket management ───────────────────────────
 
   /**
@@ -337,6 +411,7 @@ export class BackendWakeWordService {
     try {
       const payload = JSON.parse(event.data) as DetectionEvent;
       if (payload.event === "detected") {
+        this.wakeWordLabel = toDisplayWakeWordLabel(payload.model);
         this.setState("detected");
         this.fireDetected({
           model: payload.model,

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from urllib.parse import unquote
 
-import aiohttp
+try:
+    import aiohttp
+except ModuleNotFoundError:  # pragma: no cover - optional in minimal OVOS images
+    aiohttp = None  # type: ignore[assignment]
 
+from skill.clients.cookie_utils import normalize_cookie_header_value
 from skill.domain.exceptions import AdapterError
 
 logger = logging.getLogger(__name__)
@@ -92,26 +95,11 @@ class GenericRestHttpMixin:
         """Verify base API URL is reachable with a lightweight request."""
         self._ensure_initialized()
         assert self._session is not None
+        probe_timeout = max(1, min(int(self._timeout), 10))
 
         try:
-            async with self._session.head(self._api_url) as response:
-                if response.status < 500:
-                    return
-                raise AdapterError(
-                    message=(
-                        f"Base URL probe failed with status {response.status}: "
-                        f"{self._api_url}"
-                    ),
-                    code="GENERIC_REST_INIT_FAILED",
-                    platform="generic_rest",
-                    status_code=response.status,
-                )
-        except AdapterError:
-            raise
-        except Exception:
-            # Some APIs reject HEAD; GET is fallback.
-            try:
-                async with self._session.get(self._api_url) as response:
+            async with asyncio.timeout(probe_timeout):
+                async with self._session.head(self._api_url) as response:
                     if response.status < 500:
                         return
                     raise AdapterError(
@@ -123,6 +111,39 @@ class GenericRestHttpMixin:
                         platform="generic_rest",
                         status_code=response.status,
                     )
+        except aiohttp.ClientConnectorError as exc:
+            raise AdapterError(
+                message=f"Could not reach API URL: {self._api_url}",
+                code="GENERIC_REST_INIT_FAILED",
+                platform="generic_rest",
+            ) from exc
+        except asyncio.TimeoutError as exc:
+            raise AdapterError(
+                message=(
+                    f"Timed out probing API URL after {probe_timeout}s: "
+                    f"{self._api_url}"
+                ),
+                code="GENERIC_REST_INIT_FAILED",
+                platform="generic_rest",
+            ) from exc
+        except AdapterError:
+            raise
+        except Exception:
+            # Some APIs reject HEAD; GET is fallback.
+            try:
+                async with asyncio.timeout(probe_timeout):
+                    async with self._session.get(self._api_url) as response:
+                        if response.status < 500:
+                            return
+                        raise AdapterError(
+                            message=(
+                                f"Base URL probe failed with status {response.status}: "
+                                f"{self._api_url}"
+                            ),
+                            code="GENERIC_REST_INIT_FAILED",
+                            platform="generic_rest",
+                            status_code=response.status,
+                        )
             except AdapterError:
                 raise
             except aiohttp.ClientConnectorError as exc:
@@ -134,7 +155,7 @@ class GenericRestHttpMixin:
             except asyncio.TimeoutError as exc:
                 raise AdapterError(
                     message=(
-                        f"Timed out probing API URL after {self._timeout}s: "
+                        f"Timed out probing API URL after {probe_timeout}s: "
                         f"{self._api_url}"
                     ),
                     code="GENERIC_REST_INIT_FAILED",
@@ -225,14 +246,12 @@ class GenericRestHttpMixin:
         if self._auth_type == "none":
             return {}
         if self._auth_type == "cookie":
-            raw_cookie = (self._api_key or "").strip()
-            if raw_cookie.lower().startswith("cookie:"):
-                return {"Cookie": raw_cookie.split(":", 1)[1].strip()}
-
-            decoded_cookie = unquote(raw_cookie)
-            if decoded_cookie.startswith("S=") or ";" in decoded_cookie:
-                return {"Cookie": decoded_cookie}
-            return {"Cookie": f"S={decoded_cookie}"}
+            return {
+                "Cookie": normalize_cookie_header_value(
+                    self._api_key or "",
+                    decode=True,
+                ),
+            }
 
         return {"Authorization": f"Bearer {self._api_key}"}
 
