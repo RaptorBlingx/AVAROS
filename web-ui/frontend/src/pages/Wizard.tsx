@@ -41,9 +41,9 @@ function buildPayload(state: WizardState): PlatformConfigRequest {
   const platformType = state.platformType;
   return {
     platform_type: platformType,
-    api_url: platformType === "mock" ? "" : state.apiUrl.trim(),
+    api_url: platformType === "unconfigured" ? "" : state.apiUrl.trim(),
     api_key:
-      platformType === "mock" || state.authType === "none"
+      platformType === "unconfigured" || state.authType === "none"
         ? ""
         : state.apiKey.trim(),
     extra_settings: {
@@ -65,7 +65,7 @@ function enableDashboardBypass(): void {
 }
 
 function validateConnection(state: WizardState): string {
-  if (state.platformType === "mock") {
+  if (state.platformType === "unconfigured") {
     return "";
   }
   const url = state.apiUrl.trim();
@@ -313,7 +313,7 @@ export default function Wizard() {
     setHeaderError("");
     try {
       const latestStatus = await getStatus();
-      if (state.platformType === "mock" || !latestStatus.configured) {
+      if (state.platformType === "unconfigured" || !latestStatus.configured) {
         enableDashboardBypass();
       }
       setSuccessStatus(latestStatus);
@@ -341,7 +341,6 @@ export default function Wizard() {
           isTesting={isTesting}
           isSaving={isSaving}
           onChooseExternalApi={() => handlePlatformChange("custom_rest")}
-          onUseMockQuickAction={() => handlePlatformChange("mock")}
           onUseReneryoQuickAction={() => handlePlatformChange("reneryo")}
           onAuthTypeChange={(value) =>
             setState((prev) => ({ ...prev, authType: value }))
@@ -401,7 +400,7 @@ export default function Wizard() {
         status={successStatus}
         onGoToDashboard={() => {
           if (
-            state.platformType === "mock" ||
+            state.platformType === "unconfigured" ||
             (successStatus && !successStatus.configured)
           ) {
             enableDashboardBypass();

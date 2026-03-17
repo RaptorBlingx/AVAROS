@@ -55,15 +55,15 @@ describe("MetricMappingsSection profile refresh", () => {
     });
   });
 
-  it("test_mock_profile_shows_read_only_hint_and_disables_save_buttons", async () => {
+  it("test_unconfigured_profile_shows_read_only_hint_and_disables_save_buttons", async () => {
     render(
-      <MetricMappingsSection onNotify={vi.fn()} refreshKey={0} activeProfile="mock" />,
+      <MetricMappingsSection onNotify={vi.fn()} refreshKey={0} activeProfile="unconfigured" />,
     );
 
     await waitFor(() => {
       expect(
         screen.getByText(
-          "Mock profile uses built-in demo data. Metric mappings are not configurable.",
+          "Unconfigured profile uses built-in demo data. Metric mappings are not configurable.",
         ),
       ).toBeTruthy();
     });

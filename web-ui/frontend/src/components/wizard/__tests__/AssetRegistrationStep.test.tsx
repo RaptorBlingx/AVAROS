@@ -93,7 +93,8 @@ describe("AssetRegistrationStep", () => {
       expect(mockApi.getConfiguredAssets).toHaveBeenCalledTimes(1);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save & Continue" }));
+    const saveBtn = await screen.findByRole("button", { name: "Save & Continue" });
+    fireEvent.click(saveBtn);
 
     await waitFor(() => {
       expect(mockApi.saveConfiguredAssets).toHaveBeenCalledTimes(1);

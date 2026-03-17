@@ -171,7 +171,7 @@
         <label>
           API Profile
           <select id="api-profile">
-            <option value="mock">Mock</option>
+            <option value="unconfigured">Unconfigured</option>
             <option value="reneryo">RENERYO</option>
           </select>
         </label>
@@ -223,7 +223,7 @@
     const SCRIPT_ID = "avaros-widget-loader";
     let currentTheme = "light";
     const PRESETS = {
-      mock: {
+      unconfigured: {
         host: "ws://127.0.0.1:5678",
         clientName: "avaros-web-client",
         accessKey: "",
@@ -305,7 +305,7 @@
     }
 
     function applyPreset(profile) {
-      const preset = PRESETS[profile] || PRESETS.mock;
+      const preset = PRESETS[profile] || PRESETS.unconfigured;
       hostInput.value = preset.host;
       clientNameInput.value = preset.clientName;
       accessKeyInput.value = preset.accessKey;

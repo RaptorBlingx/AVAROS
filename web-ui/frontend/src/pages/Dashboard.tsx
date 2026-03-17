@@ -65,7 +65,7 @@ export default function Dashboard() {
       const shouldRedirectToWizard =
         !import.meta.env.DEV &&
         !statusData.configured &&
-        statusData.platform_type === "mock";
+        statusData.platform_type === "unconfigured";
       if (shouldRedirectToWizard) {
         const skipRedirectUntilRaw = sessionStorage.getItem(
           "avaros_skip_wizard_until",

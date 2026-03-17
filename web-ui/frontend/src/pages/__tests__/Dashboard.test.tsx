@@ -45,8 +45,8 @@ describe("Dashboard KPI summary", () => {
     vi.mocked(getHealth).mockResolvedValue({ status: "ok", version: "1.0.0" });
     vi.mocked(getStatus).mockResolvedValue({
       configured: true,
-      active_adapter: "mock",
-      platform_type: "mock",
+      active_adapter: "unconfigured",
+      platform_type: "unconfigured",
       loaded_intents: 12,
       database_connected: true,
       version: "1.0.0",

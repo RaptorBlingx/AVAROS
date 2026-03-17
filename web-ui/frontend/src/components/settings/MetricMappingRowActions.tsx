@@ -6,7 +6,7 @@ type MetricMappingRowActionsProps = {
   metricName: CanonicalMetricName;
   persisted: boolean;
   isDark: boolean;
-  isMockProfile: boolean;
+  isUnconfiguredProfile: boolean;
   savingRowId: string | null;
   rowTestState: MetricTestState | undefined;
   isAutoRow?: boolean;
@@ -33,7 +33,7 @@ export default function MetricMappingRowActions({
   metricName,
   persisted,
   isDark,
-  isMockProfile,
+  isUnconfiguredProfile,
   savingRowId,
   rowTestState,
   isAutoRow = false,
@@ -58,7 +58,7 @@ export default function MetricMappingRowActions({
       <button
         type="button"
         onClick={() => onSave(rowId)}
-        disabled={isMockProfile || savingRowId === rowId}
+        disabled={isUnconfiguredProfile || savingRowId === rowId}
         className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${
           isDark
             ? "border-slate-400 bg-white text-slate-900"
@@ -70,7 +70,7 @@ export default function MetricMappingRowActions({
       <button
         type="button"
         onClick={() => onTest(rowId)}
-        disabled={isMockProfile || savingRowId === rowId || isTesting}
+        disabled={isUnconfiguredProfile || savingRowId === rowId || isTesting}
         title={testTitle}
         aria-label={`Test mapping for ${metricName}`}
         className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${
@@ -84,7 +84,7 @@ export default function MetricMappingRowActions({
       <button
         type="button"
         onClick={() => onRemove(rowId)}
-        disabled={isMockProfile}
+        disabled={isUnconfiguredProfile}
         className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${
           isDark
             ? "border-rose-400 bg-rose-950/60 text-rose-200"

@@ -24,7 +24,7 @@ describe("AssetMappingStep platform rendering", () => {
 
     mockApi.getConfiguredAssets.mockResolvedValue({ asset_mappings: {} });
     mockApi.discoverAssets.mockResolvedValue({
-      platform_type: "mock",
+      platform_type: "unconfigured",
       supports_discovery: true,
       assets: [
         {
@@ -57,10 +57,10 @@ describe("AssetMappingStep platform rendering", () => {
     expect(screen.queryByText("These are demo assets")).toBeNull();
   });
 
-  it("renders read-only demo assets for mock", async () => {
+  it("renders read-only demo assets for unconfigured", async () => {
     render(
       <AssetMappingStep
-        platformType="mock"
+        platformType="unconfigured"
         onComplete={vi.fn()}
         onSkip={vi.fn()}
       />,

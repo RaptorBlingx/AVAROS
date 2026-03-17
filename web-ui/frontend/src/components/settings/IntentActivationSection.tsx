@@ -12,14 +12,14 @@ type IntentActivationSectionProps = {
 export default function IntentActivationSection({
   onNotify,
   refreshKey = 0,
-  activeProfile = "mock",
+  activeProfile = "unconfigured",
 }: IntentActivationSectionProps) {
   const {
     intentView,
     loading,
     savingIntent,
     bulkAction,
-    isMockProfile,
+    isUnconfiguredProfile,
     loadData,
     toggleIntent,
     setAll,
@@ -37,9 +37,9 @@ export default function IntentActivationSection({
         </div>
       ) : (
         <div className="reveal-in">
-          {isMockProfile && (
+          {isUnconfiguredProfile && (
             <div className="mb-3 rounded-lg bg-blue-50 p-3 text-sm text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-              Mock profile uses built-in demo data. Intent activation is not configurable.
+              Unconfigured profile uses built-in demo data. Intent activation is not configurable.
             </div>
           )}
           {intentView.length === 0 ? (
@@ -54,7 +54,7 @@ export default function IntentActivationSection({
               intents={intentView}
               savingIntent={savingIntent}
               bulkAction={bulkAction}
-              readOnly={isMockProfile}
+              readOnly={isUnconfiguredProfile}
               onEnableAll={() => void setAll(true)}
               onDisableAll={() => void setAll(false)}
               onToggle={(intentName, active) => void toggleIntent(intentName, active)}

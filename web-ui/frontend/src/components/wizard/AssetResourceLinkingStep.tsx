@@ -150,7 +150,7 @@ export default function AssetResourceLinkingStep({
   onSkip,
 }: AssetResourceLinkingStepProps) {
   const resolvedPlatform = platformType ?? "custom_rest";
-  const isMock = resolvedPlatform === "mock";
+  const isUnconfigured = resolvedPlatform === "unconfigured";
   const isReneryo = resolvedPlatform === "reneryo";
   const isCustomRest = resolvedPlatform === "custom_rest";
 
@@ -233,7 +233,7 @@ export default function AssetResourceLinkingStep({
   }, [generatorInput]);
 
   const saveAndContinue = useCallback(async () => {
-    if (isMock || isReneryo) {
+    if (isUnconfigured || isReneryo) {
       onComplete();
       return;
     }
@@ -261,7 +261,7 @@ export default function AssetResourceLinkingStep({
     } finally {
       setSaving(false);
     }
-  }, [isMock, isReneryo, onComplete, rows, storedMappings]);
+  }, [isUnconfigured, isReneryo, onComplete, rows, storedMappings]);
 
   const linkedCount = useMemo(
     () =>
@@ -302,8 +302,8 @@ export default function AssetResourceLinkingStep({
           />
         </div>
         <p className="m-0 mt-2 text-sm text-slate-600 dark:text-slate-300">
-          {isMock
-            ? "Mock mode does not require resource linking."
+          {isUnconfigured
+            ? "Unconfigured mode does not require resource linking."
             : isReneryo
             ? "Validate metric-resource coverage from generator mapping for each asset."
             : "Set endpoint templates that your API exposes for each asset."}
@@ -323,7 +323,7 @@ export default function AssetResourceLinkingStep({
           </div>
         ) : (
           <>
-            {!isMock && (
+            {!isUnconfigured && (
               <div className="mb-3 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
                 Linked assets: {linkedCount}/{rows.length}
                 {isReneryo && (
@@ -334,9 +334,9 @@ export default function AssetResourceLinkingStep({
               </div>
             )}
 
-            {isMock && (
+            {isUnconfigured && (
               <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/40 dark:bg-sky-900/30 dark:text-sky-200">
-                Mock profile does not need additional resource linking.
+                Unconfigured profile does not need additional resource linking.
               </div>
             )}
 

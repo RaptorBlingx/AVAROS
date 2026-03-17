@@ -283,7 +283,7 @@ export default function AssetRegistrationStep({
   }, [onComplete, rows, storedMappings, validationError]);
 
   const subtitle =
-    platformType === "mock"
+    platformType === "unconfigured"
       ? "Define your factory vocabulary even in demo mode."
       : "Define the assets users will reference in voice commands and KPI queries.";
 

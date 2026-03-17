@@ -64,8 +64,8 @@ export default function Settings() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
-  const [activeProfileName, setActiveProfileName] = useState("mock");
-  const activeProfileRef = useRef("mock");
+  const [activeProfileName, setActiveProfileName] = useState("unconfigured");
+  const activeProfileRef = useRef("unconfigured");
   const notify = useCallback((type: "success" | "error", message: string) => {
     setToasts((prev) => [
       ...prev,

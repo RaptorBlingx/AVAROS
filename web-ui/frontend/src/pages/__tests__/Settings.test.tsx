@@ -108,7 +108,7 @@ describe("Settings page profile refresh", () => {
   it("test_profile_badge_shows_active_name", () => {
     render(<Settings />);
 
-    expect(screen.getByText("Profile: mock")).toBeTruthy();
+    expect(screen.getByText("Profile: unconfigured")).toBeTruthy();
     fireEvent.click(screen.getByText("Switch Profile Success"));
     expect(screen.getByText("Profile: reneryo")).toBeTruthy();
   });

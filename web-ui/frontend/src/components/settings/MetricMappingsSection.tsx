@@ -31,7 +31,7 @@ type MetricMappingsSectionProps = {
 export default function MetricMappingsSection({
   onNotify,
   refreshKey = 0,
-  activeProfile = "mock",
+  activeProfile = "unconfigured",
 }: MetricMappingsSectionProps) {
   const { isDark } = useTheme();
   const [rows, setRows] = useState<SettingsMetricRow[]>([]);
@@ -44,8 +44,8 @@ export default function MetricMappingsSection({
     [rows],
   );
 
-  const isMockProfile = useMemo(
-    () => activeProfile === "mock",
+  const isUnconfiguredProfile = useMemo(
+    () => activeProfile === "unconfigured",
     [activeProfile],
   );
 
@@ -59,7 +59,7 @@ export default function MetricMappingsSection({
     resetRowTestState,
     clearAllTestState,
   } = useMetricMappingTest({
-    disabled: isMockProfile,
+    disabled: isUnconfiguredProfile,
     resolveRow,
   });
 
@@ -126,7 +126,7 @@ export default function MetricMappingsSection({
   }, []);
 
   const addRow = useCallback(() => {
-    if (isMockProfile) {
+    if (isUnconfiguredProfile) {
       return;
     }
     const existing = new Set(rows.map((row) => row.canonical_metric));
@@ -145,10 +145,10 @@ export default function MetricMappingsSection({
         ...EMPTY_SETTINGS_ROW_DEFAULTS,
       },
     ]);
-  }, [isMockProfile, onNotify, rows]);
+  }, [isUnconfiguredProfile, onNotify, rows]);
 
   const saveRow = useCallback(async (rowId: string) => {
-    if (isMockProfile) {
+    if (isUnconfiguredProfile) {
       return;
     }
     const row = rows.find((item) => item.id === rowId);
@@ -196,10 +196,10 @@ export default function MetricMappingsSection({
     } finally {
       setSavingRowId(null);
     }
-  }, [isMockProfile, onNotify, resetRowTestState, rows, validateRow]);
+  }, [isUnconfiguredProfile, onNotify, resetRowTestState, rows, validateRow]);
 
   const removeRow = useCallback(async (rowId: string) => {
-    if (isMockProfile) {
+    if (isUnconfiguredProfile) {
       return;
     }
     const row = rows.find((item) => item.id === rowId);
@@ -221,7 +221,7 @@ export default function MetricMappingsSection({
     } catch (error: unknown) {
       onNotify("error", toFriendlyErrorMessage(error));
     }
-  }, [isMockProfile, onNotify, resetRowTestState, rows]);
+  }, [isUnconfiguredProfile, onNotify, resetRowTestState, rows]);
 
   return (
     <section className="space-y-3">
@@ -229,7 +229,7 @@ export default function MetricMappingsSection({
         <button
           type="button"
           onClick={addRow}
-          disabled={isMockProfile}
+          disabled={isUnconfiguredProfile}
           className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
             isDark
               ? "border-slate-500 bg-slate-700 text-slate-100 hover:bg-slate-600"
@@ -246,9 +246,9 @@ export default function MetricMappingsSection({
         </div>
       ) : (
         <div className="reveal-in">
-          {isMockProfile && (
+          {isUnconfiguredProfile && (
             <div className="mb-3 rounded-lg bg-blue-50 p-3 text-sm text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-              Mock profile uses built-in demo data. Metric mappings are not configurable.
+              Unconfigured profile uses built-in demo data. Metric mappings are not configurable.
             </div>
           )}
           {rows.length === 0 ? (
@@ -263,7 +263,7 @@ export default function MetricMappingsSection({
               rows={rows}
               errorsByRow={errorsByRow}
               usedMetrics={usedMetrics}
-              readOnly={isMockProfile}
+              readOnly={isUnconfiguredProfile}
               onChange={updateBaseRow}
               renderActions={(row) => {
                 return (
@@ -272,7 +272,7 @@ export default function MetricMappingsSection({
                     metricName={row.canonical_metric}
                     persisted={row.persisted}
                     isDark={isDark}
-                    isMockProfile={isMockProfile}
+                    isUnconfiguredProfile={isUnconfiguredProfile}
                     savingRowId={savingRowId}
                     rowTestState={testStateByRow[row.id]}
                     isAutoRow={row.source === "auto"}

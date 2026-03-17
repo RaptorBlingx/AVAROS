@@ -37,7 +37,7 @@ type EmissionFactorsSectionProps = {
 export default function EmissionFactorsSection({
   onNotify,
   refreshKey = 0,
-  activeProfile = "mock",
+  activeProfile = "unconfigured",
 }: EmissionFactorsSectionProps) {
   const { isDark } = useTheme();
   const [loading, setLoading] = useState(true);
@@ -79,8 +79,8 @@ export default function EmissionFactorsSection({
     void loadData();
   }, [loadData, refreshKey, activeProfile]);
 
-  const isMockProfile = useMemo(
-    () => activeProfile === "mock",
+  const isUnconfiguredProfile = useMemo(
+    () => activeProfile === "unconfigured",
     [activeProfile],
   );
 
@@ -116,7 +116,7 @@ export default function EmissionFactorsSection({
   }, []);
 
   const handleSave = useCallback(async () => {
-    if (isMockProfile) {
+    if (isUnconfiguredProfile) {
       return;
     }
     const validationErrors = validateForm(form);
@@ -139,11 +139,11 @@ export default function EmissionFactorsSection({
     } finally {
       setSaving(false);
     }
-  }, [form, isMockProfile, loadData, onNotify]);
+  }, [form, isUnconfiguredProfile, loadData, onNotify]);
 
   const handleDelete = useCallback(
     async (energySource: string) => {
-      if (isMockProfile) {
+      if (isUnconfiguredProfile) {
         return;
       }
       setDeletingSource(energySource);
@@ -157,11 +157,11 @@ export default function EmissionFactorsSection({
         setDeletingSource(null);
       }
     },
-    [isMockProfile, loadData, onNotify],
+    [isUnconfiguredProfile, loadData, onNotify],
   );
 
   const applyPreset = useCallback(async () => {
-    if (isMockProfile) {
+    if (isUnconfiguredProfile) {
       return;
     }
     if (selectedPresetEntries.length === 0) {
@@ -191,7 +191,7 @@ export default function EmissionFactorsSection({
       setSaving(false);
     }
   }, [
-    isMockProfile,
+    isUnconfiguredProfile,
     loadData,
     onNotify,
     selectedCountry,
@@ -215,9 +215,9 @@ export default function EmissionFactorsSection({
         </div>
       ) : (
         <>
-          {isMockProfile && (
+          {isUnconfiguredProfile && (
             <div className="rounded-lg bg-blue-50 p-3 text-sm text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-              Mock profile uses built-in demo data. Emission factors are not configurable.
+              Unconfigured profile uses built-in demo data. Emission factors are not configurable.
             </div>
           )}
           <div className="brand-surface reveal-in rounded-xl p-4">
@@ -240,7 +240,7 @@ export default function EmissionFactorsSection({
               <button
                 type="button"
                 onClick={() => void applyPreset()}
-                disabled={isMockProfile || saving || !selectedCountry}
+                disabled={isUnconfiguredProfile || saving || !selectedCountry}
                 className="btn-brand-primary rounded-lg px-3 py-2 text-xs font-semibold md:w-fit"
               >
                 {saving ? "Applying..." : `Apply ${selectedCountry || "Preset"} Preset`}
@@ -254,7 +254,7 @@ export default function EmissionFactorsSection({
               <button
                 type="button"
                 onClick={() => setShowAddForm((prev) => !prev)}
-                disabled={isMockProfile}
+                disabled={isUnconfiguredProfile}
                 className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
                   isDark
                     ? "border-slate-500 bg-slate-700 text-slate-100 hover:bg-slate-600"
@@ -267,18 +267,18 @@ export default function EmissionFactorsSection({
 
             {showAddForm ? (
               <div className="mb-4 grid gap-3 md:grid-cols-5">
-                <select disabled={isMockProfile} value={form.energy_source} onChange={(event) => updateForm("energy_source", event.target.value as EnergySource)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100">
+                <select disabled={isUnconfiguredProfile} value={form.energy_source} onChange={(event) => updateForm("energy_source", event.target.value as EnergySource)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100">
                   {ENERGY_SOURCES.map((source) => (
                     <option key={source} value={source}>{formatEnergySource(source)}</option>
                   ))}
                 </select>
-                <input type="number" min="0" step="0.0001" disabled={isMockProfile} value={form.factor} onChange={(event) => updateForm("factor", Number(event.target.value))} placeholder="Factor" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
-                <input type="text" disabled={isMockProfile} value={form.country} onChange={(event) => updateForm("country", event.target.value)} placeholder="Country" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
-                <input type="text" disabled={isMockProfile} value={form.source} onChange={(event) => updateForm("source", event.target.value)} placeholder="Source" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
-                <input type="number" min="2000" max="2030" disabled={isMockProfile} value={form.year} onChange={(event) => updateForm("year", Number(event.target.value))} placeholder="Year" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+                <input type="number" min="0" step="0.0001" disabled={isUnconfiguredProfile} value={form.factor} onChange={(event) => updateForm("factor", Number(event.target.value))} placeholder="Factor" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+                <input type="text" disabled={isUnconfiguredProfile} value={form.country} onChange={(event) => updateForm("country", event.target.value)} placeholder="Country" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+                <input type="text" disabled={isUnconfiguredProfile} value={form.source} onChange={(event) => updateForm("source", event.target.value)} placeholder="Source" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
+                <input type="number" min="2000" max="2030" disabled={isUnconfiguredProfile} value={form.year} onChange={(event) => updateForm("year", Number(event.target.value))} placeholder="Year" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100" />
                 <div className="md:col-span-5 flex items-center justify-between gap-3">
                   <p className="m-0 text-xs text-rose-600 dark:text-rose-300">{errors.factor ?? errors.energy_source ?? " "}</p>
-                  <button type="button" onClick={() => void handleSave()} disabled={isMockProfile || saving} className="btn-brand-primary rounded-lg px-3 py-2 text-xs font-semibold">
+                  <button type="button" onClick={() => void handleSave()} disabled={isUnconfiguredProfile || saving} className="btn-brand-primary rounded-lg px-3 py-2 text-xs font-semibold">
                     {saving ? "Saving..." : "Save Factor"}
                   </button>
                 </div>
@@ -289,7 +289,7 @@ export default function EmissionFactorsSection({
               factors={factors}
               deletingSource={deletingSource}
               isDark={isDark}
-              readOnly={isMockProfile}
+              readOnly={isUnconfiguredProfile}
               onDelete={(energySource) => void handleDelete(energySource)}
             />
           </div>

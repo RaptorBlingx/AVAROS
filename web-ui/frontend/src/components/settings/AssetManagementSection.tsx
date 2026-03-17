@@ -42,7 +42,7 @@ export default function AssetManagementSection({
   onSkip,
 }: AssetManagementSectionProps) {
   const [resolvedPlatform, setResolvedPlatform] = useState<PlatformType>(
-    platformType ?? "mock",
+    platformType ?? "unconfigured",
   );
   const [rows, setRows] = useState<AssetRow[]>([createEmptyRow()]);
   const [discovery, setDiscovery] = useState<AssetDiscoveryResponse | null>(null);
@@ -51,9 +51,9 @@ export default function AssetManagementSection({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const canAttemptDiscovery = resolvedPlatform === "reneryo" || resolvedPlatform === "mock";
+  const canAttemptDiscovery = resolvedPlatform === "reneryo" || resolvedPlatform === "unconfigured";
   const supportsDiscover = canAttemptDiscovery && (discovery?.supports_discovery ?? true);
-  const isMock = resolvedPlatform === "mock";
+  const isUnconfigured = resolvedPlatform === "unconfigured";
   const isCustomRest = resolvedPlatform === "custom_rest";
   const isReneryo = resolvedPlatform === "reneryo";
 
@@ -66,7 +66,7 @@ export default function AssetManagementSection({
       const config = await getPlatformConfig();
       setResolvedPlatform(config.platform_type);
     } catch {
-      setResolvedPlatform("mock");
+      setResolvedPlatform("unconfigured");
     }
   }, [platformType]);
 
@@ -162,7 +162,7 @@ export default function AssetManagementSection({
   }, []);
 
   const save = useCallback(async () => {
-    if (isMock) {
+    if (isUnconfigured) {
       if (mode === "wizard" && onComplete) {
         onComplete();
       }
@@ -185,7 +185,7 @@ export default function AssetManagementSection({
     } finally {
       setSaving(false);
     }
-  }, [isMock, mode, onComplete, onNotify, resolvedPlatform, rows]);
+  }, [isUnconfigured, mode, onComplete, onNotify, resolvedPlatform, rows]);
 
   return (
     <section className="space-y-4">
@@ -197,7 +197,7 @@ export default function AssetManagementSection({
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="m-0 text-sm text-slate-600 dark:text-slate-300">
-          {isMock
+          {isUnconfigured
             ? "These are demo assets. Connect a real platform to configure your assets."
             : "Manage asset mappings used by voice and KPI queries."}
         </p>
@@ -212,7 +212,7 @@ export default function AssetManagementSection({
               {discovering ? "Discovering..." : "Discover Assets"}
             </button>
           )}
-          {!isMock && (
+          {!isUnconfigured && (
             <button
               type="button"
               className="btn-brand-subtle rounded-lg px-3 py-2 text-sm font-semibold"
@@ -230,7 +230,7 @@ export default function AssetManagementSection({
         </div>
       ) : null}
 
-      {isMock ? (
+      {isUnconfigured ? (
         <div className="space-y-2">
           {(discovery?.assets ?? []).map((asset) => (
             <div
@@ -273,7 +273,7 @@ export default function AssetManagementSection({
           {saving
             ? "Saving..."
             : mode === "wizard"
-              ? isMock
+              ? isUnconfigured
                 ? "Continue"
                 : "Save Mapping & Continue"
               : "Save Assets"}

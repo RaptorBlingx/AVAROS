@@ -47,8 +47,8 @@ const mockActivateProfile = vi.mocked(activateProfile);
 const MOCK_PROFILES: ProfileListResponse = {
   profiles: [
     {
-      name: "mock",
-      platform_type: "mock",
+      name: "unconfigured",
+      platform_type: "unconfigured",
       is_active: true,
       is_builtin: true,
     },
@@ -59,12 +59,12 @@ const MOCK_PROFILES: ProfileListResponse = {
       is_builtin: false,
     },
   ],
-  active_profile: "mock",
+  active_profile: "unconfigured",
 };
 
 const MOCK_PROFILE_CONFIG: ProfileDetailResponse = {
-  name: "mock",
-  platform_type: "mock",
+  name: "unconfigured",
+  platform_type: "unconfigured",
   api_url: "",
   api_key: "****",
   extra_settings: {},
@@ -97,7 +97,7 @@ describe("ProfileSelector", () => {
     onNotify = vi.fn() as typeof onNotify;
     mockListProfiles.mockResolvedValue(MOCK_PROFILES);
     mockGetProfile.mockImplementation(async (name: string) => {
-      if (name === "mock") return MOCK_PROFILE_CONFIG;
+      if (name === "unconfigured") return MOCK_PROFILE_CONFIG;
       if (name === "my-reneryo") return RENERYO_PROFILE_CONFIG;
       throw new Error(`Unknown profile: ${name}`);
     });
@@ -118,7 +118,7 @@ describe("ProfileSelector", () => {
     expect(dropdown.options.length).toBe(2);
   });
 
-  it("shows mock profile first with built-in label", async () => {
+  it("shows unconfigured profile first with built-in label", async () => {
     render(
       <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
@@ -131,7 +131,7 @@ describe("ProfileSelector", () => {
       "profile-dropdown",
     ) as HTMLSelectElement;
     const firstOption = dropdown.options[0];
-    expect(firstOption.value).toBe("mock");
+    expect(firstOption.value).toBe("unconfigured");
     expect(firstOption.text).toContain("Built-in");
   });
 
@@ -145,7 +145,7 @@ describe("ProfileSelector", () => {
     });
   });
 
-  it("shows built-in badge for mock profile", async () => {
+  it("shows built-in badge for unconfigured profile", async () => {
     render(
       <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
@@ -232,7 +232,7 @@ describe("ProfileSelector", () => {
     });
   });
 
-  it("does not show delete button for built-in mock profile", async () => {
+  it("does not show delete button for built-in unconfigured profile", async () => {
     render(
       <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
     );
@@ -264,7 +264,12 @@ describe("ProfileSelector", () => {
   });
 
   it("calls deleteProfile with confirmation on delete", async () => {
-    mockDeleteProfile.mockResolvedValue(undefined);
+    mockDeleteProfile.mockResolvedValue({
+      status: "deleted",
+      deleted_profile: "my-reneryo",
+      active_profile: "unconfigured",
+      message: "Profile deleted",
+    });
     vi.spyOn(window, "confirm").mockReturnValue(true);
 
     render(
@@ -372,11 +377,11 @@ describe("ProfileSelector", () => {
   });
 
   it("creates profile with valid name", async () => {
-    const newConfig: ProfileConfig = {
+    const newConfig: ProfileDetailResponse = {
       name: "new-profile",
       platform_type: "reneryo",
       api_url: "",
-      api_key: "",
+      api_key: "****",
       extra_settings: {},
       is_builtin: false,
       is_active: false,
@@ -384,7 +389,7 @@ describe("ProfileSelector", () => {
     mockCreateProfile.mockResolvedValue(newConfig);
     mockGetProfile.mockImplementation(async (name: string) => {
       if (name === "new-profile") return newConfig;
-      if (name === "mock") return MOCK_PROFILE_CONFIG;
+      if (name === "unconfigured") return MOCK_PROFILE_CONFIG;
       return RENERYO_PROFILE_CONFIG;
     });
 
@@ -412,6 +417,9 @@ describe("ProfileSelector", () => {
       expect(mockCreateProfile).toHaveBeenCalledWith({
         name: "new-profile",
         platform_type: "reneryo",
+        api_url: "",
+        api_key: "",
+        extra_settings: {},
       });
       expect(onNotify).toHaveBeenCalledWith(
         "success",

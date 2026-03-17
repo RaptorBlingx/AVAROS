@@ -13,11 +13,6 @@ const OPTIONS: Array<{
   description: string;
 }> = [
   {
-    value: "mock",
-    title: "Mock",
-    description: "Demo mode with sample data. No external connection needed.",
-  },
-  {
     value: "reneryo",
     title: "RENERYO",
     description: "Connect to RENERYO manufacturing platform.",

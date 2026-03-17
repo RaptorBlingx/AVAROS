@@ -84,15 +84,15 @@ describe("AssetManagementSection", () => {
     expect(mockApi.discoverAssets).not.toHaveBeenCalled();
   });
 
-  it("shows Discover Assets button for mock when discovery is supported", async () => {
+  it("shows Discover Assets button for unconfigured when discovery is supported", async () => {
     mockApi.discoverAssets.mockResolvedValue({
-      platform_type: "mock",
+      platform_type: "unconfigured",
       supports_discovery: true,
       assets: [],
       existing_mappings: {},
     });
 
-    render(<AssetManagementSection mode="settings" platformType="mock" />);
+    render(<AssetManagementSection mode="settings" platformType="unconfigured" />);
 
     await waitFor(() => {
       expect(mockApi.discoverAssets).toHaveBeenCalled();
@@ -103,10 +103,10 @@ describe("AssetManagementSection", () => {
     });
   });
 
-  it("keeps Discover Assets button visible after discovery fetch failure on mock", async () => {
+  it("keeps Discover Assets button visible after discovery fetch failure on unconfigured", async () => {
     mockApi.discoverAssets.mockRejectedValue(new Error("network down"));
 
-    render(<AssetManagementSection mode="settings" platformType="mock" />);
+    render(<AssetManagementSection mode="settings" platformType="unconfigured" />);
 
     await waitFor(() => {
       expect(mockApi.discoverAssets).toHaveBeenCalled();

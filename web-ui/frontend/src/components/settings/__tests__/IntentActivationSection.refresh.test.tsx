@@ -65,15 +65,15 @@ describe("IntentActivationSection profile refresh", () => {
     });
   });
 
-  it("test_mock_profile_shows_read_only_hint_and_disables_save_buttons", async () => {
+  it("test_unconfigured_profile_shows_read_only_hint_and_disables_save_buttons", async () => {
     render(
-      <IntentActivationSection onNotify={vi.fn()} refreshKey={0} activeProfile="mock" />,
+      <IntentActivationSection onNotify={vi.fn()} refreshKey={0} activeProfile="unconfigured" />,
     );
 
     await waitFor(() => {
       expect(
         screen.getByText(
-          "Mock profile uses built-in demo data. Intent activation is not configurable.",
+          "Unconfigured profile uses built-in demo data. Intent activation is not configurable.",
         ),
       ).toBeTruthy();
     });
@@ -142,7 +142,8 @@ describe("IntentActivationSection profile refresh", () => {
       expect(mockApi.getIntents).toHaveBeenCalledTimes(1);
     });
 
-    screen.getByRole("button", { name: "Enable All" }).click();
+    const enableAllBtn = await screen.findByRole("button", { name: "Enable All" });
+    enableAllBtn.click();
 
     await waitFor(() => {
       expect(mockApi.setIntentActive).toHaveBeenCalledTimes(3);

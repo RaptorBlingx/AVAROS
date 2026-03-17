@@ -56,8 +56,8 @@ function createPayload(config: {
 }): PlatformConfigRequest {
   return {
     platform_type: config.platformType,
-    api_url: config.platformType === "mock" ? "" : config.apiUrl.trim(),
-    api_key: config.platformType === "mock" ? "" : config.apiKey.trim(),
+    api_url: config.platformType === "unconfigured" ? "" : config.apiUrl.trim(),
+    api_key: config.platformType === "unconfigured" ? "" : config.apiKey.trim(),
     extra_settings: {
       auth_type: toBackendAuthType(config.authType),
     },
@@ -70,7 +70,7 @@ function validate(config: {
   apiKey: string;
   authType: AuthType;
 }): string {
-  if (config.platformType === "mock") {
+  if (config.platformType === "unconfigured") {
     return "";
   }
   if (!config.apiUrl.trim()) {
@@ -98,7 +98,7 @@ export default function PlatformConfigSection({
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [config, setConfig] = useState<PlatformConfigResponse | null>(null);
-  const [platformType, setPlatformType] = useState<PlatformType>("mock");
+  const [platformType, setPlatformType] = useState<PlatformType>("unconfigured");
   const [authType, setAuthType] = useState<AuthType>("api_key");
   const [apiUrl, setApiUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -109,26 +109,26 @@ export default function PlatformConfigSection({
   const [isBuiltinProfile, setIsBuiltinProfile] = useState(false);
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
 
-  const isMock = useMemo(() => platformType === "mock", [platformType]);
+  const isUnconfigured = useMemo(() => platformType === "unconfigured", [platformType]);
   const adapterTarget = useMemo(
     () =>
       platformType === "reneryo"
         ? "RENERYO"
         : platformType === "custom_rest"
         ? "Custom REST"
-        : "Mock",
+        : "Unconfigured",
     [platformType],
   );
 
   const formLocked = isBuiltinProfile;
 
   const handleProfileChange = useCallback((profile: ProfileDetailResponse) => {
-    setPlatformType(profile.platform_type);
+    setPlatformType(profile.platform_type as PlatformType);
     setApiUrl(profile.api_url);
     setApiKey("");
     setAuthType(fromBackendAuthType(profile.extra_settings?.auth_type));
     setConfig({
-      platform_type: profile.platform_type,
+      platform_type: profile.platform_type as PlatformType,
       api_url: profile.api_url,
       api_key: profile.api_key,
       extra_settings: profile.extra_settings,
@@ -145,11 +145,11 @@ export default function PlatformConfigSection({
     try {
       const data = await getPlatformConfig();
       setConfig(data);
-      setPlatformType(data.platform_type);
+      setPlatformType(data.platform_type as PlatformType);
       setAuthType(fromBackendAuthType(data.extra_settings?.auth_type));
       setApiUrl(data.api_url);
       setApiKey("");
-      setIsBuiltinProfile(data.platform_type === "mock");
+      setIsBuiltinProfile(data.platform_type === "unconfigured");
     } catch (error: unknown) {
       const message = toFriendlyErrorMessage(error);
       setInlineError(message);
@@ -199,7 +199,7 @@ export default function PlatformConfigSection({
 
   const handleReset = useCallback(async () => {
     const confirmed = window.confirm(
-      "Reset platform configuration to mock? This will disconnect from your current platform.",
+      "Reset platform configuration to unconfigured? This will disconnect from your current platform.",
     );
     if (!confirmed) return;
 
@@ -212,7 +212,7 @@ export default function PlatformConfigSection({
       setEditing(false);
       setProfileRefreshKey((k) => k + 1);
       setIsBuiltinProfile(true);
-      onNotify("success", "Platform config reset to mock.");
+      onNotify("success", "Platform config reset to unconfigured.");
     } catch (error: unknown) {
       const message = toFriendlyErrorMessage(error);
       setInlineError(message);
@@ -226,7 +226,7 @@ export default function PlatformConfigSection({
     const validationError = validate({
       platformType,
       apiUrl,
-      apiKey: isMock ? "" : apiKey,
+      apiKey: isUnconfigured ? "" : apiKey,
       authType,
     });
     setInlineError(validationError);
@@ -252,7 +252,7 @@ export default function PlatformConfigSection({
     } finally {
       setTesting(false);
     }
-  }, [apiKey, apiUrl, authType, isMock, onNotify, platformType]);
+  }, [apiKey, apiUrl, authType, isUnconfigured, onNotify, platformType]);
 
   return (
     <section className="space-y-3">
@@ -313,7 +313,7 @@ export default function PlatformConfigSection({
                 disabled={!editing || saving || formLocked}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               >
-                <option value="mock">Mock</option>
+                <option value="unconfigured">Unconfigured</option>
                 <option value="reneryo">RENERYO</option>
                 <option value="custom_rest">Custom REST</option>
               </select>
@@ -327,7 +327,7 @@ export default function PlatformConfigSection({
                 type="url"
                 value={apiUrl}
                 onChange={(event) => setApiUrl(event.target.value)}
-                disabled={!editing || saving || formLocked || isMock}
+                disabled={!editing || saving || formLocked || isUnconfigured}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               />
             </label>
@@ -341,7 +341,7 @@ export default function PlatformConfigSection({
                 onChange={(event) =>
                   setAuthType(event.target.value as AuthType)
                 }
-                disabled={!editing || saving || formLocked || isMock}
+                disabled={!editing || saving || formLocked || isUnconfigured}
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               >
                 <option value="api_key">API Key</option>
@@ -365,7 +365,7 @@ export default function PlatformConfigSection({
                         : "Enter API key to update"
                       : config?.api_key ?? "****"
                   }
-                  disabled={!editing || saving || formLocked || isMock}
+                  disabled={!editing || saving || formLocked || isUnconfigured}
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                 />
               </label>

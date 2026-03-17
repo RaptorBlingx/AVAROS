@@ -544,7 +544,7 @@ function normalizeDiscoveryResponse(
     : [];
   if (nativeAssets.length > 0) {
     return {
-      platform_type: (data.platform_type as AssetDiscoveryResponse["platform_type"]) ?? "mock",
+      platform_type: (data.platform_type as AssetDiscoveryResponse["platform_type"]) ?? "unconfigured",
       supports_discovery: Boolean(data.supports_discovery),
       assets: nativeAssets,
       existing_mappings: data.existing_mappings ?? {},

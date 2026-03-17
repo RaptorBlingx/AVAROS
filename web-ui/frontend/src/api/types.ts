@@ -12,7 +12,7 @@ export type SystemStatusResponse = {
   version: string;
 };
 
-export type PlatformType = "mock" | "reneryo" | "custom_rest";
+export type PlatformType = "unconfigured" | "reneryo" | "custom_rest";
 
 export type PlatformConfigRequest = {
   platform_type: PlatformType;

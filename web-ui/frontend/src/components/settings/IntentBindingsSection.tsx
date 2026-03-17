@@ -78,7 +78,7 @@ function createRow(binding: IntentBinding): IntentBindingRow {
 export default function IntentBindingsSection({
   onNotify,
   refreshKey = 0,
-  activeProfile = "mock",
+  activeProfile = "unconfigured",
 }: IntentBindingsSectionProps) {
   const { isDark } = useTheme();
   const [rows, setRows] = useState<IntentBindingRow[]>([]);
@@ -86,8 +86,8 @@ export default function IntentBindingsSection({
   const [loading, setLoading] = useState(true);
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
 
-  const isMockProfile = useMemo(
-    () => activeProfile === "mock",
+  const isUnconfiguredProfile = useMemo(
+    () => activeProfile === "unconfigured",
     [activeProfile],
   );
 
@@ -147,7 +147,7 @@ export default function IntentBindingsSection({
   }, []);
 
   const addRow = useCallback(() => {
-    if (isMockProfile) {
+    if (isUnconfiguredProfile) {
       return;
     }
     const candidate = INTENT_OPTIONS.find((option) => !usedIntents.has(option.value));
@@ -165,10 +165,10 @@ export default function IntentBindingsSection({
         ...EMPTY_ROW_DEFAULTS,
       },
     ]);
-  }, [isMockProfile, onNotify, usedIntents]);
+  }, [isUnconfiguredProfile, onNotify, usedIntents]);
 
   const saveRow = useCallback(async (rowId: string) => {
-    if (isMockProfile) {
+    if (isUnconfiguredProfile) {
       return;
     }
     const row = rows.find((item) => item.id === rowId);
@@ -216,10 +216,10 @@ export default function IntentBindingsSection({
     } finally {
       setSavingRowId(null);
     }
-  }, [isMockProfile, onNotify, rows, validateRow]);
+  }, [isUnconfiguredProfile, onNotify, rows, validateRow]);
 
   const removeRow = useCallback(async (row: IntentBindingRow) => {
-    if (isMockProfile) {
+    if (isUnconfiguredProfile) {
       return;
     }
     try {
@@ -236,7 +236,7 @@ export default function IntentBindingsSection({
     } catch (error: unknown) {
       onNotify("error", toFriendlyErrorMessage(error));
     }
-  }, [isMockProfile, onNotify]);
+  }, [isUnconfiguredProfile, onNotify]);
 
   return (
     <section className="space-y-3">
@@ -244,7 +244,7 @@ export default function IntentBindingsSection({
         <button
           type="button"
           onClick={addRow}
-          disabled={isMockProfile}
+          disabled={isUnconfiguredProfile}
           className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
             isDark
               ? "border-slate-500 bg-slate-700 text-slate-100 hover:bg-slate-600"
@@ -261,9 +261,9 @@ export default function IntentBindingsSection({
         </div>
       ) : (
         <div className="reveal-in">
-          {isMockProfile && (
+          {isUnconfiguredProfile && (
             <div className="mb-3 rounded-lg bg-blue-50 p-3 text-sm text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-              Mock profile uses built-in demo data. Intent bindings are not configurable.
+              Unconfigured profile uses built-in demo data. Intent bindings are not configurable.
             </div>
           )}
           {rows.length === 0 ? (
@@ -292,7 +292,7 @@ export default function IntentBindingsSection({
                       <td className="px-3 py-3 align-top min-w-[220px]">
                         <select
                           value={row.intent_name}
-                          disabled={isMockProfile}
+                          disabled={isUnconfiguredProfile}
                           onChange={(event) =>
                             updateRow(row.id, "intent_name", event.target.value as NonMetricIntentName)
                           }
@@ -311,7 +311,7 @@ export default function IntentBindingsSection({
                       <td className="px-3 py-3 align-top min-w-[120px]">
                         <select
                           value={row.method}
-                          disabled={isMockProfile}
+                          disabled={isUnconfiguredProfile}
                           onChange={(event) =>
                             updateRow(row.id, "method", event.target.value as IntentBindingMethod)
                           }
@@ -326,7 +326,7 @@ export default function IntentBindingsSection({
                         <input
                           type="text"
                           value={row.endpoint}
-                          disabled={isMockProfile}
+                          disabled={isUnconfiguredProfile}
                           onChange={(event) => updateRow(row.id, "endpoint", event.target.value)}
                           className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                         />
@@ -338,7 +338,7 @@ export default function IntentBindingsSection({
                         <input
                           type="text"
                           value={row.json_path}
-                          disabled={isMockProfile}
+                          disabled={isUnconfiguredProfile}
                           onChange={(event) => updateRow(row.id, "json_path", event.target.value)}
                           className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                         />
@@ -350,7 +350,7 @@ export default function IntentBindingsSection({
                         <input
                           type="text"
                           value={row.success_path}
-                          disabled={isMockProfile}
+                          disabled={isUnconfiguredProfile}
                           onChange={(event) => updateRow(row.id, "success_path", event.target.value)}
                           className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                         />
@@ -360,7 +360,7 @@ export default function IntentBindingsSection({
                           <button
                             type="button"
                             onClick={() => void saveRow(row.id)}
-                            disabled={isMockProfile || savingRowId === row.id}
+                            disabled={isUnconfiguredProfile || savingRowId === row.id}
                             className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${
                               isDark
                                 ? "border-slate-400 bg-white text-slate-900"
@@ -372,7 +372,7 @@ export default function IntentBindingsSection({
                           <button
                             type="button"
                             onClick={() => void removeRow(row)}
-                            disabled={isMockProfile}
+                            disabled={isUnconfiguredProfile}
                             className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${
                               isDark
                                 ? "border-rose-400 bg-rose-950/60 text-rose-200"

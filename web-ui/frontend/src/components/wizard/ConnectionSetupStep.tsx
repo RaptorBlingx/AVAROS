@@ -37,13 +37,13 @@ export default function ConnectionSetupStep({
   onTestConnection,
   onSave,
 }: ConnectionSetupStepProps) {
-  const isMock = platformType === "mock";
+  const isUnconfigured = platformType === "unconfigured";
   const adapterTarget =
     platformType === "reneryo"
       ? "RENERYO"
       : platformType === "custom_rest"
       ? "Custom REST"
-      : "Mock";
+      : "Unconfigured";
 
   return (
     <section className="space-y-4">
@@ -63,9 +63,9 @@ export default function ConnectionSetupStep({
       </header>
 
       <div className="brand-hero rounded-2xl p-6 backdrop-blur-sm">
-        {isMock ? (
+        {isUnconfigured ? (
           <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/40 dark:bg-sky-900/30 dark:text-sky-200">
-            Mock mode selected. No connection details are required.
+            Unconfigured mode. No connection details are required.
           </div>
         ) : (
           <div className="space-y-4">
@@ -135,7 +135,7 @@ export default function ConnectionSetupStep({
         {testResult && <ConnectionTestResult result={testResult} />}
 
         <div className="mt-6 flex flex-wrap gap-3">
-          {!isMock && (
+          {!isUnconfigured && (
             <button
               type="button"
               className="btn-brand-subtle inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"

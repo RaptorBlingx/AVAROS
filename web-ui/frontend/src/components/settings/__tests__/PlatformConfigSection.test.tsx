@@ -10,8 +10,9 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  ActivateProfileResponse,
   PlatformConfigResponse,
-  ProfileConfig,
+  ProfileDetailResponse,
   ProfileListResponse,
 } from "../../../api/types";
 import PlatformConfigSection from "../PlatformConfigSection";
@@ -48,7 +49,7 @@ const mockActivateProfile = vi.mocked(activateProfile);
 const mockResetPlatformConfig = vi.mocked(resetPlatformConfig);
 
 const DEFAULT_PLATFORM_CONFIG: PlatformConfigResponse = {
-  platform_type: "mock",
+  platform_type: "unconfigured",
   api_url: "",
   api_key: "****",
   extra_settings: {},
@@ -57,8 +58,8 @@ const DEFAULT_PLATFORM_CONFIG: PlatformConfigResponse = {
 const MOCK_PROFILES: ProfileListResponse = {
   profiles: [
     {
-      name: "mock",
-      platform_type: "mock",
+      name: "unconfigured",
+      platform_type: "unconfigured",
       is_active: true,
       is_builtin: true,
     },
@@ -75,12 +76,12 @@ const MOCK_PROFILES: ProfileListResponse = {
       is_builtin: false,
     },
   ],
-  active_profile: "mock",
+  active_profile: "unconfigured",
 };
 
-const MOCK_PROFILE_CONFIG: ProfileConfig = {
-  name: "mock",
-  platform_type: "mock",
+const MOCK_PROFILE_CONFIG: ProfileDetailResponse = {
+  name: "unconfigured",
+  platform_type: "unconfigured",
   api_url: "",
   api_key: "****",
   extra_settings: {},
@@ -88,7 +89,7 @@ const MOCK_PROFILE_CONFIG: ProfileConfig = {
   is_active: true,
 };
 
-const RENERYO_PROFILE_CONFIG: ProfileConfig = {
+const RENERYO_PROFILE_CONFIG: ProfileDetailResponse = {
   name: "my-reneryo",
   platform_type: "reneryo",
   api_url: "https://api.reneryo.com",
@@ -98,7 +99,7 @@ const RENERYO_PROFILE_CONFIG: ProfileConfig = {
   is_active: false,
 };
 
-const CUSTOM_REST_NONE_PROFILE_CONFIG: ProfileConfig = {
+const CUSTOM_REST_NONE_PROFILE_CONFIG: ProfileDetailResponse = {
   name: "custom-no-auth",
   platform_type: "custom_rest",
   api_url: "https://custom.example.com",
@@ -133,14 +134,14 @@ describe("PlatformConfigSection with ProfileSelector", () => {
     mockGetPlatformConfig.mockResolvedValue(DEFAULT_PLATFORM_CONFIG);
     mockListProfiles.mockResolvedValue(MOCK_PROFILES);
     mockGetProfile.mockImplementation(async (name: string) => {
-      if (name === "mock") return MOCK_PROFILE_CONFIG;
+      if (name === "unconfigured") return MOCK_PROFILE_CONFIG;
       if (name === "my-reneryo") return RENERYO_PROFILE_CONFIG;
       if (name === "custom-no-auth") return CUSTOM_REST_NONE_PROFILE_CONFIG;
       throw new Error(`Unknown profile: ${name}`);
     });
     mockResetPlatformConfig.mockResolvedValue({
       status: "reset",
-      platform_type: "mock",
+      platform_type: "unconfigured",
     });
     vi.spyOn(window, "confirm").mockReturnValue(true);
   });
@@ -155,11 +156,11 @@ describe("PlatformConfigSection with ProfileSelector", () => {
     await waitFor(() => {
       const platformSelect = findPlatformSelect(container);
       expect(platformSelect).not.toBeNull();
-      expect(platformSelect!.value).toBe("mock");
+      expect(platformSelect!.value).toBe("unconfigured");
     });
   });
 
-  it("hides Edit button when mock (builtin) profile is active", async () => {
+  it("hides Edit button when unconfigured (builtin) profile is active", async () => {
     const { container } = render(<PlatformConfigSection onNotify={onNotify} />);
 
     await waitFor(() => {
@@ -193,17 +194,20 @@ describe("PlatformConfigSection with ProfileSelector", () => {
   });
 
   it("shows Edit button for non-builtin active profile after switch", async () => {
-    const activatedConfig: ProfileConfig = {
-      ...RENERYO_PROFILE_CONFIG,
-      is_active: true,
+    const activatedResult: ActivateProfileResponse = {
+      status: "activated",
+      active_profile: "my-reneryo",
+      adapter_type: "reneryo",
+      message: "Adapter reloaded successfully",
+      voice_reloaded: true,
     };
-    mockActivateProfile.mockResolvedValue(activatedConfig);
+    mockActivateProfile.mockResolvedValue(activatedResult);
 
     const updatedProfiles: ProfileListResponse = {
       profiles: [
         {
-          name: "mock",
-          platform_type: "mock",
+          name: "unconfigured",
+          platform_type: "unconfigured",
           is_active: false,
           is_builtin: true,
         },
@@ -244,7 +248,7 @@ describe("PlatformConfigSection with ProfileSelector", () => {
     });
   });
 
-  it("mock profile form fields are disabled", async () => {
+  it("unconfigured profile form fields are disabled", async () => {
     const { container } = render(<PlatformConfigSection onNotify={onNotify} />);
 
     await waitFor(() => {

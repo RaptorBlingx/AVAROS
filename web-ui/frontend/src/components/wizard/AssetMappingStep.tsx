@@ -24,7 +24,7 @@ export default function AssetMappingStep({
             Asset Mapping
           </h2>
           <Tooltip
-            content="Configure assets for the selected platform. RENERYO uses discovery, custom REST uses manual mapping, mock is read-only."
+            content="Configure assets for the selected platform. RENERYO uses discovery, custom REST uses manual mapping, unconfigured is read-only."
             ariaLabel="Why asset mapping is needed"
           />
         </div>
