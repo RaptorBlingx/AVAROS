@@ -4,18 +4,25 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from skill.adapters.mock import MockAdapter
 from skill.domain.models import Asset
 
 _ENTITY_FILES = ("asset.entity", "asset_a.entity", "asset_b.entity")
 
+_PLACEHOLDER_ASSETS = (
+    "Line-1",
+    "Line-2",
+    "Assembly-A",
+    "Assembly-B",
+    "CNC-Mill-01",
+)
+
 
 def regenerate_asset_entities(assets: list[Asset], locale_dir: Path) -> None:
     """Generate OVOS asset entity files for one locale directory."""
-    normalized_assets = assets if assets else _default_mock_assets()
+    normalized_assets = assets if assets else _default_placeholder_assets()
     entries = _normalized_entries(normalized_assets)
     if not entries:
-        entries = _normalized_entries(_default_mock_assets())
+        entries = _normalized_entries(_default_placeholder_assets())
     content = "\n".join(entries) + "\n"
 
     locale_path = Path(locale_dir)
@@ -55,16 +62,14 @@ def _normalize(value: str) -> str:
     return " ".join(str(value).strip().split()).lower()
 
 
-def _default_mock_assets() -> list[Asset]:
-    assets: list[Asset] = []
-    for asset_name in MockAdapter._DEMO_ASSETS:
-        assets.append(
-            Asset(
-                asset_id=asset_name,
-                display_name=asset_name,
-                asset_type=MockAdapter._infer_asset_type(asset_name),
-                aliases=MockAdapter._build_asset_aliases(asset_name),
-                metadata={"source": "mock_demo"},
-            )
+def _default_placeholder_assets() -> list[Asset]:
+    return [
+        Asset(
+            asset_id=name,
+            display_name=name,
+            asset_type="line" if name.startswith("Line") else "machine",
+            aliases=[name.lower(), name.replace("-", " ").lower()],
+            metadata={"source": "placeholder"},
         )
-    return assets
+        for name in _PLACEHOLDER_ASSETS
+    ]

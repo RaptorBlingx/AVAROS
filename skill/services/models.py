@@ -15,21 +15,21 @@ class PlatformConfig:
     """Platform connection configuration.
 
     Attributes:
-        platform_type: Adapter type ("mock", "reneryo", etc.)
+        platform_type: Adapter type ("reneryo", "custom_rest", etc.)
         api_url: Platform API endpoint
         api_key: Authentication key (encrypted at rest)
         extra_settings: Platform-specific settings
     """
 
-    platform_type: str = "mock"
+    platform_type: str = ""
     api_url: str = ""
     api_key: str = ""
     extra_settings: dict[str, Any] = field(default_factory=dict)
 
     @property
     def is_configured(self) -> bool:
-        """Check if a real platform is configured (not mock)."""
-        return self.platform_type != "mock" and bool(self.api_url)
+        """Check if a real platform is configured."""
+        return bool(self.platform_type) and bool(self.api_url)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -39,7 +39,7 @@ class PlatformConfig:
     def from_dict(cls, data: dict[str, Any]) -> PlatformConfig:
         """Create from dictionary."""
         return cls(
-            platform_type=data.get("platform_type", "mock"),
+            platform_type=data.get("platform_type", ""),
             api_url=data.get("api_url", ""),
             api_key=data.get("api_key", ""),
             extra_settings=data.get("extra_settings", {}),

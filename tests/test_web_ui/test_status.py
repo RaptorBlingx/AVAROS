@@ -27,12 +27,12 @@ class TestStatusUnconfigured:
         assert response.status_code == 200
 
     def test_status_unconfigured_defaults(self, client: TestClient) -> None:
-        """Fresh DB reports configured=false, adapter=mock."""
+        """Fresh DB reports configured=false, adapter=unconfigured."""
         body = client.get("/api/v1/status").json()
 
         assert body["configured"] is False
-        assert body["active_adapter"] == "mock"
-        assert body["platform_type"] == "mock"
+        assert body["active_adapter"] == "unconfigured"
+        assert body["platform_type"] == "unconfigured"
 
     def test_status_database_connected_true(self, client: TestClient) -> None:
         """In-memory SQLite counts as connected database."""
@@ -78,12 +78,12 @@ class TestStatusConfigured:
         assert body["active_adapter"] == "reneryo"
         assert body["platform_type"] == "reneryo"
 
-    def test_status_returns_mock_after_config_deleted(
+    def test_status_returns_unconfigured_after_config_deleted(
         self,
         client: TestClient,
         settings_service: SettingsService,
     ) -> None:
-        """Deleting platform config reverts to mock."""
+        """Deleting platform config reverts to unconfigured."""
         settings_service.update_platform_config(
             PlatformConfig(
                 platform_type="reneryo",
@@ -96,7 +96,7 @@ class TestStatusConfigured:
         body = client.get("/api/v1/status").json()
 
         assert body["configured"] is False
-        assert body["active_adapter"] == "mock"
+        assert body["active_adapter"] == "unconfigured"
 
 
 class TestStatusDatabaseFailure:
@@ -116,7 +116,7 @@ class TestStatusDatabaseFailure:
             body = client.get("/api/v1/status").json()
 
         assert body["configured"] is False
-        assert body["active_adapter"] == "mock"
+        assert body["active_adapter"] == "unconfigured"
         assert body["database_connected"] is False
 
 

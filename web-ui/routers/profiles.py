@@ -105,8 +105,8 @@ def _validate_activation(
     Raises:
         HTTPException: 404 if profile not found, 422 if config invalid.
     """
-    if name == svc.BUILTIN_MOCK_PROFILE:
-        return  # mock always valid
+    if name == svc.DEFAULT_PROFILE:
+        return  # unconfigured always valid
 
     config = svc.get_profile(name)
     if config is None:
@@ -161,7 +161,7 @@ def _profile_detail(
         api_url=config.api_url,
         api_key=_mask_api_key(config.api_key),
         extra_settings=sanitize_extra_settings(config.extra_settings),
-        is_builtin=name == "mock",
+        is_builtin=name == "unconfigured",
         is_active=name == active,
     )
 
@@ -215,10 +215,10 @@ def create_profile(
     svc: SettingsService = Depends(get_settings_service),
 ) -> ProfileDetailResponse:
     """Create a new named profile."""
-    if payload.name == svc.BUILTIN_MOCK_PROFILE:
+    if payload.name == svc.DEFAULT_PROFILE:
         raise HTTPException(
             status_code=400,
-            detail="Profile 'mock' is built-in and cannot be created",
+            detail="Profile 'unconfigured' is built-in and cannot be created",
         )
 
     config = PlatformConfig(
@@ -269,7 +269,7 @@ def delete_profile(
     name: str,
     svc: SettingsService = Depends(get_settings_service),
 ) -> DeleteProfileResponse:
-    """Delete a custom profile. Falls back to mock if active."""
+    """Delete a custom profile. Falls back to unconfigured if active."""
     try:
         was_active = svc.get_active_profile_name() == name
         deleted = svc.delete_profile(name)
@@ -284,7 +284,7 @@ def delete_profile(
     message = "Profile deleted"
     if was_active:
         message = (
-            "Active profile reset to mock "
+            "Active profile reset to unconfigured "
             "because deleted profile was active"
         )
     return DeleteProfileResponse(
@@ -348,7 +348,7 @@ async def activate_profile(
     voice_reloaded = _notify_skill_via_bus(name)
 
     config = svc.get_profile(name)
-    adapter_type = config.platform_type if config else "mock"
+    adapter_type = config.platform_type if config else "unconfigured"
     return ActivateProfileResponse(
         status="activated",
         active_profile=name,
@@ -368,7 +368,7 @@ def _validation_status_code(exc: ValidationError) -> int:
         exc: The validation error from SettingsService.
 
     Returns:
-        400 for mock-related, 409 for duplicates, 404 not found.
+        400 for validation, 409 for duplicates, 404 not found.
     """
     msg = exc.message.lower()
     if "already exists" in msg:

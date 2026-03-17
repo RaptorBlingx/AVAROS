@@ -5,8 +5,8 @@ Manages AVAROS configuration stored in PostgreSQL (production) or
 SQLite (testing/development).  Supports hot-reload without container
 restart.
 
-Zero-Config Philosophy:
-    - On first run, no configuration required (MockAdapter used)
+Configuration Philosophy:
+    - On first run, UnconfiguredAdapter is used until a platform is set up
     - Users configure via Web UI, not YAML files
     - Settings persisted to database for reliability
 
@@ -176,7 +176,7 @@ INTENT_METRIC_REQUIREMENTS: dict[str, list[CanonicalMetric]] = {
     "help.capabilities.list": [],
 }
 
-_MOCK_ENDPOINT_BY_METRIC: dict[str, str] = {
+_DEFAULT_ENDPOINT_BY_METRIC: dict[str, str] = {
     "energy_per_unit": "/api/v1/kpis/energy/per-unit",
     "energy_total": "/api/v1/kpis/energy/total",
     "peak_demand": "/api/v1/kpis/energy/peak-demand",
@@ -198,7 +198,7 @@ _MOCK_ENDPOINT_BY_METRIC: dict[str, str] = {
     "co2_per_batch": "/api/v1/kpis/carbon/per-batch",
 }
 
-_MOCK_UNIT_BY_METRIC: dict[str, str] = {
+_DEFAULT_UNIT_BY_METRIC: dict[str, str] = {
     "energy_per_unit": "kWh/unit",
     "energy_total": "kWh",
     "peak_demand": "kW",
@@ -220,14 +220,14 @@ _MOCK_UNIT_BY_METRIC: dict[str, str] = {
     "co2_per_batch": "kg CO₂-eq/batch",
 }
 
-MOCK_DEFAULT_METRIC_MAPPINGS: dict[str, dict[str, Any]] = {
+DEFAULT_METRIC_MAPPINGS: dict[str, dict[str, Any]] = {
     metric: {
         "endpoint": endpoint,
         "json_path": "$.value",
-        "unit": _MOCK_UNIT_BY_METRIC.get(metric, ""),
+        "unit": _DEFAULT_UNIT_BY_METRIC.get(metric, ""),
         "transform": None,
     }
-    for metric, endpoint in _MOCK_ENDPOINT_BY_METRIC.items()
+    for metric, endpoint in _DEFAULT_ENDPOINT_BY_METRIC.items()
 }
 
 NON_METRIC_INTENTS: tuple[str, ...] = (
@@ -238,37 +238,37 @@ NON_METRIC_INTENTS: tuple[str, ...] = (
     "help.capabilities.list",
 )
 
-MOCK_DEFAULT_INTENT_BINDINGS: dict[str, dict[str, Any]] = {
+DEFAULT_INTENT_BINDINGS: dict[str, dict[str, Any]] = {
     "control.device.turn_on": {
-        "endpoint": "/mock/control/turn-on",
+        "endpoint": "/api/control/turn-on",
         "method": "POST",
         "json_path": "$.message",
         "success_path": "$.success",
         "transform": None,
     },
     "control.device.turn_off": {
-        "endpoint": "/mock/control/turn-off",
+        "endpoint": "/api/control/turn-off",
         "method": "POST",
         "json_path": "$.message",
         "success_path": "$.success",
         "transform": None,
     },
     "status.system.show": {
-        "endpoint": "/mock/status/system",
+        "endpoint": "/api/status/system",
         "method": "GET",
         "json_path": "$.status",
         "success_path": "$.online",
         "transform": None,
     },
     "status.profile.show": {
-        "endpoint": "/mock/status/profile",
+        "endpoint": "/api/status/profile",
         "method": "GET",
         "json_path": "$.profile",
         "success_path": "$.success",
         "transform": None,
     },
     "help.capabilities.list": {
-        "endpoint": "/mock/help/capabilities",
+        "endpoint": "/api/help/capabilities",
         "method": "GET",
         "json_path": "$.capabilities",
         "success_path": "$.success",
@@ -388,15 +388,13 @@ class SettingsService(ProfileMixin):
         self._migrate_legacy_config()
         # Migrate global settings → profile-scoped keys (DEC-029)
         self._migrate_global_settings_to_profile()
-        # Optional bootstrap profile for reneryo-mock demo API.
-        self._bootstrap_demo_profile_if_enabled()
     
     def is_configured(self) -> bool:
         """
         Check if AVAROS has been configured with a real platform.
         
         Returns:
-            True if a platform other than mock is configured
+            True if a platform is configured
         """
         self._ensure_initialized()
         config = self.get_platform_config()
@@ -521,7 +519,7 @@ class SettingsService(ProfileMixin):
             active: Whether the intent is active
 
         Raises:
-            ValidationError: If intent_name unknown or profile is mock
+            ValidationError: If intent_name unknown or no profile configured
         """
         self._validate_intent_name(intent_name)
         key = self._scoped_key(self.INTENT_ACTIVE_PREFIX, intent_name)
@@ -530,8 +528,7 @@ class SettingsService(ProfileMixin):
     def is_intent_active(self, intent_name: str) -> bool:
         """Read intent activation state (profile-scoped, DEC-029).
 
-        Mock profile always returns ``True``. Custom profiles
-        return stored state or ``True`` by default (DEC-005).
+        Returns stored state or ``True`` by default.
 
         Args:
             intent_name: Intent identifier
@@ -540,7 +537,7 @@ class SettingsService(ProfileMixin):
             True if the intent is active (or not yet configured)
         """
         profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
+        if profile == self.DEFAULT_PROFILE:
             return True
         key = self._scoped_key_for(
             self.INTENT_ACTIVE_PREFIX, profile, intent_name,
@@ -601,7 +598,7 @@ class SettingsService(ProfileMixin):
             year: Reference year
 
         Raises:
-            ValidationError: If invalid input or profile is mock
+            ValidationError: If invalid input or no profile configured
         """
         self._validate_energy_source(energy_source)
         self._validate_positive_factor(factor)
@@ -661,7 +658,7 @@ class SettingsService(ProfileMixin):
     def get_emission_factor(self, energy_source: str) -> EmissionFactor | None:
         """Get an emission factor (profile-scoped, DEC-029).
 
-        Mock profile returns Türkiye defaults. Custom profiles
+        Unconfigured profile returns Türkiye defaults. Configured profiles
         read from profile-scoped storage.
 
         Args:
@@ -671,7 +668,7 @@ class SettingsService(ProfileMixin):
             EmissionFactor instance or None if not configured
         """
         profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
+        if profile == self.DEFAULT_PROFILE:
             turkey = DEFAULT_EMISSION_FACTORS.get("TR", {})
             return turkey.get(energy_source)
         key = self._scoped_key_for(
@@ -691,7 +688,7 @@ class SettingsService(ProfileMixin):
     def list_emission_factors(self) -> dict[str, EmissionFactor]:
         """List emission factors (profile-scoped, DEC-029).
 
-        Mock returns Türkiye defaults. Custom profiles return
+        Unconfigured returns Türkiye defaults. Configured profiles return
         only that profile's stored factors.
 
         Returns:
@@ -699,7 +696,7 @@ class SettingsService(ProfileMixin):
         """
         self._ensure_initialized()
         profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
+        if profile == self.DEFAULT_PROFILE:
             return dict(DEFAULT_EMISSION_FACTORS.get("TR", {}))
         prefix = self._scoped_key_for(
             self.EMISSION_FACTOR_PREFIX, profile, "",
@@ -732,7 +729,7 @@ class SettingsService(ProfileMixin):
     def delete_emission_factor(self, energy_source: str) -> bool:
         """Delete a stored emission factor (profile-scoped, DEC-029).
 
-        Returns ``False`` for mock profile (nothing to delete).
+        Returns ``False`` for unconfigured profile (nothing to delete).
 
         Args:
             energy_source: "electricity", "gas", or "water"
@@ -741,7 +738,7 @@ class SettingsService(ProfileMixin):
             True if deleted, False if not found
         """
         profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
+        if profile == self.DEFAULT_PROFILE:
             return False
         key = self._scoped_key_for(
             self.EMISSION_FACTOR_PREFIX, profile, energy_source,
@@ -824,7 +821,7 @@ class SettingsService(ProfileMixin):
             mapping: Mapping data (endpoint, json_path, unit, etc.)
 
         Raises:
-            ValidationError: If metric_name invalid or profile is mock
+            ValidationError: If metric_name invalid or profile is unconfigured
         """
         self._validate_metric_name(metric_name)
         key = self._scoped_key(self.METRIC_MAPPING_PREFIX, metric_name)
@@ -834,7 +831,7 @@ class SettingsService(ProfileMixin):
         """Return asset mappings for a profile (DEC-029 scoped storage)."""
         self._ensure_initialized()
         target_profile = self._resolve_asset_profile(profile)
-        if target_profile == self.BUILTIN_MOCK_PROFILE:
+        if target_profile == self.DEFAULT_PROFILE:
             return {}
         key = self._asset_mappings_storage_key(target_profile)
         mappings = self.get_setting(key, default={})
@@ -850,9 +847,9 @@ class SettingsService(ProfileMixin):
         """Persist profile-scoped asset mappings."""
         self._ensure_initialized()
         target_profile = self._resolve_asset_profile(profile)
-        if target_profile == self.BUILTIN_MOCK_PROFILE:
+        if target_profile == self.DEFAULT_PROFILE:
             raise ValidationError(
-                message="Cannot write settings for built-in mock profile",
+                message="Cannot write settings for unconfigured profile",
                 field="profile",
                 value=target_profile,
             )
@@ -972,7 +969,7 @@ class SettingsService(ProfileMixin):
     def get_metric_mapping(self, metric_name: str) -> dict[str, Any] | None:
         """Get a metric mapping (profile-scoped, DEC-029).
 
-        Mock profile returns virtual built-in demo mappings.
+        Unconfigured profile returns default built-in mappings.
 
         Args:
             metric_name: Canonical metric name
@@ -981,8 +978,8 @@ class SettingsService(ProfileMixin):
             Mapping data dictionary, or None if not found
         """
         profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
-            return deepcopy(MOCK_DEFAULT_METRIC_MAPPINGS.get(metric_name))
+        if profile == self.DEFAULT_PROFILE:
+            return deepcopy(DEFAULT_METRIC_MAPPINGS.get(metric_name))
         key = self._scoped_key_for(
             self.METRIC_MAPPING_PREFIX, profile, metric_name,
         )
@@ -991,16 +988,16 @@ class SettingsService(ProfileMixin):
     def list_metric_mappings(self) -> dict[str, dict[str, Any]]:
         """List metric mappings (profile-scoped, DEC-029).
 
-        Mock returns built-in demo mappings. Custom profiles return only that
-        profile's stored mappings.
+        Unconfigured returns default built-in mappings. Configured profiles
+        return only that profile's stored mappings.
 
         Returns:
             Dictionary mapping canonical metric names to their mapping data
         """
         self._ensure_initialized()
         profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
-            return deepcopy(MOCK_DEFAULT_METRIC_MAPPINGS)
+        if profile == self.DEFAULT_PROFILE:
+            return deepcopy(DEFAULT_METRIC_MAPPINGS)
         prefix = self._scoped_key_for(
             self.METRIC_MAPPING_PREFIX, profile, "",
         )
@@ -1015,7 +1012,7 @@ class SettingsService(ProfileMixin):
     def delete_metric_mapping(self, metric_name: str) -> bool:
         """Delete a metric mapping (profile-scoped, DEC-029).
 
-        Returns ``False`` for mock profile (nothing to delete).
+        Returns ``False`` for unconfigured profile (nothing to delete).
 
         Args:
             metric_name: Canonical metric name
@@ -1024,7 +1021,7 @@ class SettingsService(ProfileMixin):
             True if mapping was deleted, False if not found
         """
         profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
+        if profile == self.DEFAULT_PROFILE:
             return False
         key = self._scoped_key_for(
             self.METRIC_MAPPING_PREFIX, profile, metric_name,
@@ -1043,8 +1040,8 @@ class SettingsService(ProfileMixin):
         """Get a non-metric intent binding from active profile."""
         self._validate_non_metric_intent_name(intent_name)
         profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
-            return deepcopy(MOCK_DEFAULT_INTENT_BINDINGS.get(intent_name))
+        if profile == self.DEFAULT_PROFILE:
+            return deepcopy(DEFAULT_INTENT_BINDINGS.get(intent_name))
         key = self._scoped_key_for(
             self.INTENT_BINDING_PREFIX, profile, intent_name,
         )
@@ -1054,8 +1051,8 @@ class SettingsService(ProfileMixin):
         """List non-metric intent bindings for active profile."""
         self._ensure_initialized()
         profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
-            return deepcopy(MOCK_DEFAULT_INTENT_BINDINGS)
+        if profile == self.DEFAULT_PROFILE:
+            return deepcopy(DEFAULT_INTENT_BINDINGS)
         prefix = self._scoped_key_for(
             self.INTENT_BINDING_PREFIX, profile, "",
         )
@@ -1071,7 +1068,7 @@ class SettingsService(ProfileMixin):
         """Delete a non-metric intent binding from active profile."""
         self._validate_non_metric_intent_name(intent_name)
         profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
+        if profile == self.DEFAULT_PROFILE:
             return False
         key = self._scoped_key_for(
             self.INTENT_BINDING_PREFIX, profile, intent_name,
@@ -1114,7 +1111,7 @@ class SettingsService(ProfileMixin):
         target_profile = str(profile).strip() if profile is not None else ""
         if not target_profile:
             target_profile = self.get_active_profile_name()
-        if target_profile == self.BUILTIN_MOCK_PROFILE:
+        if target_profile == self.DEFAULT_PROFILE:
             return target_profile
         if self.get_profile(target_profile) is None:
             raise ValidationError(
@@ -1230,57 +1227,6 @@ class SettingsService(ProfileMixin):
         if env_value:
             return Path(env_value)
         return Path(__file__).resolve().parent.parent / "locale"
-
-    def _bootstrap_demo_profile_if_enabled(self) -> None:
-        """Create optional reneryo-mock demo profile for zero-config demos.
-
-        Controlled via environment:
-            AVAROS_BOOTSTRAP_DEMO_PROFILE=true
-        """
-        if not _is_env_flag_enabled("AVAROS_BOOTSTRAP_DEMO_PROFILE"):
-            return
-
-        demo_name = os.environ.get("AVAROS_DEMO_PROFILE_NAME", "reneryo-mock")
-        if demo_name == self.BUILTIN_MOCK_PROFILE:
-            logger.warning(
-                "Skipping demo profile bootstrap: name '%s' is reserved",
-                demo_name,
-            )
-            return
-
-        if self.get_profile(demo_name) is None:
-            demo_config = PlatformConfig(
-                platform_type="reneryo",
-                api_url=os.environ.get(
-                    "AVAROS_DEMO_RENERYO_URL",
-                    "http://reneryo-mock:8090",
-                ),
-                api_key=os.environ.get(
-                    "AVAROS_DEMO_RENERYO_API_KEY",
-                    "",
-                ),
-                extra_settings={
-                    "auth_type": os.environ.get(
-                        "AVAROS_DEMO_RENERYO_AUTH_TYPE", "bearer",
-                    ),
-                    "api_format": os.environ.get(
-                        "AVAROS_DEMO_RENERYO_API_FORMAT", "mock",
-                    ),
-                    "timeout": os.environ.get(
-                        "AVAROS_DEMO_RENERYO_TIMEOUT", "10",
-                    ),
-                },
-            )
-            self.create_profile(demo_name, demo_config)
-            logger.info("Bootstrapped demo profile '%s'", demo_name)
-
-        if (
-            _is_env_flag_enabled("AVAROS_AUTO_SELECT_DEMO_PROFILE")
-            and self.get_active_profile_name() == self.BUILTIN_MOCK_PROFILE
-        ):
-            self.set_active_profile(demo_name)
-            logger.info("Auto-selected demo profile '%s'", demo_name)
-
 
     @staticmethod
     def _validate_intent_name(intent_name: str) -> None:

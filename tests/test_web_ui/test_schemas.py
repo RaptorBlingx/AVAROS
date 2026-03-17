@@ -47,13 +47,10 @@ from schemas.status import SystemStatusResponse  # noqa: E402
 class TestPlatformConfigRequest:
     """Tests for the PlatformConfigRequest Pydantic model."""
 
-    def test_mock_platform_no_url_required(self) -> None:
-        """Mock platform type skips URL and key validation."""
-        model = PlatformConfigRequest(platform_type="mock")
-
-        assert model.platform_type == "mock"
-        assert model.api_url == ""
-        assert model.api_key == ""
+    def test_mock_platform_type_rejected(self) -> None:
+        """'mock' is not a valid platform type."""
+        with pytest.raises(ValidationError):
+            PlatformConfigRequest(platform_type="mock")  # type: ignore[arg-type]
 
     def test_reneryo_with_valid_url_and_key(self) -> None:
         """Valid reneryo config passes validation."""
@@ -104,7 +101,11 @@ class TestPlatformConfigRequest:
 
     def test_extra_settings_default_empty_dict(self) -> None:
         """extra_settings defaults to an empty dict."""
-        model = PlatformConfigRequest(platform_type="mock")
+        model = PlatformConfigRequest(
+            platform_type="reneryo",
+            api_url="https://api.example.com",
+            api_key="key",
+        )
 
         assert model.extra_settings == {}
 
@@ -171,10 +172,10 @@ class TestResetResponse:
 
     def test_reset_response(self) -> None:
         """Reset response contains expected fields."""
-        model = ResetResponse(status="reset", platform_type="mock")
+        model = ResetResponse(status="reset", platform_type="unconfigured")
 
         assert model.status == "reset"
-        assert model.platform_type == "mock"
+        assert model.platform_type == "unconfigured"
 
 
 # ══════════════════════════════════════════════════════════
@@ -398,8 +399,8 @@ class TestSystemStatusResponse:
         """Default unconfigured values serialise correctly."""
         model = SystemStatusResponse(
             configured=False,
-            active_adapter="mock",
-            platform_type="mock",
+            active_adapter="unconfigured",
+            platform_type="unconfigured",
             loaded_intents=0,
             database_connected=False,
             version="0.0.0",
@@ -407,5 +408,5 @@ class TestSystemStatusResponse:
 
         data = model.model_dump()
         assert data["configured"] is False
-        assert data["active_adapter"] == "mock"
+        assert data["active_adapter"] == "unconfigured"
         assert data["database_connected"] is False

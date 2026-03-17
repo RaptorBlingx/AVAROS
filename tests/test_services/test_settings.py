@@ -193,10 +193,10 @@ class TestAutoInitialize:
 class TestPlatformConfig:
     """Tests for PlatformConfig dataclass."""
 
-    def test_default_config_is_mock(self) -> None:
-        """Default PlatformConfig uses mock adapter."""
+    def test_default_config_is_unconfigured(self) -> None:
+        """Default PlatformConfig has empty platform_type."""
         config = PlatformConfig()
-        assert config.platform_type == "mock"
+        assert config.platform_type == ""
         assert config.api_url == ""
         assert config.api_key == ""
 
@@ -234,7 +234,7 @@ class TestPlatformConfig:
     def test_from_dict_missing_keys_uses_defaults(self) -> None:
         """from_dict() with empty dict uses default values."""
         config = PlatformConfig.from_dict({})
-        assert config.platform_type == "mock"
+        assert config.platform_type == ""
         assert config.api_url == ""
 
 
@@ -244,9 +244,9 @@ class TestPlatformConfigService:
     def test_get_platform_config_first_run_returns_default(
         self, service: SettingsService
     ) -> None:
-        """First run returns default mock config."""
+        """First run returns default unconfigured config."""
         config = service.get_platform_config()
-        assert config.platform_type == "mock"
+        assert config.platform_type == ""
         assert config.is_configured is False
 
     def test_is_configured_first_run_returns_false(
@@ -613,7 +613,7 @@ class TestMetricMappingIsolation:
         """Updating platform config does not corrupt metric mappings."""
         service.set_metric_mapping("energy_per_unit", sample_mapping)
         service.update_platform_config(
-            PlatformConfig(platform_type="mock")
+            PlatformConfig(platform_type="custom_rest")
         )
 
         assert service.get_metric_mapping("energy_per_unit") == sample_mapping
@@ -673,19 +673,19 @@ class TestAssetMappingCRUD:
             "Line-1": {"seu_id": "seu-1"}
         }
 
-    def test_mock_profile_returns_empty_asset_mappings(
+    def test_unconfigured_profile_returns_empty_asset_mappings(
         self, service: SettingsService
     ) -> None:
-        """Built-in mock profile should always return empty mappings."""
-        service.set_active_profile("mock")
+        """Unconfigured profile should always return empty mappings."""
+        service.set_active_profile("unconfigured")
         assert service.get_asset_mappings() == {}
 
-    def test_mock_profile_rejects_asset_mapping_write(
+    def test_unconfigured_profile_rejects_asset_mapping_write(
         self, service: SettingsService
     ) -> None:
-        """Writing asset mappings to built-in mock profile should fail."""
-        service.set_active_profile("mock")
-        with pytest.raises(ValidationError, match="mock profile"):
+        """Writing asset mappings to unconfigured profile should fail."""
+        service.set_active_profile("unconfigured")
+        with pytest.raises(ValidationError, match="unconfigured profile"):
             service.set_asset_mappings({"Line-1": {"seu_id": "seu-1"}})
 
     def test_get_asset_list_returns_normalized_entries(

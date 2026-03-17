@@ -4,7 +4,7 @@
 # testing the complete voice pipeline path:
 #   Browser client → HiveMind WebSocket → OVOS messagebus → AVAROSSkill
 #
-# MockAdapter enabled for predictable responses.
+# UnconfiguredAdapter used for predictable responses.
 # HiveMind configured with test access keys (no TLS).
 #
 # Usage:
@@ -47,8 +47,8 @@ services:
       timeout: 3s
       retries: 3
 
-  # Use a lightweight port-open healthcheck for mock API service.
-  reneryo-mock:
+  # Use a lightweight port-open healthcheck for data generator API service.
+  reneryo-data-generator:
     healthcheck:
       test:
         [

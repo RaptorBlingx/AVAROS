@@ -11,7 +11,7 @@
 #   docker compose logs -f avaros # View logs
 #   docker compose down           # Stop all services
 #
-# First run automatically uses MockAdapter (no configuration needed)
+# First run uses UnconfiguredAdapter until platform is configured via Web UI
 
 services:
   # =========================================================================

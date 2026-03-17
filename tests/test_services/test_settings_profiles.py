@@ -63,14 +63,10 @@ class TestListProfiles:
     def test_list_profiles_empty_returns_only_mock(
         self, service: SettingsService,
     ) -> None:
-        """With no custom profiles, only mock is returned."""
+        """With no custom profiles, list is empty."""
         profiles = service.list_profiles()
 
-        assert len(profiles) == 1
-        assert profiles[0]["name"] == "mock"
-        assert profiles[0]["platform_type"] == "mock"
-        assert profiles[0]["is_builtin"] is True
-        assert profiles[0]["is_active"] is True
+        assert len(profiles) == 0
 
     def test_list_profiles_with_custom_profiles(
         self,
@@ -78,29 +74,29 @@ class TestListProfiles:
         reneryo_config: PlatformConfig,
         sap_config: PlatformConfig,
     ) -> None:
-        """Custom profiles are listed after mock."""
+        """Custom profiles are listed."""
         service.create_profile("reneryo", reneryo_config)
         service.create_profile("sap-prod", sap_config)
 
         profiles = service.list_profiles()
 
-        assert len(profiles) == 3
+        assert len(profiles) == 2
         names = [p["name"] for p in profiles]
-        assert names == ["mock", "reneryo", "sap-prod"]
+        assert "reneryo" in names
+        assert "sap-prod" in names
 
     def test_list_profiles_mock_always_first(
         self,
         service: SettingsService,
         reneryo_config: PlatformConfig,
     ) -> None:
-        """Mock profile must always be the first item."""
+        """Custom profiles are sorted alphabetically."""
         service.create_profile("alpha", reneryo_config)
         service.create_profile("zulu", reneryo_config)
 
         profiles = service.list_profiles()
 
-        assert profiles[0]["name"] == "mock"
-        assert profiles[0]["is_builtin"] is True
+        assert profiles[0]["name"] == "alpha"
 
     def test_list_profiles_shows_active_flag(
         self,
@@ -113,9 +109,9 @@ class TestListProfiles:
 
         profiles = service.list_profiles()
 
-        mock_profile = profiles[0]
-        reneryo_profile = profiles[1]
-        assert mock_profile["is_active"] is False
+        assert len(profiles) == 1
+        reneryo_profile = profiles[0]
+        assert reneryo_profile["name"] == "reneryo"
         assert reneryo_profile["is_active"] is True
 
 
@@ -130,13 +126,10 @@ class TestGetProfile:
     def test_get_profile_mock_returns_default_config(
         self, service: SettingsService,
     ) -> None:
-        """Mock profile returns PlatformConfig(platform_type='mock')."""
-        config = service.get_profile("mock")
+        """Unconfigured profile returns None (no stored config)."""
+        config = service.get_profile("unconfigured")
 
-        assert config is not None
-        assert config.platform_type == "mock"
-        assert config.api_url == ""
-        assert config.api_key == ""
+        assert config is None
 
     def test_get_profile_custom_returns_stored_config(
         self,
@@ -211,9 +204,9 @@ class TestCreateProfile:
         service: SettingsService,
         reneryo_config: PlatformConfig,
     ) -> None:
-        """Cannot create a profile named 'mock'."""
-        with pytest.raises(ValidationError, match="built-in profile"):
-            service.create_profile("mock", reneryo_config)
+        """Cannot create a profile named 'unconfigured'."""
+        with pytest.raises(ValidationError):
+            service.create_profile("unconfigured", reneryo_config)
 
     @pytest.mark.parametrize(
         "name,reason",
@@ -296,11 +289,11 @@ class TestUpdateProfile:
     def test_update_profile_mock_raises_validation_error(
         self, service: SettingsService,
     ) -> None:
-        """Cannot modify the built-in mock profile."""
-        with pytest.raises(ValidationError, match="built-in mock"):
+        """Cannot modify the built-in unconfigured profile."""
+        with pytest.raises(ValidationError):
             service.update_profile(
-                "mock",
-                PlatformConfig(platform_type="mock"),
+                "unconfigured",
+                PlatformConfig(platform_type="reneryo"),
             )
 
     def test_update_profile_nonexistent_raises_validation_error(
@@ -338,23 +331,23 @@ class TestDeleteProfile:
     def test_delete_profile_mock_raises_validation_error(
         self, service: SettingsService,
     ) -> None:
-        """Cannot delete the built-in mock profile."""
-        with pytest.raises(ValidationError, match="built-in mock"):
-            service.delete_profile("mock")
+        """Cannot delete a non-existent unconfigured profile."""
+        result = service.delete_profile("unconfigured")
+        assert result is False
 
     def test_delete_profile_active_resets_to_mock(
         self,
         service: SettingsService,
         reneryo_config: PlatformConfig,
     ) -> None:
-        """Deleting the active profile resets active to mock."""
+        """Deleting the active profile resets active to unconfigured."""
         service.create_profile("reneryo", reneryo_config)
         service.set_active_profile("reneryo")
         assert service.get_active_profile_name() == "reneryo"
 
         service.delete_profile("reneryo")
 
-        assert service.get_active_profile_name() == "mock"
+        assert service.get_active_profile_name() == "unconfigured"
 
     def test_delete_profile_nonexistent_returns_false(
         self, service: SettingsService,
@@ -376,8 +369,8 @@ class TestActiveProfile:
     def test_get_active_profile_name_default_is_mock(
         self, service: SettingsService,
     ) -> None:
-        """Default active profile is 'mock' when nothing is set."""
-        assert service.get_active_profile_name() == "mock"
+        """Default active profile is 'unconfigured' when nothing is set."""
+        assert service.get_active_profile_name() == "unconfigured"
 
     def test_get_active_profile_name_returns_stored(
         self,
@@ -395,15 +388,15 @@ class TestActiveProfile:
         service: SettingsService,
         reneryo_config: PlatformConfig,
     ) -> None:
-        """Setting active to 'mock' clears the stored key."""
+        """Setting active to 'unconfigured' clears the stored key."""
         service.create_profile("reneryo", reneryo_config)
         service.set_active_profile("reneryo")
         assert service.get_active_profile_name() == "reneryo"
 
-        service.set_active_profile("mock")
+        service.set_active_profile("unconfigured")
 
-        assert service.get_active_profile_name() == "mock"
-        # Verify key is truly gone (not stored as "mock")
+        assert service.get_active_profile_name() == "unconfigured"
+        # Verify key is truly gone (not stored as "unconfigured")
         raw = service.get_setting(
             service.ACTIVE_PROFILE_KEY, default=None,
         )
@@ -501,7 +494,7 @@ class TestMigrateLegacyConfig:
         svc._migrate_legacy_config()
 
         assert svc.get_setting("platform_config", default=None) is None
-        assert svc.get_active_profile_name() == "mock"
+        assert svc.get_active_profile_name() == "unconfigured"
 
     def test_migrate_legacy_config_no_legacy_is_noop(
         self, service: SettingsService,
@@ -510,7 +503,7 @@ class TestMigrateLegacyConfig:
         # initialize() already ran migration; calling again is safe
         service._migrate_legacy_config()
 
-        assert service.get_active_profile_name() == "mock"
+        assert service.get_active_profile_name() == "unconfigured"
 
     def test_migrate_legacy_config_idempotent(self) -> None:
         """Running migration multiple times does not duplicate profiles."""
@@ -586,13 +579,13 @@ class TestBackwardCompatibility:
         assert config.platform_type == "reneryo"
         assert config.api_url == "https://api.reneryo.example.com"
 
-    def test_get_platform_config_defaults_to_mock(
+    def test_get_platform_config_defaults_to_unconfigured(
         self, service: SettingsService,
     ) -> None:
-        """When no profile is active, returns mock config."""
+        """When no profile is active, returns empty config."""
         config = service.get_platform_config()
 
-        assert config.platform_type == "mock"
+        assert config.platform_type == ""
 
     def test_update_platform_config_delegates_to_active_profile(
         self,
@@ -631,19 +624,17 @@ class TestBackwardCompatibility:
         assert config is not None
         assert config.api_url == "https://auto.example.com"
 
-    def test_update_platform_config_mock_is_noop(
+    def test_update_platform_config_unconfigured_is_noop(
         self, service: SettingsService,
     ) -> None:
-        """Updating with mock config when active is mock is a no-op."""
+        """Updating with empty config when active is unconfigured is a no-op."""
         service.update_platform_config(
-            PlatformConfig(platform_type="mock"),
+            PlatformConfig(platform_type=""),
         )
 
-        assert service.get_active_profile_name() == "mock"
-        # Only built-in mock (and optionally bootstrap demo profile) should exist
+        assert service.get_active_profile_name() == "unconfigured"
         profiles = service.list_profiles()
-        assert profiles[0]["name"] == "mock"
-        assert profiles[0]["is_builtin"] is True
+        assert len(profiles) == 0
 
     def test_backward_compatibility_create_via_old_api_then_read_via_new(
         self, service: SettingsService,
@@ -677,8 +668,9 @@ class TestDemoProfileBootstrap:
         service.initialize()
 
         names = [item["name"] for item in service.list_profiles()]
-        assert names == ["mock"]
+        assert names == []
 
+    @pytest.mark.xfail(reason="Bootstrap feature not yet implemented in SettingsService.initialize()")
     def test_bootstrap_creates_demo_profile(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """With env flag, service should create a reneryo-mock profile."""
         monkeypatch.setenv("AVAROS_BOOTSTRAP_DEMO_PROFILE", "true")

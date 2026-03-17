@@ -1,16 +1,16 @@
 """Tests for Skill Runtime Adapter Reload (P5-L10 / DEC-029).
 
-Validates the message bus listener, reload logic, mock fallback,
+Validates the message bus listener, reload logic, unconfigured fallback,
 lazy profile mismatch detection, and event registration.
 
 Test scenarios:
     - Profile switch via message bus → adapter reloaded
-    - Reload failure → MockAdapter fallback (DEC-005)
+    - Reload failure → UnconfiguredAdapter fallback (DEC-005)
     - Lazy reload on profile mismatch → automatic recovery
     - No mismatch → no reload
     - SettingsService None → lazy check skipped safely
     - Bus listener registered on initialize
-    - Force mock fallback sets correct state
+    - Force unconfigured fallback sets correct state
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ import pytest
 from ovos_bus_client import MessageBusClient
 
 from skill import AVAROSSkill
-from skill.adapters.mock import MockAdapter
+from skill.adapters.unconfigured import UnconfiguredAdapter
 from skill.domain.exceptions import AVAROSError
 from skill.domain.models import CanonicalMetric
 from skill.use_cases.query_dispatcher import QueryDispatcher
@@ -69,11 +69,11 @@ class TestHandleProfileSwitch:
         skill.settings_service = Mock()
         skill.settings_service.get_active_profile_name.return_value = "demo"
         profile = Mock()
-        profile.platform_type = "mock"
+        profile.platform_type = "reneryo"
         skill.settings_service.get_profile.return_value = profile
 
-        # Mock the adapter factory reload to return a new MockAdapter
-        new_adapter = MockAdapter()
+        # Mock the adapter factory reload to return a new adapter
+        new_adapter = UnconfiguredAdapter()
         skill.adapter_factory.reload = AsyncMock(return_value=new_adapter)
 
         # Act
@@ -88,7 +88,7 @@ class TestHandleProfileSwitch:
         )
 
     def test_handle_profile_switch_failure_falls_back_to_mock(self):
-        """When reload raises, skill falls back to MockAdapter (DEC-005)."""
+        """When reload raises, skill falls back to UnconfiguredAdapter (DEC-005)."""
         skill = _initialized_skill()
 
         skill.adapter_factory.reload = AsyncMock(
@@ -98,10 +98,10 @@ class TestHandleProfileSwitch:
         # Act
         skill._handle_profile_switch(_make_message("reneryo"))
 
-        # Assert: MockAdapter fallback
-        assert skill._loaded_profile == "mock"
+        # Assert: UnconfiguredAdapter fallback
+        assert skill._loaded_profile == "unconfigured"
         assert isinstance(
-            skill.dispatcher._adapter, MockAdapter,
+            skill.dispatcher._adapter, UnconfiguredAdapter,
         )
         skill.log.error.assert_called_once()
 
@@ -128,13 +128,13 @@ class TestLazyReload:
     def test_lazy_reload_on_profile_mismatch(self):
         """Mismatch between loaded and active profile triggers reload."""
         skill = _initialized_skill()
-        skill._loaded_profile = "mock"
+        skill._loaded_profile = "unconfigured"
 
         # Pretend DB says active profile is "reneryo"
         skill.settings_service = Mock()
         skill.settings_service.get_active_profile_name.return_value = "reneryo"
 
-        new_adapter = MockAdapter()
+        new_adapter = UnconfiguredAdapter()
         skill.adapter_factory.reload = AsyncMock(return_value=new_adapter)
 
         # Act
@@ -147,13 +147,13 @@ class TestLazyReload:
     def test_lazy_reload_skipped_when_profile_matches(self):
         """No reload when loaded profile matches active profile."""
         skill = _initialized_skill()
-        skill._loaded_profile = "mock"
-        skill._loaded_platform = "mock"
+        skill._loaded_profile = "unconfigured"
+        skill._loaded_platform = "unconfigured"
 
         skill.settings_service = Mock()
-        skill.settings_service.get_active_profile_name.return_value = "mock"
+        skill.settings_service.get_active_profile_name.return_value = "unconfigured"
         profile = Mock()
-        profile.platform_type = "mock"
+        profile.platform_type = ""
         skill.settings_service.get_profile.return_value = profile
 
         skill.adapter_factory.reload = AsyncMock()
@@ -248,25 +248,25 @@ class TestBusListenerRegistration:
         assert register_intent_file.call_count == first_count + second_count
 
 # ══════════════════════════════════════════════════════════
-# Force Mock Fallback
+# Force Unconfigured Fallback
 # ══════════════════════════════════════════════════════════
 
 
-class TestForceMockFallback:
-    """Tests for _force_mock_fallback()."""
+class TestForceUnconfiguredFallback:
+    """Tests for _force_unconfigured_fallback()."""
 
-    def test_force_mock_fallback_sets_mock_adapter(self):
-        """_force_mock_fallback() replaces dispatcher with MockAdapter."""
+    def test_force_unconfigured_fallback_sets_unconfigured_adapter(self):
+        """_force_unconfigured_fallback() replaces dispatcher with UnconfiguredAdapter."""
         skill = _initialized_skill()
         skill._loaded_profile = "reneryo"
 
         # Act
-        skill._force_mock_fallback()
+        skill._force_unconfigured_fallback()
 
         # Assert
-        assert skill._loaded_profile == "mock"
-        assert isinstance(skill.dispatcher._adapter, MockAdapter)
-        skill.log.info.assert_any_call("Forced MockAdapter fallback")
+        assert skill._loaded_profile == "unconfigured"
+        assert isinstance(skill.dispatcher._adapter, UnconfiguredAdapter)
+        skill.log.info.assert_any_call("Forced UnconfiguredAdapter fallback")
 
 
 # ══════════════════════════════════════════════════════════
@@ -325,7 +325,7 @@ class TestSafeDispatchProfileCheck:
 
         def _recover(profile_name: str) -> None:
             skill._loaded_profile = profile_name
-            skill.dispatcher = QueryDispatcher(adapter=MockAdapter())
+            skill.dispatcher = QueryDispatcher(adapter=UnconfiguredAdapter())
 
         skill._reload_adapter = Mock(side_effect=_recover)
 
@@ -383,9 +383,9 @@ class TestReloadAdapterEdgeCases:
         skill.settings_service = Mock()
         skill.settings_service.get_active_profile_name.return_value = "demo"
         profile = Mock()
-        profile.platform_type = "mock"
+        profile.platform_type = "reneryo"
         skill.settings_service.get_profile.return_value = profile
-        new_adapter = MockAdapter()
+        new_adapter = UnconfiguredAdapter()
         skill.adapter_factory.reload = AsyncMock(return_value=new_adapter)
 
         old_dispatcher = skill.dispatcher
@@ -403,10 +403,10 @@ class TestReloadAdapterEdgeCases:
         skill.settings_service = Mock()
         skill.settings_service.get_active_profile_name.return_value = "demo"
         profile = Mock()
-        profile.platform_type = "mock"
+        profile.platform_type = "reneryo"
         skill.settings_service.get_profile.return_value = profile
 
-        new_adapter = MockAdapter()
+        new_adapter = UnconfiguredAdapter()
         skill.adapter_factory.reload = AsyncMock(return_value=new_adapter)
 
         def _run_async_stub(coro):
@@ -428,10 +428,10 @@ class TestReloadAdapterEdgeCases:
         skill.settings_service = Mock()
         skill.settings_service.get_active_profile_name.return_value = "demo"
         profile = Mock()
-        profile.platform_type = "mock"
+        profile.platform_type = "reneryo"
         skill.settings_service.get_profile.return_value = profile
         skill.dispatcher = None
-        new_adapter = MockAdapter()
+        new_adapter = UnconfiguredAdapter()
         skill.adapter_factory.reload = AsyncMock(return_value=new_adapter)
 
         fallback_loop = asyncio.new_event_loop()
@@ -602,11 +602,11 @@ class TestNonMetricIntentBindings:
 
         assert result is True
 
-    def test_require_intent_binding_allows_mock_without_lookup(self):
-        """Mock profile should not require explicit binding."""
+    def test_require_intent_binding_allows_unconfigured_without_lookup(self):
+        """Unconfigured profile should not require explicit binding."""
         skill = _initialized_skill()
         skill.settings_service = Mock()
-        skill.settings_service.get_active_profile_name.return_value = "mock"
+        skill.settings_service.get_active_profile_name.return_value = "unconfigured"
 
         result = skill._require_intent_binding("status.system.show")
 

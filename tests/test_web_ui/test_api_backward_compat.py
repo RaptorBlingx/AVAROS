@@ -39,7 +39,7 @@ def test_get_metrics_returns_active_profile_data(
     assert reneryo_resp.status_code == 200
     assert len(reneryo_resp.json()) == 1
 
-    settings_service.set_active_profile("mock")
+    settings_service.set_active_profile("unconfigured")
     mock_resp = client.get("/api/v1/config/metrics")
     assert mock_resp.status_code == 200
     mock_items = mock_resp.json()
@@ -84,7 +84,7 @@ def test_get_emission_factors_returns_active_profile_data(
     reneryo_factors = {row["energy_source"]: row["factor"] for row in reneryo_resp.json()["factors"]}
     assert reneryo_factors["electricity"] == 0.48
 
-    settings_service.set_active_profile("mock")
+    settings_service.set_active_profile("unconfigured")
     mock_resp = client.get("/api/v1/config/emission-factors")
     mock_factors = {row["energy_source"]: row["factor"] for row in mock_resp.json()["factors"]}
     assert mock_factors["electricity"] == 0.48
@@ -124,7 +124,7 @@ def test_get_intents_returns_active_profile_data(
     reneryo_items = {item["intent_name"]: item["active"] for item in reneryo_resp.json()["intents"]}
     assert reneryo_items["kpi.oee"] is False
 
-    settings_service.set_active_profile("mock")
+    settings_service.set_active_profile("unconfigured")
     mock_resp = client.get("/api/v1/config/intents")
     mock_items = {item["intent_name"]: item["active"] for item in mock_resp.json()["intents"]}
     assert all(mock_items.values()) is True
@@ -194,7 +194,6 @@ def test_profiles_list_endpoint_unchanged(
     assert resp.status_code == 200
     body = resp.json()
     names = [item["name"] for item in body["profiles"]]
-    assert names[0] == "mock"
     assert "reneryo" in names
     assert "sap" in names
 
@@ -205,7 +204,7 @@ def test_profiles_activate_endpoint_includes_voice_reloaded(
 ) -> None:
     """Activation response includes voice_reloaded field."""
     _ensure_reneryo_active(settings_service)
-    settings_service.set_active_profile("mock")
+    settings_service.set_active_profile("unconfigured")
 
     with patch("routers.profiles.AdapterFactory.reload", new=AsyncMock(return_value=None)):
         with patch("routers.profiles._notify_skill_via_bus", return_value=True):

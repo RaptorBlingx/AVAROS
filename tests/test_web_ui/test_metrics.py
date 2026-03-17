@@ -290,6 +290,7 @@ class TestListMetricMappings:
             "json_path",
             "unit",
             "transform",
+            "source",
         }
         assert set(items[0].keys()) == expected_keys
 

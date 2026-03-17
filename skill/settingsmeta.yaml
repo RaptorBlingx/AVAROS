@@ -17,14 +17,14 @@ sections:
       - name: platform_type
         type: select
         label: Manufacturing Platform
-        value: mock
+        value: reneryo
         options:
-          - value: mock
-            label: Demo Mode (No external connection)
           - value: reneryo
             label: RENERYO
+          - value: custom_rest
+            label: Custom REST API
           # Future platforms added here
-        helpText: Select your manufacturing data platform. Demo mode works without configuration.
+        helpText: Select your manufacturing data platform. Configure connection details below.
       
       - name: api_url
         type: text

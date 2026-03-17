@@ -2,8 +2,7 @@
 
 Named adapter profiles allow multiple platform configurations
 to be stored, switched instantly, and survive restarts.
-The built-in ``"mock"`` profile is always available (virtual,
-never stored in DB).
+When no profile is active the system uses the ``UnconfiguredAdapter``.
 
 This module is a mixin — ``SettingsService`` inherits from
 ``ProfileMixin`` to gain profile methods without growing
@@ -40,12 +39,12 @@ class ProfileMixin:
 
     PROFILE_PREFIX = "platform_config:"
     ACTIVE_PROFILE_KEY = "active_profile"
-    BUILTIN_MOCK_PROFILE = "mock"
+    DEFAULT_PROFILE = "unconfigured"
 
     # ── Public API ──────────────────────────────────────
 
     def list_profiles(self) -> list[dict[str, Any]]:
-        """List all profiles with the built-in mock first.
+        """List all stored profiles.
 
         Returns:
             List of profile dicts with name, platform_type,
@@ -53,9 +52,7 @@ class ProfileMixin:
         """
         self._ensure_initialized()
         active = self.get_active_profile_name()
-        profiles: list[dict[str, Any]] = [
-            _mock_profile_summary(active),
-        ]
+        profiles: list[dict[str, Any]] = []
         for name in self._sorted_custom_names():
             config = self.get_profile(name)
             ptype = config.platform_type if config else "unknown"
@@ -70,17 +67,12 @@ class ProfileMixin:
     def get_profile(self, name: str) -> PlatformConfig | None:
         """Get a profile's platform configuration.
 
-        The built-in mock profile returns a default
-        ``PlatformConfig`` without touching the database.
-
         Args:
             name: Profile name (e.g. ``"reneryo"``).
 
         Returns:
             PlatformConfig or None if profile does not exist.
         """
-        if name == self.BUILTIN_MOCK_PROFILE:
-            return PlatformConfig()
         self._ensure_initialized()
         return self._load_profile(name)
 
@@ -97,6 +89,12 @@ class ProfileMixin:
             ValidationError: If name invalid, reserved, or duplicate.
         """
         _validate_profile_name(name)
+        if name == self.DEFAULT_PROFILE:
+            raise ValidationError(
+                message=f"'{name}' is reserved and cannot be used as a profile name",
+                field="name",
+                value=name,
+            )
         self._ensure_initialized()
         self._assert_not_exists(name)
         self._store_profile(name, config)
@@ -115,9 +113,8 @@ class ProfileMixin:
             config: New platform configuration.
 
         Raises:
-            ValidationError: If mock or profile not found.
+            ValidationError: If profile not found.
         """
-        _reject_mock_mutation(name, "modify")
         self._ensure_initialized()
         self._assert_exists(name)
         self._store_profile(name, config)
@@ -126,18 +123,14 @@ class ProfileMixin:
     def delete_profile(self, name: str) -> bool:
         """Delete a named profile.
 
-        If deleted was active, falls back to mock (DEC-005).
+        If the deleted profile was active, falls back to unconfigured.
 
         Args:
             name: Profile name to delete.
 
         Returns:
             True if deleted, False if not found.
-
-        Raises:
-            ValidationError: If name is ``"mock"``.
         """
-        _reject_mock_mutation(name, "delete")
         key = f"{self.PROFILE_PREFIX}{name}"
         deleted = self.delete_setting(key)
         if deleted:
@@ -145,14 +138,14 @@ class ProfileMixin:
         if deleted and self.get_active_profile_name() == name:
             self.delete_setting(self.ACTIVE_PROFILE_KEY)
             logger.info(
-                "Active profile '%s' deleted — reset to mock", name,
+                "Active profile '%s' deleted — reset to unconfigured", name,
             )
         return deleted
 
     def get_active_profile_name(self) -> str:
         """Return name of the currently active profile.
 
-        Returns ``"mock"`` when none is set.
+        Returns ``"unconfigured"`` when none is set.
 
         Returns:
             Profile name string.
@@ -160,12 +153,12 @@ class ProfileMixin:
         value = self.get_setting(
             self.ACTIVE_PROFILE_KEY, default=None,
         )
-        return str(value) if value else self.BUILTIN_MOCK_PROFILE
+        return str(value) if value else self.DEFAULT_PROFILE
 
     def set_active_profile(self, name: str) -> None:
         """Switch the active profile.
 
-        Setting ``"mock"`` clears the stored key.
+        Setting ``"unconfigured"`` clears the stored key.
 
         Args:
             name: Profile to activate.
@@ -173,7 +166,7 @@ class ProfileMixin:
         Raises:
             ValidationError: If profile does not exist.
         """
-        if name == self.BUILTIN_MOCK_PROFILE:
+        if name == self.DEFAULT_PROFILE:
             self.delete_setting(self.ACTIVE_PROFILE_KEY)
             return
         self._ensure_initialized()
@@ -200,14 +193,14 @@ class ProfileMixin:
     ) -> None:
         """Update the active profile's platform configuration.
 
-        Auto-creates a profile when active is mock.
+        Auto-creates a profile when no profile is active.
 
         Args:
             config: New platform configuration.
         """
         self._ensure_initialized()
         name = self.get_active_profile_name()
-        if name == self.BUILTIN_MOCK_PROFILE:
+        if name == self.DEFAULT_PROFILE:
             self._auto_create_from_config(config)
         else:
             self.update_profile(name, config)
@@ -224,9 +217,9 @@ class ProfileMixin:
         if result is None:
             return
         config, profile_name = result
-        if profile_name == self.BUILTIN_MOCK_PROFILE:
+        if profile_name in ("mock", self.DEFAULT_PROFILE):
             self.delete_setting("platform_config")
-            logger.info("Removed legacy mock platform_config")
+            logger.info("Removed legacy mock/unconfigured platform_config")
             return
         self._store_profile(profile_name, config)
         self.set_setting(self.ACTIVE_PROFILE_KEY, profile_name)
@@ -242,7 +235,7 @@ class ProfileMixin:
         Idempotent — if scoped keys exist or no global keys found, skips.
         """
         active = self.get_active_profile_name()
-        if active == self.BUILTIN_MOCK_PROFILE:
+        if active == self.DEFAULT_PROFILE:
             return
 
         migrated = 0
@@ -288,12 +281,12 @@ class ProfileMixin:
             Key like ``metric_mapping:reneryo:energy_per_unit``.
 
         Raises:
-            ValidationError: If active profile is mock.
+            ValidationError: If no active profile is configured.
         """
         profile = self.get_active_profile_name()
-        if profile == self.BUILTIN_MOCK_PROFILE:
+        if profile == self.DEFAULT_PROFILE:
             raise ValidationError(
-                message="Cannot write settings for built-in mock profile",
+                message="Cannot write settings without a configured profile",
                 field="profile",
                 value=profile,
             )
@@ -458,13 +451,13 @@ class ProfileMixin:
     def _auto_create_from_config(
         self, config: PlatformConfig,
     ) -> None:
-        """Auto-create profile from platform_type when active is mock.
+        """Auto-create profile from platform_type when no profile is active.
 
         Args:
             config: Platform config with type as name source.
         """
-        name = config.platform_type.lower()
-        if name == self.BUILTIN_MOCK_PROFILE:
+        name = config.platform_type.lower().replace("_", "-")
+        if name in ("unconfigured", ""):
             return
         if self.get_profile(name) is None:
             self.create_profile(name, config)
@@ -480,7 +473,7 @@ def _validate_profile_name(name: str) -> None:
     """Validate a profile name.
 
     Rules: 2-50 chars, lowercase alphanumeric + hyphens,
-    no leading/trailing hyphen, cannot be ``"mock"``.
+    no leading/trailing hyphen.
 
     Args:
         name: Profile name to validate.
@@ -488,15 +481,6 @@ def _validate_profile_name(name: str) -> None:
     Raises:
         ValidationError: If name is invalid.
     """
-    if name == ProfileMixin.BUILTIN_MOCK_PROFILE:
-        raise ValidationError(
-            message=(
-                "Cannot create profile named 'mock' "
-                "— it is a built-in profile"
-            ),
-            field="name",
-            value=name,
-        )
     if not _PROFILE_NAME_PATTERN.match(name):
         raise ValidationError(
             message=(
@@ -507,34 +491,6 @@ def _validate_profile_name(name: str) -> None:
             field="name",
             value=name,
         )
-
-
-def _reject_mock_mutation(name: str, action: str) -> None:
-    """Raise ValidationError if name is the built-in mock profile.
-
-    Args:
-        name: Profile name to check.
-        action: Verb for error message ("modify" or "delete").
-
-    Raises:
-        ValidationError: If name is ``"mock"``.
-    """
-    if name == ProfileMixin.BUILTIN_MOCK_PROFILE:
-        raise ValidationError(
-            message=f"Cannot {action} built-in mock profile",
-            field="name",
-            value=name,
-        )
-
-
-def _mock_profile_summary(active: str) -> dict[str, Any]:
-    """Build the virtual mock profile summary dict."""
-    return {
-        "name": ProfileMixin.BUILTIN_MOCK_PROFILE,
-        "platform_type": "mock",
-        "is_builtin": True,
-        "is_active": active == ProfileMixin.BUILTIN_MOCK_PROFILE,
-    }
 
 
 def _serialize_config(

@@ -9,7 +9,7 @@ class SystemStatusResponse(BaseModel):
     """System status details for configuration and readiness checks."""
 
     configured: bool = Field(
-        ..., description="Whether AVAROS is configured with a non-mock platform."
+        ..., description="Whether AVAROS is configured with a platform."
     )
     active_adapter: str = Field(
         ..., description="Currently active adapter identifier."

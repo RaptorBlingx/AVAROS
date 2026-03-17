@@ -27,24 +27,18 @@ def reneryo_profile(settings_service: SettingsService) -> None:
     settings_service.set_active_profile("reneryo")
 
 
-def test_discover_assets_returns_generic_schema_on_mock(
+def test_discover_assets_returns_empty_on_unconfigured(
     client: TestClient,
 ) -> None:
-    """Mock profile discovery should return unified asset list schema."""
+    """Unconfigured profile discovery should return empty asset list."""
     response = client.get("/api/v1/assets/discover")
 
     assert response.status_code == 200
     body = response.json()
-    assert body["platform_type"] == "mock"
-    assert isinstance(body["supports_discovery"], bool)
+    assert body["platform_type"] == "unconfigured"
+    assert body["supports_discovery"] is False
     assert isinstance(body["assets"], list)
-    assert len(body["assets"]) > 0
-    assert set(body["assets"][0].keys()) >= {
-        "asset_id",
-        "display_name",
-        "asset_type",
-        "aliases",
-    }
+    assert len(body["assets"]) == 0
 
 
 def test_discover_assets_uses_adapter_factory_dependency(

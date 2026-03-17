@@ -65,7 +65,7 @@ class TestDockerComposeReferences:
             "avaros_db",
             "avaros_skill",
             "avaros-web-ui",
-            "reneryo-mock",
+            "reneryo-data-generator-api",
             "avaros-proxy",
         ]
         for service in expected_services:

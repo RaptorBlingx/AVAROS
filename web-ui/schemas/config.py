@@ -9,7 +9,8 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
-PlatformType = Literal["mock", "reneryo", "custom_rest"]
+PlatformType = Literal["reneryo", "custom_rest"]
+ResponsePlatformType = Literal["reneryo", "custom_rest", "unconfigured"]
 
 _PROFILE_NAME_PATTERN = re.compile(
     r"^[a-z0-9][a-z0-9\-]{0,48}[a-z0-9]$",
@@ -32,11 +33,11 @@ class PlatformConfigRequest(BaseModel):
     )
     api_url: str = Field(
         default="",
-        description="Platform API base URL. Required for non-mock platforms.",
+        description="Platform API base URL. Required for all platforms.",
     )
     api_key: str = Field(
         default="",
-        description="Platform API key. Required for non-mock platforms.",
+        description="Platform API key. Required for all platforms.",
     )
     extra_settings: dict[str, Any] = Field(
         default_factory=dict,
@@ -46,11 +47,8 @@ class PlatformConfigRequest(BaseModel):
     @model_validator(mode="after")
     def validate_for_platform(self) -> PlatformConfigRequest:
         """Enforce platform-specific required fields."""
-        if self.platform_type == "mock":
-            return self
-
         if not self.api_url:
-            raise ValueError("api_url is required for non-mock platforms")
+            raise ValueError("api_url is required")
 
         parsed = urlparse(self.api_url)
         if not parsed.scheme or not parsed.netloc:
@@ -58,7 +56,7 @@ class PlatformConfigRequest(BaseModel):
 
         auth_type = str(self.extra_settings.get("auth_type", "bearer")).strip().lower()
         if auth_type != "none" and not self.api_key:
-            raise ValueError("api_key is required for non-mock platforms")
+            raise ValueError("api_key is required when auth_type is not 'none'")
 
         return self
 
@@ -66,7 +64,7 @@ class PlatformConfigRequest(BaseModel):
 class PlatformConfigResponse(BaseModel):
     """Masked platform configuration response."""
 
-    platform_type: PlatformType = Field(
+    platform_type: ResponsePlatformType = Field(
         ...,
         description="Configured platform adapter type.",
     )
@@ -112,10 +110,10 @@ class ConnectionTestResponse(BaseModel):
 
 
 class ResetResponse(BaseModel):
-    """Response for resetting platform configuration to default mock."""
+    """Response for resetting platform configuration."""
 
     status: str = Field(..., description="Reset operation status.")
-    platform_type: PlatformType = Field(..., description="Current platform after reset.")
+    platform_type: str = Field(..., description="Current platform after reset.")
 
 
 # ── Profile Schemas ─────────────────────────────────────
@@ -126,7 +124,7 @@ class ProfileMetadataResponse(BaseModel):
 
     name: str = Field(..., description="Profile name.")
     platform_type: str = Field(..., description="Platform adapter type.")
-    is_builtin: bool = Field(..., description="True for the mock profile.")
+    is_builtin: bool = Field(..., description="True for the unconfigured profile.")
     is_active: bool = Field(..., description="True if this profile is active.")
 
 
@@ -135,7 +133,7 @@ class ProfileListResponse(BaseModel):
 
     active_profile: str = Field(..., description="Name of the active profile.")
     profiles: list[ProfileMetadataResponse] = Field(
-        ..., description="All profiles (mock first).",
+        ..., description="All profiles.",
     )
 
 
@@ -150,7 +148,7 @@ class ProfileDetailResponse(BaseModel):
         default_factory=dict,
         description="Platform-specific settings.",
     )
-    is_builtin: bool = Field(..., description="True for the mock profile.")
+    is_builtin: bool = Field(..., description="True for the unconfigured profile.")
     is_active: bool = Field(..., description="True if this profile is active.")
 
 

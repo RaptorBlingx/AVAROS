@@ -79,23 +79,20 @@ class TestListProfiles:
     def test_list_profiles_empty_returns_mock(
         self, client: TestClient,
     ) -> None:
-        """Empty DB returns only the built-in mock profile."""
+        """Empty DB returns empty profiles with unconfigured active."""
         resp = client.get("/api/v1/config/profiles")
 
         assert resp.status_code == 200
         body = resp.json()
-        assert body["active_profile"] == "mock"
-        assert len(body["profiles"]) == 1
-        assert body["profiles"][0]["name"] == "mock"
-        assert body["profiles"][0]["is_builtin"] is True
-        assert body["profiles"][0]["is_active"] is True
+        assert body["active_profile"] == "unconfigured"
+        assert len(body["profiles"]) == 0
 
     def test_list_profiles_includes_custom(
         self,
         client: TestClient,
         settings_service: SettingsService,
     ) -> None:
-        """Custom profiles appear after mock in the list."""
+        """Custom profiles appear in the list."""
         _seed_profile(settings_service, "reneryo")
         _seed_profile(settings_service, "sap-staging", "custom_rest")
 
@@ -103,10 +100,9 @@ class TestListProfiles:
 
         body = resp.json()
         names = [p["name"] for p in body["profiles"]]
-        assert names[0] == "mock"
         assert "reneryo" in names
         assert "sap-staging" in names
-        assert len(body["profiles"]) == 3
+        assert len(body["profiles"]) == 2
 
     def test_list_profiles_marks_active(
         self,
@@ -135,16 +131,10 @@ class TestGetProfile:
     """Tests for getting a single profile."""
 
     def test_get_mock_profile(self, client: TestClient) -> None:
-        """Mock profile returns default config."""
-        resp = client.get("/api/v1/config/profiles/mock")
+        """Unconfigured profile returns 404 since it has no stored config."""
+        resp = client.get("/api/v1/config/profiles/unconfigured")
 
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["name"] == "mock"
-        assert body["platform_type"] == "mock"
-        assert body["is_builtin"] is True
-        assert body["api_url"] == ""
-        assert body["api_key"] == "****"
+        assert resp.status_code == 404
 
     def test_get_custom_profile_masked_key(
         self,
@@ -201,18 +191,18 @@ class TestCreateProfile:
         self,
         client: TestClient,
     ) -> None:
-        """Creating profile named 'mock' returns 400 (built-in guard)."""
+        """Creating profile named 'unconfigured' returns 400 (built-in guard)."""
         resp = client.post(
             "/api/v1/config/profiles",
             json={
-                "name": "mock",
-                "platform_type": "mock",
+                "name": "unconfigured",
+                "platform_type": "reneryo",
             },
         )
 
         assert resp.status_code == 400
         assert resp.json()["detail"] == (
-            "Profile 'mock' is built-in and cannot be created"
+            "Profile 'unconfigured' is built-in and cannot be created"
         )
 
     def test_create_profile_duplicate_returns_409(
@@ -297,16 +287,15 @@ class TestUpdateProfile:
         self,
         client: TestClient,
     ) -> None:
-        """Cannot modify the built-in mock profile."""
+        """Cannot modify the built-in unconfigured profile (returns 404 since not stored)."""
         resp = client.put(
-            "/api/v1/config/profiles/mock",
+            "/api/v1/config/profiles/unconfigured",
             json={
-                "platform_type": "mock",
+                "platform_type": "reneryo",
             },
         )
 
-        assert resp.status_code == 400
-        assert "mock" in resp.json()["detail"].lower()
+        assert resp.status_code == 404
 
     def test_update_nonexistent_returns_404(
         self,
@@ -352,11 +341,10 @@ class TestDeleteProfile:
         self,
         client: TestClient,
     ) -> None:
-        """Cannot delete the built-in mock profile."""
-        resp = client.delete("/api/v1/config/profiles/mock")
+        """Cannot delete the unconfigured profile (returns 404 since not stored)."""
+        resp = client.delete("/api/v1/config/profiles/unconfigured")
 
-        assert resp.status_code == 400
-        assert "mock" in resp.json()["detail"].lower()
+        assert resp.status_code == 404
 
     def test_delete_nonexistent_returns_404(
         self,
@@ -372,7 +360,7 @@ class TestDeleteProfile:
         client: TestClient,
         settings_service: SettingsService,
     ) -> None:
-        """Deleting the active profile resets to mock."""
+        """Deleting the active profile resets to unconfigured."""
         _seed_profile(settings_service, "reneryo")
         settings_service.set_active_profile("reneryo")
 
@@ -380,8 +368,8 @@ class TestDeleteProfile:
 
         assert resp.status_code == 200
         body = resp.json()
-        assert body["active_profile"] == "mock"
-        assert "reset to mock" in body["message"].lower()
+        assert body["active_profile"] == "unconfigured"
+        assert "reset to unconfigured" in body["message"].lower()
 
 
 # ══════════════════════════════════════════════════════════
@@ -420,7 +408,7 @@ class TestActivateProfile:
         client: TestClient,
         settings_service: SettingsService,
     ) -> None:
-        """Activating mock profile works (resets to default)."""
+        """Activating unconfigured profile works (resets to default)."""
         _seed_profile(settings_service, "reneryo")
         settings_service.set_active_profile("reneryo")
 
@@ -429,13 +417,13 @@ class TestActivateProfile:
             return_value=True,
         ):
             resp = client.post(
-                "/api/v1/config/profiles/mock/activate",
+                "/api/v1/config/profiles/unconfigured/activate",
             )
 
         assert resp.status_code == 200
         body = resp.json()
-        assert body["active_profile"] == "mock"
-        assert body["adapter_type"] == "mock"
+        assert body["active_profile"] == "unconfigured"
+        assert body["adapter_type"] == "unconfigured"
 
     def test_activate_nonexistent_returns_404(
         self,
@@ -455,7 +443,7 @@ class TestActivateProfile:
     ) -> None:
         """Reload failure rolls back to previous profile and returns 422."""
         _seed_profile(settings_service, "reneryo")
-        assert settings_service.get_active_profile_name() == "mock"
+        assert settings_service.get_active_profile_name() == "unconfigured"
 
         with patch(
             "skill.adapters.factory.AdapterFactory.reload",
@@ -468,7 +456,7 @@ class TestActivateProfile:
         assert resp.status_code == 422
         assert "reload exploded" in resp.json()["detail"]
         assert "Rolled back" in resp.json()["detail"]
-        assert settings_service.get_active_profile_name() == "mock"
+        assert settings_service.get_active_profile_name() == "unconfigured"
 
 
 # ══════════════════════════════════════════════════════════
@@ -483,11 +471,11 @@ class TestLegacyEndpoints:
         self,
         client: TestClient,
     ) -> None:
-        """GET /platform returns mock config by default."""
+        """GET /platform returns unconfigured config by default."""
         resp = client.get("/api/v1/config/platform")
 
         assert resp.status_code == 200
-        assert resp.json()["platform_type"] == "mock"
+        assert resp.json()["platform_type"] == "unconfigured"
 
     def test_legacy_post_platform_creates_config(
         self,
@@ -510,7 +498,7 @@ class TestLegacyEndpoints:
         self,
         client: TestClient,
     ) -> None:
-        """DELETE /platform resets to mock."""
+        """DELETE /platform resets to unconfigured."""
         # First create a config
         client.post(
             "/api/v1/config/platform",
@@ -524,7 +512,7 @@ class TestLegacyEndpoints:
         resp = client.delete("/api/v1/config/platform")
 
         assert resp.status_code == 200
-        assert resp.json()["platform_type"] == "mock"
+        assert resp.json()["platform_type"] == "unconfigured"
 
 
 # ══════════════════════════════════════════════════════════
@@ -641,7 +629,7 @@ class TestActivatePreValidation:
         assert "not supported" in detail.lower()
         assert "quantum_computer" in detail
         # Active profile unchanged
-        assert settings_service.get_active_profile_name() == "mock"
+        assert settings_service.get_active_profile_name() == "unconfigured"
 
     def test_activate_reneryo_missing_url_returns_422(
         self,
@@ -661,14 +649,14 @@ class TestActivatePreValidation:
 
         assert resp.status_code == 422
         assert "api_url" in resp.json()["detail"].lower()
-        assert settings_service.get_active_profile_name() == "mock"
+        assert settings_service.get_active_profile_name() == "unconfigured"
 
-    def test_activate_mock_always_succeeds(
+    def test_activate_unconfigured_always_succeeds(
         self,
         client: TestClient,
         settings_service: SettingsService,
     ) -> None:
-        """Mock profile requires no validation — always activates."""
+        """Unconfigured profile requires no validation — always activates."""
         _seed_profile(settings_service, "reneryo")
         settings_service.set_active_profile("reneryo")
 
@@ -677,12 +665,12 @@ class TestActivatePreValidation:
             return_value=True,
         ):
             resp = client.post(
-                "/api/v1/config/profiles/mock/activate",
+                "/api/v1/config/profiles/unconfigured/activate",
             )
 
         assert resp.status_code == 200
         body = resp.json()
-        assert body["active_profile"] == "mock"
+        assert body["active_profile"] == "unconfigured"
         assert body["status"] == "activated"
 
 
@@ -716,7 +704,7 @@ class TestActivateRollback:
         detail = resp.json()["detail"]
         assert "cannot connect" in detail.lower()
         assert "Rolled back" in detail
-        assert settings_service.get_active_profile_name() == "mock"
+        assert settings_service.get_active_profile_name() == "unconfigured"
 
     def test_rollback_on_initialize_failure(
         self,
@@ -738,7 +726,7 @@ class TestActivateRollback:
         detail = resp.json()["detail"]
         assert "init boom" in detail
         assert "Rolled back" in detail
-        assert settings_service.get_active_profile_name() == "mock"
+        assert settings_service.get_active_profile_name() == "unconfigured"
 
     def test_rollback_failure_logged_still_returns_422(
         self,
@@ -796,23 +784,23 @@ class TestActivateRollback:
         assert body["status"] == "activated"
         assert body["active_profile"] == "reneryo"
 
-    def test_full_activation_mock_to_mock(
+    def test_full_activation_unconfigured_to_unconfigured(
         self,
         client: TestClient,
     ) -> None:
-        """Trivial switch from mock to mock always works."""
+        """Trivial switch from unconfigured to unconfigured always works."""
         with patch(
             "routers.profiles._notify_skill_via_bus",
             return_value=True,
         ):
             resp = client.post(
-                "/api/v1/config/profiles/mock/activate",
+                "/api/v1/config/profiles/unconfigured/activate",
             )
 
         assert resp.status_code == 200
         body = resp.json()
-        assert body["active_profile"] == "mock"
-        assert body["adapter_type"] == "mock"
+        assert body["active_profile"] == "unconfigured"
+        assert body["adapter_type"] == "unconfigured"
 
     def test_notification_failure_does_not_rollback(
         self,

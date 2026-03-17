@@ -43,9 +43,10 @@ def resolve_metric_from_utterance(
     return _resolve_metric_from_utterance(utterance)
 
 
-def is_non_mock_profile(self) -> bool:
-    """Return True when active profile is not built-in mock."""
-    return self._resolve_active_profile() != "mock"
+def has_configured_profile(self) -> bool:
+    """Return True when active profile is a real configured adapter."""
+    profile = self._resolve_active_profile()
+    return profile not in ("unconfigured", "")
 
 
 def get_intent_binding(self, intent_name: str) -> dict | None:
@@ -64,8 +65,8 @@ def get_intent_binding(self, intent_name: str) -> dict | None:
 
 
 def require_intent_binding(self, intent_name: str) -> bool:
-    """Require binding on non-mock profiles before executing handler."""
-    if not self._is_non_mock_profile():
+    """Require binding on configured profiles before executing handler."""
+    if not self._has_configured_profile():
         return True
 
     binding = self._get_intent_binding(intent_name)

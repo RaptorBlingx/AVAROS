@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from skill._helpers import canonicalize_asset_id, get_asset_registry
 from skill.adapters.factory import AdapterFactory
-from skill.adapters.mock import MockAdapter
+from tests.helpers.stub_adapter import StubAdapter
 from skill.domain.exceptions import AssetNotFoundError
 from skill.domain.models import Asset
 from skill.services.entity_generator import (
@@ -89,7 +89,7 @@ def test_asset_pipeline_end_to_end_resolves_voice_input(
     service.set_active_profile("reneryo-prod")
 
     # --- Act 1: Discovery + persist mappings ---
-    adapter = MockAdapter()
+    adapter = StubAdapter()
     discovered_assets = asyncio.run(adapter.list_assets())
     assert len(discovered_assets) == 10
 
@@ -176,13 +176,13 @@ def test_asset_profile_isolation_across_reneryo_custom_and_mock(
     service.set_active_profile("generic-test")
     assert set(service.get_asset_mappings().keys()) == {"X", "Y"}
 
-    service.set_active_profile("mock")
+    service.set_active_profile("unconfigured")
     assert service.get_asset_mappings() == {}
     service.close()
 
 
-def test_web_ui_discover_endpoint_mock_profile_returns_generic_assets(tmp_path: Path) -> None:
-    """Discover API should return platform-agnostic Asset schema on mock profile."""
+def test_web_ui_discover_endpoint_unconfigured_profile_returns_empty(tmp_path: Path) -> None:
+    """Discover API should return empty assets when no platform is configured."""
     web_ui_dir = Path(__file__).resolve().parents[2] / "web-ui"
     if str(web_ui_dir) not in sys.path:
         sys.path.insert(0, str(web_ui_dir))
@@ -194,7 +194,7 @@ def test_web_ui_discover_endpoint_mock_profile_returns_generic_assets(tmp_path: 
     settings = build_test_settings_service(
         database_url=f"sqlite:///{tmp_path / 'asset-web-ui.db'}",
     )
-    settings.set_active_profile("mock")
+    settings.set_active_profile("unconfigured")
     app.dependency_overrides[get_settings_service] = lambda: settings
 
     try:
@@ -202,11 +202,10 @@ def test_web_ui_discover_endpoint_mock_profile_returns_generic_assets(tmp_path: 
             response = client.get("/api/v1/assets/discover")
         assert response.status_code == 200
         body = response.json()
-        assert body["platform_type"] == "mock"
+        assert body["platform_type"] == "unconfigured"
+        assert body["supports_discovery"] is False
         assert isinstance(body["assets"], list)
-        assert len(body["assets"]) == 10
-        first = body["assets"][0]
-        assert set(first.keys()) >= {"asset_id", "display_name", "asset_type", "aliases"}
+        assert len(body["assets"]) == 0
     finally:
         app.dependency_overrides.clear()
         settings.close()

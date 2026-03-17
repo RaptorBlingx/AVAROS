@@ -51,9 +51,9 @@ def build_test_settings_service(
 
 @pytest.fixture
 def mock_config() -> Dict[str, Any]:
-    """Provides a mock configuration for testing"""
+    """Provides a test configuration for testing"""
     return {
-        "platform_type": "mock",
+        "platform_type": "reneryo",
         "api_url": "http://localhost:8000",
         "api_key": "test_key",
         "timeout": 30,

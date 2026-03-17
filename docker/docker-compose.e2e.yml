@@ -1,7 +1,7 @@
 # AVAROS E2E Voice Pipeline Test Environment
 #
 # Self-contained Docker Compose for CI-runnable end-to-end tests.
-# Includes: MessageBus + Skill + MockAdapter + DB + Mock RENERYO
+# Includes: MessageBus + Skill + UnconfiguredAdapter + DB + RENERYO Data Generator
 #
 # Usage:
 #   docker compose -f docker-compose.e2e.yml build
@@ -43,10 +43,10 @@ services:
       timeout: 3s
       retries: 5
 
-  reneryo-mock:
+  reneryo-data-generator:
     build:
-      context: ../tools/reneryo-mock
-    container_name: e2e-reneryo-mock
+      context: ../tools/reneryo-data-generator
+    container_name: e2e-reneryo-data-generator
     networks:
       - e2e-net
     healthcheck:
@@ -69,10 +69,9 @@ services:
         condition: service_healthy
       e2e-db:
         condition: service_healthy
-      reneryo-mock:
+      reneryo-data-generator:
         condition: service_healthy
     environment:
-      - ADAPTER_TYPE=mock
       - AVAROS_DATABASE_URL=postgresql://avaros:avaros@e2e-db:5432/avaros
       - MESSAGEBUS_HOST=ovos_messagebus
       - MESSAGEBUS_PORT=8181

@@ -131,12 +131,12 @@ def test_create_intent_binding_rejects_invalid_intent_name(
     assert response.status_code == 422
 
 
-def test_get_intent_bindings_mock_returns_defaults(
+def test_get_intent_bindings_unconfigured_returns_defaults(
     client: TestClient,
     settings_service: SettingsService,
 ) -> None:
-    """Mock profile should return built-in default bindings."""
-    settings_service.set_active_profile("mock")
+    """Unconfigured profile should return built-in default bindings."""
+    settings_service.set_active_profile("unconfigured")
 
     response = client.get("/api/v1/config/intent-bindings")
 
@@ -144,4 +144,4 @@ def test_get_intent_bindings_mock_returns_defaults(
     items = response.json()
     by_name = {item["intent_name"]: item for item in items}
     assert "help.capabilities.list" in by_name
-    assert by_name["status.system.show"]["endpoint"] == "/mock/status/system"
+    assert by_name["status.system.show"]["endpoint"] == "/api/status/system"

@@ -11,7 +11,7 @@ Covers all public methods and internal helpers of QueryDispatcher:
     - _generate_response_summary (all 5 result types)
     - _generate_query_id (format, uniqueness)
 
-Uses real MockAdapter (verified in P2-L01) and in-memory AuditLogger.
+Uses real StubAdapter (verified in P2-L01) and in-memory AuditLogger.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from skill.adapters.mock import MockAdapter
+from tests.helpers.stub_adapter import StubAdapter
 from skill.domain.models import (
     CanonicalMetric,
     ScenarioParameter,
@@ -46,9 +46,9 @@ from skill.use_cases.query_dispatcher import QueryDispatcher
 
 
 @pytest.fixture
-def adapter() -> MockAdapter:
-    """Real MockAdapter instance."""
-    return MockAdapter()
+def adapter() -> StubAdapter:
+    """Real StubAdapter instance."""
+    return StubAdapter()
 
 
 @pytest.fixture
@@ -61,8 +61,8 @@ def audit_logger() -> AuditLogger:
 
 
 @pytest.fixture
-def dispatcher(adapter: MockAdapter, audit_logger: AuditLogger) -> QueryDispatcher:
-    """QueryDispatcher wired with real MockAdapter and in-memory AuditLogger."""
+def dispatcher(adapter: StubAdapter, audit_logger: AuditLogger) -> QueryDispatcher:
+    """QueryDispatcher wired with StubAdapter and in-memory AuditLogger."""
     return QueryDispatcher(adapter=adapter, audit_logger=audit_logger)
 
 
@@ -99,7 +99,7 @@ class TestQueryDispatcherInit:
     """Tests for __init__()."""
 
     def test_init_stores_adapter_and_audit_logger(
-        self, adapter: MockAdapter, audit_logger: AuditLogger
+        self, adapter: StubAdapter, audit_logger: AuditLogger
     ) -> None:
         """Constructor stores adapter and audit logger references."""
         d = QueryDispatcher(adapter=adapter, audit_logger=audit_logger)
@@ -107,14 +107,14 @@ class TestQueryDispatcherInit:
         assert d._audit_logger is audit_logger
 
     def test_init_without_audit_logger_creates_default(
-        self, adapter: MockAdapter
+        self, adapter: StubAdapter
     ) -> None:
         """Omitting audit_logger creates a default AuditLogger."""
         d = QueryDispatcher(adapter=adapter)
         assert isinstance(d._audit_logger, AuditLogger)
 
     def test_adapter_property_returns_adapter(
-        self, dispatcher: QueryDispatcher, adapter: MockAdapter
+        self, dispatcher: QueryDispatcher, adapter: StubAdapter
     ) -> None:
         """The adapter property returns the stored adapter."""
         assert dispatcher.adapter is adapter
@@ -132,7 +132,7 @@ class TestSetAdapter:
         self, dispatcher: QueryDispatcher
     ) -> None:
         """set_adapter() swaps the adapter instance."""
-        new_adapter = MockAdapter()
+        new_adapter = StubAdapter()
         dispatcher.set_adapter(new_adapter)
         assert dispatcher.adapter is new_adapter
 
@@ -140,7 +140,7 @@ class TestSetAdapter:
         self, dispatcher: QueryDispatcher, period: TimePeriod
     ) -> None:
         """After set_adapter(), queries go through the new adapter."""
-        new_adapter = MockAdapter()
+        new_adapter = StubAdapter()
         dispatcher.set_adapter(new_adapter)
 
         result = dispatcher.get_kpi(
@@ -467,7 +467,7 @@ class TestLogAudit:
         assert "KPI value" in entry.response_summary
 
     def test_log_audit_error_does_not_crash_query(
-        self, adapter: MockAdapter, period: TimePeriod
+        self, adapter: StubAdapter, period: TimePeriod
     ) -> None:
         """If audit logging raises, the query still returns a result."""
         broken_audit = MagicMock(spec=AuditLogger)
@@ -608,9 +608,9 @@ class TestQueryDispatcherCO2Derivation:
         return CO2DerivationService(settings_service)
 
     @pytest.fixture
-    def adapter_no_native_carbon(self) -> MockAdapter:
-        """MockAdapter that does NOT support native_carbon."""
-        adapter = MockAdapter()
+    def adapter_no_native_carbon(self) -> StubAdapter:
+        """StubAdapter that does NOT support native_carbon."""
+        adapter = StubAdapter()
         original = adapter.supports_capability
 
         def _patched(capability: str) -> bool:
@@ -624,7 +624,7 @@ class TestQueryDispatcherCO2Derivation:
     @pytest.fixture
     def dispatcher_with_co2(
         self,
-        adapter_no_native_carbon: MockAdapter,
+        adapter_no_native_carbon: StubAdapter,
         settings_service: SettingsService,
         co2_service: CO2DerivationService,
     ) -> QueryDispatcher:
@@ -644,7 +644,7 @@ class TestQueryDispatcherCO2Derivation:
         audit_logger: AuditLogger,
     ) -> QueryDispatcher:
         """Dispatcher with native carbon adapter (no derivation)."""
-        adapter = MockAdapter()
+        adapter = StubAdapter()
         return QueryDispatcher(
             adapter=adapter,
             audit_logger=audit_logger,
@@ -697,8 +697,8 @@ class TestQueryDispatcherCO2Derivation:
     ) -> None:
         """Adapter with native_carbon capability goes direct, not derived."""
         period = TimePeriod.today()
-        # MockAdapter supports all capabilities including native_carbon
-        # and returns mock CO2 data directly
+        # StubAdapter supports all capabilities including native_carbon
+        # and returns stub CO2 data directly
         result = dispatcher_native.get_kpi(
             metric=CanonicalMetric.CO2_TOTAL,
             asset_id="Line-1",
@@ -742,7 +742,7 @@ class TestQueryDispatcherCO2Derivation:
         mock_adapter = MagicMock()
         mock_adapter.get_kpi = AsyncMock(return_value=energy_result)
         mock_adapter.supports_capability.return_value = False
-        mock_adapter.platform_name = "mock"
+        mock_adapter.platform_name = "stub"
 
         audit = AuditLogger()
         audit.initialize()

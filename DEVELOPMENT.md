@@ -154,23 +154,22 @@ class KPIResult:
 
 ✅ **GOOD: Works out-of-box**
 ```python
-def create_adapter() -> ManufacturingAdapter:
-    platform = os.environ.get("AVAROS_PLATFORM")
+def create_adapter(settings: SettingsService) -> ManufacturingAdapter:
+    config = settings.get_platform_config()
     
-    if not platform:
-        # ✅ No config → use mock data for demo
-        logger.info("No platform configured, using MockAdapter")
-        return MockAdapter()
+    if not config.is_configured:
+        # ✅ No config → safe default, guides user to Web UI
+        logger.info("No platform configured, using UnconfiguredAdapter")
+        return UnconfiguredAdapter()
     
-    if platform == "reneryo":
-        return RENERYOAdapter()
+    if config.platform_type == "reneryo":
+        return RENERYOAdapter(config)
 ```
 
 **First-run experience:**
-1. `git clone` → `docker compose up` → ✅ **Works immediately with mock data**
-2. User explores system, sees demo KPIs
-3. User configures via Web UI
-4. System switches to real adapter
+1. `git clone` → `docker compose up` → ✅ **System starts with UnconfiguredAdapter**
+2. User accesses Web UI, connects a platform (e.g. RENERYO)
+3. System switches to the configured adapter automatically
 
 ---
 

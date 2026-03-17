@@ -46,7 +46,7 @@ def _make_settings(platform_type: str = "reneryo") -> SettingsService:
     svc._session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     SettingsBase.metadata.create_all(engine)
     svc._initialized = True
-    if platform_type != "mock":
+    if platform_type not in ("unconfigured", ""):
         svc.update_platform_config(
             PlatformConfig(
                 platform_type=platform_type,
@@ -139,8 +139,8 @@ class TestSeedBaselines:
         assert count == 0
 
     @pytest.mark.asyncio
-    async def test_skips_when_mock_platform(self) -> None:
-        settings = _make_settings("mock")
+    async def test_skips_when_unconfigured_platform(self) -> None:
+        settings = _make_settings("unconfigured")
         kpi = _make_kpi_service()
         collector = KPICollector(settings, kpi)
 
@@ -184,7 +184,7 @@ class TestCollectSnapshots:
 
     @pytest.mark.asyncio
     async def test_skips_when_mock_platform(self) -> None:
-        settings = _make_settings("mock")
+        settings = _make_settings("unconfigured")
         kpi = _make_kpi_service()
         collector = KPICollector(settings, kpi)
 

@@ -9,7 +9,7 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from skill.adapters.factory import AdapterFactory
-from skill.adapters.mock import MockAdapter
+from skill.adapters.unconfigured import UnconfiguredAdapter
 from skill.adapters.base import ManufacturingAdapter
 
 
@@ -32,11 +32,11 @@ def reset_adapter_registry() -> None:
 
 @pytest.fixture
 def mock_settings_service() -> MagicMock:
-    """Create a mock SettingsService returning mock platform config."""
+    """Create a mock SettingsService returning unconfigured platform config."""
     service = MagicMock()
     config = MagicMock()
-    config.platform_type = "mock"
-    service.get_active_profile_name.return_value = "mock"
+    config.platform_type = ""
+    service.get_active_profile_name.return_value = "unconfigured"
     service.get_profile.return_value = config
     # Keep old API mocked for backward compat tests
     service.get_platform_config.return_value = config
@@ -90,23 +90,23 @@ class _StubAdapter(ManufacturingAdapter):
 class TestAdapterFactoryCreate:
     """Tests for create() — the primary adapter creation method."""
 
-    def test_create_no_settings_returns_mock_adapter(
+    def test_create_no_settings_returns_unconfigured_adapter(
         self,
         factory_no_settings: AdapterFactory,
     ) -> None:
-        """With no SettingsService, create() must return MockAdapter."""
+        """With no SettingsService, create() must return UnconfiguredAdapter."""
         adapter = factory_no_settings.create()
 
-        assert isinstance(adapter, MockAdapter)
+        assert isinstance(adapter, UnconfiguredAdapter)
 
-    def test_create_with_mock_config_returns_mock_adapter(
+    def test_create_with_unconfigured_config_returns_unconfigured_adapter(
         self,
         factory_with_settings: AdapterFactory,
     ) -> None:
-        """When settings return platform_type='mock', get MockAdapter."""
+        """When settings return no platform_type, get UnconfiguredAdapter."""
         adapter = factory_with_settings.create()
 
-        assert isinstance(adapter, MockAdapter)
+        assert isinstance(adapter, UnconfiguredAdapter)
 
     def test_create_caches_adapter_instance(
         self,
@@ -118,21 +118,8 @@ class TestAdapterFactoryCreate:
 
         assert first is second
 
-    def test_create_with_demo_config_returns_mock_adapter(self) -> None:
-        """'demo' is an alias for MockAdapter in the registry."""
-        service = MagicMock()
-        config = MagicMock()
-        config.platform_type = "demo"
-        service.get_active_profile_name.return_value = "demo"
-        service.get_profile.return_value = config
-
-        factory = AdapterFactory(settings_service=service)
-        adapter = factory.create()
-
-        assert isinstance(adapter, MockAdapter)
-
-    def test_create_with_unknown_platform_falls_back_to_mock(self) -> None:
-        """Unknown platform names should gracefully fall back to MockAdapter."""
+    def test_create_with_unknown_platform_falls_back_to_unconfigured(self) -> None:
+        """Unknown platform names should gracefully fall back to UnconfiguredAdapter."""
         service = MagicMock()
         config = MagicMock()
         config.platform_type = "nonexistent_platform"
@@ -142,7 +129,7 @@ class TestAdapterFactoryCreate:
         factory = AdapterFactory(settings_service=service)
         adapter = factory.create()
 
-        assert isinstance(adapter, MockAdapter)
+        assert isinstance(adapter, UnconfiguredAdapter)
 
 
 # ---------------------------------------------------------------------------
@@ -153,21 +140,21 @@ class TestAdapterFactoryCreateAsync:
     """Tests for create_async() — async adapter creation + init."""
 
     @pytest.mark.asyncio
-    async def test_create_async_returns_mock_adapter(
+    async def test_create_async_returns_unconfigured_adapter(
         self,
         factory_no_settings: AdapterFactory,
     ) -> None:
-        """create_async() should return an initialized MockAdapter."""
+        """create_async() should return an initialized UnconfiguredAdapter."""
         adapter = await factory_no_settings.create_async()
 
-        assert isinstance(adapter, MockAdapter)
+        assert isinstance(adapter, UnconfiguredAdapter)
 
     @pytest.mark.asyncio
     async def test_create_async_calls_initialize(self) -> None:
         """create_async() must call adapter.initialize()."""
         factory = AdapterFactory(settings_service=None)
 
-        with patch.object(MockAdapter, "initialize", new_callable=AsyncMock) as mock_init:
+        with patch.object(UnconfiguredAdapter, "initialize", new_callable=AsyncMock) as mock_init:
             await factory.create_async()
             mock_init.assert_called_once()
 
@@ -179,36 +166,36 @@ class TestAdapterFactoryCreateAsync:
 class TestGetConfiguredPlatform:
     """Tests for _get_configured_platform() — platform resolution."""
 
-    def test_none_settings_returns_mock(
+    def test_none_settings_returns_unconfigured(
         self,
         factory_no_settings: AdapterFactory,
     ) -> None:
-        """No settings service → 'mock'."""
+        """No settings service → 'unconfigured'."""
         result = factory_no_settings._get_configured_platform()
 
-        assert result == "mock"
+        assert result == "unconfigured"
 
     def test_settings_returns_configured_platform(
         self,
         factory_with_settings: AdapterFactory,
     ) -> None:
-        """SettingsService returning valid config → that platform name."""
+        """SettingsService returning empty config → 'unconfigured'."""
         result = factory_with_settings._get_configured_platform()
 
-        assert result == "mock"
+        assert result == "unconfigured"
 
-    def test_settings_error_falls_back_to_mock(self) -> None:
-        """If SettingsService raises, fall back to 'mock'."""
+    def test_settings_error_falls_back_to_unconfigured(self) -> None:
+        """If SettingsService raises, fall back to 'unconfigured'."""
         service = MagicMock()
         service.get_active_profile_name.side_effect = RuntimeError("DB down")
 
         factory = AdapterFactory(settings_service=service)
         result = factory._get_configured_platform()
 
-        assert result == "mock"
+        assert result == "unconfigured"
 
     def test_settings_returns_none_config_falls_back(self) -> None:
-        """If get_profile() returns None, use 'mock'."""
+        """If get_profile() returns None, use 'unconfigured'."""
         service = MagicMock()
         service.get_active_profile_name.return_value = "deleted"
         service.get_profile.return_value = None
@@ -216,20 +203,20 @@ class TestGetConfiguredPlatform:
         factory = AdapterFactory(settings_service=service)
         result = factory._get_configured_platform()
 
-        assert result == "mock"
+        assert result == "unconfigured"
 
     def test_settings_returns_empty_platform_type_falls_back(self) -> None:
-        """If platform_type is 'mock', use 'mock'."""
+        """If platform_type is empty, use 'unconfigured'."""
         service = MagicMock()
         config = MagicMock()
-        config.platform_type = "mock"
-        service.get_active_profile_name.return_value = "mock"
+        config.platform_type = ""
+        service.get_active_profile_name.return_value = "unconfigured"
         service.get_profile.return_value = config
 
         factory = AdapterFactory(settings_service=service)
         result = factory._get_configured_platform()
 
-        assert result == "mock"
+        assert result == "unconfigured"
 
     def test_platform_name_is_lowercased(self) -> None:
         """Platform identification must be case-insensitive."""
@@ -253,14 +240,14 @@ class TestGetConfiguredPlatform:
 class TestInstantiateAdapter:
     """Tests for _instantiate_adapter() — adapter construction."""
 
-    def test_instantiate_mock_adapter_returns_instance(
+    def test_instantiate_unconfigured_adapter_returns_instance(
         self,
         factory_no_settings: AdapterFactory,
     ) -> None:
-        """MockAdapter class → MockAdapter instance."""
-        adapter = factory_no_settings._instantiate_adapter(MockAdapter, "mock")
+        """UnconfiguredAdapter class → UnconfiguredAdapter instance."""
+        adapter = factory_no_settings._instantiate_adapter(UnconfiguredAdapter, "unconfigured")
 
-        assert isinstance(adapter, MockAdapter)
+        assert isinstance(adapter, UnconfiguredAdapter)
 
     def test_instantiate_unknown_class_returns_instance(
         self,
@@ -347,12 +334,12 @@ class TestAdapterFactoryRegister:
 class TestGetAvailablePlatforms:
     """Tests for get_available_platforms() — platform listing."""
 
-    def test_includes_mock_and_demo(self) -> None:
-        """Default registry must include 'mock' and 'demo'."""
+    def test_includes_reneryo_and_custom_rest(self) -> None:
+        """Default registry must include 'reneryo' and 'custom_rest'."""
         platforms = AdapterFactory.get_available_platforms()
 
-        assert "mock" in platforms
-        assert "demo" in platforms
+        assert "reneryo" in platforms
+        assert "custom_rest" in platforms
 
     def test_includes_registered_platform(self) -> None:
         """Dynamically registered platforms appear in the list."""
@@ -387,7 +374,7 @@ class TestAdapterFactoryReload:
         old = factory_no_settings.create()
         new = await factory_no_settings.reload()
 
-        assert isinstance(new, MockAdapter)
+        assert isinstance(new, UnconfiguredAdapter)
         assert new is not old
 
     @pytest.mark.asyncio
@@ -411,7 +398,7 @@ class TestAdapterFactoryReload:
 
         adapter = await factory.reload()
 
-        assert isinstance(adapter, MockAdapter)
+        assert isinstance(adapter, UnconfiguredAdapter)
 
     @pytest.mark.asyncio
     async def test_reload_swallows_shutdown_error(self) -> None:
@@ -420,13 +407,13 @@ class TestAdapterFactoryReload:
         factory.create()
 
         with patch.object(
-            MockAdapter, "shutdown",
+            UnconfiguredAdapter, "shutdown",
             new_callable=AsyncMock,
             side_effect=RuntimeError("cleanup failed"),
         ):
             adapter = await factory.reload()
 
-        assert isinstance(adapter, MockAdapter)
+        assert isinstance(adapter, UnconfiguredAdapter)
 
     @pytest.mark.asyncio
     async def test_reload_initializes_new_adapter(self) -> None:
@@ -435,7 +422,7 @@ class TestAdapterFactoryReload:
         factory.create()
 
         with patch.object(
-            MockAdapter, "initialize", new_callable=AsyncMock,
+            UnconfiguredAdapter, "initialize", new_callable=AsyncMock,
         ) as mock_init:
             await factory.reload()
             mock_init.assert_called_once()
@@ -449,18 +436,18 @@ class TestAdapterFactoryReload:
 class TestAdapterFactoryProfiles:
     """Tests for profile-based adapter creation and reload."""
 
-    def test_create_with_active_profile_mock(self) -> None:
-        """When active profile is 'mock', MockAdapter is created."""
+    def test_create_with_active_profile_unconfigured(self) -> None:
+        """When active profile is 'unconfigured', UnconfiguredAdapter is created."""
         service = MagicMock()
-        service.get_active_profile_name.return_value = "mock"
+        service.get_active_profile_name.return_value = "unconfigured"
         service.get_profile.return_value = MagicMock(
-            platform_type="mock",
+            platform_type="",
         )
 
         factory = AdapterFactory(settings_service=service)
         adapter = factory.create()
 
-        assert isinstance(adapter, MockAdapter)
+        assert isinstance(adapter, UnconfiguredAdapter)
 
     def test_create_with_active_profile_reneryo(self) -> None:
         """When active profile is 'reneryo', ReneryoAdapter is created."""
@@ -502,8 +489,8 @@ class TestAdapterFactoryProfiles:
 
         assert isinstance(adapter, GenericRestAdapter)
 
-    def test_create_with_missing_profile_falls_back_to_mock(self) -> None:
-        """When active profile config returns None, fall back to mock."""
+    def test_create_with_missing_profile_falls_back_to_unconfigured(self) -> None:
+        """When active profile config returns None, fall back to unconfigured."""
         service = MagicMock()
         service.get_active_profile_name.return_value = "deleted"
         service.get_profile.return_value = None
@@ -511,15 +498,15 @@ class TestAdapterFactoryProfiles:
         factory = AdapterFactory(settings_service=service)
         adapter = factory.create()
 
-        assert isinstance(adapter, MockAdapter)
+        assert isinstance(adapter, UnconfiguredAdapter)
 
     @pytest.mark.asyncio
     async def test_reload_with_profile_name_switches_active(self) -> None:
         """reload(profile_name=...) calls set_active_profile first."""
         service = MagicMock()
-        service.get_active_profile_name.return_value = "mock"
+        service.get_active_profile_name.return_value = "unconfigured"
         service.get_profile.return_value = MagicMock(
-            platform_type="mock",
+            platform_type="",
         )
 
         factory = AdapterFactory(settings_service=service)
@@ -533,9 +520,9 @@ class TestAdapterFactoryProfiles:
     async def test_reload_without_profile_name_uses_current(self) -> None:
         """reload() without profile_name does not change active."""
         service = MagicMock()
-        service.get_active_profile_name.return_value = "mock"
+        service.get_active_profile_name.return_value = "unconfigured"
         service.get_profile.return_value = MagicMock(
-            platform_type="mock",
+            platform_type="",
         )
 
         factory = AdapterFactory(settings_service=service)

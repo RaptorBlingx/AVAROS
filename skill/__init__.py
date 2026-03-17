@@ -49,7 +49,7 @@ from skill._helpers import (
     get_intent_binding as _get_intent_binding_impl,
     get_power_state as _get_power_state_impl,
     is_anomaly_query as _is_anomaly_query_impl,
-    is_non_mock_profile as _is_non_mock_profile_impl,
+    has_configured_profile as _has_configured_profile_impl,
     parse_numeric_amount as _parse_numeric_amount_impl,
     parse_period as _parse_period_impl,
     power_state_key as _power_state_key_impl,
@@ -74,7 +74,7 @@ class AVAROSSkill(FallbackSkill):
 
     _parse_period = _parse_period_impl
     _resolve_metric_from_utterance = _resolve_metric_from_utterance_impl
-    _is_non_mock_profile = _is_non_mock_profile_impl
+    _has_configured_profile = _has_configured_profile_impl
     _get_intent_binding = _get_intent_binding_impl
     _require_intent_binding = _require_intent_binding_impl
     _power_state_key = _power_state_key_impl
@@ -117,8 +117,8 @@ class AVAROSSkill(FallbackSkill):
         self.adapter_factory: AdapterFactory | None = None
         self.dispatcher: QueryDispatcher | None = None
         self.response_builder: ResponseBuilder | None = None
-        self._loaded_profile: str = "mock"
-        self._loaded_platform: str = "mock"
+        self._loaded_profile: str = "unconfigured"
+        self._loaded_platform: str = "unconfigured"
         self._is_initialized: bool = False
         self._asset_registry_profile: str = ""
         self._asset_registry_cache: list[Any] | None = None
@@ -152,7 +152,7 @@ class AVAROSSkill(FallbackSkill):
             self.log.info("SettingsService initialized successfully")
         except Exception as exc:
             self.log.warning(
-                "SettingsService initialization failed, using MockAdapter: %s",
+                "SettingsService initialization failed, using UnconfiguredAdapter: %s",
                 exc,
             )
 
@@ -260,11 +260,11 @@ class AVAROSSkill(FallbackSkill):
 
     def _resolve_active_profile(self) -> str:
         if self.settings_service is None:
-            return "mock"
+            return "unconfigured"
         try:
             return self.settings_service.get_active_profile_name()
         except Exception:
-            return "mock"
+            return "unconfigured"
 
     def _handle_profile_switch(self, message: Message) -> None:
         profile_name = message.data.get("profile", "")
@@ -274,10 +274,10 @@ class AVAROSSkill(FallbackSkill):
             self._reload_adapter(profile_name)
         except Exception as exc:
             self.log.error(
-                "Profile switch reload failed: %s — falling back to mock",
+                "Profile switch reload failed: %s — falling back to unconfigured",
                 exc,
             )
-            self._force_mock_fallback()
+            self._force_unconfigured_fallback()
 
     def _handle_asset_entities_updated(self, message: Message) -> None:
         """Refresh loaded entity files after dynamic regeneration."""
@@ -343,30 +343,30 @@ class AVAROSSkill(FallbackSkill):
 
         return loop.run_until_complete(coro)
 
-    def _force_mock_fallback(self) -> None:
-        """Force MockAdapter as safe fallback (DEC-005)."""
-        from skill.adapters.mock import MockAdapter
+    def _force_unconfigured_fallback(self) -> None:
+        """Force UnconfiguredAdapter as safe fallback."""
+        from skill.adapters.unconfigured import UnconfiguredAdapter
 
-        mock = MockAdapter()
+        fallback = UnconfiguredAdapter()
         self.dispatcher = QueryDispatcher(
-            adapter=mock,
+            adapter=fallback,
             settings_service=self.settings_service,
         )
         if self.response_builder is None:
             self.response_builder = ResponseBuilder(verbosity="normal")
-        self._loaded_profile = "mock"
-        self._loaded_platform = "mock"
-        self.log.info("Forced MockAdapter fallback")
+        self._loaded_profile = "unconfigured"
+        self._loaded_platform = "unconfigured"
+        self.log.info("Forced UnconfiguredAdapter fallback")
 
     def _expected_platform_for_profile(self, profile_name: str) -> str:
         if self.settings_service is None:
-            return "mock"
+            return "unconfigured"
         try:
             config = self.settings_service.get_profile(profile_name)
-            platform = ((config.platform_type if config is not None else "mock") or "mock").strip().lower()
-            return platform or "mock"
+            platform = ((config.platform_type if config is not None else "unconfigured") or "unconfigured").strip().lower()
+            return platform or "unconfigured"
         except Exception:
-            return "mock"
+            return "unconfigured"
 
     def _ensure_runtime_services(self) -> None:
         """Recreate SettingsService / AdapterFactory if missing at runtime."""
@@ -432,7 +432,7 @@ class AVAROSSkill(FallbackSkill):
                     profile = self.settings_service.get_active_profile_name()
                     self._reload_adapter(profile)
                 else:
-                    self._force_mock_fallback()
+                    self._force_unconfigured_fallback()
             except Exception as exc:
                 self.log.warning("Dispatcher recovery failed: %s", exc)
 

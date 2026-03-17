@@ -2,7 +2,7 @@
 Integration Pipeline Tests
 
 End-to-end tests exercising the full production pipeline:
-    QueryDispatcher → MockAdapter → ResponseBuilder
+    QueryDispatcher → StubAdapter → ResponseBuilder
 
 All components are REAL (no mocks). These tests validate that the
 actual production code works together correctly.
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import pytest
 
-from skill.adapters.mock import MockAdapter
+from tests.helpers.stub_adapter import StubAdapter
 from skill.domain.exceptions import AVAROSError
 from skill.domain.models import (
     CanonicalMetric,
@@ -54,8 +54,8 @@ def audit_logger() -> AuditLogger:
 
 @pytest.fixture
 def dispatcher(audit_logger: AuditLogger) -> QueryDispatcher:
-    """QueryDispatcher with real MockAdapter and in-memory audit."""
-    return QueryDispatcher(adapter=MockAdapter(), audit_logger=audit_logger)
+    """QueryDispatcher with StubAdapter and in-memory audit."""
+    return QueryDispatcher(adapter=StubAdapter(), audit_logger=audit_logger)
 
 
 @pytest.fixture
@@ -276,7 +276,7 @@ class TestAdapterHotSwap:
         assert isinstance(result1, KPIResult)
 
         # Swap adapter
-        new_adapter = MockAdapter()
+        new_adapter = StubAdapter()
         dispatcher.set_adapter(new_adapter)
         assert dispatcher.adapter is new_adapter
 

@@ -37,8 +37,8 @@ def get_system_status(
 
     defaults = SystemStatusResponse(
         configured=False,
-        active_adapter="mock",
-        platform_type="mock",
+        active_adapter="unconfigured",
+        platform_type="unconfigured",
         loaded_intents=loaded_intents,
         database_connected=False,
         version=APP_VERSION,
@@ -49,8 +49,8 @@ def get_system_status(
         platform_config = settings_service.get_platform_config()
         return SystemStatusResponse(
             configured=settings_service.is_configured(),
-            active_adapter=platform_config.platform_type or "mock",
-            platform_type=platform_config.platform_type or "mock",
+            active_adapter=platform_config.platform_type or "unconfigured",
+            platform_type=platform_config.platform_type or "unconfigured",
             loaded_intents=loaded_intents,
             database_connected=True,
             version=APP_VERSION,

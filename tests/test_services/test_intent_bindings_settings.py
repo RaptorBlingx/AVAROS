@@ -30,16 +30,16 @@ def active_reneryo_profile(service: SettingsService) -> None:
     service.set_active_profile("reneryo")
 
 
-def test_list_intent_bindings_mock_returns_defaults(
+def test_list_intent_bindings_unconfigured_returns_defaults(
     service: SettingsService,
 ) -> None:
-    """Mock profile should expose built-in non-metric intent bindings."""
-    service.set_active_profile("mock")
+    """Unconfigured profile should expose built-in non-metric intent bindings."""
+    service.set_active_profile("unconfigured")
 
     bindings = service.list_intent_bindings()
 
     assert "control.device.turn_on" in bindings
-    assert bindings["status.system.show"]["endpoint"] == "/mock/status/system"
+    assert bindings["status.system.show"]["endpoint"] == "/api/status/system"
 
 
 def test_set_intent_binding_non_mock_persists(
@@ -103,11 +103,11 @@ def test_set_intent_binding_invalid_name_raises(
         )
 
 
-def test_delete_intent_binding_mock_returns_false(
+def test_delete_intent_binding_unconfigured_returns_false(
     service: SettingsService,
 ) -> None:
-    """Mock profile delete should remain read-only."""
-    service.set_active_profile("mock")
+    """Unconfigured profile delete should remain read-only."""
+    service.set_active_profile("unconfigured")
 
     deleted = service.delete_intent_binding("status.system.show")
 

@@ -1,1 +1,1 @@
-"""Tests for adapter layer (MockAdapter, AdapterFactory)."""
+"""Tests for adapter layer (UnconfiguredAdapter, AdapterFactory)."""

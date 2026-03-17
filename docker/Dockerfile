@@ -51,8 +51,7 @@ RUN chmod +x ./launch_skill.py
 USER ovos
 
 # Environment variables for AVAROS
-ENV ADAPTER_TYPE=mock \
-    LOG_LEVEL=INFO \
+ENV LOG_LEVEL=INFO \
     AVAROS_LOG_LEVEL=INFO \
     PATH=/home/ovos/.local/bin:$PATH
 

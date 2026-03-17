@@ -56,6 +56,27 @@ MAPPING_FILE = Path(__file__).parent / "mapping_output.json"
 # =========================================================================
 
 
+def _physical_metric_name(profile: MetricProfile, asset: str) -> str:
+    """Build per-asset physical metric name for RENERYO.
+
+    Creates one metric per canonical+asset pair with unlabeled
+    resources to avoid RENERYO labeled-append instability.
+
+    Args:
+        profile: Metric profile definition.
+        asset: Asset identifier (e.g. "Line-1").
+
+    Returns:
+        Physical metric name like ``"AVAROS Energy Per Unit :: Line-1"``.
+    """
+    return f"{profile.display_name} :: {asset}"
+
+
+def _metric_asset_key(metric_name: str, asset: str) -> str:
+    """Stable key for metric+asset pair in state tracking."""
+    return f"{metric_name}::{asset}"
+
+
 async def _find_existing_metrics(
     client: ReneryoClient,
 ) -> dict[str, str]:
@@ -64,7 +85,7 @@ async def _find_existing_metrics(
     Returns:
         Dict mapping display_name → metric_id for metrics prefixed "AVAROS ".
     """
-    metrics = await client.list_metrics(count=500)
+    metrics = await client.list_metrics(count=5000)
     found: dict[str, str] = {}
     for m in metrics:
         name = m.get("name", "")
@@ -76,53 +97,66 @@ async def _find_existing_metrics(
 async def ensure_metrics_exist(
     client: ReneryoClient,
 ) -> dict[str, str]:
-    """Create all 19 AVAROS metrics (skip if already exist).
+    """Create per-asset AVAROS metrics (unlabeled resources).
+
+    Creates one metric per canonical+asset pair to avoid RENERYO
+    labeled-append instability. Uses unlabeled writes only.
 
     Returns:
-        Dict mapping canonical metric_name → metric_id.
+        Dict mapping ``metric_name::asset`` key → metric_id.
     """
     existing = await _find_existing_metrics(client)
-    name_to_id: dict[str, str] = {}
+    key_to_id: dict[str, str] = {}
 
+    created = 0
+    reused = 0
     for profile in METRIC_PROFILES:
-        if profile.display_name in existing:
-            metric_id = existing[profile.display_name]
-            logger.info(
-                "Found existing metric '%s' → %s",
-                profile.display_name, metric_id,
-            )
-        else:
-            metric_id = await _create_or_reuse_metric(client, profile)
-        name_to_id[profile.name] = metric_id
+        for asset in DEFAULT_ASSETS:
+            physical_name = _physical_metric_name(profile, asset)
+            key = _metric_asset_key(profile.name, asset)
+            if physical_name in existing:
+                key_to_id[key] = existing[physical_name]
+                reused += 1
+            else:
+                metric_id = await _create_or_reuse_metric(
+                    client, profile, asset,
+                )
+                key_to_id[key] = metric_id
+                created += 1
 
-    logger.info("All 19 metrics ensured (%d created, %d existing)",
-                19 - len(existing), min(len(existing), 19))
-    return name_to_id
+    total = len(METRIC_PROFILES) * len(DEFAULT_ASSETS)
+    logger.info(
+        "All %d metrics ensured (%d created, %d existing)",
+        total, created, reused,
+    )
+    return key_to_id
 
 
 async def _create_or_reuse_metric(
     client: ReneryoClient,
     profile: MetricProfile,
+    asset: str,
 ) -> str:
-    """Create a metric, or reuse existing metric when duplicate-name create fails.
+    """Create a per-asset metric, or reuse if already exists.
 
     This guards against partial metric listings in large tenants where
-    `list_metrics(count=500)` might miss an existing AVAROS metric.
+    ``list_metrics(count=5000)`` might miss an existing AVAROS metric.
     """
+    physical_name = _physical_metric_name(profile, asset)
     try:
         return await client.create_metric(
-            name=profile.display_name,
+            name=physical_name,
             metric_type="GAUGE",
             unit_group="SCALAR",
-            description=f"{profile.name} ({profile.unit})",
+            description=f"{profile.name} ({asset}) [{profile.unit}]",
         )
     except ReneryoApiError:
         existing = await _find_existing_metrics(client)
-        metric_id = existing.get(profile.display_name, "")
+        metric_id = existing.get(physical_name, "")
         if metric_id:
             logger.info(
                 "Reused existing metric after create failure '%s' → %s",
-                profile.display_name,
+                physical_name,
                 metric_id,
             )
             return metric_id
@@ -139,7 +173,7 @@ async def seed(
     days: int = 90,
     batch_delay_ms: int = 100,
 ) -> dict[str, dict[str, str]]:
-    """Create metrics and push historical data for all assets.
+    """Create per-asset metrics and push historical data (unlabeled).
 
     Args:
         client: Initialized ReneryoClient.
@@ -149,9 +183,9 @@ async def seed(
     Returns:
         Mapping: {metric_name: {asset: resource_id}}.
     """
-    metric_ids = await ensure_metrics_exist(client)
+    key_to_metric_id = await ensure_metrics_exist(client)
     mapping: dict[str, dict[str, str]] = {
-        name: {} for name in metric_ids
+        p.name: {} for p in METRIC_PROFILES
     }
 
     end = datetime.now(timezone.utc).replace(
@@ -169,10 +203,11 @@ async def seed(
         all_data = generate_all_metrics(start, end, asset)
 
         for metric_name, points in all_data.items():
-            metric_id = metric_ids[metric_name]
+            key = _metric_asset_key(metric_name, asset)
+            metric_id = key_to_metric_id[key]
             resource_id = await _write_batched(
                 client, metric_id, points,
-                asset=asset, delay_s=delay_s,
+                delay_s=delay_s,
             )
             mapping[metric_name][asset] = resource_id
             logger.info(
@@ -190,31 +225,39 @@ async def _write_batched(
     metric_id: str,
     points: list[dict[str, Any]],
     *,
-    asset: str,
     delay_s: float,
 ) -> str:
-    """Write points in batches of BATCH_SIZE, return resource ID.
+    """Write points in batches of BATCH_SIZE with unlabeled resources.
+
+    Uses empty labels to avoid RENERYO labeled-append instability.
+    Verifies resource drift: all batches must return the same resource ID.
 
     Args:
         client: Initialized ReneryoClient.
         metric_id: Reneryo metric UUID.
         points: All data points for this metric/asset.
-        asset: Asset identifier (sent as label for per-asset differentiation).
         delay_s: Delay between batches.
 
     Returns:
         Resource ID from the first successful write.
+
+    Raises:
+        RuntimeError: If resource ID changes between batches (drift).
     """
-    labels: list[dict[str, str]] = [{"key": "line", "value": asset}]
     resource_id = ""
 
     for batch_start in range(0, len(points), BATCH_SIZE):
         batch = points[batch_start : batch_start + BATCH_SIZE]
         rid = await client.write_values(
-            metric_id, "SCALAR", batch, labels
+            metric_id, "SCALAR", batch, []
         )
         if not resource_id:
             resource_id = rid
+        elif rid and rid != resource_id:
+            raise RuntimeError(
+                f"Resource drift detected for metric {metric_id}: "
+                f"expected={resource_id}, returned={rid}"
+            )
         if delay_s > 0:
             await asyncio.sleep(delay_s)
 
@@ -240,49 +283,63 @@ async def daemon(
         seed_days: Days of historical data to seed.
         batch_delay_ms: Delay between batch writes in milliseconds.
     """
-    await seed(client, days=seed_days, batch_delay_ms=batch_delay_ms)
-    metric_ids = await ensure_metrics_exist(client)
+    mapping = await seed(
+        client, days=seed_days, batch_delay_ms=batch_delay_ms,
+    )
+    key_to_metric_id = await ensure_metrics_exist(client)
 
-    # Reference start for improvement trend
+    # Build resource_id lookup from seed mapping
+    resource_map: dict[str, str] = {}
+    for metric_name, assets in mapping.items():
+        for asset, rid in assets.items():
+            resource_map[_metric_asset_key(metric_name, asset)] = rid
+
     ref_start = datetime.now(timezone.utc) - timedelta(days=seed_days)
 
     logger.info("Entering daemon mode (interval=%ds)", interval_s)
     while True:
         await asyncio.sleep(interval_s)
         now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-        await _push_single_round(client, metric_ids, now, ref_start)
+        await _push_single_round(
+            client, key_to_metric_id, resource_map, now, ref_start,
+        )
 
 
 async def _push_single_round(
     client: ReneryoClient,
-    metric_ids: dict[str, str],
+    key_to_metric_id: dict[str, str],
+    resource_map: dict[str, str],
     now: datetime,
     ref_start: datetime,
 ) -> None:
-    """Push one data point per metric per asset.
+    """Push one data point per metric per asset (unlabeled, drift-checked).
 
     Args:
         client: Initialized ReneryoClient.
-        metric_ids: metric_name → metric_id mapping.
+        key_to_metric_id: ``metric_name::asset`` → metric_id.
+        resource_map: ``metric_name::asset`` → expected resource_id.
         now: Current timestamp.
         ref_start: Reference start for improvement trend.
     """
+    writes = 0
     for profile in METRIC_PROFILES:
-        metric_id = metric_ids[profile.name]
         for asset in DEFAULT_ASSETS:
+            key = _metric_asset_key(profile.name, asset)
+            metric_id = key_to_metric_id[key]
+            expected_rid = resource_map.get(key, "")
             point = generate_single_metric(
                 profile, now, ref_start, asset,
             )
-            # NOTE: Reneryo has a bug where appending to labeled
-            # resources returns 500. Daemon writes with empty labels
-            # create a separate (unused) resource. This is a known
-            # limitation until Reneryo fixes the append bug.
-            await client.write_values(
+            rid = await client.write_values(
                 metric_id, "SCALAR", [point], []
             )
-    logger.info("Daemon: pushed %d values at %s",
-                len(METRIC_PROFILES) * len(DEFAULT_ASSETS),
-                now.isoformat())
+            if expected_rid and rid and rid != expected_rid:
+                raise RuntimeError(
+                    f"Resource drift for {key}: "
+                    f"expected={expected_rid}, returned={rid}"
+                )
+            writes += 1
+    logger.info("Daemon: pushed %d values at %s", writes, now.isoformat())
 
 
 # =========================================================================

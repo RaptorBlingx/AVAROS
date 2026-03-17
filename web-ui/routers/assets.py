@@ -143,8 +143,8 @@ def _get_current_platform(settings_service: SettingsService) -> str:
     profile_name = settings_service.get_active_profile_name()
     profile = settings_service.get_profile(profile_name)
     if profile is None:
-        return "mock"
-    return str(profile.platform_type or "mock").lower()
+        return "unconfigured"
+    return str(profile.platform_type or "unconfigured").lower()
 
 
 def _persist_asset_mappings(
@@ -253,7 +253,7 @@ async def discover_assets(
 ) -> AssetDiscoveryResponse:
     """Discover assets through active adapter's list_assets() implementation.
 
-    Creates a fresh adapter per call. For MockAdapter this is cheap; for
+    Creates a fresh adapter per call. For UnconfiguredAdapter this is cheap; for
     ReneryoAdapter it involves HTTP session setup/teardown.  If discovery
     becomes a hot path, consider caching the adapter across requests.
     """

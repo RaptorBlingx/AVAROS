@@ -2,7 +2,7 @@
 # 
 # This compose file deploys AVAROS as a separate container that joins the
 # WASABI OVOS network (per DEC-010). The skill connects to the OVOS message
-# bus and uses MockAdapter by default (DEC-005: zero-config).
+# bus and uses UnconfiguredAdapter by default until platform is set up.
 #
 # Usage:
 #   docker compose -f docker-compose.avaros.yml up -d
@@ -57,7 +57,7 @@ services:
 
     # Corporate DNS name doesn't always resolve inside Docker Desktop.
     # Set RENERYO_DEPLOYS_IP in .env when connecting to real RENERYO.
-    # Defaults to 127.0.0.1 (safe no-op for mock adapter).
+    # Defaults to 127.0.0.1 (safe no-op when unconfigured).
     extra_hosts:
       - "deploys.int.arti.ac:${RENERYO_DEPLOYS_IP:-127.0.0.1}"
     
@@ -80,8 +80,9 @@ services:
     
     # Environment configuration
     environment:
-      # Adapter configuration (DEC-005: MockAdapter default)
-      - ADAPTER_TYPE=mock
+      # Adapter: configured via Web UI (SettingsService), not env vars.
+      # ADAPTER_TYPE is kept for documentation only.
+      - ADAPTER_TYPE=
 
       # OVOS messagebus endpoint (used by launch_skill.py)
       - MESSAGEBUS_HOST=${MESSAGEBUS_HOST:-ovos_messagebus}
@@ -89,13 +90,6 @@ services:
       
       # Database configuration (PostgreSQL — production-grade)
       - AVAROS_DATABASE_URL=postgresql://${POSTGRES_USER:-avaros}:${POSTGRES_PASSWORD:-avaros}@avaros_db:5432/avaros
-      # Demo profile bootstrap (reneryo-mock)
-      - AVAROS_BOOTSTRAP_DEMO_PROFILE=true
-      - AVAROS_DEMO_PROFILE_NAME=reneryo-mock
-      - AVAROS_DEMO_RENERYO_URL=http://reneryo-mock:8090
-      - AVAROS_DEMO_RENERYO_API_KEY=${AVAROS_DEMO_RENERYO_API_KEY:-}
-      - AVAROS_DEMO_RENERYO_AUTH_TYPE=bearer
-      - AVAROS_DEMO_RENERYO_API_FORMAT=mock
       
       # Logging configuration
       - LOG_LEVEL=INFO
@@ -165,13 +159,6 @@ services:
     environment:
       - AVAROS_DATABASE_URL=postgresql://${POSTGRES_USER:-avaros}:${POSTGRES_PASSWORD:-avaros}@avaros_db:5432/avaros
       - AVAROS_WEB_UI_PORT=8080
-      # Demo profile bootstrap (reneryo-mock)
-      - AVAROS_BOOTSTRAP_DEMO_PROFILE=true
-      - AVAROS_DEMO_PROFILE_NAME=reneryo-mock
-      - AVAROS_DEMO_RENERYO_URL=http://reneryo-mock:8090
-      - AVAROS_DEMO_RENERYO_API_KEY=${AVAROS_DEMO_RENERYO_API_KEY:-}
-      - AVAROS_DEMO_RENERYO_AUTH_TYPE=bearer
-      - AVAROS_DEMO_RENERYO_API_FORMAT=mock
       # HiveMind voice config: passed via env_file (.env) — do NOT redeclare
       # here or compose defaults will override the .env values.
       # Required .env vars: HIVEMIND_WS_URL, HIVEMIND_CLIENT_KEY,
@@ -229,7 +216,7 @@ services:
     container_name: avaros-data-generator
     hostname: avaros-data-generator
     build:
-      context: ../tools/reneryo-mock
+      context: ../tools/reneryo-data-generator
       dockerfile: Dockerfile.generator
     restart: unless-stopped
     environment:
@@ -247,11 +234,11 @@ services:
           cpus: '0.5'
           memory: 256M
 
-  reneryo-mock:
-    container_name: reneryo-mock
-    hostname: reneryo-mock
+  reneryo-data-generator-api:
+    container_name: reneryo-data-generator-api
+    hostname: reneryo-data-generator-api
     build:
-      context: ../tools/reneryo-mock
+      context: ../tools/reneryo-data-generator
     restart: unless-stopped
     ports:
       - "${MOCK_RENERYO_PORT:-8090}:8090"

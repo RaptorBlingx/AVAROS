@@ -6,10 +6,10 @@ during skill initialization. Validates that platform configuration
 from the database (Web UI) is respected when creating adapters.
 
 Test scenarios:
-    - No database → MockAdapter (zero-config)
-    - Empty database → MockAdapter (no config set)
+    - No database → UnconfiguredAdapter (zero-config)
+    - Empty database → UnconfiguredAdapter (no config set)
     - Database with Reneryo config → ReneryoAdapter
-    - Database error → MockAdapter (graceful fallback)
+    - Database error → UnconfiguredAdapter (graceful fallback)
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import pytest
 from ovos_bus_client import MessageBusClient
 
 from skill import AVAROSSkill
-from skill.adapters.mock import MockAdapter
+from skill.adapters.unconfigured import UnconfiguredAdapter
 from skill.adapters.reneryo import ReneryoAdapter
 
 
@@ -42,7 +42,7 @@ class TestSkillInitializationNoDatabase:
     """Test skill initialization when no database is configured."""
 
     def test_initialize_no_db_env_uses_mock_adapter(self):
-        """When AVAROS_DATABASE_URL is not set, skill uses MockAdapter."""
+        """When AVAROS_DATABASE_URL is not set, skill uses UnconfiguredAdapter."""
         # Arrange: ensure no DB URL in environment
         with patch.dict(os.environ, {}, clear=False):
             if "AVAROS_DATABASE_URL" in os.environ:
@@ -53,10 +53,10 @@ class TestSkillInitializationNoDatabase:
             # Act: initialize the skill
             skill.initialize()
             
-            # Assert: MockAdapter is created
+            # Assert: UnconfiguredAdapter is created
             assert skill.adapter_factory is not None
             adapter = skill.adapter_factory._current_adapter
-            assert isinstance(adapter, MockAdapter)
+            assert isinstance(adapter, UnconfiguredAdapter)
             assert skill.dispatcher is not None
 
 
@@ -64,7 +64,7 @@ class TestSkillInitializationWithDatabase:
     """Test skill initialization when database is configured."""
 
     def test_initialize_empty_config_uses_mock_adapter(self):
-        """When DB is set but no platform configured, skill uses MockAdapter."""
+        """When DB is set but no platform configured, skill uses UnconfiguredAdapter."""
         # Arrange: in-memory SQLite DB
         with patch.dict(os.environ, {"AVAROS_DATABASE_URL": "sqlite:///:memory:"}):
             skill = _make_skill()
@@ -72,10 +72,10 @@ class TestSkillInitializationWithDatabase:
             # Act: initialize the skill
             skill.initialize()
             
-            # Assert: MockAdapter is created (no config in empty DB)
+            # Assert: UnconfiguredAdapter is created (no config in empty DB)
             assert skill.adapter_factory is not None
             adapter = skill.adapter_factory._current_adapter
-            assert isinstance(adapter, MockAdapter)
+            assert isinstance(adapter, UnconfiguredAdapter)
 
     def test_initialize_with_reneryo_config_creates_reneryo_adapter(self):
         """When Reneryo is configured via Web UI, skill uses ReneryoAdapter."""
@@ -112,7 +112,7 @@ class TestSkillInitializationErrorHandling:
     """Test graceful fallback when SettingsService fails."""
 
     def test_initialize_with_bad_db_url_falls_back_to_mock(self):
-        """When SettingsService fails to initialize, skill falls back to Mock."""
+        """When SettingsService fails to initialize, skill falls back to UnconfiguredAdapter."""
         # Arrange: invalid DB URL that will cause SettingsService to fail
         with patch.dict(
             os.environ,
@@ -123,20 +123,20 @@ class TestSkillInitializationErrorHandling:
             # Act: initialize the skill (SettingsService will fail)
             skill.initialize()
             
-            # Assert: MockAdapter is created (graceful fallback)
+            # Assert: UnconfiguredAdapter is created (graceful fallback)
             assert skill.adapter_factory is not None
             adapter = skill.adapter_factory._current_adapter
-            assert isinstance(adapter, MockAdapter)
+            assert isinstance(adapter, UnconfiguredAdapter)
             
             # Warning was logged
             skill.log.warning.assert_called_once()
             assert "SettingsService initialization failed" in skill.log.warning.call_args[0][0]
             
-            # Still initialized successfully with MockAdapter
+            # Still initialized successfully with UnconfiguredAdapter
             skill.log.info.assert_any_call(
                 "AVAROS skill initialized with adapter: %s (profile='%s')",
-                "MockAdapter",
-                "mock",
+                "UnconfiguredAdapter",
+                "unconfigured",
             )
 
     def test_settings_service_exists_even_when_db_is_inaccessible(self):
@@ -156,16 +156,16 @@ class TestSkillInitializationErrorHandling:
             # Assert: SettingsService exists (created successfully)
             assert skill.settings_service is not None
             
-            # Assert: MockAdapter is used as fallback
+            # Assert: UnconfiguredAdapter is used as fallback
             assert skill.adapter_factory is not None
             adapter = skill.adapter_factory._current_adapter
-            assert isinstance(adapter, MockAdapter)
+            assert isinstance(adapter, UnconfiguredAdapter)
             
-            # Assert: Skill initialized successfully (using MockAdapter)
+            # Assert: Skill initialized successfully (using UnconfiguredAdapter)
             skill.log.info.assert_any_call(
                 "AVAROS skill initialized with adapter: %s (profile='%s')",
-                "MockAdapter",
-                "mock",
+                "UnconfiguredAdapter",
+                "unconfigured",
             )
 
 

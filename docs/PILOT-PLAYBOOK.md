@@ -98,7 +98,7 @@ At minimum, set:
 
 | Variable | What to Enter |
 |----------|---------------|
-| `ADAPTER_TYPE` | `reneryo` (for production) or `mock` (for demo) |
+| `ADAPTER_TYPE` | Leave empty — adapter is configured via Web UI |
 | `AVAROS_DATABASE_URL` | PostgreSQL connection URL (default works for Docker) |
 | `AVAROS_WEB_API_KEY` | A secure API key (generate with the command below) |
 
@@ -157,7 +157,7 @@ This starts five services:
 | `avaros_db` | PostgreSQL database for settings, baselines, and production data |
 | `avaros_skill` | OVOS voice skill (connects to OVOS message bus) |
 | `avaros-web-ui` | Web interface for configuration and KPI dashboard |
-| `reneryo-mock` | Mock RENERYO server for testing (can be disabled in production) |
+| `reneryo-data-generator-api` | RENERYO data generator for testing (can be disabled in production) |
 | `avaros-proxy` | Nginx reverse proxy with HTTPS/TLS termination |
 
 ### Step 6: Verify All Services Are Running

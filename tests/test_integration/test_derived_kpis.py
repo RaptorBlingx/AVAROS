@@ -3,7 +3,7 @@ Derived KPI Integration Tests
 
 Full pipeline tests exercising QueryDispatcher with supplementary
 production data:
-    - energy_total from MockAdapter + production data → energy_per_unit
+    - energy_total from StubAdapter + production data → energy_per_unit
     - energy_total + emission factor + production count → co2_per_unit
     - production data only → material_efficiency
     - Error: no production data → MetricNotSupportedError
@@ -15,7 +15,7 @@ from datetime import date
 
 import pytest
 
-from skill.adapters.mock import MockAdapter
+from tests.helpers.stub_adapter import StubAdapter
 from skill.domain.exceptions import MetricNotSupportedError
 from skill.domain.models import CanonicalMetric, TimePeriod
 from skill.domain.production import ProductionRecord
@@ -82,9 +82,9 @@ def production_service_with_data(
 
 
 @pytest.fixture
-def adapter() -> MockAdapter:
-    """Real MockAdapter with native_carbon disabled for derivation tests."""
-    a = MockAdapter()
+def adapter() -> StubAdapter:
+    """StubAdapter with native_carbon disabled for derivation tests."""
+    a = StubAdapter()
     original = a.supports_capability
 
     def _no_carbon_or_supplementary(cap: str) -> bool:
@@ -109,7 +109,7 @@ def period() -> TimePeriod:
 
 @pytest.fixture
 def dispatcher_with_production(
-    adapter: MockAdapter,
+    adapter: StubAdapter,
     settings_service: SettingsService,
     co2_service: CO2DerivationService,
     production_service_with_data: ProductionDataService,
@@ -125,7 +125,7 @@ def dispatcher_with_production(
 
 @pytest.fixture
 def dispatcher_no_production(
-    adapter: MockAdapter,
+    adapter: StubAdapter,
     settings_service: SettingsService,
     co2_service: CO2DerivationService,
 ) -> QueryDispatcher:
@@ -149,7 +149,7 @@ class TestEnergyPerUnitDerivation:
         self, dispatcher_with_production: QueryDispatcher,
         period: TimePeriod,
     ) -> None:
-        """Pipeline: MockAdapter energy_total + production → energy_per_unit."""
+        """Pipeline: StubAdapter energy_total + production → energy_per_unit."""
         result = dispatcher_with_production.get_kpi(
             metric=CanonicalMetric.ENERGY_PER_UNIT,
             asset_id="Line-1",
@@ -230,7 +230,7 @@ class TestDerivedKpiErrors:
     """Error paths for derived KPIs."""
 
     def test_no_production_data_for_period(
-        self, adapter: MockAdapter,
+        self, adapter: StubAdapter,
         settings_service: SettingsService,
         co2_service: CO2DerivationService,
     ) -> None:
@@ -256,8 +256,8 @@ class TestDerivedKpiErrors:
 
     def test_dispatcher_without_production_falls_through(self) -> None:
         """Dispatcher without production service can still get normal KPIs."""
-        # Use a vanilla MockAdapter (supports all capabilities natively)
-        vanilla = MockAdapter()
+        # Use a vanilla StubAdapter (supports all capabilities natively)
+        vanilla = StubAdapter()
         dispatcher = QueryDispatcher(adapter=vanilla)
 
         result = dispatcher.get_kpi(

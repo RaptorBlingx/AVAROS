@@ -45,8 +45,9 @@ class ManufacturingAdapter(ABC):
     platform-specific implementations.
     
     Implementing Classes:
-        - MockAdapter: Demo data (default, zero-config)
-        - ReneryoAdapter: RENERYO platform (to be implemented)
+        - UnconfiguredAdapter: Default when no platform is configured
+        - ReneryoAdapter: RENERYO platform
+        - GenericRestAdapter: Custom REST API platforms
         - Future: SAPAdapter, SiemensAdapter, etc.
     
     Design Principles:

@@ -1,15 +1,11 @@
 """KPI data collector — fetches metrics from the active adapter and records
 baselines / snapshots in the KPI measurement database.
-
-Works with both real and mock platforms. For mock mode, values are
-slightly biased to produce realistic movement on KPI cards.
 """
 
 from __future__ import annotations
 
 import logging
-import random
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Sequence
 
 from skill.adapters.base import ManufacturingAdapter
@@ -62,7 +58,7 @@ class KPICollector:
 
         Returns the number of baselines written (0 when all already exist).
         """
-        if self._is_mock_platform():
+        if not self._settings.is_configured():
             return 0
 
         existing = self._kpi.get_all_baselines(site_id)
@@ -86,7 +82,7 @@ class KPICollector:
 
         Returns the number of snapshots recorded.
         """
-        if self._is_mock_platform():
+        if not self._settings.is_configured():
             return 0
 
         adapter = await self._create_adapter()
@@ -94,71 +90,6 @@ class KPICollector:
             return await self._fetch_and_record_snapshots(adapter, site_id)
         finally:
             await adapter.shutdown()
-
-    async def seed_mock_snapshot_history(self, site_id: str, points: int = 10) -> int:
-        """Generate historical snapshot points for mock trends.
-
-        This backfills time-series data so charts are informative immediately
-        after switching to the mock profile.
-        """
-        if not self._is_mock_platform():
-            return 0
-
-        period = TimePeriod.last_month()
-        now = datetime.now(tz=timezone.utc)
-        adapter = await self._create_adapter()
-        recorded = 0
-        try:
-            baseline_map = {
-                metric.value: self._kpi.get_baseline(metric.value, site_id)
-                for metric in _KPI_METRICS
-            }
-            for idx in range(points):
-                measured_at = now - timedelta(days=(points - 1 - idx) * 3)
-                cache: dict[CanonicalMetric, KPIResult] = {}
-                for metric in _KPI_METRICS:
-                    result = await self._resolve_metric_result(
-                        adapter=adapter,
-                        metric=metric,
-                        period=period,
-                        cache=cache,
-                    )
-                    if result is None:
-                        continue
-                    baseline = baseline_map.get(metric.value)
-                    if baseline is not None:
-                        end_value = self._mock_snapshot_from_baseline(
-                            metric=metric,
-                            baseline_value=baseline.baseline_value,
-                        )
-                        progress_ratio = (idx + 1) / points
-                        snapshot_value = round(
-                            baseline.baseline_value
-                            + (end_value - baseline.baseline_value) * progress_ratio,
-                            4,
-                        )
-                    else:
-                        snapshot_value = self._apply_mock_bias(
-                            metric=metric,
-                            value=result.value,
-                            phase="snapshot",
-                            enabled=True,
-                        )
-                    self._kpi.record_snapshot(
-                        KPISnapshot(
-                            metric=metric.value,
-                            site_id=site_id,
-                            value=snapshot_value,
-                            unit=result.unit,
-                            measured_at=measured_at,
-                            period_start=period.start.date(),
-                            period_end=period.end.date(),
-                        )
-                    )
-                    recorded += 1
-        finally:
-            await adapter.shutdown()
-        return recorded
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -177,7 +108,6 @@ class KPICollector:
         period = TimePeriod.last_month()
         now = datetime.now(tz=timezone.utc)
         recorded = 0
-        is_mock = self._is_mock_platform()
 
         cache: dict[CanonicalMetric, KPIResult] = {}
         for metric in metrics:
@@ -194,16 +124,10 @@ class KPICollector:
                         metric.value,
                     )
                     continue
-                baseline_value = self._apply_mock_bias(
-                    metric=metric,
-                    value=result.value,
-                    phase="baseline",
-                    enabled=is_mock,
-                )
                 baseline = KPIBaseline(
                     metric=metric.value,
                     site_id=site_id,
-                    baseline_value=baseline_value,
+                    baseline_value=result.value,
                     unit=result.unit,
                     recorded_at=now,
                     period_start=period.start.date(),
@@ -214,7 +138,7 @@ class KPICollector:
                 recorded += 1
                 logger.info(
                     "Baseline seeded: %s = %.4f %s (site=%s)",
-                    metric.value, baseline_value, result.unit, site_id,
+                    metric.value, result.value, result.unit, site_id,
                 )
             except Exception:
                 logger.exception("Failed to seed baseline for %s", metric.value)
@@ -229,7 +153,6 @@ class KPICollector:
         period = TimePeriod.last_month()
         now = datetime.now(tz=timezone.utc)
         recorded = 0
-        is_mock = self._is_mock_platform()
 
         cache: dict[CanonicalMetric, KPIResult] = {}
         for metric in _KPI_METRICS:
@@ -246,23 +169,10 @@ class KPICollector:
                         metric.value,
                     )
                     continue
-                snapshot_value = self._apply_mock_bias(
-                    metric=metric,
-                    value=result.value,
-                    phase="snapshot",
-                    enabled=is_mock,
-                )
-                if is_mock:
-                    baseline = self._kpi.get_baseline(metric.value, site_id)
-                    if baseline is not None:
-                        snapshot_value = self._mock_snapshot_from_baseline(
-                            metric=metric,
-                            baseline_value=baseline.baseline_value,
-                        )
                 snapshot = KPISnapshot(
                     metric=metric.value,
                     site_id=site_id,
-                    value=snapshot_value,
+                    value=result.value,
                     unit=result.unit,
                     measured_at=now,
                     period_start=period.start.date(),
@@ -272,7 +182,7 @@ class KPICollector:
                 recorded += 1
                 logger.info(
                     "Snapshot recorded: %s = %.4f %s (site=%s)",
-                    metric.value, snapshot_value, result.unit, site_id,
+                    metric.value, result.value, result.unit, site_id,
                 )
             except Exception:
                 logger.exception("Failed to record snapshot for %s", metric.value)
@@ -369,11 +279,6 @@ class KPICollector:
             timestamp=datetime.now(tz=timezone.utc),
         )
 
-    def _is_mock_platform(self) -> bool:
-        config = self._settings.get_platform_config()
-        platform = getattr(config, "platform_type", "mock") or "mock"
-        return platform.lower() == "mock"
-
     def _resolve_energy_source(self) -> str:
         """Return the configured energy source for collector-side CO2 math."""
         try:
@@ -381,54 +286,3 @@ class KPICollector:
         except Exception:
             logger.debug("Collector energy source lookup failed", exc_info=True)
             return "electricity"
-
-    @staticmethod
-    def _apply_mock_bias(
-        metric: CanonicalMetric,
-        value: float,
-        phase: str,
-        enabled: bool,
-    ) -> float:
-        """Bias mock values so cards are dynamic and not always red."""
-        if not enabled:
-            return value
-
-        if metric in (CanonicalMetric.ENERGY_PER_UNIT, CanonicalMetric.CO2_TOTAL):
-            if metric == CanonicalMetric.ENERGY_PER_UNIT:
-                # Keep energy mostly "on track" in mock demo.
-                if phase == "baseline":
-                    return round(value * random.uniform(1.06, 1.10), 4)
-                return round(value * random.uniform(0.89, 0.94), 4)
-
-            # CO2 is usually mid-band (at risk / off-track) for variety.
-            if phase == "baseline":
-                return round(value * random.uniform(1.03, 1.07), 4)
-            return round(value * random.uniform(0.97, 1.02), 4)
-
-        if metric == CanonicalMetric.MATERIAL_EFFICIENCY:
-            # Keep material around threshold so cards do not all share same tone.
-            if phase == "baseline":
-                return round(value * random.uniform(0.97, 0.995), 4)
-            return round(value * random.uniform(0.995, 1.02), 4)
-
-        return value
-
-    @staticmethod
-    def _mock_snapshot_from_baseline(
-        metric: CanonicalMetric,
-        baseline_value: float,
-    ) -> float:
-        """Deterministic mock bands to avoid extreme target attainment swings.
-
-        Intended visual mix:
-        - energy_per_unit: on track (around 10% improvement vs 8% target)
-        - material_efficiency: at risk (around 3.5% improvement vs 5% target)
-        - co2_total: off track (around -4% improvement for reduction KPI)
-        """
-        if metric == CanonicalMetric.ENERGY_PER_UNIT:
-            return round(baseline_value * 0.90, 4)
-        if metric == CanonicalMetric.MATERIAL_EFFICIENCY:
-            return round(baseline_value * 1.035, 4)
-        if metric == CanonicalMetric.CO2_TOTAL:
-            return round(baseline_value * 1.04, 4)
-        return baseline_value

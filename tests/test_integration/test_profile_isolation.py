@@ -121,7 +121,7 @@ def test_delete_profile_removes_scoped_settings(svc: SettingsService) -> None:
     svc.set_emission_factor("electricity", 0.4, country="TR")
     svc.set_intent_active("kpi.oee", False)
 
-    svc.set_active_profile("mock")
+    svc.set_active_profile("unconfigured")
     assert svc.delete_profile("temp") is True
 
     keys = svc.list_settings()
@@ -144,7 +144,7 @@ def test_profile_switch_does_not_affect_voice_config(svc: SettingsService) -> No
 
     svc.set_active_profile("reneryo")
     svc.set_active_profile("sap")
-    svc.set_active_profile("mock")
+    svc.set_active_profile("unconfigured")
 
     voice = svc.get_voice_config()
     assert voice.hivemind_url == "ws://custom:5678"

@@ -64,7 +64,7 @@ def test_regenerate_asset_entities_deduplicates_entries(tmp_path: Path) -> None:
 def test_regenerate_asset_entities_empty_assets_falls_back_to_mock_defaults(
     tmp_path: Path,
 ) -> None:
-    """Empty asset input should still produce non-empty mock-backed files."""
+    """Empty asset input should still produce non-empty placeholder files."""
     locale_dir = tmp_path / "en-us"
 
     regenerate_asset_entities([], locale_dir)

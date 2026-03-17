@@ -32,8 +32,9 @@ def _mask_api_key(api_key: str) -> str:
 
 def _to_response(config: PlatformConfig) -> PlatformConfigResponse:
     """Convert service config into API-safe masked response."""
+    platform_type = config.platform_type or "unconfigured"
     return PlatformConfigResponse(
-        platform_type=config.platform_type,
+        platform_type=platform_type,
         api_url=config.api_url,
         api_key=_mask_api_key(config.api_key),
         extra_settings=sanitize_extra_settings(config.extra_settings),
@@ -79,11 +80,11 @@ def get_platform_config(
 def reset_platform_config(
     settings_service: SettingsService = Depends(get_settings_service),
 ) -> ResetResponse:
-    """Reset configuration by switching back to mock profile."""
+    """Reset configuration by switching back to unconfigured profile."""
     active = settings_service.get_active_profile_name()
-    if active != settings_service.BUILTIN_MOCK_PROFILE:
+    if active != settings_service.DEFAULT_PROFILE:
         settings_service.delete_profile(active)
-    return ResetResponse(status="reset", platform_type="mock")
+    return ResetResponse(status="reset", platform_type="unconfigured")
 
 
 @router.post("/platform/test", response_model=ConnectionTestResponse)
@@ -136,11 +137,6 @@ def _create_adapter_from_config(
     Raises:
         ValueError: If platform_type is unknown.
     """
-    if payload.platform_type == "mock":
-        from skill.adapters.mock import MockAdapter
-
-        return MockAdapter()
-
     if payload.platform_type == "reneryo":
         from skill.adapters.reneryo import ReneryoAdapter
 

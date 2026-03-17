@@ -64,8 +64,8 @@ collect_logs() {
     echo "=== hivemind logs ==="
     "${COMPOSE_CMD[@]}" logs --tail=80 hivemind || true
     echo ""
-    echo "=== reneryo-mock logs ==="
-    "${COMPOSE_CMD[@]}" logs --tail=60 reneryo-mock || true
+    echo "=== reneryo-data-generator logs ==="
+    "${COMPOSE_CMD[@]}" logs --tail=60 reneryo-data-generator || true
 }
 
 # ── Build ────────────────────────────────────────────────

@@ -4,8 +4,8 @@ AdapterFactory - Creates Platform Adapters Based on Configuration
 Implements the Factory pattern to instantiate the appropriate adapter
 based on system configuration stored in SettingsService (database-backed).
 
-Zero-Config Behavior:
-    - If no platform is configured, returns MockAdapter
+Default Behavior:
+    - If no platform is configured, returns UnconfiguredAdapter
     - Supports hot-reload when configuration changes
     - No container restart required for adapter switching
 
@@ -24,8 +24,8 @@ from typing import TYPE_CHECKING
 
 from skill.adapters.base import ManufacturingAdapter
 from skill.adapters.generic_rest import GenericRestAdapter
-from skill.adapters.mock import MockAdapter
 from skill.adapters.reneryo import ReneryoAdapter
+from skill.adapters.unconfigured import UnconfiguredAdapter
 
 if TYPE_CHECKING:
     from skill.services.settings import SettingsService
@@ -38,9 +38,9 @@ class AdapterFactory:
     """
     Factory for creating platform adapters based on configuration.
     
-    This factory ensures zero-config deployment by defaulting to MockAdapter
-    when no platform is configured. It also supports hot-reload for
-    configuration changes without container restart.
+    This factory defaults to UnconfiguredAdapter when no platform
+    is configured, providing clear error messages guiding the user
+    to set up a connection via the Web UI.
     
     Attributes:
         settings_service: Database-backed configuration service
@@ -51,9 +51,9 @@ class AdapterFactory:
         synchronized to prevent race conditions.
     
     Example:
-        # At startup (zero-config)
+        # At startup (no config)
         factory = AdapterFactory(settings_service=None)
-        adapter = factory.create()  # Returns MockAdapter
+        adapter = factory.create()  # Returns UnconfiguredAdapter
         
         # After user configures platform via Web UI
         factory.reload()  # Switches to configured adapter
@@ -62,8 +62,6 @@ class AdapterFactory:
     # Registry of available adapters
     # Maps platform name -> adapter class
     _ADAPTER_REGISTRY: dict[str, type[ManufacturingAdapter]] = {
-        "mock": MockAdapter,
-        "demo": MockAdapter,
         "reneryo": ReneryoAdapter,
         "custom_rest": GenericRestAdapter,
         # "sap": SAPAdapter,           # Future
@@ -74,7 +72,7 @@ class AdapterFactory:
         Initialize factory with optional settings service.
         
         Args:
-            settings_service: Configuration service. If None, defaults to MockAdapter.
+            settings_service: Configuration service. If None, defaults to UnconfiguredAdapter.
         """
         self._settings_service = settings_service
         self._current_adapter: ManufacturingAdapter | None = None
@@ -85,7 +83,7 @@ class AdapterFactory:
         Create and return the configured adapter.
         
         Returns cached adapter if available, otherwise creates new instance.
-        Defaults to MockAdapter if no platform is configured.
+        Defaults to UnconfiguredAdapter if no platform is configured.
         
         Returns:
             ManufacturingAdapter instance ready for use
@@ -100,7 +98,9 @@ class AdapterFactory:
         platform_name = self._get_configured_platform()
         
         # Create adapter
-        adapter_class = self._ADAPTER_REGISTRY.get(platform_name, MockAdapter)
+        adapter_class = self._ADAPTER_REGISTRY.get(
+            platform_name, UnconfiguredAdapter,
+        )
         
         logger.info(
             "Creating adapter: %s (platform: %s)",
@@ -162,28 +162,28 @@ class AdapterFactory:
         """Get the configured platform name from the active profile.
 
         Uses the profile system (DEC-028) to resolve the active
-        adapter.  Falls back to ``"mock"`` when no profile is set.
+        adapter.  Falls back to ``"unconfigured"`` when no profile is set.
 
         Returns:
-            Platform name (e.g., "mock", "reneryo")
+            Platform name (e.g., "unconfigured", "reneryo")
         """
         if self._settings_service is None:
-            logger.debug("No settings service, defaulting to mock adapter")
-            return "mock"
+            logger.debug("No settings service, defaulting to unconfigured adapter")
+            return "unconfigured"
 
         try:
             profile_name = (
                 self._settings_service.get_active_profile_name()
             )
             config = self._settings_service.get_profile(profile_name)
-            if config is None or config.platform_type == "mock":
-                return "mock"
+            if config is None or not config.platform_type or config.platform_type == "unconfigured":
+                return "unconfigured"
             return config.platform_type.lower()
         except Exception as e:
             logger.warning(
-                "Error reading platform config: %s. Using mock.", e,
+                "Error reading platform config: %s. Using unconfigured.", e,
             )
-            return "mock"
+            return "unconfigured"
     
     def _instantiate_adapter(
         self,
@@ -200,9 +200,9 @@ class AdapterFactory:
         Returns:
             Configured adapter instance
         """
-        # MockAdapter needs no configuration
-        if adapter_class == MockAdapter:
-            return MockAdapter()
+        # UnconfiguredAdapter needs no configuration
+        if adapter_class == UnconfiguredAdapter:
+            return UnconfiguredAdapter()
         
         # ReneryoAdapter requires api_url and api_key from platform config
         if adapter_class == ReneryoAdapter:

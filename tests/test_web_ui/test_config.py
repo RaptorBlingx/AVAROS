@@ -40,12 +40,12 @@ def valid_reneryo_payload() -> dict[str, Any]:
 
 @pytest.fixture()
 def valid_mock_payload() -> dict[str, Any]:
-    """Valid mock platform config payload (no URL/key required)."""
+    """Valid custom_rest platform config payload for connection testing."""
     return {
-        "platform_type": "mock",
-        "api_url": "",
+        "platform_type": "custom_rest",
+        "api_url": "https://mock-test.example.com",
         "api_key": "",
-        "extra_settings": {},
+        "extra_settings": {"auth_type": "none"},
     }
 
 
@@ -122,19 +122,23 @@ class TestCreatePlatformConfig:
             "tenant_id": "wasabi-01",
         }
 
-    def test_create_mock_config_succeeds(
+    def test_create_custom_rest_config_succeeds(
         self,
         client: TestClient,
-        valid_mock_payload: dict[str, Any],
     ) -> None:
-        """Mock platform type does not require URL or key."""
+        """Custom REST platform type with valid URL succeeds."""
         response = client.post(
             "/api/v1/config/platform",
-            json=valid_mock_payload,
+            json={
+                "platform_type": "custom_rest",
+                "api_url": "https://api.example.com",
+                "api_key": "",
+                "extra_settings": {"auth_type": "none"},
+            },
         )
 
         assert response.status_code == 200
-        assert response.json()["platform_type"] == "mock"
+        assert response.json()["platform_type"] == "custom_rest"
 
     def test_create_config_upsert_overwrites(
         self,
@@ -283,16 +287,16 @@ class TestCreatePlatformConfigValidation:
 class TestGetPlatformConfig:
     """Tests for reading platform configuration."""
 
-    def test_get_default_config_returns_mock(
+    def test_get_default_config_returns_unconfigured(
         self,
         client: TestClient,
     ) -> None:
-        """Fresh DB returns default mock config."""
+        """Fresh DB returns default unconfigured config."""
         response = client.get("/api/v1/config/platform")
 
         assert response.status_code == 200
         body = response.json()
-        assert body["platform_type"] == "mock"
+        assert body["platform_type"] == "unconfigured"
 
     def test_get_config_after_create(
         self,
@@ -331,12 +335,12 @@ class TestGetPlatformConfig:
 class TestResetPlatformConfig:
     """Tests for resetting platform configuration."""
 
-    def test_reset_returns_mock_status(
+    def test_reset_returns_unconfigured_status(
         self,
         client: TestClient,
         valid_reneryo_payload: dict[str, Any],
     ) -> None:
-        """DELETE returns reset status with mock platform."""
+        """DELETE returns reset status with unconfigured platform."""
         client.post("/api/v1/config/platform", json=valid_reneryo_payload)
 
         response = client.delete("/api/v1/config/platform")
@@ -344,20 +348,20 @@ class TestResetPlatformConfig:
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "reset"
-        assert body["platform_type"] == "mock"
+        assert body["platform_type"] == "unconfigured"
 
-    def test_reset_reverts_get_to_mock(
+    def test_reset_reverts_get_to_unconfigured(
         self,
         client: TestClient,
         valid_reneryo_payload: dict[str, Any],
     ) -> None:
-        """After DELETE, GET returns default mock config."""
+        """After DELETE, GET returns default unconfigured config."""
         client.post("/api/v1/config/platform", json=valid_reneryo_payload)
         client.delete("/api/v1/config/platform")
 
         body = client.get("/api/v1/config/platform").json()
 
-        assert body["platform_type"] == "mock"
+        assert body["platform_type"] == "unconfigured"
 
     def test_reset_on_fresh_db_still_succeeds(
         self,
@@ -367,7 +371,7 @@ class TestResetPlatformConfig:
         response = client.delete("/api/v1/config/platform")
 
         assert response.status_code == 200
-        assert response.json()["platform_type"] == "mock"
+        assert response.json()["platform_type"] == "unconfigured"
 
 
 # ══════════════════════════════════════════════════════════
@@ -378,34 +382,60 @@ class TestResetPlatformConfig:
 class TestConnectionTest:
     """Tests for POST /api/v1/config/platform/test (real implementation)."""
 
-    def test_mock_platform_succeeds_with_adapter_name(
+    def test_custom_rest_test_succeeds_with_adapter_name(
         self,
         client: TestClient,
         valid_mock_payload: dict[str, Any],
     ) -> None:
-        """Mock platform test returns success with adapter name."""
-        response = client.post(
-            "/api/v1/config/platform/test",
-            json=valid_mock_payload,
+        """Custom REST platform test returns success with adapter name."""
+        mock_result = ConnectionTestResult(
+            success=True,
+            latency_ms=5.0,
+            message="Connected — 3 resource(s) discovered",
+            adapter_name="GenericREST",
+            resources_discovered=("res-1", "res-2", "res-3"),
         )
+        with patch(
+            "routers.config._create_adapter_from_config",
+        ) as mock_factory:
+            mock_adapter = AsyncMock()
+            mock_adapter.test_connection.return_value = mock_result
+            mock_factory.return_value = mock_adapter
+
+            response = client.post(
+                "/api/v1/config/platform/test",
+                json=valid_mock_payload,
+            )
 
         assert response.status_code == 200
         body = response.json()
         assert body["success"] is True
-        assert body["adapter_name"] == "Demo (Mock)"
-        assert "demo" in body["message"].lower()
+        assert body["adapter_name"] == "GenericREST"
         assert len(body["resources_discovered"]) == 3
 
-    def test_mock_platform_returns_latency(
+    def test_custom_rest_test_returns_latency(
         self,
         client: TestClient,
         valid_mock_payload: dict[str, Any],
     ) -> None:
-        """Mock platform test includes latency_ms field."""
-        response = client.post(
-            "/api/v1/config/platform/test",
-            json=valid_mock_payload,
+        """Custom REST platform test includes latency_ms field."""
+        mock_result = ConnectionTestResult(
+            success=True,
+            latency_ms=8.5,
+            message="Connected",
+            adapter_name="GenericREST",
         )
+        with patch(
+            "routers.config._create_adapter_from_config",
+        ) as mock_factory:
+            mock_adapter = AsyncMock()
+            mock_adapter.test_connection.return_value = mock_result
+            mock_factory.return_value = mock_adapter
+
+            response = client.post(
+                "/api/v1/config/platform/test",
+                json=valid_mock_payload,
+            )
 
         body = response.json()
         assert body["latency_ms"] >= 0
@@ -508,10 +538,24 @@ class TestConnectionTest:
         valid_mock_payload: dict[str, Any],
     ) -> None:
         """Response includes resources_discovered as a list."""
-        response = client.post(
-            "/api/v1/config/platform/test",
-            json=valid_mock_payload,
+        mock_result = ConnectionTestResult(
+            success=True,
+            latency_ms=5.0,
+            message="Connected",
+            adapter_name="GenericREST",
+            resources_discovered=("res-1",),
         )
+        with patch(
+            "routers.config._create_adapter_from_config",
+        ) as mock_factory:
+            mock_adapter = AsyncMock()
+            mock_adapter.test_connection.return_value = mock_result
+            mock_factory.return_value = mock_adapter
+
+            response = client.post(
+                "/api/v1/config/platform/test",
+                json=valid_mock_payload,
+            )
 
         body = response.json()
         assert isinstance(body["resources_discovered"], list)
@@ -843,15 +887,13 @@ class TestAdapterFactoryAuthType:
 class TestProfileEndpoints:
     """Smoke tests for profile CRUD and activation endpoints."""
 
-    def test_list_profiles_contains_mock_first(self, client: TestClient) -> None:
-        """GET /profiles always includes built-in mock profile first."""
+    def test_list_profiles_empty_on_fresh_db(self, client: TestClient) -> None:
+        """GET /profiles on fresh DB returns empty profiles with unconfigured active."""
         response = client.get("/api/v1/config/profiles")
         assert response.status_code == 200
         body = response.json()
-        assert body["active_profile"] == "mock"
-        assert len(body["profiles"]) >= 1
-        assert body["profiles"][0]["name"] == "mock"
-        assert body["profiles"][0]["is_builtin"] is True
+        assert body["active_profile"] == "unconfigured"
+        assert len(body["profiles"]) == 0
 
     def test_create_get_activate_delete_profile_flow(self, client: TestClient) -> None:
         """Create custom profile, activate it, then delete it."""
@@ -893,12 +935,12 @@ class TestProfileEndpoints:
         assert delete_resp.json()["deleted_profile"] == "site-a"
 
         list_after_delete = client.get("/api/v1/config/profiles").json()
-        assert list_after_delete["active_profile"] == "mock"
+        assert list_after_delete["active_profile"] == "unconfigured"
 
-    def test_delete_mock_profile_rejected(self, client: TestClient) -> None:
-        """DELETE mock profile is blocked."""
-        response = client.delete("/api/v1/config/profiles/mock")
-        assert response.status_code == 400
+    def test_delete_unconfigured_profile_returns_404(self, client: TestClient) -> None:
+        """DELETE unconfigured profile returns 404 (not a stored profile)."""
+        response = client.delete("/api/v1/config/profiles/unconfigured")
+        assert response.status_code == 404
 
     def test_activate_missing_profile_returns_404(self, client: TestClient) -> None:
         """Activating unknown profile returns 404."""
@@ -934,13 +976,13 @@ class TestProfileEndpoints:
         assert platform_cfg.api_key == "old-cookie"
         assert platform_cfg.extra_settings.get("auth_type") == "bearer"
 
-    def test_activate_mock_returns_activation_contract(self, client: TestClient) -> None:
-        """Mock activation returns the expected activation response payload."""
+    def test_activate_unconfigured_returns_activation_contract(self, client: TestClient) -> None:
+        """Unconfigured activation returns the expected activation response payload."""
         with patch("routers.profiles._notify_skill_via_bus", return_value=False):
-            resp = client.post("/api/v1/config/profiles/mock/activate")
+            resp = client.post("/api/v1/config/profiles/unconfigured/activate")
 
         assert resp.status_code == 200
         body = resp.json()
         assert body["status"] == "activated"
-        assert body["active_profile"] == "mock"
-        assert body["adapter_type"] == "mock"
+        assert body["active_profile"] == "unconfigured"
+        assert body["adapter_type"] == "unconfigured"
