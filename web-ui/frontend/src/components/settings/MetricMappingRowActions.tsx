@@ -18,7 +18,7 @@ type MetricMappingRowActionsProps = {
 function resolveTestLabel(state: MetricTestState | undefined): string {
   if (state?.status === "loading") return "Testing...";
   if (state?.status === "success") return "✓";
-  if (state?.status === "error") return "✕";
+  if (state?.status === "error") return "Retry";
   return "Test";
 }
 
@@ -52,6 +52,18 @@ export default function MetricMappingRowActions({
   const isTesting = rowTestState?.status === "loading";
   const testLabel = resolveTestLabel(rowTestState);
   const testTitle = resolveTestTitle(rowTestState);
+  const testClassName =
+    rowTestState?.status === "error"
+      ? isDark
+        ? "border-rose-500 bg-rose-950/50 text-rose-200"
+        : "border-rose-300 bg-rose-50 text-rose-700"
+      : rowTestState?.status === "success"
+      ? isDark
+        ? "border-emerald-500 bg-emerald-950/50 text-emerald-200"
+        : "border-emerald-300 bg-emerald-50 text-emerald-700"
+      : isDark
+      ? "border-slate-400 bg-slate-800 text-slate-100"
+      : "border-slate-300 bg-white text-slate-700";
 
   return (
     <div className="flex w-full flex-col gap-2 sm:flex-row md:w-auto">
@@ -73,11 +85,7 @@ export default function MetricMappingRowActions({
         disabled={isUnconfiguredProfile || savingRowId === rowId || isTesting}
         title={testTitle}
         aria-label={`Test mapping for ${metricName}`}
-        className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${
-          isDark
-            ? "border-slate-400 bg-slate-800 text-slate-100"
-            : "border-slate-300 bg-white text-slate-700"
-        }`}
+        className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${testClassName}`}
       >
         {testLabel}
       </button>
@@ -96,4 +104,3 @@ export default function MetricMappingRowActions({
     </div>
   );
 }
-

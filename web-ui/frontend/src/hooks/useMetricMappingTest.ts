@@ -16,6 +16,7 @@ type TestableMetricRow = {
 type UseMetricMappingTestOptions = {
   disabled?: boolean;
   resolveRow: (rowId: string) => TestableMetricRow | undefined;
+  onError?: (message: string) => void;
 };
 
 function clearRowState(
@@ -33,6 +34,7 @@ function clearRowState(
 export default function useMetricMappingTest({
   disabled = false,
   resolveRow,
+  onError,
 }: UseMetricMappingTestOptions) {
   const [testStateByRow, setTestStateByRow] = useState<Record<string, MetricTestState>>({});
 
@@ -53,13 +55,16 @@ export default function useMetricMappingTest({
       return;
     }
     if (!row.endpoint.trim() || !row.json_path.trim()) {
+      const errorMessage =
+        "Endpoint and JSON path are required before testing.";
       setTestStateByRow((prev) => ({
         ...prev,
         [rowId]: {
           status: "error",
-          error: "Endpoint and JSON path are required before testing.",
+          error: errorMessage,
         },
       }));
+      onError?.(errorMessage);
       return;
     }
 
@@ -67,13 +72,15 @@ export default function useMetricMappingTest({
     try {
       const config = await getPlatformConfig();
       if (!config.api_url.trim()) {
+        const errorMessage = "Platform base URL is not configured yet.";
         setTestStateByRow((prev) => ({
           ...prev,
           [rowId]: {
             status: "error",
-            error: "Platform base URL is not configured yet.",
+            error: errorMessage,
           },
         }));
+        onError?.(errorMessage);
         return;
       }
 
@@ -103,16 +110,19 @@ export default function useMetricMappingTest({
           error: response.error ?? "Mapping test failed.",
         },
       }));
+      onError?.(response.error ?? "Mapping test failed.");
     } catch (error: unknown) {
+      const errorMessage = toFriendlyErrorMessage(error);
       setTestStateByRow((prev) => ({
         ...prev,
         [rowId]: {
           status: "error",
-          error: toFriendlyErrorMessage(error),
+          error: errorMessage,
         },
       }));
+      onError?.(errorMessage);
     }
-  }, [disabled, resolveRow]);
+  }, [disabled, onError, resolveRow]);
 
   return {
     testStateByRow,

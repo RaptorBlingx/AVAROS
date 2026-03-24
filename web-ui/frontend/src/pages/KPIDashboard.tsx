@@ -6,6 +6,7 @@ import {
   DEFAULT_SITE_ID,
   getBaselines,
   getSiteProgress,
+  getStatus,
   getSnapshots,
   toFriendlyErrorMessage,
 } from "../api/client";
@@ -45,6 +46,9 @@ export default function KPIDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showEmpty, setShowEmpty] = useState(false);
+  const [showLiveConnectionBlocked, setShowLiveConnectionBlocked] =
+    useState(false);
+  const [liveConnectionMessage, setLiveConnectionMessage] = useState("");
   const [onboardingOpen, setOnboardingOpen] = useState(false);
 
   const [siteProgress, setSiteProgress] = useState<SiteProgressResponse | null>(
@@ -59,8 +63,26 @@ export default function KPIDashboard() {
     setLoading(true);
     setError("");
     setShowEmpty(false);
+    setShowLiveConnectionBlocked(false);
+    setLiveConnectionMessage("");
 
     try {
+      const statusData = await getStatus();
+      const isReneryoBlocked =
+        statusData.platform_type === "reneryo" &&
+        statusData.live_connection_verified !== true;
+      if (isReneryoBlocked) {
+        setShowLiveConnectionBlocked(true);
+        setLiveConnectionMessage(
+          statusData.live_connection_message ||
+            "Live RENERYO connection is not verified.",
+        );
+        setSiteProgress(null);
+        setBaselines([]);
+        setSnapshotsByMetric({});
+        return;
+      }
+
       const [progressResult, baselineResult] = await Promise.allSettled([
         getSiteProgress(DEFAULT_SITE_ID),
         getBaselines(DEFAULT_SITE_ID),
@@ -228,7 +250,16 @@ export default function KPIDashboard() {
         />
       )}
 
-      {!loading && !error && !showEmpty && (
+      {!loading && !error && showLiveConnectionBlocked && (
+        <EmptyState
+          title="Live RENERYO connection not verified"
+          message={`${liveConnectionMessage} KPI charts are hidden until the platform is reachable and authenticated.`}
+          actionLabel="Go to Settings"
+          onAction={() => navigate("/settings")}
+        />
+      )}
+
+      {!loading && !error && !showEmpty && !showLiveConnectionBlocked && (
         <>
           <div
             className="brand-panel rounded-2xl p-4"

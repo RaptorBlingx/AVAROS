@@ -12,7 +12,7 @@ type MetricMappingRowActionsProps = {
 function resolveTestLabel(state: MetricTestState | undefined): string {
   if (state?.status === "loading") return "Testing...";
   if (state?.status === "success") return "✓";
-  if (state?.status === "error") return "✕";
+  if (state?.status === "error") return "Retry";
   return "Test";
 }
 
@@ -55,4 +55,3 @@ export default function MetricMappingRowActions({
     </>
   );
 }
-

@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 from routers.config import _create_adapter_from_config
 from schemas.config import PlatformConfigRequest
 from skill.domain.results import ConnectionTestResult
-from skill.services.settings import SettingsService
+from skill.services.settings import PlatformConfig, SettingsService
 
 
 # ── Fixtures ────────────────────────────────────────────
@@ -173,6 +173,37 @@ class TestCreatePlatformConfig:
 
         assert response.status_code == 200
         mock_reload.assert_awaited_once()
+
+    def test_create_config_normalizes_to_reneryo_for_active_reneryo_profile(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """Active reneryo profile should not drift to custom_rest on save."""
+        settings_service.create_profile(
+            "reneryo",
+            PlatformConfig(
+                platform_type="reneryo",
+                api_url="https://api.reneryo.example.com",
+                api_key="initial-secret",
+                extra_settings={"auth_type": "cookie"},
+            ),
+        )
+        settings_service.set_active_profile("reneryo")
+
+        response = client.post(
+            "/api/v1/config/platform",
+            json={
+                "platform_type": "custom_rest",
+                "api_url": "https://api.reneryo.example.com",
+                "api_key": "cookie-value",
+                "extra_settings": {"auth_type": "cookie"},
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["platform_type"] == "reneryo"
+        assert settings_service.get_platform_config().platform_type == "reneryo"
 
 
 # ══════════════════════════════════════════════════════════
