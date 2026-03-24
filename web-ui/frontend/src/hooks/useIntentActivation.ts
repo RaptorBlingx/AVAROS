@@ -86,24 +86,16 @@ export default function useIntentActivation({
     if (errorHandler.mode === "state") errorHandler.setError("");
     try {
       const intentList = await getIntents();
-      const isReneryoProfile = activeProfile === "reneryo";
       let mapped = new Set<string>();
 
-      if (isReneryoProfile) {
-        try {
-          const summary = await getAssetLinkingSummary();
-          mapped = new Set(
-            summary.metric_coverage
-              .filter((item) => item.linked_assets > 0)
-              .map((item) => item.metric_name),
-          );
-        } catch {
-          const mappings = await listMetricMappings();
-          mapped = new Set(
-            mappings.map((m: MetricMapping) => m.canonical_metric),
-          );
-        }
-      } else {
+      try {
+        const summary = await getAssetLinkingSummary();
+        mapped = new Set(
+          summary.metric_coverage
+            .filter((item) => item.linked_assets > 0)
+            .map((item) => item.metric_name),
+        );
+      } catch {
         const mappings = await listMetricMappings();
         mapped = new Set(
           mappings.map((m: MetricMapping) => m.canonical_metric),

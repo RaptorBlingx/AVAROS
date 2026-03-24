@@ -1,5 +1,6 @@
 import type {
   ActivateProfileResponse,
+  AssetLinkingSummaryResponse,
   AssetMappingsResponse,
   BaselineResponse,
   CSVUploadResponse,
@@ -496,6 +497,10 @@ export function saveConfiguredAssets(
     method: "POST",
     body: { asset_mappings: assetMappings },
   });
+}
+
+export function getAssetLinkingSummary(): Promise<AssetLinkingSummaryResponse> {
+  return request<AssetLinkingSummaryResponse>("/api/v1/assets/linking-summary");
 }
 
 // Backward-compatible aliases for existing callers.

@@ -356,6 +356,55 @@ export type AssetDiscoveryResponse = {
   existing_mappings: Record<string, AssetMappingItem>;
 };
 
+export type MetricCoverageItem = {
+  metric_name: CanonicalMetricName;
+  linked_assets: number;
+  total_assets: number;
+  missing_assets: string[];
+};
+
+export type AssetLinkingSummaryResponse = {
+  platform_type: PlatformType | string;
+  supports_discovery: boolean;
+  discovery_source: "adapter" | "registered" | "none";
+  discovery_error: string;
+  canonical_metrics: string[];
+  imported_assets: Array<{
+    asset_id: string;
+    display_name: string;
+    asset_type: string;
+    aliases: string[];
+    source: "imported" | "registered" | "discovered";
+    linked_metrics: string[];
+    missing_metrics: string[];
+    linked_metric_count: number;
+    total_metrics: number;
+  }>;
+  unlinked_assets: Array<{
+    asset_id: string;
+    display_name: string;
+    asset_type: string;
+    aliases: string[];
+    source: "imported" | "registered" | "discovered";
+    linked_metrics: string[];
+    missing_metrics: string[];
+    linked_metric_count: number;
+    total_metrics: number;
+  }>;
+  discovered_assets: Array<{
+    asset_id: string;
+    display_name: string;
+    asset_type: string;
+    aliases: string[];
+    source: "imported" | "registered" | "discovered";
+    linked_metrics: string[];
+    missing_metrics: string[];
+    linked_metric_count: number;
+    total_metrics: number;
+  }>;
+  metric_coverage: MetricCoverageItem[];
+};
+
 export type ProfileConfig = {
   platform_type: string;
   api_url: string;
