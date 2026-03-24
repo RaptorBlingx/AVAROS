@@ -118,8 +118,9 @@ class TestAdapterFactoryCreate:
 
         assert first is second
 
-    def test_create_with_unknown_platform_falls_back_to_unconfigured(self) -> None:
-        """Unknown platform names should gracefully fall back to UnconfiguredAdapter."""
+    def test_create_with_unknown_platform_uses_generic_rest_adapter(self) -> None:
+        """Unknown platform names use GenericRestAdapter."""
+        from skill.adapters.generic_rest import GenericRestAdapter
         service = MagicMock()
         config = MagicMock()
         config.platform_type = "nonexistent_platform"
@@ -129,7 +130,7 @@ class TestAdapterFactoryCreate:
         factory = AdapterFactory(settings_service=service)
         adapter = factory.create()
 
-        assert isinstance(adapter, UnconfiguredAdapter)
+        assert isinstance(adapter, GenericRestAdapter)
 
 
 # ---------------------------------------------------------------------------
@@ -219,18 +220,17 @@ class TestGetConfiguredPlatform:
         assert result == "unconfigured"
 
     def test_platform_name_is_lowercased(self) -> None:
-        """Platform identification must be case-insensitive."""
+        """Any configured profile resolves to custom_rest adapter key."""
         service = MagicMock()
         config = MagicMock()
-        config.platform_type = "RENERYO"
-        service.get_active_profile_name.return_value = "reneryo"
+        config.platform_type = "CUSTOM_REST"
+        service.get_active_profile_name.return_value = "custom-rest"
         service.get_profile.return_value = config
-        service.get_asset_mappings.return_value = {"Line-1": {"seu_id": "seu-1"}}
 
         factory = AdapterFactory(settings_service=service)
         result = factory._get_configured_platform()
 
-        assert result == "reneryo"
+        assert result == "custom_rest"
 
 
 # ---------------------------------------------------------------------------
@@ -259,37 +259,6 @@ class TestInstantiateAdapter:
         )
 
         assert isinstance(adapter, _StubAdapter)
-
-    def test_create_reneryo_adapter_passes_profile_context(self) -> None:
-        """Factory forwards settings/profile metadata to ReneryoAdapter."""
-        service = MagicMock()
-        config = MagicMock()
-        config.platform_type = "reneryo"
-        config.api_url = "https://api.example"
-        config.api_key = "secret"
-        config.timeout = 25
-        config.extra_settings = {
-            "auth_type": "cookie",
-            "api_format": "native",
-            "SEU_ID": "seu-7",
-        }
-        service.get_active_profile_name.return_value = "reneryo"
-        service.get_profile.return_value = config
-        service.get_asset_mappings.return_value = {"Line-1": {"seu_id": "seu-1"}}
-
-        factory = AdapterFactory(settings_service=service)
-
-        with patch("skill.adapters.factory.ReneryoAdapter") as adapter_cls:
-            adapter_cls.return_value = MagicMock()
-            factory._create_reneryo_adapter()
-
-            kwargs = adapter_cls.call_args.kwargs
-            assert kwargs["settings_service"] is service
-            assert kwargs["profile_name"] == "reneryo"
-            assert kwargs["extra_settings"]["SEU_ID"] == "seu-7"
-            assert kwargs["asset_mappings"] == {"Line-1": {"seu_id": "seu-1"}}
-            service.get_asset_mappings.assert_called_once_with(profile="reneryo")
-
 
 # ---------------------------------------------------------------------------
 # register_adapter()
@@ -334,11 +303,10 @@ class TestAdapterFactoryRegister:
 class TestGetAvailablePlatforms:
     """Tests for get_available_platforms() — platform listing."""
 
-    def test_includes_reneryo_and_custom_rest(self) -> None:
-        """Default registry must include 'reneryo' and 'custom_rest'."""
+    def test_includes_custom_rest(self) -> None:
+        """Default registry must include custom_rest."""
         platforms = AdapterFactory.get_available_platforms()
 
-        assert "reneryo" in platforms
         assert "custom_rest" in platforms
 
     def test_includes_registered_platform(self) -> None:
@@ -449,25 +417,24 @@ class TestAdapterFactoryProfiles:
 
         assert isinstance(adapter, UnconfiguredAdapter)
 
-    def test_create_with_active_profile_reneryo(self) -> None:
-        """When active profile is 'reneryo', ReneryoAdapter is created."""
-        from skill.adapters.reneryo import ReneryoAdapter
-
+    def test_create_with_active_profile_configured(self) -> None:
+        """When profile is configured, GenericRestAdapter is created."""
+        from skill.adapters.generic_rest import GenericRestAdapter
         config = MagicMock()
-        config.platform_type = "reneryo"
+        config.platform_type = "custom_rest"
         config.api_url = "https://api.example.com"
         config.api_key = "test-key"
         config.timeout = 30
         config.extra_settings = {"auth_type": "bearer"}
 
         service = MagicMock()
-        service.get_active_profile_name.return_value = "reneryo"
+        service.get_active_profile_name.return_value = "custom-rest"
         service.get_profile.return_value = config
 
         factory = AdapterFactory(settings_service=service)
         adapter = factory.create()
 
-        assert isinstance(adapter, ReneryoAdapter)
+        assert isinstance(adapter, GenericRestAdapter)
 
     def test_custom_rest_profile_creates_generic_rest_adapter(self) -> None:
         """When active profile is custom_rest, GenericRestAdapter is created."""
@@ -512,9 +479,9 @@ class TestAdapterFactoryProfiles:
         factory = AdapterFactory(settings_service=service)
         factory.create()
 
-        await factory.reload(profile_name="reneryo")
+        await factory.reload(profile_name="custom-rest")
 
-        service.set_active_profile.assert_called_once_with("reneryo")
+        service.set_active_profile.assert_called_once_with("custom-rest")
 
     @pytest.mark.asyncio
     async def test_reload_without_profile_name_uses_current(self) -> None:

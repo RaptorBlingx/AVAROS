@@ -5,7 +5,7 @@ Validates all 19 KPI endpoints, auth checks, trend/comparison modes,
 the native measurement endpoint, and deterministic data generation.
 
 Run:
-    cd tools/reneryo-mock
+    cd tools/reneryo-data-generator
     pip install -r requirements.txt pytest httpx
     pytest test_mock_server.py -v
 """

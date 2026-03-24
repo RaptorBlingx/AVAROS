@@ -51,7 +51,7 @@ describe("EmissionFactorsSection profile refresh", () => {
   it("test_emission_factors_refetches_on_refresh_key_change", async () => {
     const notify = vi.fn();
     const { rerender } = render(
-      <EmissionFactorsSection onNotify={notify} refreshKey={0} activeProfile="reneryo" />,
+      <EmissionFactorsSection onNotify={notify} refreshKey={0} activeProfile="custom_rest" />,
     );
 
     await waitFor(() => {
@@ -60,7 +60,7 @@ describe("EmissionFactorsSection profile refresh", () => {
     });
 
     rerender(
-      <EmissionFactorsSection onNotify={notify} refreshKey={1} activeProfile="reneryo" />,
+      <EmissionFactorsSection onNotify={notify} refreshKey={1} activeProfile="custom_rest" />,
     );
 
     await waitFor(() => {

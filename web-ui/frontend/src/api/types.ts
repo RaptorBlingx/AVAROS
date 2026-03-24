@@ -12,7 +12,7 @@ export type SystemStatusResponse = {
   version: string;
 };
 
-export type PlatformType = "unconfigured" | "reneryo" | "custom_rest";
+export type PlatformType = "unconfigured" | "custom_rest";
 
 export type PlatformConfigRequest = {
   platform_type: PlatformType;
@@ -292,14 +292,14 @@ export type ProfileDetailResponse = {
 
 export type CreateProfileRequest = {
   name: string;
-  platform_type: string;
+  platform_type: Exclude<PlatformType, "unconfigured">;
   api_url: string;
   api_key: string;
   extra_settings: Record<string, string>;
 };
 
 export type UpdateProfileRequest = {
-  platform_type: string;
+  platform_type: Exclude<PlatformType, "unconfigured">;
   api_url: string;
   api_key: string;
   extra_settings: Record<string, string>;
@@ -324,10 +324,9 @@ export type MetricResourceMap = Record<string, string>;
 
 export type AssetMappingItem = {
   display_name?: string;
-  asset_type?: "machine" | "line" | "sensor" | "seu";
+  asset_type?: "machine" | "line" | "sensor";
   aliases?: string[];
   endpoint_template?: string;
-  seu_id?: string;
   metric_resources?: MetricResourceMap;
   [key: string]: unknown;
 };
@@ -345,7 +344,7 @@ export type GeneratorMappingResponse = {
 export type AssetRecord = {
   asset_id: string;
   display_name: string;
-  asset_type: "machine" | "line" | "sensor" | "seu";
+  asset_type: "machine" | "line" | "sensor";
   aliases: string[];
   metadata?: Record<string, unknown>;
 };

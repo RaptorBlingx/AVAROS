@@ -186,7 +186,7 @@ class TestAdapterError:
         """Test creating AdapterError with platform name."""
         # Arrange
         message = "Connection failed"
-        platform = "reneryo"
+        platform = "my-api"
         
         # Act
         error = AdapterError(
@@ -204,7 +204,7 @@ class TestAdapterError:
         # Arrange & Act
         error = AdapterError(
             message="API error",
-            platform="reneryo",
+            platform="my-api",
             status_code=504
         )
         
@@ -225,12 +225,12 @@ class TestAdapterError:
         # Arrange & Act
         error = AdapterError(
             message="Timeout",
-            platform="reneryo",
+            platform="my-api",
             status_code=408
         )
         
         # Assert
-        assert error.details["platform"] == "reneryo"
+        assert error.details["platform"] == "my-api"
         assert error.details["status_code"] == 408
     
     def test_default_user_message_mentions_connection(self):
@@ -258,7 +258,7 @@ class TestMetricNotSupportedError:
         """Test creating MetricNotSupportedError with metric and platform."""
         # Arrange
         metric = "supplier_co2_per_kg"
-        platform = "mock"
+        platform = "unconfigured"
         
         # Act
         error = MetricNotSupportedError(
@@ -281,7 +281,7 @@ class TestMetricNotSupportedError:
         error = MetricNotSupportedError(
             message="",
             metric="unknown",
-            platform="mock",
+            platform="unconfigured",
             available_metrics=available
         )
         
@@ -308,12 +308,12 @@ class TestMetricNotSupportedError:
         error = MetricNotSupportedError(
             message="",
             metric="co2_total",
-            platform="mock"
+            platform="unconfigured"
         )
         
         # Assert
         assert error.details["metric"] == "co2_total"
-        assert error.details["platform"] == "mock"
+        assert error.details["platform"] == "unconfigured"
     
     def test_inheritance_from_avaros_error_is_valid(self):
         """Test that MetricNotSupportedError inherits from AVAROSError."""
@@ -550,7 +550,7 @@ class TestErrorContext:
         # Act
         error = AdapterError(
             message="Failed to retrieve KPI",
-            platform="reneryo",
+            platform="my-api",
             status_code=500
         )
         # Add custom details after creation through base class

@@ -39,7 +39,7 @@ describe("MetricMappingsSection profile refresh", () => {
   it("test_metric_mappings_refetches_on_refresh_key_change", async () => {
     const notify = vi.fn();
     const { rerender } = render(
-      <MetricMappingsSection onNotify={notify} refreshKey={0} activeProfile="reneryo" />,
+      <MetricMappingsSection onNotify={notify} refreshKey={0} activeProfile="custom_rest" />,
     );
 
     await waitFor(() => {
@@ -47,7 +47,7 @@ describe("MetricMappingsSection profile refresh", () => {
     });
 
     rerender(
-      <MetricMappingsSection onNotify={notify} refreshKey={1} activeProfile="reneryo" />,
+      <MetricMappingsSection onNotify={notify} refreshKey={1} activeProfile="custom_rest" />,
     );
 
     await waitFor(() => {

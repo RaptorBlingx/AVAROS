@@ -4,7 +4,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockApi = vi.hoisted(() => ({
-  discoverAssets: vi.fn(),
   getConfiguredAssets: vi.fn(),
   saveConfiguredAssets: vi.fn(),
   toFriendlyErrorMessage: vi.fn(() => "error"),
@@ -16,7 +15,6 @@ import AssetRegistrationStep from "../AssetRegistrationStep";
 
 describe("AssetRegistrationStep", () => {
   beforeEach(() => {
-    mockApi.discoverAssets.mockReset();
     mockApi.getConfiguredAssets.mockReset();
     mockApi.saveConfiguredAssets.mockReset();
 
@@ -27,19 +25,6 @@ describe("AssetRegistrationStep", () => {
           aliases: ["line one"],
         },
       },
-    });
-    mockApi.discoverAssets.mockResolvedValue({
-      supports_discovery: true,
-      assets: [
-        {
-          asset_id: "line-2",
-          display_name: "Line 2",
-          asset_type: "line",
-          aliases: ["line two"],
-          metadata: {},
-        },
-      ],
-      existing_mappings: {},
     });
     mockApi.saveConfiguredAssets.mockResolvedValue({
       asset_mappings: {
@@ -52,10 +37,10 @@ describe("AssetRegistrationStep", () => {
     });
   });
 
-  it("loads configured rows and discovery suggestions for asset registration", async () => {
+  it("loads configured rows for manual asset registration", async () => {
     render(
       <AssetRegistrationStep
-        platformType="reneryo"
+        platformType="custom_rest"
         onComplete={vi.fn()}
         onSkip={vi.fn()}
       />,
@@ -65,15 +50,10 @@ describe("AssetRegistrationStep", () => {
       expect(mockApi.getConfiguredAssets).toHaveBeenCalledTimes(1);
     });
 
-    expect(mockApi.discoverAssets).toHaveBeenCalledTimes(1);
     expect(screen.getByDisplayValue("line-1")).toBeTruthy();
     expect(screen.getByDisplayValue("Line 1")).toBeTruthy();
-    expect(screen.getByDisplayValue("line-2")).toBeTruthy();
-    expect(screen.getByDisplayValue("Line 2")).toBeTruthy();
     const existingAssetIdInput = screen.getByDisplayValue("line-1") as HTMLInputElement;
-    const suggestedAssetIdInput = screen.getByDisplayValue("line-2") as HTMLInputElement;
     expect(existingAssetIdInput.disabled).toBe(true);
-    expect(suggestedAssetIdInput.disabled).toBe(false);
     expect(
       screen.queryByRole("button", { name: "Import Mapping" }),
     ).toBeNull();
@@ -104,11 +84,6 @@ describe("AssetRegistrationStep", () => {
         asset_type: "line",
         aliases: ["line one"],
         display_name: "Line 1",
-      },
-      "line-2": {
-        aliases: ["line two"],
-        asset_type: "line",
-        display_name: "Line 2",
       },
     });
     expect(onComplete).toHaveBeenCalledTimes(1);

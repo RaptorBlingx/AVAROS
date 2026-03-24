@@ -72,7 +72,7 @@ vi.mock("../../components/settings/PlatformConfigSection", () => ({
     <div>
       <button
         type="button"
-        onClick={() => onProfileSwitch?.("reneryo", true)}
+        onClick={() => onProfileSwitch?.("my-api", true)}
       >
         Switch Profile Success
       </button>
@@ -110,7 +110,7 @@ describe("Settings page profile refresh", () => {
 
     expect(screen.getByText("Profile: unconfigured")).toBeTruthy();
     fireEvent.click(screen.getByText("Switch Profile Success"));
-    expect(screen.getByText("Profile: reneryo")).toBeTruthy();
+    expect(screen.getByText("Profile: my-api")).toBeTruthy();
   });
 
   it("test_voice_reload_failure_shows_warning", () => {

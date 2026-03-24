@@ -28,12 +28,12 @@ from skill.services.settings import SettingsService
 
 
 @pytest.fixture()
-def valid_reneryo_payload() -> dict[str, Any]:
-    """Valid non-mock platform config payload."""
+def valid_custom_rest_payload() -> dict[str, Any]:
+    """Valid custom_rest platform config payload."""
     return {
-        "platform_type": "reneryo",
-        "api_url": "https://api.reneryo.example.com/v1",
-        "api_key": "reneryo-secret-key-1234",
+        "platform_type": "custom_rest",
+        "api_url": "https://api.example.com/v1",
+        "api_key": "secret-key-1234",
         "extra_settings": {"tenant_id": "wasabi-01"},
     }
 
@@ -57,60 +57,59 @@ def valid_mock_payload() -> dict[str, Any]:
 class TestCreatePlatformConfig:
     """Tests for creating/updating platform configuration."""
 
-    def test_create_reneryo_config_returns_201_or_200(
+    def test_create_custom_rest_config_returns_200(
         self,
         client: TestClient,
-        valid_reneryo_payload: dict[str, Any],
+        valid_custom_rest_payload: dict[str, Any],
     ) -> None:
-        """POST with valid reneryo payload succeeds."""
+        """POST with valid custom_rest payload succeeds."""
         response = client.post(
             "/api/v1/config/platform",
-            json=valid_reneryo_payload,
+            json=valid_custom_rest_payload,
         )
 
         assert response.status_code == 200
         body = response.json()
-        assert body["platform_type"] == "reneryo"
+        assert body["platform_type"] == "custom_rest"
 
     def test_create_config_masks_api_key(
         self,
         client: TestClient,
-        valid_reneryo_payload: dict[str, Any],
+        valid_custom_rest_payload: dict[str, Any],
     ) -> None:
         """Returned API key is masked, not plaintext."""
         response = client.post(
             "/api/v1/config/platform",
-            json=valid_reneryo_payload,
+            json=valid_custom_rest_payload,
         )
 
         body = response.json()
         assert body["api_key"].startswith("****")
-        assert "reneryo-secret" not in body["api_key"]
+        assert "secret-key-1234" not in body["api_key"]
 
     def test_create_config_preserves_extra_settings(
         self,
         client: TestClient,
-        valid_reneryo_payload: dict[str, Any],
+        valid_custom_rest_payload: dict[str, Any],
     ) -> None:
         """Extra settings are persisted and returned."""
         response = client.post(
             "/api/v1/config/platform",
-            json=valid_reneryo_payload,
+            json=valid_custom_rest_payload,
         )
 
         assert response.json()["extra_settings"] == {"tenant_id": "wasabi-01"}
 
-    def test_create_config_drops_legacy_seu_id_setting(
+    def test_create_config_preserves_extra_settings_as_submitted(
         self,
         client: TestClient,
-        valid_reneryo_payload: dict[str, Any],
+        valid_custom_rest_payload: dict[str, Any],
     ) -> None:
-        """Platform config must not persist deprecated top-level seu_id."""
+        """Extra settings are persisted and returned as submitted."""
         payload = {
-            **valid_reneryo_payload,
+            **valid_custom_rest_payload,
             "extra_settings": {
                 "auth_type": "cookie",
-                "seu_id": "SEU-123",
                 "tenant_id": "wasabi-01",
             },
         }
@@ -143,24 +142,24 @@ class TestCreatePlatformConfig:
     def test_create_config_upsert_overwrites(
         self,
         client: TestClient,
-        valid_reneryo_payload: dict[str, Any],
+        valid_custom_rest_payload: dict[str, Any],
     ) -> None:
         """Second POST overwrites first (upsert behaviour)."""
-        client.post("/api/v1/config/platform", json=valid_reneryo_payload)
+        client.post("/api/v1/config/platform", json=valid_custom_rest_payload)
 
         updated = {
-            **valid_reneryo_payload,
-            "api_url": "https://api.reneryo-v2.example.com",
+            **valid_custom_rest_payload,
+            "api_url": "https://api.example-v2.com",
         }
         response = client.post("/api/v1/config/platform", json=updated)
 
         assert response.status_code == 200
-        assert response.json()["api_url"] == "https://api.reneryo-v2.example.com"
+        assert response.json()["api_url"] == "https://api.example-v2.com"
 
     def test_create_config_triggers_adapter_reload(
         self,
         client: TestClient,
-        valid_reneryo_payload: dict[str, Any],
+        valid_custom_rest_payload: dict[str, Any],
     ) -> None:
         """Saving platform config should hot-reload the active adapter."""
         with patch(
@@ -169,7 +168,7 @@ class TestCreatePlatformConfig:
         ) as mock_reload:
             response = client.post(
                 "/api/v1/config/platform",
-                json=valid_reneryo_payload,
+                json=valid_custom_rest_payload,
             )
 
         assert response.status_code == 200
@@ -184,15 +183,15 @@ class TestCreatePlatformConfig:
 class TestCreatePlatformConfigValidation:
     """Validation error tests for platform config creation."""
 
-    def test_reject_non_mock_without_api_url(
+    def test_reject_configured_platform_without_api_url(
         self,
         client: TestClient,
     ) -> None:
-        """Non-mock platform without api_url returns 422."""
+        """Configured platform without api_url returns 422."""
         response = client.post(
             "/api/v1/config/platform",
             json={
-                "platform_type": "reneryo",
+                "platform_type": "custom_rest",
                 "api_url": "",
                 "api_key": "some-key",
             },
@@ -200,15 +199,15 @@ class TestCreatePlatformConfigValidation:
 
         assert response.status_code == 422
 
-    def test_reject_non_mock_without_api_key(
+    def test_reject_configured_platform_without_api_key(
         self,
         client: TestClient,
     ) -> None:
-        """Non-mock platform without api_key returns 422."""
+        """Configured platform without api_key returns 422."""
         response = client.post(
             "/api/v1/config/platform",
             json={
-                "platform_type": "reneryo",
+                "platform_type": "custom_rest",
                 "api_url": "https://api.example.com",
                 "api_key": "",
             },
@@ -235,11 +234,11 @@ class TestCreatePlatformConfigValidation:
         self,
         client: TestClient,
     ) -> None:
-        """Non-mock platform with malformed URL returns 422."""
+        """Platform with malformed URL returns 422."""
         response = client.post(
             "/api/v1/config/platform",
             json={
-                "platform_type": "reneryo",
+                "platform_type": "custom_rest",
                 "api_url": "not-a-url",
                 "api_key": "some-key",
             },
@@ -301,30 +300,30 @@ class TestGetPlatformConfig:
     def test_get_config_after_create(
         self,
         client: TestClient,
-        valid_reneryo_payload: dict[str, Any],
+        valid_custom_rest_payload: dict[str, Any],
     ) -> None:
         """GET returns the config saved by POST."""
-        client.post("/api/v1/config/platform", json=valid_reneryo_payload)
+        client.post("/api/v1/config/platform", json=valid_custom_rest_payload)
 
         response = client.get("/api/v1/config/platform")
 
         assert response.status_code == 200
         body = response.json()
-        assert body["platform_type"] == "reneryo"
-        assert body["api_url"] == valid_reneryo_payload["api_url"]
+        assert body["platform_type"] == "custom_rest"
+        assert body["api_url"] == valid_custom_rest_payload["api_url"]
 
     def test_get_config_api_key_is_masked(
         self,
         client: TestClient,
-        valid_reneryo_payload: dict[str, Any],
+        valid_custom_rest_payload: dict[str, Any],
     ) -> None:
         """GET never exposes the raw API key."""
-        client.post("/api/v1/config/platform", json=valid_reneryo_payload)
+        client.post("/api/v1/config/platform", json=valid_custom_rest_payload)
 
         body = client.get("/api/v1/config/platform").json()
 
         assert body["api_key"].startswith("****")
-        assert valid_reneryo_payload["api_key"] not in body["api_key"]
+        assert valid_custom_rest_payload["api_key"] not in body["api_key"]
 
 
 # ══════════════════════════════════════════════════════════
@@ -338,10 +337,10 @@ class TestResetPlatformConfig:
     def test_reset_returns_unconfigured_status(
         self,
         client: TestClient,
-        valid_reneryo_payload: dict[str, Any],
+        valid_custom_rest_payload: dict[str, Any],
     ) -> None:
         """DELETE returns reset status with unconfigured platform."""
-        client.post("/api/v1/config/platform", json=valid_reneryo_payload)
+        client.post("/api/v1/config/platform", json=valid_custom_rest_payload)
 
         response = client.delete("/api/v1/config/platform")
 
@@ -353,10 +352,10 @@ class TestResetPlatformConfig:
     def test_reset_reverts_get_to_unconfigured(
         self,
         client: TestClient,
-        valid_reneryo_payload: dict[str, Any],
+        valid_custom_rest_payload: dict[str, Any],
     ) -> None:
         """After DELETE, GET returns default unconfigured config."""
-        client.post("/api/v1/config/platform", json=valid_reneryo_payload)
+        client.post("/api/v1/config/platform", json=valid_custom_rest_payload)
         client.delete("/api/v1/config/platform")
 
         body = client.get("/api/v1/config/platform").json()
@@ -440,17 +439,17 @@ class TestConnectionTest:
         body = response.json()
         assert body["latency_ms"] >= 0
 
-    def test_reneryo_connection_success(
+    def test_connection_success_with_mocked_adapter(
         self,
         client: TestClient,
-        valid_reneryo_payload: dict[str, Any],
+        valid_custom_rest_payload: dict[str, Any],
     ) -> None:
-        """RENERYO test with mocked adapter returns success + meters."""
+        """Connection test with mocked adapter returns success + resources."""
         mock_result = ConnectionTestResult(
             success=True,
             latency_ms=55.3,
-            message="Connected — 2 meter(s) discovered",
-            adapter_name="RENERYO",
+            message="Connected — 2 resource(s) discovered",
+            adapter_name="GenericREST",
             resources_discovered=("Meter-A", "Meter-B"),
         )
         with patch(
@@ -462,28 +461,28 @@ class TestConnectionTest:
 
             response = client.post(
                 "/api/v1/config/platform/test",
-                json=valid_reneryo_payload,
+                json=valid_custom_rest_payload,
             )
 
         assert response.status_code == 200
         body = response.json()
         assert body["success"] is True
         assert body["latency_ms"] == 55.3
-        assert body["adapter_name"] == "RENERYO"
+        assert body["adapter_name"] == "GenericREST"
         assert body["resources_discovered"] == ["Meter-A", "Meter-B"]
 
-    def test_reneryo_connection_auth_failure(
+    def test_connection_auth_failure(
         self,
         client: TestClient,
-        valid_reneryo_payload: dict[str, Any],
+        valid_custom_rest_payload: dict[str, Any],
     ) -> None:
-        """RENERYO test with 401 returns auth error details."""
+        """Connection test with 401 returns auth error details."""
         mock_result = ConnectionTestResult(
             success=False,
             latency_ms=12.0,
             message="Authentication failed — check API key",
-            adapter_name="RENERYO",
-            error_code="RENERYO_AUTH_FAILED",
+            adapter_name="GenericREST",
+            error_code="AUTH_FAILED",
             error_details="HTTP 401",
         )
         with patch(
@@ -495,25 +494,25 @@ class TestConnectionTest:
 
             response = client.post(
                 "/api/v1/config/platform/test",
-                json=valid_reneryo_payload,
+                json=valid_custom_rest_payload,
             )
 
         body = response.json()
         assert body["success"] is False
-        assert body["error_code"] == "RENERYO_AUTH_FAILED"
+        assert body["error_code"] == "AUTH_FAILED"
 
-    def test_reneryo_connection_unreachable(
+    def test_connection_unreachable(
         self,
         client: TestClient,
-        valid_reneryo_payload: dict[str, Any],
+        valid_custom_rest_payload: dict[str, Any],
     ) -> None:
-        """RENERYO test with unreachable server returns connection error."""
+        """Connection test with unreachable server returns connection error."""
         mock_result = ConnectionTestResult(
             success=False,
             latency_ms=3000.0,
             message="Cannot reach server — check URL and network",
-            adapter_name="RENERYO",
-            error_code="RENERYO_CONNECTION_FAILED",
+            adapter_name="GenericREST",
+            error_code="CONNECTION_FAILED",
             error_details="Connection refused",
         )
         with patch(
@@ -525,12 +524,12 @@ class TestConnectionTest:
 
             response = client.post(
                 "/api/v1/config/platform/test",
-                json=valid_reneryo_payload,
+                json=valid_custom_rest_payload,
             )
 
         body = response.json()
         assert body["success"] is False
-        assert body["error_code"] == "RENERYO_CONNECTION_FAILED"
+        assert body["error_code"] == "CONNECTION_FAILED"
 
     def test_response_includes_resources_list(
         self,
@@ -599,7 +598,7 @@ class TestConnectionTest:
         self,
         client: TestClient,
         settings_service: SettingsService,
-        valid_reneryo_payload: dict[str, Any],
+        valid_custom_rest_payload: dict[str, Any],
     ) -> None:
         """Testing doesn't modify stored platform config."""
         # Get config before test
@@ -609,7 +608,7 @@ class TestConnectionTest:
             success=True,
             latency_ms=10.0,
             message="OK",
-            adapter_name="RENERYO",
+            adapter_name="GenericREST",
         )
         with patch(
             "routers.config._create_adapter_from_config",
@@ -620,7 +619,7 @@ class TestConnectionTest:
 
             client.post(
                 "/api/v1/config/platform/test",
-                json=valid_reneryo_payload,
+                json=valid_custom_rest_payload,
             )
 
         # Config should be unchanged
@@ -642,7 +641,7 @@ class TestApiKeyMasking:
     ) -> None:
         """Keys longer than 4 chars show ****XXXX (last 4)."""
         payload = {
-            "platform_type": "reneryo",
+            "platform_type": "custom_rest",
             "api_url": "https://api.example.com",
             "api_key": "abcdefgh",
         }
@@ -656,7 +655,7 @@ class TestApiKeyMasking:
     ) -> None:
         """Keys with 4 or fewer chars are fully masked as ****."""
         payload = {
-            "platform_type": "reneryo",
+            "platform_type": "custom_rest",
             "api_url": "https://api.example.com",
             "api_key": "abcd",
         }
@@ -679,8 +678,8 @@ class TestConnectionTestAuthType:
     ) -> None:
         """POST with auth_type=cookie creates adapter with cookie auth."""
         payload = {
-            "platform_type": "reneryo",
-            "api_url": "https://api.reneryo.example.com",
+            "platform_type": "custom_rest",
+            "api_url": "https://api.example.com",
             "api_key": "session-cookie-value",
             "extra_settings": {"auth_type": "cookie"},
         }
@@ -688,7 +687,7 @@ class TestConnectionTestAuthType:
             success=True,
             latency_ms=42.0,
             message="Connected via cookie auth",
-            adapter_name="RENERYO",
+            adapter_name="GenericREST",
             resources_discovered=("Meter-1",),
         )
         with patch(
@@ -714,18 +713,20 @@ class TestConnectionTestAuthType:
 class TestAdapterFactoryAuthType:
     """Direct unit tests for adapter factory auth_type wiring."""
 
-    def test_create_adapter_with_cookie_auth_passes_cookie_to_reneryo_adapter(
+    def test_create_adapter_with_cookie_auth_passes_cookie_to_generic_rest_adapter(
         self,
     ) -> None:
-        """Factory forwards auth_type=cookie to ReneryoAdapter constructor."""
+        """Factory forwards auth_type=cookie to GenericRestAdapter constructor."""
         payload = PlatformConfigRequest(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.example.com",
+            platform_type="custom_rest",
+            api_url="https://api.example.com",
             api_key="session-cookie-value",
             extra_settings={"auth_type": "cookie"},
         )
 
-        with patch("skill.adapters.reneryo.ReneryoAdapter") as mock_adapter_class:
+        with patch(
+            "skill.adapters.generic_rest.GenericRestAdapter",
+        ) as mock_adapter_class:
             _create_adapter_from_config(payload)
 
         assert mock_adapter_class.call_count == 1
@@ -737,8 +738,8 @@ class TestAdapterFactoryAuthType:
     ) -> None:
         """POST with auth_type=bearer creates adapter with bearer auth."""
         payload = {
-            "platform_type": "reneryo",
-            "api_url": "https://api.reneryo.example.com",
+            "platform_type": "custom_rest",
+            "api_url": "https://api.example.com",
             "api_key": "api-key-value",
             "extra_settings": {"auth_type": "bearer"},
         }
@@ -746,7 +747,7 @@ class TestAdapterFactoryAuthType:
             success=True,
             latency_ms=30.0,
             message="Connected via bearer auth",
-            adapter_name="RENERYO",
+            adapter_name="GenericREST",
             resources_discovered=("Meter-A",),
         )
         with patch(
@@ -773,8 +774,8 @@ class TestAdapterFactoryAuthType:
     ) -> None:
         """POST without auth_type in extra_settings defaults to bearer."""
         payload = {
-            "platform_type": "reneryo",
-            "api_url": "https://api.reneryo.example.com",
+            "platform_type": "custom_rest",
+            "api_url": "https://api.example.com",
             "api_key": "api-key-value",
             "extra_settings": {},
         }
@@ -782,7 +783,7 @@ class TestAdapterFactoryAuthType:
             success=True,
             latency_ms=25.0,
             message="Connected",
-            adapter_name="RENERYO",
+            adapter_name="GenericREST",
             resources_discovered=(),
         )
         with patch(
@@ -803,24 +804,6 @@ class TestAdapterFactoryAuthType:
 
         assert response.status_code == 200
         assert response.json()["success"] is True
-
-    def test_create_adapter_supports_legacy_seu_id_fallback(
-        self,
-    ) -> None:
-        """Connection-test adapter keeps legacy seu_id fallback for compatibility."""
-        payload = PlatformConfigRequest(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.example.com",
-            api_key="api-key-value",
-            extra_settings={"auth_type": "bearer", "seu_id": "SEU-123"},
-        )
-
-        with patch("skill.adapters.reneryo.ReneryoAdapter") as mock_adapter_class:
-            _create_adapter_from_config(payload)
-
-        assert mock_adapter_class.call_count == 1
-        assert mock_adapter_class.call_args.kwargs["native_seu_id"] == "SEU-123"
-        assert "seu_id" not in mock_adapter_class.call_args.kwargs["extra_settings"]
 
     def test_create_adapter_for_custom_rest_uses_generic_rest_adapter(
         self,
@@ -901,8 +884,8 @@ class TestProfileEndpoints:
             "/api/v1/config/profiles",
             json={
                 "name": "site-a",
-                "platform_type": "reneryo",
-                "api_url": "https://api.reneryo.example.com",
+                "platform_type": "custom_rest",
+                "api_url": "https://api.example.com",
                 "api_key": "secret-1234",
                 "extra_settings": {"auth_type": "cookie"},
             },
@@ -912,14 +895,18 @@ class TestProfileEndpoints:
 
         get_resp = client.get("/api/v1/config/profiles/site-a")
         assert get_resp.status_code == 200
-        assert get_resp.json()["platform_type"] == "reneryo"
+        assert get_resp.json()["platform_type"] == "custom_rest"
         assert get_resp.json()["is_builtin"] is False
 
-        activate_resp = client.post("/api/v1/config/profiles/site-a/activate")
+        with patch(
+            "skill.adapters.generic_rest.GenericRestAdapter._probe_base_url",
+            new_callable=AsyncMock,
+        ):
+            activate_resp = client.post("/api/v1/config/profiles/site-a/activate")
         assert activate_resp.status_code == 200
         assert activate_resp.json()["status"] == "activated"
         assert activate_resp.json()["active_profile"] == "site-a"
-        assert activate_resp.json()["adapter_type"] == "reneryo"
+        assert activate_resp.json()["adapter_type"] == "custom_rest"
 
         list_resp = client.get("/api/v1/config/profiles")
         assert list_resp.status_code == 200
@@ -927,7 +914,7 @@ class TestProfileEndpoints:
 
         platform_resp = client.get("/api/v1/config/platform")
         assert platform_resp.status_code == 200
-        assert platform_resp.json()["platform_type"] == "reneryo"
+        assert platform_resp.json()["platform_type"] == "custom_rest"
 
         delete_resp = client.delete("/api/v1/config/profiles/site-a")
         assert delete_resp.status_code == 200
@@ -947,17 +934,17 @@ class TestProfileEndpoints:
         response = client.post("/api/v1/config/profiles/does-not-exist/activate")
         assert response.status_code == 404
 
-    def test_activate_reneryo_overwrites_cookie(
+    def test_activate_custom_rest_overwrites_cookie(
         self,
         client: TestClient,
         settings_service: SettingsService,
     ) -> None:
-        """Activating reneryo profile keeps stored profile credentials."""
+        """Activating custom_rest profile keeps stored profile credentials."""
         create_resp = client.post(
             "/api/v1/config/profiles",
             json={
-                "name": "reneryo",
-                "platform_type": "reneryo",
+                "name": "my-api",
+                "platform_type": "custom_rest",
                 "api_url": "http://198.51.100.1:30896",
                 "api_key": "old-cookie",
                 "extra_settings": {"auth_type": "bearer"},
@@ -965,14 +952,18 @@ class TestProfileEndpoints:
         )
         assert create_resp.status_code == 201
 
-        activate_resp = client.post("/api/v1/config/profiles/reneryo/activate")
+        with patch(
+            "skill.adapters.generic_rest.GenericRestAdapter._probe_base_url",
+            new_callable=AsyncMock,
+        ):
+            activate_resp = client.post("/api/v1/config/profiles/my-api/activate")
         assert activate_resp.status_code == 200
         assert activate_resp.json()["status"] == "activated"
-        assert activate_resp.json()["active_profile"] == "reneryo"
-        assert activate_resp.json()["adapter_type"] == "reneryo"
+        assert activate_resp.json()["active_profile"] == "my-api"
+        assert activate_resp.json()["adapter_type"] == "custom_rest"
 
         platform_cfg = settings_service.get_platform_config()
-        assert platform_cfg.platform_type == "reneryo"
+        assert platform_cfg.platform_type == "custom_rest"
         assert platform_cfg.api_key == "old-cookie"
         assert platform_cfg.extra_settings.get("auth_type") == "bearer"
 

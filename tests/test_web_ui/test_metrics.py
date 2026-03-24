@@ -53,15 +53,15 @@ def scrap_mapping_payload() -> dict[str, Any]:
 @pytest.fixture(autouse=True)
 def active_profile(settings_service: SettingsService) -> None:
     """Use a non-mock active profile for legacy API compatibility tests."""
-    if settings_service.get_profile("reneryo") is None:
+    if settings_service.get_profile("my-api") is None:
         settings_service.create_profile(
-            "reneryo",
+            "my-api",
             PlatformConfig(
-                platform_type="reneryo",
-                api_url="https://api.reneryo.example.com",
+                platform_type="custom_rest",
+                api_url="https://api.example.com",
             ),
         )
-    settings_service.set_active_profile("reneryo")
+    settings_service.set_active_profile("my-api")
 
 
 # ══════════════════════════════════════════════════════════
@@ -248,31 +248,6 @@ class TestListMetricMappings:
         assert len(items) == 2
         names = {m["canonical_metric"] for m in items}
         assert names == {"energy_per_unit", "scrap_rate"}
-
-    def test_list_auto_mappings_include_units_for_all_derived_metrics(
-        self,
-        client: TestClient,
-        settings_service: SettingsService,
-    ) -> None:
-        """Auto-derived mappings should include non-empty unit defaults."""
-        settings_service.set_asset_mappings({
-            "Line-1": {
-                "metric_resources": {
-                    "peak_tariff_exposure": "res-peak",
-                    "supplier_co2_per_kg": "res-supplier-co2",
-                },
-            },
-        })
-
-        response = client.get("/api/v1/config/metrics")
-
-        assert response.status_code == 200
-        items = response.json()
-        by_metric = {item["canonical_metric"]: item for item in items}
-        assert by_metric["peak_tariff_exposure"]["source"] == "auto"
-        assert by_metric["peak_tariff_exposure"]["unit"] == "%"
-        assert by_metric["supplier_co2_per_kg"]["source"] == "auto"
-        assert by_metric["supplier_co2_per_kg"]["unit"] == "kg CO₂/kg"
 
     def test_list_response_has_correct_structure(
         self,

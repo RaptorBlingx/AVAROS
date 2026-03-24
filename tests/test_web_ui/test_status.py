@@ -63,10 +63,10 @@ class TestStatusConfigured:
         client: TestClient,
         settings_service: SettingsService,
     ) -> None:
-        """After saving a reneryo config, configured=true."""
+        """After saving a custom_rest config, configured=true."""
         settings_service.update_platform_config(
             PlatformConfig(
-                platform_type="reneryo",
+                platform_type="custom_rest",
                 api_url="https://api.example.com",
                 api_key="secret-key-1234",
             )
@@ -75,8 +75,8 @@ class TestStatusConfigured:
         body = client.get("/api/v1/status").json()
 
         assert body["configured"] is True
-        assert body["active_adapter"] == "reneryo"
-        assert body["platform_type"] == "reneryo"
+        assert body["active_adapter"] == "custom_rest"
+        assert body["platform_type"] == "custom_rest"
 
     def test_status_returns_unconfigured_after_config_deleted(
         self,
@@ -86,12 +86,12 @@ class TestStatusConfigured:
         """Deleting platform config reverts to unconfigured."""
         settings_service.update_platform_config(
             PlatformConfig(
-                platform_type="reneryo",
+                platform_type="custom_rest",
                 api_url="https://api.example.com",
                 api_key="secret-key-1234",
             )
         )
-        settings_service.delete_profile("reneryo")
+        settings_service.delete_profile("custom-rest")
 
         body = client.get("/api/v1/status").json()
 

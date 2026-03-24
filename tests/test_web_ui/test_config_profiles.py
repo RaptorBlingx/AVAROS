@@ -27,13 +27,13 @@ from skill.services.settings import SettingsService
 
 
 @pytest.fixture()
-def reneryo_profile_payload() -> dict[str, Any]:
-    """Valid create-profile payload for a reneryo profile."""
+def custom_rest_profile_payload() -> dict[str, Any]:
+    """Valid create-profile payload for a custom_rest profile."""
     return {
-        "name": "reneryo",
-        "platform_type": "reneryo",
-        "api_url": "https://api.reneryo.example.com/v1",
-        "api_key": "reneryo-secret-key-1234",
+        "name": "my-api",
+        "platform_type": "custom_rest",
+        "api_url": "https://api.example.com/v1",
+        "api_key": "secret-key-1234",
         "extra_settings": {"auth_type": "cookie"},
     }
 
@@ -53,7 +53,7 @@ def sap_profile_payload() -> dict[str, Any]:
 def _seed_profile(
     svc: SettingsService,
     name: str,
-    platform_type: str = "reneryo",
+    platform_type: str = "custom_rest",
     api_url: str = "https://api.example.com",
     api_key: str = "test-key-1234",
 ) -> None:
@@ -93,14 +93,14 @@ class TestListProfiles:
         settings_service: SettingsService,
     ) -> None:
         """Custom profiles appear in the list."""
-        _seed_profile(settings_service, "reneryo")
+        _seed_profile(settings_service, "my-api")
         _seed_profile(settings_service, "sap-staging", "custom_rest")
 
         resp = client.get("/api/v1/config/profiles")
 
         body = resp.json()
         names = [p["name"] for p in body["profiles"]]
-        assert "reneryo" in names
+        assert "my-api" in names
         assert "sap-staging" in names
         assert len(body["profiles"]) == 2
 
@@ -110,15 +110,15 @@ class TestListProfiles:
         settings_service: SettingsService,
     ) -> None:
         """Active profile is marked correctly."""
-        _seed_profile(settings_service, "reneryo")
-        settings_service.set_active_profile("reneryo")
+        _seed_profile(settings_service, "my-api")
+        settings_service.set_active_profile("my-api")
 
         resp = client.get("/api/v1/config/profiles")
 
         body = resp.json()
-        assert body["active_profile"] == "reneryo"
+        assert body["active_profile"] == "my-api"
         for p in body["profiles"]:
-            expected = p["name"] == "reneryo"
+            expected = p["name"] == "my-api"
             assert p["is_active"] is expected
 
 
@@ -142,13 +142,13 @@ class TestGetProfile:
         settings_service: SettingsService,
     ) -> None:
         """Custom profile returns masked API key."""
-        _seed_profile(settings_service, "reneryo", api_key="super-secret-key")
+        _seed_profile(settings_service, "my-api", api_key="super-secret-key")
 
-        resp = client.get("/api/v1/config/profiles/reneryo")
+        resp = client.get("/api/v1/config/profiles/my-api")
 
         assert resp.status_code == 200
         body = resp.json()
-        assert body["name"] == "reneryo"
+        assert body["name"] == "my-api"
         assert body["api_key"].startswith("****")
         assert "super-secret" not in body["api_key"]
         assert body["is_builtin"] is False
@@ -172,18 +172,18 @@ class TestCreateProfile:
     def test_create_profile_success(
         self,
         client: TestClient,
-        reneryo_profile_payload: dict[str, Any],
+        custom_rest_profile_payload: dict[str, Any],
     ) -> None:
         """Valid payload creates profile with 201."""
         resp = client.post(
             "/api/v1/config/profiles",
-            json=reneryo_profile_payload,
+            json=custom_rest_profile_payload,
         )
 
         assert resp.status_code == 201
         body = resp.json()
-        assert body["name"] == "reneryo"
-        assert body["platform_type"] == "reneryo"
+        assert body["name"] == "my-api"
+        assert body["platform_type"] == "custom_rest"
         assert body["api_key"].startswith("****")
         assert body["is_builtin"] is False
 
@@ -196,7 +196,7 @@ class TestCreateProfile:
             "/api/v1/config/profiles",
             json={
                 "name": "unconfigured",
-                "platform_type": "reneryo",
+                "platform_type": "custom_rest",
             },
         )
 
@@ -209,14 +209,14 @@ class TestCreateProfile:
         self,
         client: TestClient,
         settings_service: SettingsService,
-        reneryo_profile_payload: dict[str, Any],
+        custom_rest_profile_payload: dict[str, Any],
     ) -> None:
         """Duplicate profile name returns 409."""
-        _seed_profile(settings_service, "reneryo")
+        _seed_profile(settings_service, "my-api")
 
         resp = client.post(
             "/api/v1/config/profiles",
-            json=reneryo_profile_payload,
+            json=custom_rest_profile_payload,
         )
 
         assert resp.status_code == 409
@@ -231,7 +231,7 @@ class TestCreateProfile:
             "/api/v1/config/profiles",
             json={
                 "name": "BAD_NAME!!",
-                "platform_type": "reneryo",
+                "platform_type": "custom_rest",
             },
         )
 
@@ -246,7 +246,24 @@ class TestCreateProfile:
             "/api/v1/config/profiles",
             json={
                 "name": "x",
+                "platform_type": "custom_rest",
+            },
+        )
+
+        assert resp.status_code == 422
+
+    def test_create_profile_rejects_unknown_platform_type(
+        self,
+        client: TestClient,
+    ) -> None:
+        """Unknown platform_type should fail schema validation."""
+        resp = client.post(
+            "/api/v1/config/profiles",
+            json={
+                "name": "legacy-reneryo",
                 "platform_type": "reneryo",
+                "api_url": "https://api.example.com",
+                "api_key": "key",
             },
         )
 
@@ -267,12 +284,12 @@ class TestUpdateProfile:
         settings_service: SettingsService,
     ) -> None:
         """Updating an existing profile returns 200."""
-        _seed_profile(settings_service, "reneryo")
+        _seed_profile(settings_service, "my-api")
 
         resp = client.put(
-            "/api/v1/config/profiles/reneryo",
+            "/api/v1/config/profiles/my-api",
             json={
-                "platform_type": "reneryo",
+                "platform_type": "custom_rest",
                 "api_url": "https://new-api.example.com",
                 "api_key": "new-key-5678",
             },
@@ -291,7 +308,7 @@ class TestUpdateProfile:
         resp = client.put(
             "/api/v1/config/profiles/unconfigured",
             json={
-                "platform_type": "reneryo",
+                "platform_type": "custom_rest",
             },
         )
 
@@ -305,7 +322,7 @@ class TestUpdateProfile:
         resp = client.put(
             "/api/v1/config/profiles/nonexistent",
             json={
-                "platform_type": "reneryo",
+                "platform_type": "custom_rest",
                 "api_url": "https://api.example.com",
                 "api_key": "key",
             },
@@ -328,14 +345,14 @@ class TestDeleteProfile:
         settings_service: SettingsService,
     ) -> None:
         """Deleting an existing profile returns 200."""
-        _seed_profile(settings_service, "reneryo")
+        _seed_profile(settings_service, "my-api")
 
-        resp = client.delete("/api/v1/config/profiles/reneryo")
+        resp = client.delete("/api/v1/config/profiles/my-api")
 
         assert resp.status_code == 200
         body = resp.json()
         assert body["status"] == "deleted"
-        assert body["deleted_profile"] == "reneryo"
+        assert body["deleted_profile"] == "my-api"
 
     def test_delete_mock_returns_400(
         self,
@@ -361,10 +378,10 @@ class TestDeleteProfile:
         settings_service: SettingsService,
     ) -> None:
         """Deleting the active profile resets to unconfigured."""
-        _seed_profile(settings_service, "reneryo")
-        settings_service.set_active_profile("reneryo")
+        _seed_profile(settings_service, "my-api")
+        settings_service.set_active_profile("my-api")
 
-        resp = client.delete("/api/v1/config/profiles/reneryo")
+        resp = client.delete("/api/v1/config/profiles/my-api")
 
         assert resp.status_code == 200
         body = resp.json()
@@ -386,21 +403,24 @@ class TestActivateProfile:
         settings_service: SettingsService,
     ) -> None:
         """Activating an existing profile succeeds with voice_reloaded."""
-        _seed_profile(settings_service, "reneryo")
+        _seed_profile(settings_service, "my-api")
 
         with patch(
             "routers.profiles._notify_skill_via_bus",
             return_value=True,
+        ), patch(
+            "skill.adapters.generic_rest.GenericRestAdapter._probe_base_url",
+            new_callable=AsyncMock,
         ):
             resp = client.post(
-                "/api/v1/config/profiles/reneryo/activate",
+                "/api/v1/config/profiles/my-api/activate",
             )
 
         assert resp.status_code == 200
         body = resp.json()
         assert body["status"] == "activated"
-        assert body["active_profile"] == "reneryo"
-        assert body["adapter_type"] == "reneryo"
+        assert body["active_profile"] == "my-api"
+        assert body["adapter_type"] == "custom_rest"
         assert body["voice_reloaded"] is True
 
     def test_activate_mock_success(
@@ -409,8 +429,8 @@ class TestActivateProfile:
         settings_service: SettingsService,
     ) -> None:
         """Activating unconfigured profile works (resets to default)."""
-        _seed_profile(settings_service, "reneryo")
-        settings_service.set_active_profile("reneryo")
+        _seed_profile(settings_service, "my-api")
+        settings_service.set_active_profile("my-api")
 
         with patch(
             "routers.profiles._notify_skill_via_bus",
@@ -442,7 +462,7 @@ class TestActivateProfile:
         settings_service: SettingsService,
     ) -> None:
         """Reload failure rolls back to previous profile and returns 422."""
-        _seed_profile(settings_service, "reneryo")
+        _seed_profile(settings_service, "my-api")
         assert settings_service.get_active_profile_name() == "unconfigured"
 
         with patch(
@@ -450,7 +470,7 @@ class TestActivateProfile:
             new=AsyncMock(side_effect=RuntimeError("reload exploded")),
         ):
             resp = client.post(
-                "/api/v1/config/profiles/reneryo/activate",
+                "/api/v1/config/profiles/my-api/activate",
             )
 
         assert resp.status_code == 422
@@ -485,14 +505,14 @@ class TestLegacyEndpoints:
         resp = client.post(
             "/api/v1/config/platform",
             json={
-                "platform_type": "reneryo",
+                "platform_type": "custom_rest",
                 "api_url": "https://api.example.com/v1",
                 "api_key": "key-1234",
             },
         )
 
         assert resp.status_code == 200
-        assert resp.json()["platform_type"] == "reneryo"
+        assert resp.json()["platform_type"] == "custom_rest"
 
     def test_legacy_delete_platform_resets(
         self,
@@ -503,7 +523,7 @@ class TestLegacyEndpoints:
         client.post(
             "/api/v1/config/platform",
             json={
-                "platform_type": "reneryo",
+                "platform_type": "custom_rest",
                 "api_url": "https://api.example.com/v1",
                 "api_key": "key-1234",
             },
@@ -535,7 +555,7 @@ class TestNotifySkillViaBus:
         ):
             from routers.profiles import _notify_skill_via_bus
 
-            result = _notify_skill_via_bus("reneryo")
+            result = _notify_skill_via_bus("my-api")
 
         assert result is True
         mock_websocket.create_connection.assert_called_once()
@@ -546,7 +566,7 @@ class TestNotifySkillViaBus:
         sent = mock_ws.send.call_args[0][0]
         msg = json.loads(sent)
         assert msg["type"] == "avaros.profile.activated"
-        assert msg["data"]["profile"] == "reneryo"
+        assert msg["data"]["profile"] == "my-api"
         assert "context" in msg
         mock_ws.close.assert_called_once()
 
@@ -563,7 +583,7 @@ class TestNotifySkillViaBus:
         ):
             from routers.profiles import _notify_skill_via_bus
 
-            result = _notify_skill_via_bus("reneryo")
+            result = _notify_skill_via_bus("my-api")
 
         assert result is False
 
@@ -573,14 +593,17 @@ class TestNotifySkillViaBus:
         settings_service: SettingsService,
     ) -> None:
         """Activation response always includes voice_reloaded field."""
-        _seed_profile(settings_service, "reneryo")
+        _seed_profile(settings_service, "my-api")
 
         with patch(
             "routers.profiles._notify_skill_via_bus",
             return_value=False,
+        ), patch(
+            "skill.adapters.generic_rest.GenericRestAdapter._probe_base_url",
+            new_callable=AsyncMock,
         ):
             resp = client.post(
-                "/api/v1/config/profiles/reneryo/activate",
+                "/api/v1/config/profiles/my-api/activate",
             )
 
         assert resp.status_code == 200
@@ -631,20 +654,20 @@ class TestActivatePreValidation:
         # Active profile unchanged
         assert settings_service.get_active_profile_name() == "unconfigured"
 
-    def test_activate_reneryo_missing_url_returns_422(
+    def test_activate_configured_profile_missing_url_returns_422(
         self,
         client: TestClient,
         settings_service: SettingsService,
     ) -> None:
-        """RENERYO profile without api_url → 422."""
+        """Configured profile without api_url → 422."""
         _seed_profile(
-            settings_service, "ren-broken",
-            platform_type="reneryo",
+            settings_service, "broken-profile",
+            platform_type="custom_rest",
             api_url="",
         )
 
         resp = client.post(
-            "/api/v1/config/profiles/ren-broken/activate",
+            "/api/v1/config/profiles/broken-profile/activate",
         )
 
         assert resp.status_code == 422
@@ -657,8 +680,8 @@ class TestActivatePreValidation:
         settings_service: SettingsService,
     ) -> None:
         """Unconfigured profile requires no validation — always activates."""
-        _seed_profile(settings_service, "reneryo")
-        settings_service.set_active_profile("reneryo")
+        _seed_profile(settings_service, "my-api")
+        settings_service.set_active_profile("my-api")
 
         with patch(
             "routers.profiles._notify_skill_via_bus",
@@ -688,7 +711,7 @@ class TestActivateRollback:
         settings_service: SettingsService,
     ) -> None:
         """factory.reload() raises → old profile restored, 422 returned."""
-        _seed_profile(settings_service, "reneryo")
+        _seed_profile(settings_service, "my-api")
 
         with patch(
             "skill.adapters.factory.AdapterFactory.reload",
@@ -697,7 +720,7 @@ class TestActivateRollback:
             ),
         ):
             resp = client.post(
-                "/api/v1/config/profiles/reneryo/activate",
+                "/api/v1/config/profiles/my-api/activate",
             )
 
         assert resp.status_code == 422
@@ -712,14 +735,14 @@ class TestActivateRollback:
         settings_service: SettingsService,
     ) -> None:
         """Initialize failure via reload() path restores old profile."""
-        _seed_profile(settings_service, "reneryo")
+        _seed_profile(settings_service, "my-api")
 
         with patch(
             "skill.adapters.factory.AdapterFactory.reload",
             new=AsyncMock(side_effect=RuntimeError("init boom")),
         ):
             resp = client.post(
-                "/api/v1/config/profiles/reneryo/activate",
+                "/api/v1/config/profiles/my-api/activate",
             )
 
         assert resp.status_code == 422
@@ -734,7 +757,7 @@ class TestActivateRollback:
         settings_service: SettingsService,
     ) -> None:
         """Both activation and rollback fail → 422 returned, error logged."""
-        _seed_profile(settings_service, "reneryo")
+        _seed_profile(settings_service, "my-api")
         call_count = 0
 
         async def _reload_side_effects() -> None:
@@ -751,7 +774,7 @@ class TestActivateRollback:
             "routers.profiles.logger",
         ) as mock_logger:
             resp = client.post(
-                "/api/v1/config/profiles/reneryo/activate",
+                "/api/v1/config/profiles/my-api/activate",
             )
 
         assert resp.status_code == 422
@@ -768,21 +791,24 @@ class TestActivateRollback:
         settings_service: SettingsService,
     ) -> None:
         """Successful activation includes voice_reloaded in response."""
-        _seed_profile(settings_service, "reneryo")
+        _seed_profile(settings_service, "my-api")
 
         with patch(
             "routers.profiles._notify_skill_via_bus",
             return_value=True,
+        ), patch(
+            "skill.adapters.generic_rest.GenericRestAdapter._probe_base_url",
+            new_callable=AsyncMock,
         ):
             resp = client.post(
-                "/api/v1/config/profiles/reneryo/activate",
+                "/api/v1/config/profiles/my-api/activate",
             )
 
         assert resp.status_code == 200
         body = resp.json()
         assert body["voice_reloaded"] is True
         assert body["status"] == "activated"
-        assert body["active_profile"] == "reneryo"
+        assert body["active_profile"] == "my-api"
 
     def test_full_activation_unconfigured_to_unconfigured(
         self,
@@ -808,18 +834,21 @@ class TestActivateRollback:
         settings_service: SettingsService,
     ) -> None:
         """Message bus failure → voice_reloaded=false, activation succeeds."""
-        _seed_profile(settings_service, "reneryo")
+        _seed_profile(settings_service, "my-api")
 
         with patch(
             "routers.profiles._notify_skill_via_bus",
             return_value=False,
+        ), patch(
+            "skill.adapters.generic_rest.GenericRestAdapter._probe_base_url",
+            new_callable=AsyncMock,
         ):
             resp = client.post(
-                "/api/v1/config/profiles/reneryo/activate",
+                "/api/v1/config/profiles/my-api/activate",
             )
 
         assert resp.status_code == 200
         body = resp.json()
         assert body["voice_reloaded"] is False
-        assert body["active_profile"] == "reneryo"
-        assert settings_service.get_active_profile_name() == "reneryo"
+        assert body["active_profile"] == "my-api"
+        assert settings_service.get_active_profile_name() == "my-api"

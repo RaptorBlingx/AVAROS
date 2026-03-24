@@ -5,7 +5,7 @@ Validates auth handling, retry logic, batch splitting on 500,
 and all CRUD operations using mocked HTTP responses.
 
 Run:
-    cd tools/reneryo-mock
+    cd tools/reneryo-data-generator
     pip install -r requirements.txt pytest pytest-asyncio respx
     pytest tests/test_reneryo_client.py -v
 """

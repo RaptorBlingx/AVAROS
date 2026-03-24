@@ -15,17 +15,17 @@ from skill.services.settings import PlatformConfig, SettingsService
 @pytest.fixture(autouse=True)
 def active_profile(settings_service: SettingsService) -> None:
     """Ensure test requests run against a non-mock active profile."""
-    if settings_service.get_profile("reneryo") is None:
+    if settings_service.get_profile("my-api") is None:
         settings_service.create_profile(
-            "reneryo",
+            "my-api",
             PlatformConfig(
-                platform_type="reneryo",
-                api_url="https://api.reneryo.example.com",
+                platform_type="custom_rest",
+                api_url="https://api.example.com",
                 api_key="server-secret-token",
                 extra_settings={"auth_type": "bearer"},
             ),
         )
-    settings_service.set_active_profile("reneryo")
+    settings_service.set_active_profile("my-api")
 
 
 class TestMetricMappingValidationEndpoint:

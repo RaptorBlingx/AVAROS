@@ -17,14 +17,14 @@ from skill.services.settings import SettingsService
 
 
 @pytest.fixture()
-def reneryo_profile(settings_service: SettingsService) -> None:
+def custom_rest_profile(settings_service: SettingsService) -> None:
     """Ensure a writable Reneryo profile is active for mapping tests."""
-    if settings_service.get_profile("reneryo") is None:
+    if settings_service.get_profile("my-api") is None:
         settings_service.create_profile(
-            "reneryo",
-            PlatformConfig(platform_type="reneryo", api_url="https://reneryo.example.com"),
+            "my-api",
+            PlatformConfig(platform_type="custom_rest", api_url="https://api.example.com"),
         )
-    settings_service.set_active_profile("reneryo")
+    settings_service.set_active_profile("my-api")
 
 
 def test_discover_assets_returns_empty_on_unconfigured(
@@ -186,7 +186,7 @@ def test_assets_router_has_no_reneryo_imports() -> None:
 def test_import_generator_mapping_transforms_and_persists(
     client: TestClient,
     settings_service: SettingsService,
-    reneryo_profile: None,
+    custom_rest_profile: None,
 ) -> None:
     """Import generator mapping → merges metric_resources into asset mappings."""
 
@@ -211,7 +211,7 @@ def test_import_generator_mapping_transforms_and_persists(
 def test_import_generator_mapping_merges_with_existing(
     client: TestClient,
     settings_service: SettingsService,
-    reneryo_profile: None,
+    custom_rest_profile: None,
 ) -> None:
     """Existing asset fields (display_name, etc.) are preserved after import."""
 
@@ -244,7 +244,7 @@ def test_import_generator_mapping_merges_with_existing(
 def test_import_generator_mapping_rejects_empty(
     client: TestClient,
     settings_service: SettingsService,
-    reneryo_profile: None,
+    custom_rest_profile: None,
 ) -> None:
     """Empty mapping payload should return 400."""
 
@@ -269,7 +269,7 @@ def test_import_generator_mapping_on_mock_profile_fails(
 def test_import_generator_mapping_rejects_unknown_metric_names(
     client: TestClient,
     settings_service: SettingsService,
-    reneryo_profile: None,
+    custom_rest_profile: None,
 ) -> None:
     """Unknown metric names should fail fast with HTTP 422."""
     settings_service.set_asset_mappings({
@@ -291,7 +291,7 @@ def test_import_generator_mapping_rejects_unknown_metric_names(
 def test_config_assets_preserves_existing_metric_resources_when_missing_in_payload(
     client: TestClient,
     settings_service: SettingsService,
-    reneryo_profile: None,
+    custom_rest_profile: None,
 ) -> None:
     """Saving UI rows without metric_resources must not wipe imported mappings."""
     settings_service.set_asset_mappings({

@@ -23,15 +23,15 @@ from skill.services.settings import (
 @pytest.fixture(autouse=True)
 def active_profile(settings_service: SettingsService) -> None:
     """Use a non-mock active profile for legacy API compatibility tests."""
-    if settings_service.get_profile("reneryo") is None:
+    if settings_service.get_profile("my-api") is None:
         settings_service.create_profile(
-            "reneryo",
+            "my-api",
             PlatformConfig(
-                platform_type="reneryo",
-                api_url="https://api.reneryo.example.com",
+                platform_type="custom_rest",
+                api_url="https://api.example.com",
             ),
         )
-    settings_service.set_active_profile("reneryo")
+    settings_service.set_active_profile("my-api")
 
 
 # ══════════════════════════════════════════════════════════

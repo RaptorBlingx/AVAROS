@@ -10,7 +10,6 @@ import {
 } from "../../api/client";
 import type {
   CreateProfileRequest,
-  PlatformType,
   ProfileDetailResponse,
   ProfileMetadata,
 } from "../../api/types";
@@ -53,8 +52,9 @@ export default function ProfileSelector({
   const [switching, setSwitching] = useState(false);
   const [showNewForm, setShowNewForm] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newPlatformType, setNewPlatformType] =
-    useState<PlatformType>("reneryo");
+  const [newPlatformType, setNewPlatformType] = useState<
+    CreateProfileRequest["platform_type"]
+  >("custom_rest");
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -386,7 +386,9 @@ export default function ProfileSelector({
               <select
                 value={newPlatformType}
                 onChange={(e) =>
-                  setNewPlatformType(e.target.value as PlatformType)
+                  setNewPlatformType(
+                    e.target.value as CreateProfileRequest["platform_type"],
+                  )
                 }
                 className={`rounded-lg border px-3 py-2 text-sm ${
                   isDark
@@ -395,8 +397,7 @@ export default function ProfileSelector({
                 }`}
                 data-testid="profile-new-platform"
               >
-                <option value="reneryo">RENERYO</option>
-                <option value="custom_rest">Custom REST</option>
+                <option value="custom_rest">REST API</option>
               </select>
             </label>
             <button

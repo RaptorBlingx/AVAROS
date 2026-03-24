@@ -6,7 +6,7 @@ anomaly injection rate, improvement trends, asset offsets, and cross-metric
 correlations.
 
 Run:
-    cd tools/reneryo-mock
+    cd tools/reneryo-data-generator
     pip install pytest
     pytest tests/test_patterns.py -v
 """

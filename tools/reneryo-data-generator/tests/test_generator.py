@@ -4,7 +4,7 @@ Tests for generator.py — CLI, metric creation, seed flow, mapping output.
 Uses mocked ReneryoClient to test generator logic without network access.
 
 Run:
-    cd tools/reneryo-mock
+    cd tools/reneryo-data-generator
     pip install -r requirements.txt pytest pytest-asyncio
     pytest tests/test_generator.py -v
 """

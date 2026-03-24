@@ -2,13 +2,13 @@
 Mock RENERYO HTTP Server
 
 A lightweight FastAPI application serving all 19 KPI endpoints from
-ReneryoAdapter._ENDPOINT_MAP with realistic manufacturing JSON data.
+AVAROS canonical metric paths with realistic manufacturing JSON data.
 
 This is a **development tool** — it enables testing the full RENERYO
 HTTP client pipeline without real API credentials.
 
 Usage:
-    cd tools/reneryo-mock
+    cd tools/reneryo-data-generator
     pip install -r requirements.txt
     uvicorn main:app --host 0.0.0.0 --port 8090
 
@@ -109,7 +109,7 @@ async def health() -> dict:
 
 # =========================================================================
 # Endpoint path → metric name mapping
-# Exactly mirrors ReneryoAdapter._ENDPOINT_MAP
+# Canonical path-to-metric mapping used by the mock server
 # =========================================================================
 
 _PATH_TO_METRIC: dict[str, str] = {

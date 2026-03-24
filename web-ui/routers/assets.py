@@ -52,7 +52,7 @@ class AssetMappingsResponse(BaseModel):
 
 
 class GeneratorMappingRequest(BaseModel):
-    """Accept mapping_output.json format from Reneryo data generator.
+    """Accept mapping_output.json format from the data generator.
 
     Generator outputs: ``{metric_name: {asset_id: resource_id}}``.
     This endpoint transforms and merges it into SettingsService
@@ -154,7 +154,7 @@ def _persist_asset_mappings(
     """Save mappings via SettingsService (which handles bus notification).
 
     Preserve previously imported ``metric_resources`` when UI payloads
-    update only registration/linking fields (for example ``seu_id``).
+    update only registration/linking fields.
     """
     try:
         _validate_asset_mappings(payload.asset_mappings)
@@ -253,9 +253,8 @@ async def discover_assets(
 ) -> AssetDiscoveryResponse:
     """Discover assets through active adapter's list_assets() implementation.
 
-    Creates a fresh adapter per call. For UnconfiguredAdapter this is cheap; for
-    ReneryoAdapter it involves HTTP session setup/teardown.  If discovery
-    becomes a hot path, consider caching the adapter across requests.
+    Creates a fresh adapter per call. For UnconfiguredAdapter this is cheap.
+    If discovery becomes a hot path, consider caching the adapter across requests.
     """
     platform_type = _get_current_platform(settings_service)
     adapter = adapter_factory.create()
@@ -294,7 +293,7 @@ def import_generator_mapping(
     payload: GeneratorMappingRequest,
     settings_service: SettingsService = Depends(get_settings_service),
 ) -> GeneratorMappingResponse:
-    """Import Reneryo data generator mapping_output.json into asset mappings.
+    """Import data generator mapping_output.json into asset mappings.
 
     Accepts the generator's ``{metric_name: {asset_id: resource_id}}``
     format, transforms it to per-asset ``metric_resources`` dicts, and
