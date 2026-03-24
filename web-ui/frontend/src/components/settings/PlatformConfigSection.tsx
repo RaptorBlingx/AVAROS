@@ -54,10 +54,12 @@ function createPayload(config: {
   apiKey: string;
   authType: AuthType;
 }): PlatformConfigRequest {
+  const shouldBlankApiKey =
+    config.platformType === "unconfigured" || config.authType === "none";
   return {
     platform_type: config.platformType,
     api_url: config.platformType === "unconfigured" ? "" : config.apiUrl.trim(),
-    api_key: config.platformType === "unconfigured" ? "" : config.apiKey.trim(),
+    api_key: shouldBlankApiKey ? "" : config.apiKey.trim(),
     extra_settings: {
       auth_type: toBackendAuthType(config.authType),
     },

@@ -23,13 +23,13 @@ All environment variables used by AVAROS services. Set these in the `.env` file 
 
 > **Default for Docker:** `postgresql://avaros:avaros@avaros_db:5432/avaros` — works with the default Docker Compose setup.
 
-## Platform Adapter
+## Platform Configuration
 
-| Variable | Required | Default | Used By | Description |
-|----------|----------|---------|---------|-------------|
-| `ADAPTER_TYPE` | No | `mock` | Skill | Platform adapter to use: `mock` (demo data) or `reneryo` (production) |
+Platform connection is configured from the Web UI wizard and stored per profile in the database.
 
-> **Note:** Platform credentials (API URL, authentication) are entered via the Web UI wizard and stored encrypted in the database — not in environment variables.
+- No adapter selection environment variable is required.
+- Runtime uses the unified REST adapter with the active profile configuration.
+- API URL, auth type, and credentials are profile-scoped and not read from env vars.
 
 ## Web UI
 
@@ -92,13 +92,10 @@ These variables configure the `tools/reneryo-data-generator/generator.py` daemon
 
 ## Quick Setup
 
-For a standard Docker deployment, only two variables typically need customization:
+For a standard Docker deployment, one variable typically needs customization:
 
 ```bash
-# 1. Set adapter to production
-ADAPTER_TYPE=reneryo
-
-# 2. Set a secure API key
+# Set a secure API key
 AVAROS_WEB_API_KEY=your-secure-32-char-hex-key-here
 ```
 

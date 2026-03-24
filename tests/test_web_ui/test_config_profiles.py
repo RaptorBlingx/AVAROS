@@ -252,6 +252,23 @@ class TestCreateProfile:
 
         assert resp.status_code == 422
 
+    def test_create_profile_rejects_unknown_platform_type(
+        self,
+        client: TestClient,
+    ) -> None:
+        """Unknown platform_type should fail schema validation."""
+        resp = client.post(
+            "/api/v1/config/profiles",
+            json={
+                "name": "legacy-reneryo",
+                "platform_type": "reneryo",
+                "api_url": "https://api.example.com",
+                "api_key": "key",
+            },
+        )
+
+        assert resp.status_code == 422
+
 
 # ══════════════════════════════════════════════════════════
 # PUT /api/v1/config/profiles/{name}

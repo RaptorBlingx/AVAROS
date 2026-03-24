@@ -32,8 +32,8 @@ def _mask_api_key(api_key: str) -> str:
 
 def _to_response(config: PlatformConfig) -> PlatformConfigResponse:
     """Convert service config into API-safe masked response."""
-    raw = config.platform_type or "unconfigured"
-    platform_type = "custom_rest" if raw == "reneryo" else raw
+    raw = str(config.platform_type or "unconfigured").lower()
+    platform_type = raw if raw in {"custom_rest", "unconfigured"} else "custom_rest"
     return PlatformConfigResponse(
         platform_type=platform_type,
         api_url=config.api_url,

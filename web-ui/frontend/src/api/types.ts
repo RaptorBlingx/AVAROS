@@ -292,14 +292,14 @@ export type ProfileDetailResponse = {
 
 export type CreateProfileRequest = {
   name: string;
-  platform_type: string;
+  platform_type: Exclude<PlatformType, "unconfigured">;
   api_url: string;
   api_key: string;
   extra_settings: Record<string, string>;
 };
 
 export type UpdateProfileRequest = {
-  platform_type: string;
+  platform_type: Exclude<PlatformType, "unconfigured">;
   api_url: string;
   api_key: string;
   extra_settings: Record<string, string>;

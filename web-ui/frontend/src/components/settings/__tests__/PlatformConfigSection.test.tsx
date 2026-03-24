@@ -36,6 +36,7 @@ vi.mock("../../common/ThemeProvider", () => ({
 
 import {
   activateProfile,
+  createPlatformConfig,
   resetPlatformConfig,
   getProfile,
   getPlatformConfig,
@@ -46,6 +47,7 @@ const mockGetPlatformConfig = vi.mocked(getPlatformConfig);
 const mockListProfiles = vi.mocked(listProfiles);
 const mockGetProfile = vi.mocked(getProfile);
 const mockActivateProfile = vi.mocked(activateProfile);
+const mockCreatePlatformConfig = vi.mocked(createPlatformConfig);
 const mockResetPlatformConfig = vi.mocked(resetPlatformConfig);
 
 const DEFAULT_PLATFORM_CONFIG: PlatformConfigResponse = {
@@ -143,6 +145,7 @@ describe("PlatformConfigSection with ProfileSelector", () => {
       status: "reset",
       platform_type: "unconfigured",
     });
+    mockCreatePlatformConfig.mockResolvedValue(DEFAULT_PLATFORM_CONFIG);
     vi.spyOn(window, "confirm").mockReturnValue(true);
   });
 
@@ -305,5 +308,62 @@ describe("PlatformConfigSection with ProfileSelector", () => {
       const authSelect = screen.getByLabelText("Auth Type") as HTMLSelectElement;
       expect(authSelect.value).toBe("none");
     });
+  });
+
+  it("sends empty api_key when auth type is none", async () => {
+    const activeProfileConfig: PlatformConfigResponse = {
+      platform_type: "custom_rest",
+      api_url: "https://api.custom_rest.com",
+      api_key: "****abcd",
+      extra_settings: { auth_type: "bearer" },
+    };
+    const activeProfiles: ProfileListResponse = {
+      profiles: [
+        {
+          name: "unconfigured",
+          platform_type: "unconfigured",
+          is_active: false,
+          is_builtin: true,
+        },
+        {
+          name: "my-custom_rest",
+          platform_type: "custom_rest",
+          is_active: true,
+          is_builtin: false,
+        },
+      ],
+      active_profile: "my-custom_rest",
+    };
+    mockGetPlatformConfig.mockResolvedValue(activeProfileConfig);
+    mockListProfiles.mockResolvedValue(activeProfiles);
+
+    render(<PlatformConfigSection onNotify={onNotify} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Edit")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText("Edit"));
+
+    fireEvent.change(screen.getByLabelText("Auth Type"), {
+      target: { value: "api_key" },
+    });
+    fireEvent.change(screen.getByLabelText("API Key"), {
+      target: { value: "stale-secret-should-not-be-sent" },
+    });
+    fireEvent.change(screen.getByLabelText("Auth Type"), {
+      target: { value: "none" },
+    });
+
+    fireEvent.click(screen.getByText("Save Changes"));
+
+    await waitFor(() => {
+      expect(mockCreatePlatformConfig).toHaveBeenCalled();
+    });
+
+    const payload = mockCreatePlatformConfig.mock.calls.at(-1)?.[0];
+    expect(payload?.platform_type).toBe("custom_rest");
+    expect(payload?.extra_settings?.auth_type).toBe("none");
+    expect(payload?.api_key).toBe("");
   });
 });

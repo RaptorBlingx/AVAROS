@@ -157,7 +157,7 @@ class CreateProfileRequest(BaseModel):
         ...,
         description="Profile name (2-50 chars, lowercase alphanumeric + hyphens).",
     )
-    platform_type: str = Field(..., description="Platform adapter type.")
+    platform_type: PlatformType = Field(..., description="Platform adapter type.")
     api_url: str = Field(default="", description="Platform API base URL.")
     api_key: str = Field(default="", description="Platform API key.")
     extra_settings: dict[str, Any] = Field(
@@ -181,7 +181,7 @@ class CreateProfileRequest(BaseModel):
 class UpdateProfileRequest(BaseModel):
     """Request body for updating an existing profile."""
 
-    platform_type: str = Field(..., description="Platform adapter type.")
+    platform_type: PlatformType = Field(..., description="Platform adapter type.")
     api_url: str = Field(default="", description="Platform API base URL.")
     api_key: str = Field(default="", description="Platform API key.")
     extra_settings: dict[str, Any] = Field(
