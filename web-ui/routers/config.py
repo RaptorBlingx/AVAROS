@@ -32,7 +32,8 @@ def _mask_api_key(api_key: str) -> str:
 
 def _to_response(config: PlatformConfig) -> PlatformConfigResponse:
     """Convert service config into API-safe masked response."""
-    platform_type = config.platform_type or "unconfigured"
+    raw = str(config.platform_type or "unconfigured").lower()
+    platform_type = raw if raw in {"custom_rest", "unconfigured"} else "custom_rest"
     return PlatformConfigResponse(
         platform_type=platform_type,
         api_url=config.api_url,
@@ -137,19 +138,6 @@ def _create_adapter_from_config(
     Raises:
         ValueError: If platform_type is unknown.
     """
-    if payload.platform_type == "reneryo":
-        from skill.adapters.reneryo import ReneryoAdapter
-
-        return ReneryoAdapter(
-            api_url=payload.api_url,
-            api_key=payload.api_key,
-            timeout=payload.extra_settings.get("timeout", 10),
-            auth_type=payload.extra_settings.get("auth_type", "bearer"),
-            api_format=payload.extra_settings.get("api_format", "native"),
-            native_seu_id=str(payload.extra_settings.get("seu_id", "")).strip(),
-            extra_settings=sanitize_extra_settings(payload.extra_settings),
-        )
-
     if payload.platform_type == "custom_rest":
         from skill.adapters.generic_rest import GenericRestAdapter
 

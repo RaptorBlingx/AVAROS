@@ -140,8 +140,8 @@ class TestNginxHiveMindProxy:
     def test_nginx_conf_has_hivemind_upstream(self) -> None:
         """nginx.conf defines hivemind_ws upstream."""
         content = NGINX_CONF.read_text()
-        assert "hivemind_ws" in content, (
-            "nginx.conf must define hivemind_ws upstream"
+        assert "hivemind_upstream" in content, (
+            "nginx.conf must define hivemind_upstream"
         )
 
     def test_nginx_conf_has_hivemind_location(self) -> None:
@@ -157,7 +157,7 @@ class TestNginxHiveMindProxy:
         # Find the hivemind section specifically
         hivemind_idx = content.find("location /hivemind")
         assert hivemind_idx > -1
-        hivemind_block = content[hivemind_idx:hivemind_idx + 500]
+        hivemind_block = content[hivemind_idx:hivemind_idx + 1000]
         assert "proxy_http_version 1.1" in hivemind_block
         assert 'Connection "upgrade"' in hivemind_block
 
@@ -165,7 +165,7 @@ class TestNginxHiveMindProxy:
         """nginx.conf has long read timeout for persistent WebSocket."""
         content = NGINX_CONF.read_text()
         hivemind_idx = content.find("location /hivemind")
-        hivemind_block = content[hivemind_idx:hivemind_idx + 500]
+        hivemind_block = content[hivemind_idx:hivemind_idx + 1000]
         assert "86400" in hivemind_block, (
             "HiveMind proxy needs 24h timeout for persistent WebSocket"
         )

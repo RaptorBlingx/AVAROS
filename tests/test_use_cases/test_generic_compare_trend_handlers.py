@@ -191,7 +191,7 @@ def test_trend_energy_falls_back_to_last_week_when_today_is_empty():
         AdapterError(
             message="Empty trend response for energy_per_unit",
             code="EMPTY_RESPONSE",
-            platform="reneryo",
+            platform="my-api",
         ),
         Mock(),
     ]
@@ -214,12 +214,12 @@ def test_trend_energy_falls_back_to_kpi_when_trend_unavailable():
         AdapterError(
             message="Empty trend response for energy_per_unit",
             code="EMPTY_RESPONSE",
-            platform="reneryo",
+            platform="my-api",
         ),
         AdapterError(
             message="Empty trend response for energy_per_unit",
             code="EMPTY_RESPONSE",
-            platform="reneryo",
+            platform="my-api",
         ),
     ]
     kpi_result = Mock()

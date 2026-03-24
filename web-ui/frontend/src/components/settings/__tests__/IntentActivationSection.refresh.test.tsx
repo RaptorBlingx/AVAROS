@@ -47,7 +47,7 @@ describe("IntentActivationSection profile refresh", () => {
   it("test_intent_activation_refetches_on_refresh_key_change", async () => {
     const notify = vi.fn();
     const { rerender } = render(
-      <IntentActivationSection onNotify={notify} refreshKey={0} activeProfile="reneryo" />,
+      <IntentActivationSection onNotify={notify} refreshKey={0} activeProfile="custom_rest" />,
     );
 
     await waitFor(() => {
@@ -56,7 +56,7 @@ describe("IntentActivationSection profile refresh", () => {
     });
 
     rerender(
-      <IntentActivationSection onNotify={notify} refreshKey={1} activeProfile="reneryo" />,
+      <IntentActivationSection onNotify={notify} refreshKey={1} activeProfile="custom_rest" />,
     );
 
     await waitFor(() => {
@@ -135,7 +135,7 @@ describe("IntentActivationSection profile refresh", () => {
     const notify = vi.fn();
 
     render(
-      <IntentActivationSection onNotify={notify} refreshKey={0} activeProfile="reneryo" />,
+      <IntentActivationSection onNotify={notify} refreshKey={0} activeProfile="custom_rest" />,
     );
 
     await waitFor(() => {

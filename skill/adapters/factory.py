@@ -12,9 +12,7 @@ Default Behavior:
 Usage:
     factory = AdapterFactory(settings_service)
     adapter = factory.create()  # Returns configured adapter
-    
-    # Later, after user configures RENERYO in Web UI:
-    factory.reload()  # Hot-swaps to ReneryoAdapter
+    factory.reload()  # Hot-swaps based on active profile
 """
 
 from __future__ import annotations
@@ -24,7 +22,6 @@ from typing import TYPE_CHECKING
 
 from skill.adapters.base import ManufacturingAdapter
 from skill.adapters.generic_rest import GenericRestAdapter
-from skill.adapters.reneryo import ReneryoAdapter
 from skill.adapters.unconfigured import UnconfiguredAdapter
 
 if TYPE_CHECKING:
@@ -62,7 +59,6 @@ class AdapterFactory:
     # Registry of available adapters
     # Maps platform name -> adapter class
     _ADAPTER_REGISTRY: dict[str, type[ManufacturingAdapter]] = {
-        "reneryo": ReneryoAdapter,
         "custom_rest": GenericRestAdapter,
         # "sap": SAPAdapter,           # Future
     }
@@ -165,7 +161,7 @@ class AdapterFactory:
         adapter.  Falls back to ``"unconfigured"`` when no profile is set.
 
         Returns:
-            Platform name (e.g., "unconfigured", "reneryo")
+            Platform name (e.g., "unconfigured", "custom_rest")
         """
         if self._settings_service is None:
             logger.debug("No settings service, defaulting to unconfigured adapter")
@@ -178,7 +174,14 @@ class AdapterFactory:
             config = self._settings_service.get_profile(profile_name)
             if config is None or not config.platform_type or config.platform_type == "unconfigured":
                 return "unconfigured"
-            return config.platform_type.lower()
+            
+            # If the platform type is explicitly registered, use it
+            ptype = config.platform_type.lower()
+            if ptype in self._ADAPTER_REGISTRY:
+                return ptype
+                
+            # Otherwise, all configured profiles use the GenericRestAdapter.
+            return "custom_rest"
         except Exception as e:
             logger.warning(
                 "Error reading platform config: %s. Using unconfigured.", e,
@@ -204,10 +207,6 @@ class AdapterFactory:
         if adapter_class == UnconfiguredAdapter:
             return UnconfiguredAdapter()
         
-        # ReneryoAdapter requires api_url and api_key from platform config
-        if adapter_class == ReneryoAdapter:
-            return self._create_reneryo_adapter()
-
         # GenericRestAdapter uses profile metric mappings (custom_rest)
         if adapter_class == GenericRestAdapter:
             return self._create_generic_rest_adapter()
@@ -215,79 +214,6 @@ class AdapterFactory:
         # Fallback for unknown adapters
         return adapter_class()
     
-    def _create_reneryo_adapter(self) -> ReneryoAdapter:
-        """Create ReneryoAdapter with config from the active profile.
-
-        Reads api_url, api_key, timeout and auth_type from the
-        active profile's ``PlatformConfig`` (DEC-028).
-
-        Returns:
-            Configured ReneryoAdapter instance
-        """
-        api_url = ""
-        api_key = ""
-        timeout = 30
-        auth_type = "bearer"
-        api_format = "native"
-        native_seu_id = ""
-        profile_name = ""
-        extra: dict = {}
-        asset_mappings: dict[str, dict[str, object]] = {}
-
-        if self._settings_service is not None:
-            try:
-                profile_name = (
-                    self._settings_service.get_active_profile_name()
-                )
-                config = self._settings_service.get_profile(
-                    profile_name,
-                )
-                if config is not None:
-                    api_url = getattr(config, "api_url", "") or ""
-                    api_key = getattr(config, "api_key", "") or ""
-                    timeout = getattr(config, "timeout", 30) or 30
-                    extra = (
-                        getattr(config, "extra_settings", {}) or {}
-                    )
-                    auth_type = (
-                        extra.get("auth_type", "bearer")
-                        if isinstance(extra, dict)
-                        else "bearer"
-                    )
-                    api_format = (
-                        extra.get("api_format", "native")
-                        if isinstance(extra, dict)
-                        else "native"
-                    )
-                    native_seu_id = (
-                        str(extra.get("seu_id", "")).strip()
-                        if isinstance(extra, dict)
-                        else ""
-                    )
-                    profile_for_assets = profile_name or None
-                    raw_mappings = self._settings_service.get_asset_mappings(
-                        profile=profile_for_assets,
-                    )
-                    if isinstance(raw_mappings, dict):
-                        asset_mappings = raw_mappings
-            except Exception as exc:
-                logger.warning(
-                    "Error reading RENERYO config: %s", exc,
-                )
-
-        return ReneryoAdapter(
-            api_url=api_url,
-            api_key=api_key,
-            timeout=timeout,
-            auth_type=auth_type,
-            api_format=api_format,
-            native_seu_id=native_seu_id,
-            settings_service=self._settings_service,
-            profile_name=profile_name,
-            extra_settings=self._sanitize_extra_settings(extra),
-            asset_mappings=asset_mappings,
-        )
-
     def _create_generic_rest_adapter(self) -> GenericRestAdapter:
         """Create GenericRestAdapter with config from active profile."""
         api_url = ""
@@ -319,7 +245,7 @@ class AdapterFactory:
                     )
             except Exception as exc:
                 logger.warning(
-                    "Error reading custom_rest config: %s", exc,
+                    "Error reading configured profile: %s", exc,
                 )
 
         return GenericRestAdapter(
@@ -331,13 +257,6 @@ class AdapterFactory:
             profile_name=profile_name,
             extra_settings=extra if isinstance(extra, dict) else {},
         )
-
-    @staticmethod
-    def _sanitize_extra_settings(extra_settings: dict | None) -> dict:
-        """Strip deprecated keys before passing settings to adapter runtime."""
-        sanitized = dict(extra_settings or {})
-        sanitized.pop("seu_id", None)
-        return sanitized
 
     @classmethod
     def register_adapter(

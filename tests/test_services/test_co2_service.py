@@ -137,15 +137,15 @@ class TestDeriveCO2Total:
     ) -> None:
         """Custom stored factor overrides default."""
         settings_service.create_profile(
-            "reneryo",
+            "my-api",
             PlatformConfig(
-                platform_type="reneryo",
-                api_url="https://api.reneryo.example.com",
+                platform_type="custom_rest",
+                api_url="https://api.example.com",
                 api_key="secret",
                 extra_settings={"auth_type": "cookie"},
             ),
         )
-        settings_service.set_active_profile("reneryo")
+        settings_service.set_active_profile("my-api")
         settings_service.set_emission_factor("electricity", 0.55)
         svc = CO2DerivationService(settings_service)
         result = svc.derive_co2_total(

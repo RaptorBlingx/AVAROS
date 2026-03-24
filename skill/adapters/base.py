@@ -5,11 +5,6 @@ Defines the contract that ALL platform adapters must implement.
 Every adapter provides the core query methods plus asset discovery.
 
 Usage:
-    class ReneryoAdapter(ManufacturingAdapter):
-        async def get_kpi(self, metric, asset_id, period) -> KPIResult:
-            # Call RENERYO API, transform to canonical type
-            ...
-
     class SAPAdapter(ManufacturingAdapter):
         async def get_kpi(self, metric, asset_id, period) -> KPIResult:
             # Call SAP API, transform to canonical type
@@ -46,7 +41,6 @@ class ManufacturingAdapter(ABC):
     
     Implementing Classes:
         - UnconfiguredAdapter: Default when no platform is configured
-        - ReneryoAdapter: RENERYO platform
         - GenericRestAdapter: Custom REST API platforms
         - Future: SAPAdapter, SiemensAdapter, etc.
     

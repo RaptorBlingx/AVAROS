@@ -15,7 +15,7 @@ class PlatformConfig:
     """Platform connection configuration.
 
     Attributes:
-        platform_type: Adapter type ("reneryo", "custom_rest", etc.)
+        platform_type: Adapter type ("custom_rest", etc.)
         api_url: Platform API endpoint
         api_key: Authentication key (encrypted at rest)
         extra_settings: Platform-specific settings

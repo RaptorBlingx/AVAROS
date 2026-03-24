@@ -31,11 +31,11 @@ def service() -> SettingsService:
 @pytest.fixture
 def active_profile(service: SettingsService) -> None:
     """Activate a non-mock profile for profile-scoped CRUD tests."""
-    service.create_profile("reneryo", PlatformConfig(
-        platform_type="reneryo",
-        api_url="https://api.reneryo.example.com",
+    service.create_profile("my-api", PlatformConfig(
+        platform_type="custom_rest",
+        api_url="https://api.example.com",
     ))
-    service.set_active_profile("reneryo")
+    service.set_active_profile("my-api")
 
 
 @pytest.fixture
@@ -204,23 +204,23 @@ class TestPlatformConfig:
         """Mock config is not considered 'configured'."""
         assert PlatformConfig().is_configured is False
 
-    def test_is_configured_reneryo_with_url_returns_true(self) -> None:
+    def test_is_configured_custom_rest_with_url_returns_true(self) -> None:
         """Real platform with URL is configured."""
         config = PlatformConfig(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.com",
+            platform_type="custom_rest",
+            api_url="https://api.example.com",
         )
         assert config.is_configured is True
 
     def test_is_configured_non_mock_without_url_returns_false(self) -> None:
         """Non-mock but without URL is not configured."""
-        config = PlatformConfig(platform_type="reneryo")
+        config = PlatformConfig(platform_type="custom_rest")
         assert config.is_configured is False
 
     def test_to_dict_round_trip(self) -> None:
         """to_dict() and from_dict() produce identical configs."""
         original = PlatformConfig(
-            platform_type="reneryo",
+            platform_type="custom_rest",
             api_url="https://example.com",
             api_key="secret",
             extra_settings={"timeout": 30},
@@ -260,15 +260,15 @@ class TestPlatformConfigService:
     ) -> None:
         """update_platform_config() persists and can be retrieved."""
         config = PlatformConfig(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.com",
+            platform_type="custom_rest",
+            api_url="https://api.example.com",
             api_key="my-secret-key",
         )
         service.update_platform_config(config)
 
         retrieved = service.get_platform_config()
-        assert retrieved.platform_type == "reneryo"
-        assert retrieved.api_url == "https://api.reneryo.com"
+        assert retrieved.platform_type == "custom_rest"
+        assert retrieved.api_url == "https://api.example.com"
         assert retrieved.api_key == "my-secret-key"
 
     def test_update_platform_config_api_key_encrypted(
@@ -276,14 +276,14 @@ class TestPlatformConfigService:
     ) -> None:
         """API key is encrypted at rest in the database."""
         config = PlatformConfig(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.com",
+            platform_type="custom_rest",
+            api_url="https://api.example.com",
             api_key="super-secret",
         )
         service.update_platform_config(config)
 
         # Read raw value from DB — stored under profile key (DEC-028)
-        raw = service.get_setting("platform_config:reneryo")
+        raw = service.get_setting("platform_config:custom-rest")
         assert isinstance(raw, dict)
         assert raw["api_key"] != "super-secret"
 
@@ -293,8 +293,8 @@ class TestPlatformConfigService:
         """After saving real config, is_configured() returns True."""
         service.update_platform_config(
             PlatformConfig(
-                platform_type="reneryo",
-                api_url="https://api.reneryo.com",
+                platform_type="custom_rest",
+                api_url="https://api.example.com",
             )
         )
         assert service.is_configured() is True
@@ -304,10 +304,10 @@ class TestPlatformConfigService:
     ) -> None:
         """Updating config twice overwrites the first."""
         service.update_platform_config(
-            PlatformConfig(platform_type="reneryo", api_url="https://v1.com")
+            PlatformConfig(platform_type="custom_rest", api_url="https://v1.com")
         )
         service.update_platform_config(
-            PlatformConfig(platform_type="reneryo", api_url="https://v2.com")
+            PlatformConfig(platform_type="custom_rest", api_url="https://v2.com")
         )
         assert service.get_platform_config().api_url == "https://v2.com"
 
@@ -527,7 +527,7 @@ class TestListMetricMappings:
         """Generic settings and platform_config are NOT included."""
         service.set_setting("language", "en-us")
         service.update_platform_config(
-            PlatformConfig(platform_type="reneryo", api_url="https://x.com")
+            PlatformConfig(platform_type="custom_rest", api_url="https://x.com")
         )
         service.set_metric_mapping("energy_per_unit", sample_mapping)
 
@@ -594,15 +594,15 @@ class TestMetricMappingIsolation:
         """Storing a mapping does not corrupt platform config."""
         service.update_platform_config(
             PlatformConfig(
-                platform_type="reneryo",
-                api_url="https://api.reneryo.com",
+                platform_type="custom_rest",
+                api_url="https://api.example.com",
                 api_key="secret",
             )
         )
         service.set_metric_mapping("energy_per_unit", sample_mapping)
 
         config = service.get_platform_config()
-        assert config.platform_type == "reneryo"
+        assert config.platform_type == "custom_rest"
         assert config.api_key == "secret"
 
     def test_platform_config_does_not_affect_metric_mappings(
@@ -669,7 +669,7 @@ class TestAssetMappingCRUD:
         service.set_asset_mappings({"Machine-A": {"endpoint": "/assets/a"}})
 
         assert service.get_asset_mappings() == {"Machine-A": {"endpoint": "/assets/a"}}
-        assert service.get_asset_mappings(profile="reneryo") == {
+        assert service.get_asset_mappings(profile="my-api") == {
             "Line-1": {"seu_id": "seu-1"}
         }
 
@@ -1044,13 +1044,13 @@ class TestIntentActivationIsolation:
         """Toggling intents does not affect platform config."""
         service.update_platform_config(
             PlatformConfig(
-                platform_type="reneryo",
-                api_url="https://api.reneryo.com",
+                platform_type="custom_rest",
+                api_url="https://api.example.com",
             )
         )
         service.set_intent_active("kpi.oee", False)
         config = service.get_platform_config()
-        assert config.platform_type == "reneryo"
+        assert config.platform_type == "custom_rest"
 
     def test_metric_mapping_does_not_affect_intent_state(
         self,

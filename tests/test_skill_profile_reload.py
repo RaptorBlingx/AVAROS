@@ -47,7 +47,7 @@ def _initialized_skill() -> AVAROSSkill:
     return skill
 
 
-def _make_message(profile: str = "reneryo") -> Mock:
+def _make_message(profile: str = "my-api") -> Mock:
     """Build a fake OVOS message with ``data.profile``."""
     msg = Mock()
     msg.data = {"profile": profile}
@@ -69,7 +69,7 @@ class TestHandleProfileSwitch:
         skill.settings_service = Mock()
         skill.settings_service.get_active_profile_name.return_value = "demo"
         profile = Mock()
-        profile.platform_type = "reneryo"
+        profile.platform_type="custom_rest"
         skill.settings_service.get_profile.return_value = profile
 
         # Mock the adapter factory reload to return a new adapter
@@ -96,7 +96,7 @@ class TestHandleProfileSwitch:
         )
 
         # Act
-        skill._handle_profile_switch(_make_message("reneryo"))
+        skill._handle_profile_switch(_make_message("my-api"))
 
         # Assert: UnconfiguredAdapter fallback
         assert skill._loaded_profile == "unconfigured"
@@ -110,9 +110,9 @@ class TestHandleProfileSwitch:
         skill = _initialized_skill()
         skill.adapter_factory = None
         skill.settings_service = Mock()
-        skill.settings_service.get_active_profile_name.return_value = "reneryo"
+        skill.settings_service.get_active_profile_name.return_value = "my-api"
 
-        skill._handle_profile_switch(_make_message("reneryo"))
+        skill._handle_profile_switch(_make_message("my-api"))
 
         assert skill.adapter_factory is not None
 
@@ -130,9 +130,9 @@ class TestLazyReload:
         skill = _initialized_skill()
         skill._loaded_profile = "unconfigured"
 
-        # Pretend DB says active profile is "reneryo"
+        # Pretend DB says active profile is "my-api"
         skill.settings_service = Mock()
-        skill.settings_service.get_active_profile_name.return_value = "reneryo"
+        skill.settings_service.get_active_profile_name.return_value = "my-api"
 
         new_adapter = UnconfiguredAdapter()
         skill.adapter_factory.reload = AsyncMock(return_value=new_adapter)
@@ -141,8 +141,8 @@ class TestLazyReload:
         skill._check_profile_mismatch()
 
         # Assert
-        skill.adapter_factory.reload.assert_awaited_once_with("reneryo")
-        assert skill._loaded_profile == "reneryo"
+        skill.adapter_factory.reload.assert_awaited_once_with("my-api")
+        assert skill._loaded_profile == "my-api"
 
     def test_lazy_reload_skipped_when_profile_matches(self):
         """No reload when loaded profile matches active profile."""
@@ -258,7 +258,7 @@ class TestForceUnconfiguredFallback:
     def test_force_unconfigured_fallback_sets_unconfigured_adapter(self):
         """_force_unconfigured_fallback() replaces dispatcher with UnconfiguredAdapter."""
         skill = _initialized_skill()
-        skill._loaded_profile = "reneryo"
+        skill._loaded_profile = "my-api"
 
         # Act
         skill._force_unconfigured_fallback()
@@ -383,7 +383,7 @@ class TestReloadAdapterEdgeCases:
         skill.settings_service = Mock()
         skill.settings_service.get_active_profile_name.return_value = "demo"
         profile = Mock()
-        profile.platform_type = "reneryo"
+        profile.platform_type="custom_rest"
         skill.settings_service.get_profile.return_value = profile
         new_adapter = UnconfiguredAdapter()
         skill.adapter_factory.reload = AsyncMock(return_value=new_adapter)
@@ -403,7 +403,7 @@ class TestReloadAdapterEdgeCases:
         skill.settings_service = Mock()
         skill.settings_service.get_active_profile_name.return_value = "demo"
         profile = Mock()
-        profile.platform_type = "reneryo"
+        profile.platform_type="custom_rest"
         skill.settings_service.get_profile.return_value = profile
 
         new_adapter = UnconfiguredAdapter()
@@ -428,7 +428,7 @@ class TestReloadAdapterEdgeCases:
         skill.settings_service = Mock()
         skill.settings_service.get_active_profile_name.return_value = "demo"
         profile = Mock()
-        profile.platform_type = "reneryo"
+        profile.platform_type="custom_rest"
         skill.settings_service.get_profile.return_value = profile
         skill.dispatcher = None
         new_adapter = UnconfiguredAdapter()
@@ -578,7 +578,7 @@ class TestNonMetricIntentBindings:
         """Non-mock profile should require configured intent binding."""
         skill = _initialized_skill()
         skill.settings_service = Mock()
-        skill.settings_service.get_active_profile_name.return_value = "reneryo"
+        skill.settings_service.get_active_profile_name.return_value = "my-api"
         skill.settings_service.get_intent_binding.return_value = None
         skill.speak = Mock()
 
@@ -591,7 +591,7 @@ class TestNonMetricIntentBindings:
         """Non-mock profile proceeds when a binding exists."""
         skill = _initialized_skill()
         skill.settings_service = Mock()
-        skill.settings_service.get_active_profile_name.return_value = "reneryo"
+        skill.settings_service.get_active_profile_name.return_value = "my-api"
         skill.settings_service.get_intent_binding.return_value = {
             "endpoint": "/status/system",
             "method": "GET",
@@ -617,8 +617,8 @@ class TestNonMetricIntentBindings:
         """System status intent should respond without requiring a binding."""
         skill = _initialized_skill()
         skill.settings_service = Mock()
-        skill.settings_service.get_active_profile_name.return_value = "reneryo"
-        skill.settings_service.get_profile.return_value = Mock(platform_type="reneryo")
+        skill.settings_service.get_active_profile_name.return_value = "my-api"
+        skill.settings_service.get_profile.return_value = Mock(platform_type="custom_rest")
         skill._require_intent_binding = Mock(return_value=False)
         skill.speak = Mock()
 
@@ -633,8 +633,8 @@ class TestNonMetricIntentBindings:
         """Profile status intent should respond without requiring a binding."""
         skill = _initialized_skill()
         skill.settings_service = Mock()
-        skill.settings_service.get_active_profile_name.return_value = "reneryo"
-        skill.settings_service.get_profile.return_value = Mock(platform_type="reneryo")
+        skill.settings_service.get_active_profile_name.return_value = "my-api"
+        skill.settings_service.get_profile.return_value = Mock(platform_type="custom_rest")
         skill._require_intent_binding = Mock(return_value=False)
         skill.speak = Mock()
 
@@ -649,7 +649,7 @@ class TestNonMetricIntentBindings:
         """Capabilities help intent should respond without requiring a binding."""
         skill = _initialized_skill()
         skill.settings_service = Mock()
-        skill.settings_service.get_active_profile_name.return_value = "reneryo"
+        skill.settings_service.get_active_profile_name.return_value = "my-api"
         skill._require_intent_binding = Mock(return_value=False)
         skill.speak = Mock()
 

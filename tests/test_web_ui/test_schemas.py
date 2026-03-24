@@ -2,7 +2,7 @@
 Tests for Pydantic schema validation and serialisation.
 
 Covers:
-    - PlatformConfigRequest model_validator (URL, key, mock bypass)
+    - PlatformConfigRequest model_validator (URL, key, platform validation)
     - PlatformType literal rejects unknown values
     - MetricMappingRequest field validation
     - SystemStatusResponse serialisation round-trip
@@ -47,45 +47,45 @@ from schemas.status import SystemStatusResponse  # noqa: E402
 class TestPlatformConfigRequest:
     """Tests for the PlatformConfigRequest Pydantic model."""
 
-    def test_mock_platform_type_rejected(self) -> None:
-        """'mock' is not a valid platform type."""
+    def test_unknown_platform_type_mock_rejected(self) -> None:
+        """'mock' is not a valid platform type — only 'custom_rest' is accepted."""
         with pytest.raises(ValidationError):
             PlatformConfigRequest(platform_type="mock")  # type: ignore[arg-type]
 
-    def test_reneryo_with_valid_url_and_key(self) -> None:
-        """Valid reneryo config passes validation."""
+    def test_custom_rest_with_valid_url_and_key(self) -> None:
+        """Valid custom_rest config passes validation."""
         model = PlatformConfigRequest(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.com/v1",
-            api_key="reneryo-secret",
+            platform_type="custom_rest",
+            api_url="https://api.example.com/v1",
+            api_key="secret-key",
         )
 
-        assert model.platform_type == "reneryo"
-        assert model.api_url == "https://api.reneryo.com/v1"
+        assert model.platform_type == "custom_rest"
+        assert model.api_url == "https://api.example.com/v1"
 
-    def test_non_mock_missing_url_raises(self) -> None:
-        """Non-mock without api_url raises ValidationError."""
+    def test_configured_platform_missing_url_raises(self) -> None:
+        """Configured platform without api_url raises ValidationError."""
         with pytest.raises(ValidationError, match="api_url"):
             PlatformConfigRequest(
-                platform_type="reneryo",
+                platform_type="custom_rest",
                 api_url="",
                 api_key="secret",
             )
 
-    def test_non_mock_missing_key_raises(self) -> None:
-        """Non-mock without api_key raises ValidationError."""
+    def test_configured_platform_missing_key_raises(self) -> None:
+        """Configured platform without api_key raises ValidationError."""
         with pytest.raises(ValidationError, match="api_key"):
             PlatformConfigRequest(
-                platform_type="reneryo",
+                platform_type="custom_rest",
                 api_url="https://api.example.com",
                 api_key="",
             )
 
-    def test_non_mock_invalid_url_raises(self) -> None:
-        """Non-mock with malformed URL raises ValidationError."""
+    def test_configured_platform_invalid_url_raises(self) -> None:
+        """Configured platform with malformed URL raises ValidationError."""
         with pytest.raises(ValidationError, match="valid URL"):
             PlatformConfigRequest(
-                platform_type="reneryo",
+                platform_type="custom_rest",
                 api_url="not-a-url",
                 api_key="secret",
             )
@@ -102,7 +102,7 @@ class TestPlatformConfigRequest:
     def test_extra_settings_default_empty_dict(self) -> None:
         """extra_settings defaults to an empty dict."""
         model = PlatformConfigRequest(
-            platform_type="reneryo",
+            platform_type="custom_rest",
             api_url="https://api.example.com",
             api_key="key",
         )
@@ -131,7 +131,7 @@ class TestPlatformConfigResponse:
     def test_serialises_all_fields(self) -> None:
         """Response model serialises all expected fields."""
         model = PlatformConfigResponse(
-            platform_type="reneryo",
+            platform_type="custom_rest",
             api_url="https://api.example.com",
             api_key="****5678",
             extra_settings={"tenant_id": "abc"},
@@ -139,7 +139,7 @@ class TestPlatformConfigResponse:
 
         data = model.model_dump()
 
-        assert data["platform_type"] == "reneryo"
+        assert data["platform_type"] == "custom_rest"
         assert data["api_url"] == "https://api.example.com"
         assert data["api_key"] == "****5678"
         assert data["extra_settings"] == {"tenant_id": "abc"}
@@ -383,8 +383,8 @@ class TestSystemStatusResponse:
         """All fields serialise with correct types."""
         model = SystemStatusResponse(
             configured=True,
-            active_adapter="reneryo",
-            platform_type="reneryo",
+            active_adapter="custom_rest",
+            platform_type="custom_rest",
             loaded_intents=15,
             database_connected=True,
             version="0.1.0",

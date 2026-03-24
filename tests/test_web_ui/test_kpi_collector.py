@@ -35,7 +35,7 @@ from skill.services.settings import (  # noqa: E402
 # ── Fixtures ────────────────────────────────────────────
 
 
-def _make_settings(platform_type: str = "reneryo") -> SettingsService:
+def _make_settings(platform_type: str = "my-api") -> SettingsService:
     svc = SettingsService()
     engine = create_engine(
         "sqlite:///:memory:",
@@ -112,7 +112,7 @@ class TestSeedBaselines:
 
     @pytest.mark.asyncio
     async def test_seeds_all_three_metrics(self) -> None:
-        settings = _make_settings("reneryo")
+        settings = _make_settings("my-api")
         kpi = _make_kpi_service()
         collector = KPICollector(settings, kpi)
 
@@ -126,7 +126,7 @@ class TestSeedBaselines:
 
     @pytest.mark.asyncio
     async def test_skips_existing_baselines(self) -> None:
-        settings = _make_settings("reneryo")
+        settings = _make_settings("my-api")
         kpi = _make_kpi_service()
         collector = KPICollector(settings, kpi)
 
@@ -151,7 +151,7 @@ class TestSeedBaselines:
 
     @pytest.mark.asyncio
     async def test_records_correct_values(self) -> None:
-        settings = _make_settings("reneryo")
+        settings = _make_settings("my-api")
         kpi = _make_kpi_service()
         collector = KPICollector(settings, kpi)
 
@@ -170,7 +170,7 @@ class TestCollectSnapshots:
 
     @pytest.mark.asyncio
     async def test_records_three_snapshots(self) -> None:
-        settings = _make_settings("reneryo")
+        settings = _make_settings("my-api")
         kpi = _make_kpi_service()
         collector = KPICollector(settings, kpi)
 
@@ -194,7 +194,7 @@ class TestCollectSnapshots:
 
     @pytest.mark.asyncio
     async def test_multiple_collections_append(self) -> None:
-        settings = _make_settings("reneryo")
+        settings = _make_settings("my-api")
         kpi = _make_kpi_service()
         collector = KPICollector(settings, kpi)
 
@@ -211,7 +211,7 @@ class TestErrorHandling:
 
     @pytest.mark.asyncio
     async def test_partial_failure_continues(self) -> None:
-        settings = _make_settings("reneryo")
+        settings = _make_settings("my-api")
         kpi = _make_kpi_service()
         collector = KPICollector(settings, kpi)
 
@@ -243,7 +243,7 @@ class TestErrorHandling:
 
     @pytest.mark.asyncio
     async def test_adapter_shutdown_called_on_error(self) -> None:
-        settings = _make_settings("reneryo")
+        settings = _make_settings("my-api")
         kpi = _make_kpi_service()
         collector = KPICollector(settings, kpi)
 
@@ -257,7 +257,7 @@ class TestErrorHandling:
 
     @pytest.mark.asyncio
     async def test_derives_co2_total_from_energy_total_when_direct_metric_fails(self) -> None:
-        settings = _make_settings("reneryo")
+        settings = _make_settings("my-api")
         kpi = _make_kpi_service()
         collector = KPICollector(settings, kpi)
 
@@ -285,7 +285,7 @@ class TestErrorHandling:
 
     @pytest.mark.asyncio
     async def test_derives_co2_total_using_profile_energy_source(self) -> None:
-        settings = _make_settings("reneryo")
+        settings = _make_settings("my-api")
         settings.set_emission_factor("gas", 0.2)
         kpi = _make_kpi_service()
         collector = KPICollector(settings, kpi)

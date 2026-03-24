@@ -17,10 +17,8 @@ sections:
       - name: platform_type
         type: select
         label: Manufacturing Platform
-        value: reneryo
+        value: custom_rest
         options:
-          - value: reneryo
-            label: RENERYO
           - value: custom_rest
             label: Custom REST API
           # Future platforms added here

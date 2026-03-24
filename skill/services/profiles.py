@@ -68,7 +68,7 @@ class ProfileMixin:
         """Get a profile's platform configuration.
 
         Args:
-            name: Profile name (e.g. ``"reneryo"``).
+            name: Profile name (e.g. ``"rest-api"``).
 
         Returns:
             PlatformConfig or None if profile does not exist.
@@ -217,9 +217,9 @@ class ProfileMixin:
         if result is None:
             return
         config, profile_name = result
-        if profile_name in ("mock", self.DEFAULT_PROFILE):
+        if profile_name == self.DEFAULT_PROFILE:
             self.delete_setting("platform_config")
-            logger.info("Removed legacy mock/unconfigured platform_config")
+            logger.info("Removed legacy unconfigured platform_config")
             return
         self._store_profile(profile_name, config)
         self.set_setting(self.ACTIVE_PROFILE_KEY, profile_name)
@@ -278,7 +278,7 @@ class ProfileMixin:
             item: Item identifier (e.g. ``"energy_per_unit"``).
 
         Returns:
-            Key like ``metric_mapping:reneryo:energy_per_unit``.
+            Key like ``metric_mapping:rest-api:energy_per_unit``.
 
         Raises:
             ValidationError: If no active profile is configured.
@@ -299,11 +299,11 @@ class ProfileMixin:
 
         Args:
             prefix: Domain prefix (e.g. ``"intent_active:"``).
-            profile: Profile name (e.g. ``"reneryo"``).
+            profile: Profile name (e.g. ``"rest-api"``).
             item: Item identifier.
 
         Returns:
-            Key like ``intent_active:reneryo:kpi.energy.per_unit``.
+            Key like ``intent_active:rest-api:kpi.energy.per_unit``.
         """
         return f"{prefix}{profile}:{item}"
 
@@ -334,7 +334,7 @@ class ProfileMixin:
             return config, config.platform_type.lower()
 
     def _load_profile(self, name: str) -> PlatformConfig | None:
-        """Read a non-mock profile from the database.
+        """Read a profile from the database.
 
         Args:
             name: Profile name.

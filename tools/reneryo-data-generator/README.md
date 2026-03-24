@@ -1,11 +1,11 @@
 # Mock RENERYO HTTP Server
 
-A lightweight FastAPI mock that serves all 19 KPI endpoints from `ReneryoAdapter._ENDPOINT_MAP` with deterministic manufacturing data. This is a **development tool** for testing the RENERYO HTTP client pipeline without real API credentials.
+A lightweight FastAPI mock that serves all 19 canonical KPI endpoints with deterministic manufacturing data. This is a **development tool** for testing the REST adapter pipeline without real API credentials.
 
 ## Quick Start (Local)
 
 ```bash
-cd tools/reneryo-mock
+cd tools/reneryo-data-generator
 pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8090
 ```
@@ -32,7 +32,7 @@ GET /health → {"status": "ok", "service": "reneryo-mock", "endpoints": 19}
 
 ### Canonical KPI Endpoints (auth required)
 
-All 19 endpoints from `ReneryoAdapter._ENDPOINT_MAP`:
+All 19 canonical KPI endpoints:
 
 | Path | Metric |
 |------|--------|
@@ -106,7 +106,7 @@ curl -H "Authorization: Bearer test" "http://localhost:8090/api/v1/kpis/energy/p
 ## Data Characteristics
 
 - Deterministic: seed-based `random.Random(42)` — same request → same data
-- Value ranges match `MockAdapter._METRIC_BASELINES` in the skill codebase
+- Value ranges align with the generator baseline profiles in `patterns.py`
 - Trend data uses realistic random-walk with configurable granularity
 
 ---
@@ -124,7 +124,7 @@ The generator (`generator.py`) seeds and continuously feeds realistic manufactur
 ## Installation
 
 ```bash
-cd tools/reneryo-mock
+cd tools/reneryo-data-generator
 pip install -r requirements.txt
 ```
 
@@ -232,7 +232,7 @@ This tests `get_kpi`, `get_trend`, `compare`, and `get_raw_data` for all 19 metr
 ## Directory Structure
 
 ```
-tools/reneryo-mock/
+tools/reneryo-data-generator/
 ├── generator.py          # Main generator script (seed/daemon/verify/list)
 ├── patterns.py           # Metric profiles, baselines, data generation patterns
 ├── reneryo_client.py     # Low-level Reneryo API client

@@ -5,6 +5,7 @@ import EmptyState from "../common/EmptyState";
 import ErrorMessage from "../common/ErrorMessage";
 import IntentActivationList from "../common/IntentActivationList";
 import LoadingSpinner from "../common/LoadingSpinner";
+import IntentBindingsSection from "../settings/IntentBindingsSection";
 import useIntentActivation from "../../hooks/useIntentActivation";
 
 type IntentActivationStepProps = {
@@ -17,6 +18,7 @@ export default function IntentActivationStep({
   onSkip,
 }: IntentActivationStepProps) {
   const [error, setError] = useState("");
+  const [bindingRefreshKey, setBindingRefreshKey] = useState(0);
 
   const {
     intentView,
@@ -34,7 +36,7 @@ export default function IntentActivationStep({
     <section className="space-y-4">
       <header className="brand-hero rounded-2xl p-6 backdrop-blur-sm">
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">
-          Step 5 of 6
+          Step 4 of 5
         </p>
         <div className="mt-2 inline-flex items-center gap-2">
           <h2 className="m-0 text-2xl font-semibold text-slate-900 dark:text-slate-100">
@@ -57,6 +59,26 @@ export default function IntentActivationStep({
           </div>
         ) : (
           <>
+            <div className="mb-4 rounded-xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+              <h3 className="m-0 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                Action Intent Bindings
+              </h3>
+              <p className="mb-3 mt-1 text-xs text-slate-600 dark:text-slate-300">
+                Configure endpoints for non-metric action and system intents.
+              </p>
+              <IntentBindingsSection
+                refreshKey={bindingRefreshKey}
+                activeProfile={"wizard"}
+                onNotify={(type, message) => {
+                  if (type === "error") {
+                    setError(message);
+                  } else {
+                    setBindingRefreshKey((prev) => prev + 1);
+                  }
+                }}
+              />
+            </div>
+
             {error && (
               <div className="mb-4">
                 <ErrorMessage

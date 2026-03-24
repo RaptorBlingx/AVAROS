@@ -24,7 +24,7 @@ def _init_service(database_url: str) -> SettingsService:
     return service
 
 
-def _seed_active_profile(service: SettingsService, name: str = "reneryo") -> None:
+def _seed_active_profile(service: SettingsService, name: str = "my-api") -> None:
     """Create and activate a custom profile."""
     service.create_profile(
         name,
@@ -55,7 +55,7 @@ def test_migration_global_metric_mappings_to_active_profile(database_url: str) -
 
     migrated = _init_service(database_url)
     assert migrated.get_setting("metric_mapping:energy_per_unit") is None
-    assert migrated.get_setting("metric_mapping:reneryo:energy_per_unit") == _sample_mapping()
+    assert migrated.get_setting("metric_mapping:my-api:energy_per_unit") == _sample_mapping()
     migrated.close()
 
 
@@ -77,7 +77,7 @@ def test_migration_global_emission_factors_to_active_profile(database_url: str) 
 
     migrated = _init_service(database_url)
     assert migrated.get_setting("emission_factor:electricity") is None
-    assert migrated.get_setting("emission_factor:reneryo:electricity")["factor"] == 0.48
+    assert migrated.get_setting("emission_factor:my-api:electricity")["factor"] == 0.48
     migrated.close()
 
 
@@ -90,7 +90,7 @@ def test_migration_global_intent_states_to_active_profile(database_url: str) -> 
 
     migrated = _init_service(database_url)
     assert migrated.get_setting("intent_active:kpi.energy.per_unit") is None
-    assert migrated.get_setting("intent_active:reneryo:kpi.energy.per_unit") is False
+    assert migrated.get_setting("intent_active:my-api:kpi.energy.per_unit") is False
     migrated.close()
 
 
@@ -114,9 +114,9 @@ def test_migration_combined_all_domains(database_url: str) -> None:
 
     migrated = _init_service(database_url)
     keys = set(migrated.list_settings())
-    assert "metric_mapping:reneryo:energy_per_unit" in keys
-    assert "emission_factor:reneryo:electricity" in keys
-    assert "intent_active:reneryo:kpi.oee" in keys
+    assert "metric_mapping:my-api:energy_per_unit" in keys
+    assert "emission_factor:my-api:electricity" in keys
+    assert "intent_active:my-api:kpi.oee" in keys
     assert "metric_mapping:energy_per_unit" not in keys
     assert "emission_factor:electricity" not in keys
     assert "intent_active:kpi.oee" not in keys
@@ -140,8 +140,8 @@ def test_migration_idempotent_run_twice(database_url: str) -> None:
     second.close()
 
 
-def test_migration_skips_when_active_is_mock(database_url: str) -> None:
-    """No migration occurs while active profile is mock."""
+def test_migration_skips_when_active_is_unconfigured(database_url: str) -> None:
+    """No migration occurs while active profile is unconfigured."""
     service = _init_service(database_url)
     service.set_setting("metric_mapping:energy_per_unit", _sample_mapping())
     service.set_setting("emission_factor:electricity", {"factor": 0.48})
@@ -152,7 +152,7 @@ def test_migration_skips_when_active_is_mock(database_url: str) -> None:
     assert migrated.get_setting("metric_mapping:energy_per_unit") is not None
     assert migrated.get_setting("emission_factor:electricity") is not None
     assert migrated.get_setting("intent_active:kpi.oee") is False
-    assert migrated.get_setting("metric_mapping:mock:energy_per_unit") is None
+    assert migrated.get_setting("metric_mapping:unconfigured:energy_per_unit") is None
     migrated.close()
 
 
@@ -161,12 +161,12 @@ def test_migration_skips_already_scoped_keys(database_url: str) -> None:
     service = _init_service(database_url)
     _seed_active_profile(service)
     service.set_setting("metric_mapping:energy_per_unit", {"unit": "legacy"})
-    service.set_setting("metric_mapping:reneryo:energy_per_unit", {"unit": "new"})
+    service.set_setting("metric_mapping:my-api:energy_per_unit", {"unit": "new"})
     service.close()
 
     migrated = _init_service(database_url)
     assert migrated.get_setting("metric_mapping:energy_per_unit") is None
-    assert migrated.get_setting("metric_mapping:reneryo:energy_per_unit") == {"unit": "new"}
+    assert migrated.get_setting("metric_mapping:my-api:energy_per_unit") == {"unit": "new"}
     migrated.close()
 
 
@@ -176,8 +176,8 @@ def test_migration_chained_with_legacy_platform_config(database_url: str) -> Non
     service.set_setting(
         "platform_config",
         {
-            "platform_type": "reneryo",
-            "api_url": "https://api.reneryo.example.com",
+            "platform_type": "custom_rest",
+            "api_url": "https://api.example.com",
             "api_key": "",
             "extra_settings": {},
         },
@@ -187,8 +187,8 @@ def test_migration_chained_with_legacy_platform_config(database_url: str) -> Non
 
     migrated = _init_service(database_url)
     assert migrated.get_setting("platform_config") is None
-    assert migrated.get_active_profile_name() == "reneryo"
-    assert migrated.get_setting("platform_config:reneryo") is not None
-    assert migrated.get_setting("metric_mapping:reneryo:energy_per_unit") == _sample_mapping()
+    assert migrated.get_active_profile_name() == "custom_rest"
+    assert migrated.get_setting("platform_config:custom_rest") is not None
+    assert migrated.get_setting("metric_mapping:custom_rest:energy_per_unit") == _sample_mapping()
     assert migrated.get_setting("metric_mapping:energy_per_unit") is None
     migrated.close()

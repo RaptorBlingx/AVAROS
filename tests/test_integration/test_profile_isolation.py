@@ -19,8 +19,8 @@ def svc() -> SettingsService:
 def _create_profiles(service: SettingsService) -> None:
     """Create two custom profiles used by isolation tests."""
     service.create_profile(
-        "reneryo",
-        PlatformConfig(platform_type="reneryo", api_url="https://reneryo.example.com"),
+        "my-api",
+        PlatformConfig(platform_type="custom_rest", api_url="https://api.example.com"),
     )
     service.create_profile(
         "sap",
@@ -32,7 +32,7 @@ def test_two_profiles_independent_metric_mappings(svc: SettingsService) -> None:
     """Each profile sees only its own metric mappings."""
     _create_profiles(svc)
 
-    svc.set_active_profile("reneryo")
+    svc.set_active_profile("my-api")
     svc.set_metric_mapping("energy_per_unit", {"endpoint": "/e", "json_path": "$.e", "unit": "kWh/unit"})
     svc.set_metric_mapping("oee", {"endpoint": "/o", "json_path": "$.o", "unit": "%"})
     svc.set_metric_mapping("scrap_rate", {"endpoint": "/s", "json_path": "$.s", "unit": "%"})
@@ -42,7 +42,7 @@ def test_two_profiles_independent_metric_mappings(svc: SettingsService) -> None:
 
     assert set(svc.list_metric_mappings().keys()) == {"co2_per_unit"}
 
-    svc.set_active_profile("reneryo")
+    svc.set_active_profile("my-api")
     assert set(svc.list_metric_mappings().keys()) == {
         "energy_per_unit",
         "oee",
@@ -54,14 +54,14 @@ def test_two_profiles_independent_emission_factors(svc: SettingsService) -> None
     """Emission factors are isolated by active profile."""
     _create_profiles(svc)
 
-    svc.set_active_profile("reneryo")
+    svc.set_active_profile("my-api")
     svc.set_emission_factor("electricity", 0.48, country="TR")
 
     svc.set_active_profile("sap")
     svc.set_emission_factor("electricity", 0.35, country="DE")
     assert svc.get_emission_factor("electricity").factor == pytest.approx(0.35)
 
-    svc.set_active_profile("reneryo")
+    svc.set_active_profile("my-api")
     assert svc.get_emission_factor("electricity").factor == pytest.approx(0.48)
 
 
@@ -69,7 +69,7 @@ def test_two_profiles_independent_intent_states(svc: SettingsService) -> None:
     """Intent activation states remain profile-scoped."""
     _create_profiles(svc)
 
-    svc.set_active_profile("reneryo")
+    svc.set_active_profile("my-api")
     svc.set_intent_active("kpi.oee", False)
     svc.set_intent_active("kpi.scrap_rate", False)
     svc.set_intent_active("trend.energy", False)
@@ -78,22 +78,22 @@ def test_two_profiles_independent_intent_states(svc: SettingsService) -> None:
     sap_states = svc.list_intent_states()
     assert all(sap_states.values()) is True
 
-    svc.set_active_profile("reneryo")
-    reneryo_states = svc.list_intent_states()
-    assert reneryo_states["kpi.oee"] is False
-    assert reneryo_states["kpi.scrap_rate"] is False
-    assert reneryo_states["trend.energy"] is False
+    svc.set_active_profile("my-api")
+    api_states = svc.list_intent_states()
+    assert api_states["kpi.oee"] is False
+    assert api_states["kpi.scrap_rate"] is False
+    assert api_states["trend.energy"] is False
 
 
 def test_switch_preserves_and_restores_all_domains(svc: SettingsService) -> None:
     """Round-trip switching restores each profile's full state."""
     _create_profiles(svc)
 
-    svc.set_active_profile("reneryo")
-    svc.set_metric_mapping("energy_per_unit", {"endpoint": "/reneryo", "json_path": "$.value", "unit": "kWh/unit"})
+    svc.set_active_profile("my-api")
+    svc.set_metric_mapping("energy_per_unit", {"endpoint": "/api", "json_path": "$.value", "unit": "kWh/unit"})
     svc.set_emission_factor("electricity", 0.48, country="TR")
     svc.set_intent_active("kpi.oee", False)
-    reneryo_snapshot = (
+    api_snapshot = (
         svc.list_metric_mappings(),
         svc.get_effective_emission_factor("electricity"),
         svc.list_intent_states(),
@@ -104,17 +104,17 @@ def test_switch_preserves_and_restores_all_domains(svc: SettingsService) -> None
     svc.set_emission_factor("electricity", 0.35, country="DE")
     svc.set_intent_active("kpi.oee", True)
 
-    svc.set_active_profile("reneryo")
-    assert svc.list_metric_mappings() == reneryo_snapshot[0]
-    assert svc.get_effective_emission_factor("electricity") == pytest.approx(reneryo_snapshot[1])
-    assert svc.list_intent_states() == reneryo_snapshot[2]
+    svc.set_active_profile("my-api")
+    assert svc.list_metric_mappings() == api_snapshot[0]
+    assert svc.get_effective_emission_factor("electricity") == pytest.approx(api_snapshot[1])
+    assert svc.list_intent_states() == api_snapshot[2]
 
 
 def test_delete_profile_removes_scoped_settings(svc: SettingsService) -> None:
     """Deleting a profile removes all profile-scoped keys."""
     svc.create_profile(
         "temp",
-        PlatformConfig(platform_type="reneryo", api_url="https://temp.example.com"),
+        PlatformConfig(platform_type="custom_rest", api_url="https://temp.example.com"),
     )
     svc.set_active_profile("temp")
     svc.set_metric_mapping("energy_per_unit", {"endpoint": "/temp", "json_path": "$.e", "unit": "kWh/unit"})
@@ -142,7 +142,7 @@ def test_profile_switch_does_not_affect_voice_config(svc: SettingsService) -> No
         )
     )
 
-    svc.set_active_profile("reneryo")
+    svc.set_active_profile("my-api")
     svc.set_active_profile("sap")
     svc.set_active_profile("unconfigured")
 

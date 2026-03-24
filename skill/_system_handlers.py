@@ -52,7 +52,7 @@ def handle_whatif_temperature(skill: "AVAROSSkill", message: Message) -> None:
 
 
 def handle_control_turn_on(skill: "AVAROSSkill", message: Message) -> None:
-    """Handle generic turn-on command (platform-agnostic mock default)."""
+    """Handle generic turn-on command."""
 
     def _execute() -> None:
         if not skill._require_intent_binding("control.device.turn_on"):
@@ -65,7 +65,7 @@ def handle_control_turn_on(skill: "AVAROSSkill", message: Message) -> None:
 
 
 def handle_control_turn_off(skill: "AVAROSSkill", message: Message) -> None:
-    """Handle generic turn-off command (platform-agnostic mock default)."""
+    """Handle generic turn-off command."""
 
     def _execute() -> None:
         if not skill._require_intent_binding("control.device.turn_off"):
@@ -83,7 +83,7 @@ def handle_status_system_show(skill: "AVAROSSkill", message: Message) -> None:
     def _execute() -> None:
         active_profile = skill._resolve_active_profile()
         power_state = skill._get_power_state()
-        platform = "mock"
+        platform = "unconfigured"
         if skill.settings_service is not None:
             config = skill.settings_service.get_profile(active_profile)
             if config is not None:
@@ -110,7 +110,7 @@ def handle_status_profile_show(skill: "AVAROSSkill", message: Message) -> None:
 
     def _execute() -> None:
         profile = skill._resolve_active_profile()
-        platform = "mock"
+        platform = "unconfigured"
         if skill.settings_service is not None:
             config = skill.settings_service.get_profile(profile)
             if config is not None:

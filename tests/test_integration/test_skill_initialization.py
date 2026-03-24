@@ -8,7 +8,7 @@ from the database (Web UI) is respected when creating adapters.
 Test scenarios:
     - No database → UnconfiguredAdapter (zero-config)
     - Empty database → UnconfiguredAdapter (no config set)
-    - Database with Reneryo config → ReneryoAdapter
+    - Database with custom_rest config → GenericRestAdapter
     - Database error → UnconfiguredAdapter (graceful fallback)
 """
 
@@ -21,8 +21,8 @@ import pytest
 from ovos_bus_client import MessageBusClient
 
 from skill import AVAROSSkill
+from skill.adapters.generic_rest import GenericRestAdapter
 from skill.adapters.unconfigured import UnconfiguredAdapter
-from skill.adapters.reneryo import ReneryoAdapter
 
 
 def _make_skill() -> AVAROSSkill:
@@ -77,24 +77,24 @@ class TestSkillInitializationWithDatabase:
             adapter = skill.adapter_factory._current_adapter
             assert isinstance(adapter, UnconfiguredAdapter)
 
-    def test_initialize_with_reneryo_config_creates_reneryo_adapter(self):
-        """When Reneryo is configured via Web UI, skill uses ReneryoAdapter."""
-        # Arrange: in-memory SQLite DB with Reneryo config
+    def test_initialize_with_custom_rest_config_creates_generic_rest_adapter(self):
+        """When custom_rest is configured via Web UI, skill uses GenericRestAdapter."""
+        # Arrange: in-memory SQLite DB with custom_rest config
         with patch.dict(os.environ, {"AVAROS_DATABASE_URL": "sqlite:///:memory:"}):
             skill = _make_skill()
             
             # Initialize first
             skill.initialize()
             
-            # Configure RENERYO via SettingsService
+            # Configure custom REST via SettingsService
             from skill.services.settings import PlatformConfig
             from skill.adapters.factory import AdapterFactory
             
             assert skill.settings_service is not None
             skill.settings_service.update_platform_config(
                 PlatformConfig(
-                    platform_type="reneryo",
-                    api_url="https://api.reneryo.example.com/v1",
+                    platform_type="custom_rest",
+                    api_url="https://api.example.com/v1",
                     api_key="test-key-123",
                     extra_settings={"tenant_id": "test-tenant"},
                 )
@@ -104,8 +104,8 @@ class TestSkillInitializationWithDatabase:
             new_factory = AdapterFactory(settings_service=skill.settings_service)
             new_adapter = new_factory.create()
             
-            # Assert: ReneryoAdapter is created
-            assert isinstance(new_adapter, ReneryoAdapter)
+            # Assert: GenericRestAdapter is created
+            assert isinstance(new_adapter, GenericRestAdapter)
 
 
 class TestSkillInitializationErrorHandling:
