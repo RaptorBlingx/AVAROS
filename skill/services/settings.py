@@ -305,8 +305,8 @@ class SettingsService(ProfileMixin):
         
         # User configures via Web UI
         service.update_platform_config(PlatformConfig(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.com",
+            platform_type="custom_rest",
+            api_url="https://api.example.com",
             api_key="secret-key"  # Will be encrypted
         ))
         

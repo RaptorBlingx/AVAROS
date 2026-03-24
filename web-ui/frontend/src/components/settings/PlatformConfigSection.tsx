@@ -111,12 +111,7 @@ export default function PlatformConfigSection({
 
   const isUnconfigured = useMemo(() => platformType === "unconfigured", [platformType]);
   const adapterTarget = useMemo(
-    () =>
-      platformType === "reneryo"
-        ? "RENERYO"
-        : platformType === "custom_rest"
-        ? "Custom REST"
-        : "Unconfigured",
+    () => (platformType === "custom_rest" ? "REST API" : "Unconfigured"),
     [platformType],
   );
 
@@ -314,8 +309,7 @@ export default function PlatformConfigSection({
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
               >
                 <option value="unconfigured">Unconfigured</option>
-                <option value="reneryo">RENERYO</option>
-                <option value="custom_rest">Custom REST</option>
+                <option value="custom_rest">REST API</option>
               </select>
             </label>
 

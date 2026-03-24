@@ -1,17 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
-  discoverAssets,
   getConfiguredAssets,
-  getPlatformConfig,
   saveConfiguredAssets,
   toFriendlyErrorMessage,
 } from "../../api/client";
-import type {
-  AssetDiscoveryResponse,
-  AssetRecord,
-  PlatformType,
-} from "../../api/types";
+import type { PlatformType } from "../../api/types";
 import AssetManagementRows from "./AssetManagementRows";
 import {
   createEmptyRow,
@@ -45,29 +39,18 @@ export default function AssetManagementSection({
     platformType ?? "unconfigured",
   );
   const [rows, setRows] = useState<AssetRow[]>([createEmptyRow()]);
-  const [discovery, setDiscovery] = useState<AssetDiscoveryResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [discovering, setDiscovering] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const canAttemptDiscovery = resolvedPlatform === "reneryo" || resolvedPlatform === "unconfigured";
-  const supportsDiscover = canAttemptDiscovery && (discovery?.supports_discovery ?? true);
   const isUnconfigured = resolvedPlatform === "unconfigured";
-  const isCustomRest = resolvedPlatform === "custom_rest";
-  const isReneryo = resolvedPlatform === "reneryo";
 
-  const resolvePlatform = useCallback(async () => {
+  const resolvePlatform = useCallback(() => {
     if (platformType) {
       setResolvedPlatform(platformType);
       return;
     }
-    try {
-      const config = await getPlatformConfig();
-      setResolvedPlatform(config.platform_type);
-    } catch {
-      setResolvedPlatform("unconfigured");
-    }
+    setResolvedPlatform("custom_rest");
   }, [platformType]);
 
   const loadMappings = useCallback(async () => {
@@ -83,61 +66,13 @@ export default function AssetManagementSection({
     }
   }, []);
 
-  const runDiscovery = useCallback(async () => {
-    if (!canAttemptDiscovery) {
-      return;
-    }
-    setDiscovering(true);
-    setError("");
-    try {
-      const result = await discoverAssets();
-      setDiscovery(result);
-      if (isReneryo) {
-        setRows((prev) => {
-          const next = [...prev];
-          const discoveredAssets = Array.isArray(result.assets) ? result.assets : [];
-          const seuAssets = discoveredAssets.filter((asset) => asset.asset_type === "seu");
-          if (next.length === 1 && !next[0].assetId.trim() && seuAssets.length > 0) {
-            return seuAssets.slice(0, 5).map((asset) => ({
-              rowId: `discovered-${asset.asset_id}`,
-              assetId: asset.asset_id,
-              displayName: asset.display_name,
-              assetType: "seu",
-              aliases: asset.aliases.join(", "),
-              endpointTemplate: "",
-              seuId: asset.asset_id,
-            }));
-          }
-          return next;
-        });
-      }
-    } catch (err: unknown) {
-      setError(toFriendlyErrorMessage(err));
-    } finally {
-      setDiscovering(false);
-    }
-  }, [canAttemptDiscovery, isReneryo]);
-
   useEffect(() => {
-    void resolvePlatform();
+    resolvePlatform();
   }, [activeProfile, refreshKey, resolvePlatform]);
 
   useEffect(() => {
     void loadMappings();
   }, [activeProfile, loadMappings, refreshKey, resolvedPlatform]);
-
-  useEffect(() => {
-    if (canAttemptDiscovery) {
-      void runDiscovery();
-    } else {
-      setDiscovery(null);
-    }
-  }, [canAttemptDiscovery, runDiscovery]);
-
-  const seuOptions = useMemo<AssetRecord[]>(
-    () => (discovery?.assets ?? []).filter((asset) => asset.asset_type === "seu"),
-    [discovery],
-  );
 
   const handleChange = useCallback(
     <K extends keyof AssetRow>(index: number, key: K, value: AssetRow[K]) => {
@@ -202,16 +137,6 @@ export default function AssetManagementSection({
             : "Manage asset mappings used by voice and KPI queries."}
         </p>
         <div className="flex items-center gap-2">
-          {supportsDiscover && (
-            <button
-              type="button"
-              className="btn-brand-subtle rounded-lg px-3 py-2 text-sm font-semibold"
-              onClick={() => void runDiscovery()}
-              disabled={discovering || loading}
-            >
-              {discovering ? "Discovering..." : "Discover Assets"}
-            </button>
-          )}
           {!isUnconfigured && (
             <button
               type="button"
@@ -230,29 +155,11 @@ export default function AssetManagementSection({
         </div>
       ) : null}
 
-      {isUnconfigured ? (
-        <div className="space-y-2">
-          {(discovery?.assets ?? []).map((asset) => (
-            <div
-              key={asset.asset_id}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-            >
-              <span className="font-semibold">{asset.display_name}</span>
-              <span className="ml-2 rounded-full border border-slate-300 px-2 py-0.5 text-xs uppercase dark:border-slate-500">
-                {asset.asset_type}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <AssetManagementRows
-          rows={rows}
-          isCustomRest={isCustomRest}
-          seuOptions={seuOptions}
-          onChange={handleChange}
-          onDelete={deleteRow}
-        />
-      )}
+      <AssetManagementRows
+        rows={rows}
+        onChange={handleChange}
+        onDelete={deleteRow}
+      />
 
       <div className="flex flex-wrap gap-2">
         {mode === "wizard" && (

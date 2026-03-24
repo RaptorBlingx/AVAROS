@@ -53,7 +53,7 @@ def build_test_settings_service(
 def mock_config() -> Dict[str, Any]:
     """Provides a test configuration for testing"""
     return {
-        "platform_type": "reneryo",
+        "platform_type": "custom_rest",
         "api_url": "http://localhost:8000",
         "api_key": "test_key",
         "timeout": 30,

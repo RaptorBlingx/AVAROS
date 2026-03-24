@@ -14,7 +14,6 @@ from schemas.metrics import (
     MetricMappingTestResponse,
 )
 from skill.domain.exceptions import ValidationError
-from skill.domain.models import CanonicalMetric
 from skill.services.settings import SettingsService
 from services.metric_test_service import run_metric_mapping_test
 
@@ -64,50 +63,6 @@ def _to_response(
     )
 
 
-_METRIC_RESOURCE_ENDPOINT = "/api/u/measurement/metric/resource/{resource_id}/values"
-_METRIC_RESOURCE_JSON_PATH = "$.records[*].value"
-
-
-def _derive_auto_metrics(
-    settings_service: SettingsService,
-) -> list[MetricMappingResponse]:
-    """Derive metric mappings from asset_mappings metric_resources.
-
-    Scans all configured assets for their metric_resources entries
-    and creates read-only (source='auto') mapping rows.
-    """
-    mappings = settings_service.get_asset_mappings()
-    seen_metrics: dict[str, str] = {}  # metric -> first resource_id
-    for _asset_id, asset_data in mappings.items():
-        if not isinstance(asset_data, dict):
-            continue
-        resources = asset_data.get("metric_resources", {})
-        if not isinstance(resources, dict):
-            continue
-        for metric_name, resource_id in resources.items():
-            if metric_name not in seen_metrics:
-                seen_metrics[metric_name] = str(resource_id)
-    items: list[MetricMappingResponse] = []
-    for metric_name, resource_id in sorted(seen_metrics.items()):
-        if metric_name not in CANONICAL_METRIC_VALUES:
-            continue
-        try:
-            cm = CanonicalMetric(metric_name)
-            unit = cm.default_unit
-        except ValueError:
-            unit = ""
-        items.append(
-            MetricMappingResponse(
-                canonical_metric=metric_name,
-                endpoint=_METRIC_RESOURCE_ENDPOINT.format(resource_id=resource_id),
-                json_path=_METRIC_RESOURCE_JSON_PATH,
-                unit=unit,
-                source="auto",
-            ),
-        )
-    return items
-
-
 @router.post(
     "/metrics",
     response_model=MetricMappingResponse,
@@ -137,24 +92,13 @@ def create_metric_mapping(
 def list_metric_mappings(
     settings_service: SettingsService = Depends(get_settings_service),
 ) -> MetricMappingListResponse:
-    """Return all configured metric mappings.
-
-    Manual mappings (set by user) take priority. For metrics without a manual
-    mapping, auto-derived entries from asset_mappings metric_resources are
-    appended so the UI always shows what is configured.
-    """
+    """Return all configured metric mappings."""
     data = settings_service.list_metric_mappings()
     manual_items = [
         _to_response(metric_name, mapping, source="manual")
         for metric_name, mapping in data.items()
     ]
-    manual_names = {item.canonical_metric for item in manual_items}
-    auto_items = [
-        item
-        for item in _derive_auto_metrics(settings_service)
-        if item.canonical_metric not in manual_names
-    ]
-    return MetricMappingListResponse(root=manual_items + auto_items)
+    return MetricMappingListResponse(root=manual_items)
 
 
 @router.put("/metrics/{metric_name}", response_model=MetricMappingResponse)

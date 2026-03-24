@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
-  discoverAssets,
   getConfiguredAssets,
   saveConfiguredAssets,
   toFriendlyErrorMessage,
@@ -106,7 +105,6 @@ export default function AssetRegistrationStep({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [showSuggestions, setShowSuggestions] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -116,43 +114,7 @@ export default function AssetRegistrationStep({
       const existingMappings = mappingsResponse.asset_mappings;
       const registrationRows = toRegistrationRows(existingMappings);
       setStoredMappings(existingMappings);
-
-      const discovery = await discoverAssets().catch(() => null);
-      const existingIds = new Set(
-        registrationRows.map((row) => row.assetId.toLowerCase()),
-      );
-      const suggestedRows: RegistrationRow[] = [];
-      const discoveredAssets = discovery?.assets ?? [];
-      for (const asset of discoveredAssets) {
-        const candidateId =
-          toAssetId(asset.asset_id) || toAssetId(asset.display_name);
-        if (!candidateId || existingIds.has(candidateId.toLowerCase())) {
-          continue;
-        }
-        existingIds.add(candidateId.toLowerCase());
-        suggestedRows.push({
-          rowId: createRowId(candidateId),
-          assetId: candidateId,
-          displayName: asset.display_name || asset.asset_id,
-          assetType: inferAssetType(candidateId, asset.asset_type),
-          aliases: aliasesToCsv(asset.aliases),
-          isExisting: false,
-          existingAssetId: null,
-        });
-      }
-
-      const hasOnlySeedRow =
-        registrationRows.length === 1 &&
-        !registrationRows[0].assetId.trim() &&
-        !registrationRows[0].displayName.trim() &&
-        !registrationRows[0].aliases.trim();
-
-      setRows(
-        hasOnlySeedRow && suggestedRows.length > 0
-          ? suggestedRows
-          : [...registrationRows, ...suggestedRows],
-      );
-      setShowSuggestions(suggestedRows.length > 0);
+      setRows(registrationRows);
     } catch (err: unknown) {
       setError(toFriendlyErrorMessage(err));
     } finally {
@@ -291,7 +253,7 @@ export default function AssetRegistrationStep({
     <section className="space-y-4">
       <header className="brand-hero rounded-2xl p-6 backdrop-blur-sm">
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">
-          Step 2 of 6
+          Step 2 of 5
         </p>
         <div className="mt-2 inline-flex items-center gap-2">
           <h2 className="m-0 text-2xl font-semibold text-slate-900 dark:text-slate-100">
@@ -308,12 +270,6 @@ export default function AssetRegistrationStep({
       </header>
 
       <div className="brand-hero rounded-2xl p-6 backdrop-blur-sm">
-        {showSuggestions && (
-          <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/40 dark:bg-sky-900/30 dark:text-sky-200">
-            Discovered assets were pre-filled. Review names and aliases before continuing.
-          </div>
-        )}
-
         {error && (
           <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-500/40 dark:bg-red-900/40 dark:text-red-200">
             {error}

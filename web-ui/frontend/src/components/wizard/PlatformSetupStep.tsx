@@ -23,8 +23,6 @@ type PlatformSetupStepProps = {
   testError: string;
   isTesting: boolean;
   isSaving: boolean;
-  onChooseExternalApi: () => void;
-  onUseReneryoQuickAction: () => void;
   onAuthTypeChange: (value: AuthType) => void;
   onApiUrlChange: (value: string) => void;
   onApiKeyChange: (value: string) => void;
@@ -45,28 +43,20 @@ export default function PlatformSetupStep({
   testError,
   isTesting,
   isSaving,
-  onChooseExternalApi,
-  onUseReneryoQuickAction,
   onAuthTypeChange,
   onApiUrlChange,
   onApiKeyChange,
   onTestConnection,
   onSaveAndContinue,
 }: PlatformSetupStepProps) {
-  const showDevQuickActions =
-    import.meta.env.DEV ||
-    import.meta.env.VITE_ENABLE_DEV_QUICK_ACTIONS === "true";
   const resolvedPlatform = platformType ?? "custom_rest";
   const isUnconfigured = resolvedPlatform === "unconfigured";
-  const isReneryo = resolvedPlatform === "reneryo";
-  const isExternalApi = resolvedPlatform === "custom_rest";
-  const adapterTarget = isReneryo ? "RENERYO" : "External API";
 
   return (
     <section className="space-y-4">
       <header className="brand-hero rounded-2xl p-6 backdrop-blur-sm">
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">
-          Step 1 of 6
+          Step 1 of 5
         </p>
         <div className="mt-2 inline-flex items-center gap-2">
           <h2 className="m-0 text-2xl font-semibold text-slate-900 dark:text-slate-100">
@@ -115,43 +105,14 @@ export default function PlatformSetupStep({
         )}
 
         <div className="space-y-3">
-          <button
-            type="button"
-            onClick={onChooseExternalApi}
-            className={`w-full rounded-xl border p-4 text-left transition ${
-              isExternalApi
-                ? "border-cyan-300 bg-gradient-to-r from-sky-50/90 via-white to-emerald-50/70 shadow-sm dark:border-cyan-500/50 dark:from-sky-900/50 dark:via-slate-900/90 dark:to-emerald-900/35"
-                : "border-slate-200 bg-white/90 hover:bg-gradient-to-r hover:from-sky-50 hover:to-emerald-50 dark:border-slate-700 dark:bg-slate-800/85 dark:hover:from-slate-800 dark:hover:via-slate-800 dark:hover:to-slate-700/90"
-            }`}
-          >
+          <div className="w-full rounded-xl border border-cyan-300 bg-gradient-to-r from-sky-50/90 via-white to-emerald-50/70 p-4 text-left shadow-sm dark:border-cyan-500/50 dark:from-sky-900/50 dark:via-slate-900/90 dark:to-emerald-900/35">
             <p className="m-0 text-sm font-semibold text-slate-900 dark:text-slate-100">
               Connect via API
             </p>
             <p className="m-0 mt-1 text-sm text-slate-600 dark:text-slate-300">
-              Primary production path. Connect to your platform API endpoint.
+              Configure your platform API URL and authentication.
             </p>
-          </button>
-
-          {showDevQuickActions && (
-            <div className="rounded-xl border border-dashed border-slate-300 p-3 dark:border-slate-600">
-              <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                Developer Quick Actions
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className={`rounded-lg px-3 py-2 text-sm font-semibold ${
-                    isReneryo
-                      ? "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"
-                      : "btn-brand-subtle"
-                  }`}
-                  onClick={onUseReneryoQuickAction}
-                >
-                  Use RENERYO
-                </button>
-              </div>
-            </div>
-          )}
+          </div>
         </div>
 
         {isUnconfigured ? (
@@ -247,7 +208,7 @@ export default function PlatformSetupStep({
                       strokeLinecap="round"
                     />
                   </svg>
-                  Testing connection to {adapterTarget}...
+                  Testing connection...
                 </span>
               ) : (
                 "Test Connection"

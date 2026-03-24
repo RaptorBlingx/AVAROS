@@ -401,7 +401,7 @@ This gives us:
 ### Location
 
 ```
-tools/reneryo-mock/generator.py
+tools/reneryo-data-generator/generator.py
 ```
 
 ### Modes
@@ -432,7 +432,7 @@ Defined in `docker/docker-compose.avaros.yml` as `avaros-data-generator`.
 avaros-data-generator:
   container_name: avaros-data-generator
   build:
-    context: ../tools/reneryo-mock
+    context: ../tools/reneryo-data-generator
     dockerfile: Dockerfile.generator
   environment:
     - RENERYO_API_URL=${RENERYO_API_URL}
@@ -463,7 +463,7 @@ avaros-data-generator:
 
 ## 9. Mapping File Format
 
-**File:** `tools/reneryo-mock/mapping_output.json`
+**File:** `tools/reneryo-data-generator/mapping_output.json`
 
 ```json
 {
@@ -485,7 +485,76 @@ avaros-data-generator:
 
 ---
 
-## 10. Quick Curl Examples
+## 10. Wizard Configuration Guide
+
+Use this section when configuring AVAROS for RENERYO through the unified wizard. Fill in the exact values for each step.
+
+### Step 1 — Connect
+
+| Field | Value |
+|-------|-------|
+| API URL | `http://deploys.int.arti.ac:31290/api` (or your RENERYO base URL) |
+| Auth type | Cookie |
+| API key / Cookie | Session cookie value from `.env` → `RENERYO_SESSION_COOKIE` |
+
+### Step 2 — Register Assets
+
+Register these assets (ID = display name for RENERYO):
+
+| Asset ID | Display Name | Type |
+|----------|--------------|------|
+| Line-1 | Line 1 | line |
+| Line-2 | Line 2 | line |
+| Line-3 | Line 3 | line |
+
+### Step 3 — Map Metrics
+
+For each metric × asset combination, use the endpoint template and resource UUID from `mapping_output.json`. The endpoint uses `{asset_id}` placeholder — the wizard substitutes the asset ID (e.g. `Line-1`).
+
+**Endpoint template:** `/u/measurement/metric/resource/{resource_id}/values?period=RAW&count=1`  
+**JSONPath (latest value):** `$.records[-1].value`  
+**JSONPath (trend):** `$.records`
+
+| Metric | Unit | Line-1 Resource UUID | Line-2 Resource UUID | Line-3 Resource UUID |
+|--------|------|---------------------|---------------------|---------------------|
+| energy_per_unit | kWh/unit | 09881529-c1de-4135-bb9f-d564a58ad606 | 67afbdf6-1861-4bd4-b9b7-5887e031981f | 7e74b6be-b6a0-471e-85c0-9f3ced9a6850 |
+| energy_total | kWh | 292e9098-45e4-43df-8a49-5f952e57047c | 502eb30b-4d08-44dd-ada1-2f17db80a83b | 4ccbe92b-9d0b-4f40-bfa6-9e4585dfe1b9 |
+| peak_demand | kW | dbb8a24e-ec1d-470d-ad66-7cfd5770683b | d18a1ddd-13ec-4769-b6e9-317c03a6b776 | 52a93867-2126-4e6a-b70e-272e1e8eb559 |
+| peak_tariff_exposure | % | 6f8320a7-6b1e-468a-b328-1eab39e667c5 | f94d55e9-c673-4dcf-b62e-c8ee35b4f7e8 | 4aa1e468-86c9-47b4-bc4b-1c03929d53fa |
+| scrap_rate | % | 2f80230e-df7e-449f-baaf-c15e34974b57 | 3b34cdf1-0862-4e0f-a0b6-17611d64168e | — |
+| rework_rate | % | b57c52b5-cf70-4afe-80a4-d15ef5eb9c56 | af613087-836e-4d01-8f29-764fde05ecd8 | — |
+| material_efficiency | % | ac894e3e-5537-4fd3-b483-9518060760ed | 04a25d72-163b-4104-9fc3-9f03426d1bc8 | — |
+| recycled_content | % | eb1331f2-27cf-4812-85a8-8340f823a114 | c68bb89a-b341-4c77-906a-798103a549e9 | — |
+| oee | % | fb34799f-11ba-4319-94e0-e9e380edb937 | 13f9a2c3-647a-4158-a283-3fe63e01b3b9 | — |
+| throughput | units/hr | 7bfe59da-76e4-4425-992a-e01866e4ce94 | b61c5a08-23d5-4703-a754-d615d4379ab6 | — |
+| cycle_time | sec | 5d9ffa66-a8d0-44c1-a2c8-726b3e5821ab | a8c75ef2-319b-4a57-8496-ddb46ea9677f | — |
+| changeover_time | min | 5358b4c9-5729-42a8-9d0a-0a89814dd9f6 | 8d34c1e7-f360-4d34-b56c-5157f0cc5588 | — |
+| co2_per_unit | kg CO₂-eq/unit | c9a4bfe8-6838-43ae-943d-0b89e509532d | 5fb3da2f-3637-4a95-84c2-cb3c18a2f526 | — |
+| co2_total | kg CO₂-eq | d1ac87b6-01c9-49b9-885e-d4b71ca6ac2e | 521bb97d-1615-4aeb-9ae1-b52c6746b78d | — |
+| co2_per_batch | kg CO₂-eq/batch | a9068f7d-087d-4cfe-913c-3caa564a0ef4 | 4dc4f13b-f27e-4cda-b560-8a6c1845d500 | — |
+| supplier_lead_time | days | a453884f-a751-4169-8c08-153c9742c1ea | e4a488ca-3990-4973-8762-38b61198df18 | — |
+| supplier_defect_rate | % | 3dc67069-0497-496c-9072-68793864d217 | 942f05b5-8cee-41f4-838e-2330a3618794 | — |
+| supplier_on_time | % | fd74b87e-8a4b-4af0-9e0c-3c5bf8823cad | d3bde3fa-a416-4b1f-8811-7e45febd8baa | — |
+| supplier_co2_per_kg | kg CO₂/kg | c974d385-ce5a-4504-bc2f-bda12f1825c4 | ad7a7c55-19b3-4e19-9a57-7bf8d8194933 | — |
+
+**Per-metric wizard entry:** For each row, create one mapping per asset. Example for `energy_per_unit` on Line-1:
+- Endpoint: `/u/measurement/metric/resource/09881529-c1de-4135-bb9f-d564a58ad606/values?period=RAW&count=1`
+- JSONPath: `$.records[-1].value`
+- Unit: `kWh/unit`
+
+### Step 4 — Activate Intents
+
+Enable the 19 KPI intents. Configure action intent bindings (control.turn_on, control.turn_off) if your RENERYO instance exposes control endpoints.
+
+### Troubleshooting
+
+- **BUG-001:** Labeled resource append returns 500 — use empty labels for daemon writes.
+- **BUG-002:** Duplicate timestamps in batch may cause 500 — ensure unique datetimes.
+- **BUG-003:** Cookie expiry — renew session at RENERYO web UI if 401 occurs.
+
+---
+
+## 11. Quick Curl Examples
 
 ### Auth Test
 ```bash
@@ -532,5 +601,5 @@ Metrics follow the pattern: `AVAROS {Display Name} :: {Asset}`
 | scrap_rate | AVAROS Scrap Rate :: Line-1 / Line-2 / Line-3 |
 | ... | (19 canonical metrics × 3 assets = 57 total) |
 
-> Run `python3 tools/reneryo-mock/generator.py --list` for the complete live mapping table.
-> Mapping file: `tools/reneryo-mock/mapping_output.json`
+> Run `python3 tools/reneryo-data-generator/generator.py --list` for the complete live mapping table.
+> Mapping file: `tools/reneryo-data-generator/mapping_output.json`

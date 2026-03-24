@@ -111,10 +111,10 @@ def test_set_asset_mappings_triggers_entity_regeneration(
     service = SettingsService()
     service.initialize()
     service.create_profile(
-        "reneryo",
-        PlatformConfig(platform_type="reneryo", api_url="https://api.example.com"),
+        "my-api",
+        PlatformConfig(platform_type="custom_rest", api_url="https://api.example.com"),
     )
-    service.set_active_profile("reneryo")
+    service.set_active_profile("my-api")
 
     service.set_asset_mappings(
         {

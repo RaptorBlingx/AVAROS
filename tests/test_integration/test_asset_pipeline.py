@@ -83,10 +83,10 @@ def test_asset_pipeline_end_to_end_resolves_voice_input(
         database_url=f"sqlite:///{tmp_path / 'asset-pipeline.db'}",
     )
     service.create_profile(
-        "reneryo-prod",
-        PlatformConfig(platform_type="reneryo", api_url="https://reneryo.example.com"),
+        "api-prod",
+        PlatformConfig(platform_type="custom_rest", api_url="https://api.example.com"),
     )
-    service.set_active_profile("reneryo-prod")
+    service.set_active_profile("api-prod")
 
     # --- Act 1: Discovery + persist mappings ---
     adapter = StubAdapter()
@@ -103,7 +103,7 @@ def test_asset_pipeline_end_to_end_resolves_voice_input(
     }
     # Add richer alias coverage for canonicalization assertions.
     mappings["Line-1"]["aliases"] = ["line 1", "production line one"]
-    service.set_asset_mappings(mappings, profile="reneryo-prod")
+    service.set_asset_mappings(mappings, profile="api-prod")
 
     # --- Act 2: Entity file generation ---
     regenerate_asset_entities(discovered_assets, locale_root / "en-us")
@@ -145,15 +145,15 @@ def test_asset_profile_isolation_across_reneryo_custom_and_mock(
         database_url=f"sqlite:///{tmp_path / 'asset-isolation.db'}",
     )
     service.create_profile(
-        "reneryo-prod",
-        PlatformConfig(platform_type="reneryo", api_url="https://reneryo.example.com"),
+        "api-prod",
+        PlatformConfig(platform_type="custom_rest", api_url="https://api.example.com"),
     )
     service.create_profile(
         "generic-test",
         PlatformConfig(platform_type="custom_rest", api_url="https://rest.example.com"),
     )
 
-    service.set_active_profile("reneryo-prod")
+    service.set_active_profile("api-prod")
     service.set_asset_mappings(
         {
             "A": {"display_name": "Asset A", "asset_type": "line"},
@@ -170,7 +170,7 @@ def test_asset_profile_isolation_across_reneryo_custom_and_mock(
         }
     )
 
-    service.set_active_profile("reneryo-prod")
+    service.set_active_profile("api-prod")
     assert set(service.get_asset_mappings().keys()) == {"A", "B", "C"}
 
     service.set_active_profile("generic-test")

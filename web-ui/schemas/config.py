@@ -9,8 +9,8 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
-PlatformType = Literal["reneryo", "custom_rest"]
-ResponsePlatformType = Literal["reneryo", "custom_rest", "unconfigured"]
+PlatformType = Literal["custom_rest"]
+ResponsePlatformType = Literal["custom_rest", "unconfigured"]
 
 _PROFILE_NAME_PATTERN = re.compile(
     r"^[a-z0-9][a-z0-9\-]{0,48}[a-z0-9]$",
@@ -18,10 +18,8 @@ _PROFILE_NAME_PATTERN = re.compile(
 
 
 def sanitize_extra_settings(extra_settings: dict[str, Any] | None) -> dict[str, Any]:
-    """Drop deprecated platform-level settings before save/response."""
-    sanitized = dict(extra_settings or {})
-    sanitized.pop("seu_id", None)
-    return sanitized
+    """Normalize platform-level settings before save/response."""
+    return dict(extra_settings or {})
 
 
 class PlatformConfigRequest(BaseModel):

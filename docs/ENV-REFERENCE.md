@@ -77,7 +77,7 @@ All environment variables used by AVAROS services. Set these in the `.env` file 
 
 ## Reneryo Data Generator
 
-These variables configure the `tools/reneryo-mock/generator.py` daemon that seeds and continuously writes manufacturing data into Reneryo for all 19 AVAROS canonical metrics.
+These variables configure the `tools/reneryo-data-generator/generator.py` daemon that seeds and continuously writes manufacturing data into Reneryo for all 19 AVAROS canonical metrics.
 
 | Variable | Required | Default | Used By | Description |
 |----------|----------|---------|---------|-------------|

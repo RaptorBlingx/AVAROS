@@ -48,13 +48,13 @@ docker compose up
 ```
 
 ### First Run (Zero-Config)
-AVAROS works out-of-the-box with mock data:
+AVAROS works out-of-the-box in unconfigured mode:
 - No configuration files to edit
-- Demo KPIs available immediately
+- Run the wizard to connect to any REST platform
 - Perfect for testing and learning
 
-### Connect to Real Platform
-Configuration is done via the Web UI wizard or Settings API. Supports `mock`, `reneryo`, and `custom_rest` platform profiles in the current setup flow.
+### Connect to a Platform
+Configuration is done via the Web UI wizard or Settings API. All platforms use a single `custom_rest` adapter — provide an API URL, auth credentials, and metric mappings through the unified wizard.
 
 ### Web UI API Key Auth (Required)
 Web UI API routes are protected by `AVAROS_WEB_API_KEY`.
@@ -111,8 +111,9 @@ avaros-ovos-skill/
 │   │   └── exceptions.py      # Custom exceptions
 │   ├── adapters/              # Backend platform adapters
 │   │   ├── base.py            # ManufacturingAdapter interface (ABC)
-│   │   ├── mock.py            # MockAdapter (demo data, zero-config)
-│   │   └── factory.py         # Adapter factory (selects based on config)
+│   │   ├── generic_rest/      # GenericRestAdapter (configurable for any REST API)
+│   │   ├── unconfigured.py    # UnconfiguredAdapter (default, guides user to wizard)
+│   │   └── factory.py         # Adapter factory (selects based on active profile)
 │   ├── use_cases/             # Orchestration layer
 │   │   └── query_dispatcher.py  # Routes queries, adds intelligence
 │   ├── services/              # Support services
@@ -256,10 +257,9 @@ Closes P1-L05
 - [x] Platform configuration CRUD API
 - [x] Metric mapping CRUD API
 - [x] React frontend shell (Vite + TypeScript)
-- [x] First-run wizard (3-step MVP)
+- [x] First-run wizard (5-step unified flow)
 - [ ] DocuBoT integration (RAG for procedures/specs)
 - [ ] PREVENTION service (anomaly detection)
-- [ ] RENERYO adapter implementation
 
 ### Phase 3: Production Hardening (Planned)
 - [ ] Multi-platform adapters (additional energy management systems)

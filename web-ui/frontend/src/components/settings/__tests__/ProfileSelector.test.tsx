@@ -53,8 +53,8 @@ const MOCK_PROFILES: ProfileListResponse = {
       is_builtin: true,
     },
     {
-      name: "my-reneryo",
-      platform_type: "reneryo",
+      name: "my-custom_rest",
+      platform_type: "custom_rest",
       is_active: false,
       is_builtin: false,
     },
@@ -73,9 +73,9 @@ const MOCK_PROFILE_CONFIG: ProfileDetailResponse = {
 };
 
 const RENERYO_PROFILE_CONFIG: ProfileDetailResponse = {
-  name: "my-reneryo",
-  platform_type: "reneryo",
-  api_url: "https://api.reneryo.com",
+  name: "my-custom_rest",
+  platform_type: "custom_rest",
+  api_url: "https://api.custom_rest.com",
   api_key: "****abcd",
   extra_settings: { auth_type: "bearer" },
   is_builtin: false,
@@ -98,7 +98,7 @@ describe("ProfileSelector", () => {
     mockListProfiles.mockResolvedValue(MOCK_PROFILES);
     mockGetProfile.mockImplementation(async (name: string) => {
       if (name === "unconfigured") return MOCK_PROFILE_CONFIG;
-      if (name === "my-reneryo") return RENERYO_PROFILE_CONFIG;
+      if (name === "my-custom_rest") return RENERYO_PROFILE_CONFIG;
       throw new Error(`Unknown profile: ${name}`);
     });
   });
@@ -173,8 +173,8 @@ describe("ProfileSelector", () => {
   it("calls getProfile and onProfileChange when selecting a different profile", async () => {
     const activationResult: ActivateProfileResponse = {
       status: "activated",
-      active_profile: "my-reneryo",
-      adapter_type: "reneryo",
+      active_profile: "my-custom_rest",
+      adapter_type: "custom_rest",
       message: "Adapter reloaded successfully",
       voice_reloaded: true,
     };
@@ -191,11 +191,11 @@ describe("ProfileSelector", () => {
     const dropdown = screen.getByTestId(
       "profile-dropdown",
     ) as HTMLSelectElement;
-    fireEvent.change(dropdown, { target: { value: "my-reneryo" } });
+    fireEvent.change(dropdown, { target: { value: "my-custom_rest" } });
 
     await waitFor(() => {
-      expect(mockGetProfile).toHaveBeenCalledWith("my-reneryo");
-      expect(mockActivateProfile).toHaveBeenCalledWith("my-reneryo");
+      expect(mockGetProfile).toHaveBeenCalledWith("my-custom_rest");
+      expect(mockActivateProfile).toHaveBeenCalledWith("my-custom_rest");
       expect(onProfileChange).toHaveBeenCalledWith(RENERYO_PROFILE_CONFIG);
     });
   });
@@ -203,8 +203,8 @@ describe("ProfileSelector", () => {
   it("calls activateProfile when selecting a different profile", async () => {
     const activationResult: ActivateProfileResponse = {
       status: "activated",
-      active_profile: "my-reneryo",
-      adapter_type: "reneryo",
+      active_profile: "my-custom_rest",
+      adapter_type: "custom_rest",
       message: "Adapter reloaded successfully",
       voice_reloaded: true,
     };
@@ -221,13 +221,13 @@ describe("ProfileSelector", () => {
     const dropdown = screen.getByTestId(
       "profile-dropdown",
     ) as HTMLSelectElement;
-    fireEvent.change(dropdown, { target: { value: "my-reneryo" } });
+    fireEvent.change(dropdown, { target: { value: "my-custom_rest" } });
 
     await waitFor(() => {
-      expect(mockActivateProfile).toHaveBeenCalledWith("my-reneryo");
+      expect(mockActivateProfile).toHaveBeenCalledWith("my-custom_rest");
       expect(onNotify).toHaveBeenCalledWith(
         "success",
-        expect.stringContaining("my-reneryo"),
+        expect.stringContaining("my-custom_rest"),
       );
     });
   });
@@ -256,7 +256,7 @@ describe("ProfileSelector", () => {
     const dropdown = screen.getByTestId(
       "profile-dropdown",
     ) as HTMLSelectElement;
-    fireEvent.change(dropdown, { target: { value: "my-reneryo" } });
+    fireEvent.change(dropdown, { target: { value: "my-custom_rest" } });
 
     await waitFor(() => {
       expect(screen.getByTestId("profile-delete-btn")).toBeTruthy();
@@ -266,7 +266,7 @@ describe("ProfileSelector", () => {
   it("calls deleteProfile with confirmation on delete", async () => {
     mockDeleteProfile.mockResolvedValue({
       status: "deleted",
-      deleted_profile: "my-reneryo",
+      deleted_profile: "my-custom_rest",
       active_profile: "unconfigured",
       message: "Profile deleted",
     });
@@ -283,7 +283,7 @@ describe("ProfileSelector", () => {
     const dropdown = screen.getByTestId(
       "profile-dropdown",
     ) as HTMLSelectElement;
-    fireEvent.change(dropdown, { target: { value: "my-reneryo" } });
+    fireEvent.change(dropdown, { target: { value: "my-custom_rest" } });
 
     await waitFor(() => {
       expect(screen.getByTestId("profile-delete-btn")).toBeTruthy();
@@ -293,10 +293,10 @@ describe("ProfileSelector", () => {
 
     await waitFor(() => {
       expect(window.confirm).toHaveBeenCalled();
-      expect(mockDeleteProfile).toHaveBeenCalledWith("my-reneryo");
+      expect(mockDeleteProfile).toHaveBeenCalledWith("my-custom_rest");
       expect(onNotify).toHaveBeenCalledWith(
         "success",
-        expect.stringContaining("my-reneryo"),
+        expect.stringContaining("my-custom_rest"),
       );
     });
 
@@ -315,7 +315,7 @@ describe("ProfileSelector", () => {
     });
 
     fireEvent.change(screen.getByTestId("profile-dropdown"), {
-      target: { value: "my-reneryo" },
+      target: { value: "my-custom_rest" },
     });
 
     await waitFor(() => {
@@ -379,7 +379,7 @@ describe("ProfileSelector", () => {
   it("creates profile with valid name", async () => {
     const newConfig: ProfileDetailResponse = {
       name: "new-profile",
-      platform_type: "reneryo",
+      platform_type: "custom_rest",
       api_url: "",
       api_key: "****",
       extra_settings: {},
@@ -416,7 +416,7 @@ describe("ProfileSelector", () => {
     await waitFor(() => {
       expect(mockCreateProfile).toHaveBeenCalledWith({
         name: "new-profile",
-        platform_type: "reneryo",
+        platform_type: "custom_rest",
         api_url: "",
         api_key: "",
         extra_settings: {},
@@ -473,7 +473,7 @@ describe("ProfileSelector", () => {
     });
 
     fireEvent.change(screen.getByTestId("profile-dropdown"), {
-      target: { value: "my-reneryo" },
+      target: { value: "my-custom_rest" },
     });
 
     await waitFor(() => {
@@ -491,6 +491,6 @@ describe("ProfileSelector", () => {
     const dropdown = screen.getByTestId(
       "profile-dropdown",
     ) as HTMLSelectElement;
-    expect(dropdown.value).toBe("my-reneryo");
+    expect(dropdown.value).toBe("my-custom_rest");
   });
 });

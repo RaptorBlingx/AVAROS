@@ -126,10 +126,10 @@ def _validate_activation(
             ),
         )
 
-    if platform == "reneryo" and not config.api_url:
+    if platform != "unconfigured" and not config.api_url:
         raise HTTPException(
             status_code=422,
-            detail="RENERYO profile requires api_url to be configured",
+            detail="Configured profile requires api_url to be set",
         )
 
 

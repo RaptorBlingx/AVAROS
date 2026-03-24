@@ -41,7 +41,7 @@ describe("MetricMappingsSection mapping test action", () => {
     ]);
 
     mockApi.getPlatformConfig.mockResolvedValue({
-      platform_type: "reneryo",
+      platform_type: "custom_rest",
       api_url: "https://api.example.com",
       api_key: "****1234",
       extra_settings: { auth_type: "bearer" },
@@ -64,7 +64,7 @@ describe("MetricMappingsSection mapping test action", () => {
     );
 
     render(
-      <MetricMappingsSection onNotify={vi.fn()} refreshKey={0} activeProfile="reneryo" />,
+      <MetricMappingsSection onNotify={vi.fn()} refreshKey={0} activeProfile="custom_rest" />,
     );
 
     await waitFor(() => {
@@ -109,7 +109,7 @@ describe("MetricMappingsSection mapping test action", () => {
     });
 
     render(
-      <MetricMappingsSection onNotify={vi.fn()} refreshKey={0} activeProfile="reneryo" />,
+      <MetricMappingsSection onNotify={vi.fn()} refreshKey={0} activeProfile="custom_rest" />,
     );
 
     await waitFor(() => {
@@ -142,7 +142,7 @@ describe("MetricMappingsSection mapping test action", () => {
     });
 
     render(
-      <MetricMappingsSection onNotify={vi.fn()} refreshKey={0} activeProfile="reneryo" />,
+      <MetricMappingsSection onNotify={vi.fn()} refreshKey={0} activeProfile="custom_rest" />,
     );
 
     await waitFor(() => {

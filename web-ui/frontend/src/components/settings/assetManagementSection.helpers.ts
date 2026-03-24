@@ -4,17 +4,15 @@ export type AssetRow = {
   rowId: string;
   assetId: string;
   displayName: string;
-  assetType: "machine" | "line" | "sensor" | "seu";
+  assetType: "machine" | "line" | "sensor";
   aliases: string;
   endpointTemplate: string;
-  seuId: string;
 };
 
 export const TYPE_OPTIONS: Array<AssetRow["assetType"]> = [
   "machine",
   "line",
   "sensor",
-  "seu",
 ];
 
 function createRowId(seed?: string): string {
@@ -52,7 +50,6 @@ export function createEmptyRow(): AssetRow {
     assetType: "machine",
     aliases: "",
     endpointTemplate: "",
-    seuId: "",
   };
 }
 
@@ -70,7 +67,6 @@ export function toRows(mappings: Record<string, AssetMappingItem>): AssetRow[] {
       assetType,
       aliases: aliasesToCsv(item.aliases),
       endpointTemplate: String(item.endpoint_template ?? ""),
-      seuId: String(item.seu_id ?? ""),
     };
   });
   return rows.length > 0 ? rows : [createEmptyRow()];
@@ -78,7 +74,7 @@ export function toRows(mappings: Record<string, AssetMappingItem>): AssetRow[] {
 
 export function toPayload(
   rows: AssetRow[],
-  platformType: PlatformType,
+  _platformType: PlatformType,
 ): Record<string, AssetMappingItem> {
   return rows.reduce<Record<string, AssetMappingItem>>((acc, row) => {
     const resolvedId = row.assetId.trim() || toAssetId(row.displayName);
@@ -87,15 +83,10 @@ export function toPayload(
     }
     const payload: AssetMappingItem = {
       display_name: row.displayName.trim() || resolvedId,
-      asset_type: platformType === "reneryo" ? "seu" : row.assetType,
+      asset_type: row.assetType,
       aliases: csvToAliases(row.aliases),
+      endpoint_template: row.endpointTemplate.trim(),
     };
-    if (platformType === "custom_rest") {
-      payload.endpoint_template = row.endpointTemplate.trim();
-    }
-    if (platformType === "reneryo") {
-      payload.seu_id = row.seuId.trim();
-    }
     acc[resolvedId] = payload;
     return acc;
   }, {});

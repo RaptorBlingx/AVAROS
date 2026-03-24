@@ -773,7 +773,7 @@ class TestQueryDispatcherCO2Derivation:
         """Gas-only custom profile should derive CO2 using gas factor."""
         settings_service.update_platform_config(
             PlatformConfig(
-                platform_type="reneryo",
+                platform_type="custom_rest",
                 api_url="http://example.invalid",
                 api_key="test-key",
             )
@@ -791,7 +791,7 @@ class TestQueryDispatcherCO2Derivation:
         mock_adapter = MagicMock()
         mock_adapter.get_kpi = AsyncMock(return_value=energy_result)
         mock_adapter.supports_capability.return_value = False
-        mock_adapter.platform_name = "reneryo"
+        mock_adapter.platform_name = "my-api"
         audit = AuditLogger()
         audit.initialize()
         dispatcher = QueryDispatcher(

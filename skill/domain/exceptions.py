@@ -98,8 +98,8 @@ class AdapterError(AVAROSError):
     
     Example:
         AdapterError(
-            message="RENERYO API timeout after 30s",
-            platform="reneryo",
+            message="REST API timeout after 30s",
+            platform="custom_rest",
             status_code=504
         )
     """
@@ -130,7 +130,7 @@ class MetricNotSupportedError(AVAROSError):
     Example:
         MetricNotSupportedError(
             metric="supplier_co2_per_kg",
-            platform="mock",
+            platform="unconfigured",
             available_metrics=["oee", "energy_per_unit"]
         )
     """

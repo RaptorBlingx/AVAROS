@@ -109,7 +109,7 @@ class TestAuthRejection:
         response = client_no_auth.post(
             "/api/v1/config/platform",
             json={
-                "platform_type": "reneryo",
+                "platform_type": "custom_rest",
                 "api_url": "https://auth-test.example.com",
                 "api_key": "test-key",
                 "extra_settings": {},

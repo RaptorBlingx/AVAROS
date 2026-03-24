@@ -52,8 +52,8 @@ class TestNginxConfig:
     def test_nginx_config_has_proxy_pass(self) -> None:
         """Config proxies to the Web UI upstream."""
         content = (NGINX_DIR / "nginx.conf").read_text()
-        assert "proxy_pass http://web_ui" in content
-        assert "upstream web_ui" in content
+        assert "proxy_pass $web_ui_upstream" in content
+        assert "set $web_ui_upstream" in content
 
     def test_nginx_config_has_websocket_support(self) -> None:
         """Config includes WebSocket upgrade headers."""

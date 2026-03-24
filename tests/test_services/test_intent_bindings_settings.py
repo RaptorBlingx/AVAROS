@@ -18,16 +18,16 @@ def service() -> SettingsService:
 
 
 @pytest.fixture
-def active_reneryo_profile(service: SettingsService) -> None:
+def active_custom_rest_profile(service: SettingsService) -> None:
     """Create and activate a non-mock profile for writable binding tests."""
     service.create_profile(
-        "reneryo",
+        "my-api",
         PlatformConfig(
-            platform_type="reneryo",
-            api_url="https://api.reneryo.example.com",
+            platform_type="custom_rest",
+            api_url="https://api.example.com",
         ),
     )
-    service.set_active_profile("reneryo")
+    service.set_active_profile("my-api")
 
 
 def test_list_intent_bindings_unconfigured_returns_defaults(
@@ -44,7 +44,7 @@ def test_list_intent_bindings_unconfigured_returns_defaults(
 
 def test_set_intent_binding_non_mock_persists(
     service: SettingsService,
-    active_reneryo_profile: None,
+    active_custom_rest_profile: None,
 ) -> None:
     """set_intent_binding should persist under active profile scope."""
     payload = {
@@ -65,7 +65,7 @@ def test_set_intent_binding_non_mock_persists(
 
 def test_delete_intent_binding_non_mock_removes_value(
     service: SettingsService,
-    active_reneryo_profile: None,
+    active_custom_rest_profile: None,
 ) -> None:
     """delete_intent_binding should remove persisted non-metric binding."""
     service.set_intent_binding(
@@ -87,7 +87,7 @@ def test_delete_intent_binding_non_mock_removes_value(
 
 def test_set_intent_binding_invalid_name_raises(
     service: SettingsService,
-    active_reneryo_profile: None,
+    active_custom_rest_profile: None,
 ) -> None:
     """Unknown intent name should fail validation."""
     with pytest.raises(ValidationError):

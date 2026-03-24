@@ -64,8 +64,8 @@ const MOCK_PROFILES: ProfileListResponse = {
       is_builtin: true,
     },
     {
-      name: "my-reneryo",
-      platform_type: "reneryo",
+      name: "my-custom_rest",
+      platform_type: "custom_rest",
       is_active: false,
       is_builtin: false,
     },
@@ -90,9 +90,9 @@ const MOCK_PROFILE_CONFIG: ProfileDetailResponse = {
 };
 
 const RENERYO_PROFILE_CONFIG: ProfileDetailResponse = {
-  name: "my-reneryo",
-  platform_type: "reneryo",
-  api_url: "https://api.reneryo.com",
+  name: "my-custom_rest",
+  platform_type: "custom_rest",
+  api_url: "https://api.custom_rest.com",
   api_key: "****abcd",
   extra_settings: { auth_type: "bearer" },
   is_builtin: false,
@@ -114,7 +114,7 @@ function findPlatformSelect(container: HTMLElement): HTMLSelectElement | null {
   return (
     Array.from(selects).find((s) => {
       const options = Array.from(s.options).map((o) => o.value);
-      return options.includes("reneryo") && options.includes("custom_rest");
+      return options.includes("custom_rest") && options.includes("custom_rest");
     }) ?? null
   );
 }
@@ -135,7 +135,7 @@ describe("PlatformConfigSection with ProfileSelector", () => {
     mockListProfiles.mockResolvedValue(MOCK_PROFILES);
     mockGetProfile.mockImplementation(async (name: string) => {
       if (name === "unconfigured") return MOCK_PROFILE_CONFIG;
-      if (name === "my-reneryo") return RENERYO_PROFILE_CONFIG;
+      if (name === "my-custom_rest") return RENERYO_PROFILE_CONFIG;
       if (name === "custom-no-auth") return CUSTOM_REST_NONE_PROFILE_CONFIG;
       throw new Error(`Unknown profile: ${name}`);
     });
@@ -179,25 +179,25 @@ describe("PlatformConfigSection with ProfileSelector", () => {
     });
 
     fireEvent.change(screen.getByTestId("profile-dropdown"), {
-      target: { value: "my-reneryo" },
+      target: { value: "my-custom_rest" },
     });
 
     await waitFor(() => {
-      expect(mockGetProfile).toHaveBeenCalledWith("my-reneryo");
+      expect(mockGetProfile).toHaveBeenCalledWith("my-custom_rest");
     });
 
     await waitFor(() => {
       const platformSelect = findPlatformSelect(container);
       expect(platformSelect).not.toBeNull();
-      expect(platformSelect!.value).toBe("reneryo");
+      expect(platformSelect!.value).toBe("custom_rest");
     });
   });
 
   it("shows Edit button for non-builtin active profile after switch", async () => {
     const activatedResult: ActivateProfileResponse = {
       status: "activated",
-      active_profile: "my-reneryo",
-      adapter_type: "reneryo",
+      active_profile: "my-custom_rest",
+      adapter_type: "custom_rest",
       message: "Adapter reloaded successfully",
       voice_reloaded: true,
     };
@@ -212,13 +212,13 @@ describe("PlatformConfigSection with ProfileSelector", () => {
           is_builtin: true,
         },
         {
-          name: "my-reneryo",
-          platform_type: "reneryo",
+          name: "my-custom_rest",
+          platform_type: "custom_rest",
           is_active: true,
           is_builtin: false,
         },
       ],
-      active_profile: "my-reneryo",
+      active_profile: "my-custom_rest",
     };
 
     render(<PlatformConfigSection onNotify={onNotify} />);
@@ -228,11 +228,11 @@ describe("PlatformConfigSection with ProfileSelector", () => {
     });
 
     fireEvent.change(screen.getByTestId("profile-dropdown"), {
-      target: { value: "my-reneryo" },
+      target: { value: "my-custom_rest" },
     });
 
     await waitFor(() => {
-      expect(mockGetProfile).toHaveBeenCalledWith("my-reneryo");
+      expect(mockGetProfile).toHaveBeenCalledWith("my-custom_rest");
     });
 
     mockListProfiles.mockResolvedValue(updatedProfiles);
@@ -240,7 +240,7 @@ describe("PlatformConfigSection with ProfileSelector", () => {
     fireEvent.click(screen.getByTestId("profile-switch-btn"));
 
     await waitFor(() => {
-      expect(mockActivateProfile).toHaveBeenCalledWith("my-reneryo");
+      expect(mockActivateProfile).toHaveBeenCalledWith("my-custom_rest");
     });
 
     await waitFor(() => {

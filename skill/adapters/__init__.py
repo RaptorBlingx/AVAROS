@@ -16,14 +16,12 @@ Golden Rule:
 
 from skill.adapters.base import ManufacturingAdapter
 from skill.adapters.generic_rest import GenericRestAdapter
-from skill.adapters.reneryo import ReneryoAdapter
 from skill.adapters.unconfigured import UnconfiguredAdapter
 from skill.adapters.factory import AdapterFactory
 
 __all__ = [
     "ManufacturingAdapter",
     "GenericRestAdapter",
-    "ReneryoAdapter",
     "UnconfiguredAdapter",
     "AdapterFactory",
 ]

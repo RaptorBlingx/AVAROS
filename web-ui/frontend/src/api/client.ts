@@ -557,7 +557,7 @@ function normalizeDiscoveryResponse(
     .map((item) => ({
       asset_id: item.id as string,
       display_name: (item.name as string) || (item.id as string),
-      asset_type: "seu",
+      asset_type: "machine",
       aliases: [
         ((item.name as string) || "").trim(),
         (item.id as string).trim(),
@@ -568,7 +568,7 @@ function normalizeDiscoveryResponse(
     }));
 
   return {
-    platform_type: (data.platform_type as AssetDiscoveryResponse["platform_type"]) ?? "reneryo",
+    platform_type: (data.platform_type as AssetDiscoveryResponse["platform_type"]) ?? "custom_rest",
     supports_discovery:
       typeof data.supports_discovery === "boolean"
         ? data.supports_discovery
