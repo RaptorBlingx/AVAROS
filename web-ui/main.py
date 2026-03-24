@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -40,6 +41,44 @@ app.add_middleware(
 )
 
 
+def _resolve_sqlite_db_path(database_url: str) -> Path | None:
+    """Return SQLite filesystem path when DATABASE_URL targets sqlite."""
+    if not database_url.startswith("sqlite:///"):
+        return None
+    raw_path = database_url.removeprefix("sqlite:///")
+    if not raw_path:
+        return None
+    if not raw_path.startswith("/"):
+        raw_path = f"/{raw_path}"
+    return Path(raw_path)
+
+
+def _ensure_shared_sqlite_permissions(database_url: str) -> None:
+    """Keep shared sqlite file writable by both web-ui and skill containers."""
+    db_path = _resolve_sqlite_db_path(database_url)
+    if db_path is None:
+        return
+
+    db_dir = db_path.parent
+    db_dir.mkdir(parents=True, exist_ok=True)
+    if not db_path.exists():
+        db_path.touch(exist_ok=True)
+
+    shared_uid = int(os.environ.get("AVAROS_SHARED_DB_UID", "1000"))
+    shared_gid = int(os.environ.get("AVAROS_SHARED_DB_GID", "1000"))
+    try:
+        os.chown(db_dir, shared_uid, shared_gid)
+        os.chown(db_path, shared_uid, shared_gid)
+    except (PermissionError, OSError) as exc:
+        logger.warning("Could not apply shared DB ownership: %s", exc)
+
+    try:
+        os.chmod(db_dir, 0o775)
+        os.chmod(db_path, 0o664)
+    except (PermissionError, OSError) as exc:
+        logger.warning("Could not apply shared DB permissions: %s", exc)
+
+
 @app.middleware("http")
 async def api_key_auth_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
     """Enforce API-key authentication on ``/api/v1/`` routes.
@@ -60,6 +99,7 @@ async def api_key_auth_middleware(request: Request, call_next):  # type: ignore[
 @app.on_event("startup")
 async def startup_check() -> None:
     """Validate shared skill imports and DB-backed settings init path."""
+    _ensure_shared_sqlite_permissions(DATABASE_URL)
     settings_service = get_settings_service()
     settings_service.initialize()
     logger.info(

@@ -4,6 +4,7 @@ import {
   createMetricMapping,
   deleteMetricMapping,
   getAssetLinkingSummary,
+  importGeneratorMapping,
   listMetricMappings,
   toFriendlyErrorMessage,
   updateMetricMapping,
@@ -12,7 +13,6 @@ import type {
   CanonicalMetricName,
   MetricMapping,
   MetricCoverageItem,
-  PlatformType,
 } from "../../api/types";
 import useMetricMappingTest from "../../hooks/useMetricMappingTest";
 import Tooltip from "../common/Tooltip";
@@ -29,7 +29,7 @@ import {
 } from "./metricMappingStep.helpers";
 
 type MetricMappingStepProps = {
-  platformType?: PlatformType | null;
+  integrationPreset?: "reneryo" | "mock" | null;
   onComplete: () => void;
   onSkip: () => void;
 };
@@ -52,16 +52,20 @@ function isMetricMappingNotFoundError(error: unknown): boolean {
 }
 
 export default function MetricMappingStep({
-  platformType = null,
+  integrationPreset = null,
   onComplete,
   onSkip,
 }: MetricMappingStepProps) {
-  const isReneryo = platformType === "reneryo";
+  const isReneryoHelper = integrationPreset === "reneryo";
   const [rows, setRows] = useState<MetricMappingRow[]>([]);
   const [existingByMetric, setExistingByMetric] = useState<Partial<Record<CanonicalMetricName, MetricMapping>>>({});
   const [metricCoverage, setMetricCoverage] = useState<MetricCoverageItem[]>([]);
   const [errorsByRow, setErrorsByRow] = useState<Record<string, MetricRowError>>({});
   const [formError, setFormError] = useState("");
+  const [helperError, setHelperError] = useState("");
+  const [helperLoading, setHelperLoading] = useState(false);
+  const [helperImporting, setHelperImporting] = useState(false);
+  const [helperMappingText, setHelperMappingText] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -83,18 +87,29 @@ export default function MetricMappingStep({
     },
   });
 
+  const refreshLinkingSummary = useCallback(async () => {
+    if (!isReneryoHelper) {
+      setMetricCoverage([]);
+      setHelperError("");
+      return;
+    }
+    setHelperLoading(true);
+    setHelperError("");
+    try {
+      const summary = await getAssetLinkingSummary();
+      setMetricCoverage(summary.metric_coverage);
+    } catch (error: unknown) {
+      setHelperError(toFriendlyErrorMessage(error));
+      setMetricCoverage([]);
+    } finally {
+      setHelperLoading(false);
+    }
+  }, [isReneryoHelper]);
+
   const loadMappings = useCallback(async () => {
     setLoading(true);
     setFormError("");
     try {
-      if (isReneryo) {
-        const summary = await getAssetLinkingSummary();
-        setMetricCoverage(summary.metric_coverage);
-        setRows([]);
-        setExistingByMetric({});
-        clearAllTestState();
-        return;
-      }
       const mappings = await listMetricMappings();
       const nextRows = mappings.map(createWizardRow);
       const nextExistingByMetric: Partial<
@@ -111,11 +126,12 @@ export default function MetricMappingStep({
     } finally {
       setLoading(false);
     }
-  }, [clearAllTestState, isReneryo]);
+  }, [clearAllTestState]);
 
   useEffect(() => {
     void loadMappings();
-  }, [loadMappings]);
+    void refreshLinkingSummary();
+  }, [loadMappings, refreshLinkingSummary]);
 
   const validateRows = useCallback(
     (targetRows: MetricMappingRow[]): boolean => {
@@ -208,10 +224,6 @@ export default function MetricMappingStep({
   );
 
   const saveMappings = useCallback(async () => {
-    if (isReneryo) {
-      onComplete();
-      return;
-    }
     setFormError("");
     if (!validateRows(rows)) {
       setFormError("Please fix validation errors before saving.");
@@ -253,7 +265,54 @@ export default function MetricMappingStep({
     } finally {
       setSaving(false);
     }
-  }, [existingByMetric, isReneryo, onComplete, rows, validateRows]);
+  }, [existingByMetric, onComplete, rows, validateRows]);
+
+  const importHelperMapping = useCallback(async () => {
+    setHelperError("");
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(helperMappingText);
+    } catch {
+      setHelperError("Invalid JSON. Paste mapping_output.json content first.");
+      return;
+    }
+    const payloadMapping =
+      parsed &&
+      typeof parsed === "object" &&
+      "mapping" in (parsed as Record<string, unknown>) &&
+      (parsed as Record<string, unknown>).mapping &&
+      typeof (parsed as Record<string, unknown>).mapping === "object"
+        ? ((parsed as Record<string, unknown>).mapping as Record<string, Record<string, string>>)
+        : (parsed as Record<string, Record<string, string>>);
+
+    if (!payloadMapping || typeof payloadMapping !== "object") {
+      setHelperError("Payload must include a mapping object.");
+      return;
+    }
+
+    setHelperImporting(true);
+    try {
+      await importGeneratorMapping({ mapping: payloadMapping });
+      await refreshLinkingSummary();
+    } catch (error: unknown) {
+      setHelperError(toFriendlyErrorMessage(error));
+    } finally {
+      setHelperImporting(false);
+    }
+  }, [helperMappingText, refreshLinkingSummary]);
+
+  const loadMappingFile = useCallback(async (file: File | null) => {
+    if (!file) {
+      return;
+    }
+    try {
+      const text = await file.text();
+      setHelperMappingText(text);
+      setHelperError("");
+    } catch {
+      setHelperError("Failed to read JSON file.");
+    }
+  }, []);
 
   return (
     <section className="space-y-4">
@@ -271,9 +330,7 @@ export default function MetricMappingStep({
           />
         </div>
         <p className="m-0 mt-2 text-sm text-slate-600 dark:text-slate-300">
-          {isReneryo
-            ? "Review live metric-resource coverage imported from mapping_output.json."
-            : "Map AVAROS canonical metrics to your platform API fields."}
+          Map AVAROS canonical metrics to your platform API fields.
         </p>
       </header>
 
@@ -293,14 +350,54 @@ export default function MetricMappingStep({
               </div>
             )}
 
-            {isReneryo ? (
-              <div className="space-y-3">
-                {metricCoverage.length === 0 ? (
-                  <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-900/30 dark:text-amber-200">
-                    No generator coverage found yet. Import `mapping_output.json` in Resource Linking first.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
+            {isReneryoHelper && (
+              <div className="mb-4 rounded-xl border border-slate-300 bg-white/80 p-4 dark:border-slate-600 dark:bg-slate-800/80">
+                <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                  RENERYO Helper
+                </p>
+                <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Optional: import mapping_output.json and review coverage while keeping manual mapping editable.
+                </p>
+                {helperError && (
+                  <p className="m-0 mt-2 text-xs text-rose-700 dark:text-rose-300">{helperError}</p>
+                )}
+                <textarea
+                  value={helperMappingText}
+                  onChange={(event) => setHelperMappingText(event.target.value)}
+                  placeholder='{"mapping": {"energy_total": {"Line-1": "uuid"}}}'
+                  className="mt-3 min-h-24 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <label className="btn-brand-subtle inline-flex cursor-pointer items-center rounded-lg px-3 py-1.5 text-xs font-semibold">
+                    Load JSON File
+                    <input
+                      type="file"
+                      accept="application/json"
+                      className="hidden"
+                      onChange={(event) => {
+                        void loadMappingFile(event.target.files?.[0] ?? null);
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
+                    onClick={() => void importHelperMapping()}
+                    disabled={helperImporting || !helperMappingText.trim()}
+                  >
+                    {helperImporting ? "Importing..." : "Import Mapping"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
+                    onClick={() => void refreshLinkingSummary()}
+                    disabled={helperLoading}
+                  >
+                    {helperLoading ? "Refreshing..." : "Refresh Status"}
+                  </button>
+                </div>
+                {metricCoverage.length > 0 && (
+                  <div className="mt-3 space-y-2">
                     {metricCoverage.map((item) => {
                       const isReady = item.linked_assets > 0;
                       const statusClass = isReady
@@ -309,26 +406,16 @@ export default function MetricMappingStep({
                       return (
                         <div
                           key={item.metric_name}
-                          className="grid gap-2 rounded-xl border border-slate-300 bg-white p-3 dark:border-slate-600 dark:bg-slate-800 md:grid-cols-5"
+                          className="grid gap-2 rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700 md:grid-cols-5"
                         >
-                          <div className="md:col-span-2">
-                            <p className="m-0 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                              {item.metric_name}
-                            </p>
-                          </div>
-                          <div className="md:col-span-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:border-slate-600 dark:bg-slate-900/50 dark:text-slate-200">
+                          <p className="m-0 text-sm font-semibold text-slate-900 dark:text-slate-100 md:col-span-2">
+                            {item.metric_name}
+                          </p>
+                          <p className="m-0 text-xs text-slate-600 dark:text-slate-300 md:col-span-2">
                             Linked assets: {item.linked_assets}/{item.total_assets}
-                            {item.missing_assets.length > 0 && (
-                              <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                Missing assets: {item.missing_assets.slice(0, 3).join(", ")}
-                                {item.missing_assets.length > 3
-                                  ? ` +${item.missing_assets.length - 3} more`
-                                  : ""}
-                              </p>
-                            )}
-                          </div>
-                          <div className="flex items-center">
-                            <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass}`}>
+                          </p>
+                          <div>
+                            <span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${statusClass}`}>
                               {isReady ? "Available" : "Missing"}
                             </span>
                           </div>
@@ -337,72 +424,54 @@ export default function MetricMappingStep({
                     })}
                   </div>
                 )}
-                <div className="mt-4 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    className="btn-brand-subtle inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold"
-                    onClick={onSkip}
-                  >
-                    Skip
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-brand-primary inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold"
-                    onClick={() => void saveMappings()}
-                  >
-                    Continue
-                  </button>
-                </div>
               </div>
-            ) : (
-              <>
-                <MetricMappingsTable
-                  rows={rows}
-                  errorsByRow={errorsByRow}
-                  usedMetrics={usedMetrics}
-                  onChange={updateRow}
-                  renderActions={(row) => (
-                    <MetricMappingRowActions
-                      rowId={row.id}
-                      metricName={row.canonical_metric}
-                      rowTestState={testStateByRow[row.id]}
-                      onTest={(rowId) => {
-                        void testRowMapping(rowId);
-                      }}
-                      onRemove={removeRow}
-                    />
-                  )}
-                />
-
-                <div className="mt-4 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    className="btn-brand-subtle inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-                    onClick={addRow}
-                    disabled={saving || !canAddRow}
-                    title={canAddRow ? undefined : "All canonical metrics are already mapped."}
-                  >
-                    Add Mapping
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-brand-subtle inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold"
-                    onClick={onSkip}
-                    disabled={saving}
-                  >
-                    Skip
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-brand-primary inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-                    onClick={() => void saveMappings()}
-                    disabled={saving}
-                  >
-                    {saving ? "Saving..." : "Save Mappings & Continue"}
-                  </button>
-                </div>
-              </>
             )}
+
+            <MetricMappingsTable
+              rows={rows}
+              errorsByRow={errorsByRow}
+              usedMetrics={usedMetrics}
+              onChange={updateRow}
+              renderActions={(row) => (
+                <MetricMappingRowActions
+                  rowId={row.id}
+                  metricName={row.canonical_metric}
+                  rowTestState={testStateByRow[row.id]}
+                  onTest={(rowId) => {
+                    void testRowMapping(rowId);
+                  }}
+                  onRemove={removeRow}
+                />
+              )}
+            />
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="button"
+                className="btn-brand-subtle inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={addRow}
+                disabled={saving || !canAddRow}
+                title={canAddRow ? undefined : "All canonical metrics are already mapped."}
+              >
+                Add Mapping
+              </button>
+              <button
+                type="button"
+                className="btn-brand-subtle inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold"
+                onClick={onSkip}
+                disabled={saving}
+              >
+                Skip
+              </button>
+              <button
+                type="button"
+                className="btn-brand-primary inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => void saveMappings()}
+                disabled={saving}
+              >
+                {saving ? "Saving..." : "Save Mappings & Continue"}
+              </button>
+            </div>
           </>
         )}
       </div>

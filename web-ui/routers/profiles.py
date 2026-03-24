@@ -46,6 +46,15 @@ router = APIRouter(prefix="/api/v1/config", tags=["profiles"])
 MESSAGEBUS_URL = os.environ.get(
     "OVOS_MESSAGEBUS_URL", "ws://ovos_messagebus:8181/core",
 )
+MOCK_PRESET_URL = os.environ.get(
+    "AVAROS_MOCK_PRESET_URL", "http://reneryo-data-generator-api:8090",
+).strip()
+_LEGACY_MOCK_PRESET_URLS = {
+    "http://localhost:8082",
+    "http://127.0.0.1:8082",
+    "http://localhost:8090",
+    "http://127.0.0.1:8090",
+}
 
 
 # ── Helpers ─────────────────────────────────────────────
@@ -131,6 +140,61 @@ def _validate_activation(
             status_code=422,
             detail="Configured profile requires api_url to be set",
         )
+
+
+def _normalize_url(url: str) -> str:
+    """Normalize URL for comparison by stripping trailing slash."""
+    return str(url).strip().rstrip("/")
+
+
+def _is_no_auth_profile(config: PlatformConfig) -> bool:
+    """Return True when profile auth type is explicitly 'none'."""
+    extra = config.extra_settings if isinstance(config.extra_settings, dict) else {}
+    auth_type = str(extra.get("auth_type", "")).strip().lower()
+    return auth_type == "none"
+
+
+def _normalize_legacy_mock_profile(
+    name: str,
+    svc: SettingsService,
+) -> None:
+    """Upgrade legacy localhost mock preset URLs to the compose service URL.
+
+    Legacy profiles created during older UI revisions used localhost URLs
+    which fail inside containers. This keeps existing profiles switchable.
+    """
+    if name == svc.DEFAULT_PROFILE:
+        return
+
+    config = svc.get_profile(name)
+    if config is None:
+        return
+    if config.platform_type.lower() != "custom_rest":
+        return
+    if not _is_no_auth_profile(config):
+        return
+
+    normalized_api_url = _normalize_url(config.api_url)
+    legacy_urls = {_normalize_url(value) for value in _LEGACY_MOCK_PRESET_URLS}
+    if normalized_api_url not in legacy_urls:
+        return
+
+    normalized_extra = sanitize_extra_settings(config.extra_settings)
+    normalized_extra["auth_type"] = "none"
+    svc.update_profile(
+        name,
+        PlatformConfig(
+            platform_type=config.platform_type,
+            api_url=MOCK_PRESET_URL,
+            api_key="",
+            extra_settings=normalized_extra,
+        ),
+    )
+    logger.info(
+        "Migrated legacy mock preset URL for profile '%s' -> %s",
+        name,
+        MOCK_PRESET_URL,
+    )
 
 
 def _mask_api_key(api_key: str) -> str:
@@ -309,6 +373,8 @@ async def activate_profile(
     Pre-checks profile validity before any state change.  On adapter
     creation failure, rolls back to the previous working profile.
     """
+    _normalize_legacy_mock_profile(name, svc)
+
     # Phase 1: Pre-validation (no state change)
     _validate_activation(name, svc)
 

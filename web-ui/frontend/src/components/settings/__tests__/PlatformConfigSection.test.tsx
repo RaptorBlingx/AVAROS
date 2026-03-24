@@ -361,8 +361,67 @@ describe("PlatformConfigSection with ProfileSelector", () => {
       expect(mockCreatePlatformConfig).toHaveBeenCalled();
     });
 
-    const payload = mockCreatePlatformConfig.mock.calls.at(-1)?.[0];
+    const payload =
+      mockCreatePlatformConfig.mock.calls[
+        mockCreatePlatformConfig.mock.calls.length - 1
+      ]?.[0];
     expect(payload?.platform_type).toBe("custom_rest");
+    expect(payload?.extra_settings?.auth_type).toBe("none");
+    expect(payload?.api_key).toBe("");
+  });
+
+  it("hides API fields and saves mock-safe payload when mock preset is active", async () => {
+    const activeProfileConfig: PlatformConfigResponse = {
+      platform_type: "custom_rest",
+      api_url: "https://api.custom_rest.com",
+      api_key: "****abcd",
+      extra_settings: { auth_type: "bearer" },
+    };
+    const activeProfiles: ProfileListResponse = {
+      profiles: [
+        {
+          name: "unconfigured",
+          platform_type: "unconfigured",
+          is_active: false,
+          is_builtin: true,
+        },
+        {
+          name: "my-custom_rest",
+          platform_type: "custom_rest",
+          is_active: true,
+          is_builtin: false,
+        },
+      ],
+      active_profile: "my-custom_rest",
+    };
+    mockGetPlatformConfig.mockResolvedValue(activeProfileConfig);
+    mockListProfiles.mockResolvedValue(activeProfiles);
+
+    render(<PlatformConfigSection onNotify={onNotify} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Edit")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText("Edit"));
+    fireEvent.click(screen.getByRole("button", { name: "Use Mock" }));
+
+    expect(screen.queryByLabelText("API URL")).toBeNull();
+    expect(screen.queryByLabelText("Auth Type")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Test Connection" })).toBeNull();
+
+    fireEvent.click(screen.getByText("Save Changes"));
+
+    await waitFor(() => {
+      expect(mockCreatePlatformConfig).toHaveBeenCalled();
+    });
+
+    const payload =
+      mockCreatePlatformConfig.mock.calls[
+        mockCreatePlatformConfig.mock.calls.length - 1
+      ]?.[0];
+    expect(payload?.platform_type).toBe("custom_rest");
+    expect(payload?.api_url).toBe("http://reneryo-data-generator-api:8090");
     expect(payload?.extra_settings?.auth_type).toBe("none");
     expect(payload?.api_key).toBe("");
   });

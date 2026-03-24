@@ -145,18 +145,18 @@ describe("Dashboard KPI summary", () => {
     expect(screen.getByText("+16.0% vs baseline")).toBeTruthy();
   });
 
-  it("hides KPI cards when reneryo live connection is not verified", async () => {
+  it("hides KPI cards when live connection is not verified", async () => {
     vi.mocked(getStatus).mockResolvedValue({
       configured: true,
-      active_adapter: "reneryo",
-      platform_type: "reneryo",
+      active_adapter: "custom_rest",
+      platform_type: "custom_rest",
       loaded_intents: 12,
       database_connected: true,
       version: "1.0.0",
       live_connection_state: "auth_failed",
       live_connection_verified: false,
-      live_connection_message: "RENERYO authentication failed.",
-      live_connection_error_code: "RENERYO_AUTH_FAILED",
+      live_connection_message: "Platform authentication failed.",
+      live_connection_error_code: "GENERIC_REST_AUTH_FAILED",
       live_connection_checked_at: "2026-03-16T12:10:00Z",
     });
     vi.mocked(getSiteProgress).mockResolvedValue({
@@ -186,7 +186,7 @@ describe("Dashboard KPI summary", () => {
     await waitFor(() => {
       expect(
         screen.getByText(
-          "Live KPI cards are hidden until RENERYO connection is verified.",
+          "Live KPI cards are hidden until platform connection is verified.",
         ),
       ).toBeTruthy();
     });

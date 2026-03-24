@@ -15,6 +15,7 @@ type PlatformSetupStepProps = {
   statusLoading: boolean;
   statusError: string;
   platformType: PlatformType | null;
+  isMockPresetActive: boolean;
   authType: AuthType;
   apiUrl: string;
   apiKey: string;
@@ -26,6 +27,9 @@ type PlatformSetupStepProps = {
   onAuthTypeChange: (value: AuthType) => void;
   onApiUrlChange: (value: string) => void;
   onApiKeyChange: (value: string) => void;
+  onUseReneryoQuickAction: () => void;
+  onUseMockQuickAction: () => void;
+  onUseApiMode: () => void;
   onTestConnection: () => void;
   onSaveAndContinue: () => void;
 };
@@ -35,6 +39,7 @@ export default function PlatformSetupStep({
   statusLoading,
   statusError,
   platformType,
+  isMockPresetActive,
   authType,
   apiUrl,
   apiKey,
@@ -46,11 +51,15 @@ export default function PlatformSetupStep({
   onAuthTypeChange,
   onApiUrlChange,
   onApiKeyChange,
+  onUseReneryoQuickAction,
+  onUseMockQuickAction,
+  onUseApiMode,
   onTestConnection,
   onSaveAndContinue,
 }: PlatformSetupStepProps) {
   const resolvedPlatform = platformType ?? "custom_rest";
   const isUnconfigured = resolvedPlatform === "unconfigured";
+  const isMockPreset = isMockPresetActive && !isUnconfigured;
 
   return (
     <section className="space-y-4">
@@ -113,11 +122,50 @@ export default function PlatformSetupStep({
               Configure your platform API URL and authentication.
             </p>
           </div>
+          <div className="rounded-xl border border-slate-300 bg-white/80 p-4 dark:border-slate-600 dark:bg-slate-800/80">
+            <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+              Developer Quick Actions
+            </p>
+            <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Optional presets to speed up local verification without changing the primary flow.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
+                onClick={onUseApiMode}
+                disabled={isTesting || isSaving}
+              >
+                Use API
+              </button>
+              <button
+                type="button"
+                className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
+                onClick={onUseMockQuickAction}
+                disabled={isTesting || isSaving}
+              >
+                Use Mock
+              </button>
+              <button
+                type="button"
+                className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
+                onClick={onUseReneryoQuickAction}
+                disabled={isTesting || isSaving}
+              >
+                Use RENERYO
+              </button>
+            </div>
+          </div>
         </div>
 
         {isUnconfigured ? (
           <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/40 dark:bg-sky-900/30 dark:text-sky-200">
             Unconfigured mode. No connection details are required.
+          </div>
+        ) : isMockPreset ? (
+          <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-900/30 dark:text-emerald-200">
+            Mock quick action is active. AVAROS will use the built-in mock endpoint
+            with no authentication. No external API URL is required in this mode.
           </div>
         ) : (
           <div className="mt-4 space-y-4">
@@ -187,7 +235,7 @@ export default function PlatformSetupStep({
         {testResult && <ConnectionTestResult result={testResult} />}
 
         <div className="mt-6 flex flex-wrap gap-3">
-          {!isUnconfigured && (
+          {!isUnconfigured && !isMockPreset && (
             <button
               type="button"
               className="btn-brand-subtle inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"

@@ -14,7 +14,7 @@ from services.kpi_collector import KPICollector
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_INTERVAL_HOURS = 6
+_DEFAULT_INTERVAL_HOURS = 0.25
 _MAX_RETRIES = 3
 _INITIAL_BACKOFF_SECONDS = 30
 
@@ -44,6 +44,7 @@ class KPIScheduler:
             ),
         )
         self._task: asyncio.Task[None] | None = None
+        self._bootstrap_task: asyncio.Task[None] | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -55,6 +56,10 @@ class KPIScheduler:
             logger.debug("KPI scheduler already running")
             return
         self._task = asyncio.create_task(self._loop(), name="kpi-scheduler")
+        self._bootstrap_task = asyncio.create_task(
+            self._bootstrap_once(),
+            name="kpi-scheduler-bootstrap",
+        )
         logger.info(
             "KPI scheduler started (interval=%.1fh, site=%s)",
             self._interval_hours, self._site_id,
@@ -66,6 +71,9 @@ class KPIScheduler:
             self._task.cancel()
             logger.info("KPI scheduler stopped")
         self._task = None
+        if self._bootstrap_task is not None and not self._bootstrap_task.done():
+            self._bootstrap_task.cancel()
+        self._bootstrap_task = None
 
     # ------------------------------------------------------------------
     # Internal loop
@@ -107,3 +115,37 @@ class KPIScheduler:
         logger.error(
             "KPI collection failed after %d retries", _MAX_RETRIES,
         )
+
+    async def _bootstrap_once(self) -> None:
+        """Seed baselines and collect first snapshots on startup."""
+        backoff = _INITIAL_BACKOFF_SECONDS
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                seeded = await self._collector.seed_baselines(self._site_id)
+                backfilled = await self._collector.backfill_snapshots_from_trend(
+                    self._site_id,
+                )
+                realigned = self._collector.realign_baselines_to_earliest_snapshot(
+                    self._site_id,
+                )
+                snapshots = await self._collector.collect_snapshots(self._site_id)
+                logger.info(
+                    "KPI bootstrap completed: baselines=%d backfilled=%d realigned=%d snapshots=%d (attempt %d)",
+                    seeded,
+                    backfilled,
+                    realigned,
+                    snapshots,
+                    attempt,
+                )
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "KPI bootstrap attempt %d/%d failed",
+                    attempt,
+                    _MAX_RETRIES,
+                )
+                if attempt < _MAX_RETRIES:
+                    await asyncio.sleep(backoff)
+                    backoff *= 2

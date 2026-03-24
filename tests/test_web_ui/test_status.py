@@ -54,6 +54,14 @@ class TestStatusUnconfigured:
         assert isinstance(body["loaded_intents"], int)
         assert body["loaded_intents"] >= 0
 
+    def test_status_unconfigured_live_fields(self, client: TestClient) -> None:
+        """Fresh DB reports explicit unconfigured live connection status."""
+        body = client.get("/api/v1/status").json()
+
+        assert body["live_connection_state"] == "unconfigured"
+        assert body["live_connection_verified"] is False
+        assert body["live_connection_error_code"] == "UNCONFIGURED"
+
 
 class TestStatusConfigured:
     """Status endpoint after platform configuration is saved."""
@@ -130,6 +138,11 @@ class TestStatusResponseShape:
         "loaded_intents",
         "database_connected",
         "version",
+        "live_connection_state",
+        "live_connection_verified",
+        "live_connection_message",
+        "live_connection_error_code",
+        "live_connection_checked_at",
     }
 
     def test_status_response_keys(self, client: TestClient) -> None:

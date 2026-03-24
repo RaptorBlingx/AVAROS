@@ -1,8 +1,8 @@
 # Reneryo API Reference — AVAROS Source of Truth
 
-> **Last verified:** 2026-03-12 by live API probe  
-> **Base URL:** `http://deploys.int.arti.ac:31290/api`  
-> **Swagger UI:** `http://deploys.int.arti.ac:31290/api/ui`  
+> **Last verified:** 2026-03-24 by live API probe  
+> **Base URL:** `http://10.33.10.110:30377/api` (or your active RENERYO base URL)  
+> **Swagger UI:** `http://10.33.10.110:30377/api/ui`  
 > **Auth:** Session cookie `Cookie: S=<value>` (see `.env` → `RENERYO_SESSION_COOKIE`)
 
 ---
@@ -417,7 +417,7 @@ tools/reneryo-data-generator/generator.py
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `RENERYO_API_URL` | `http://deploys.int.arti.ac:31290/api` | Base URL |
+| `RENERYO_API_URL` | `http://10.33.10.110:30377/api` | Base URL |
 | `RENERYO_SESSION_COOKIE` | (required) | Session cookie value without `S=` prefix |
 | `GENERATOR_MODE` | `seed` | One of: seed, daemon, verify, list |
 | `GENERATOR_INTERVAL` | `900` | Seconds between daemon writes |
@@ -493,7 +493,7 @@ Use this section when configuring AVAROS for RENERYO through the unified wizard.
 
 | Field | Value |
 |-------|-------|
-| API URL | `http://deploys.int.arti.ac:31290/api` (or your RENERYO base URL) |
+| API URL | `http://10.33.10.110:30377/api` (or your RENERYO base URL) |
 | Auth type | Cookie |
 | API key / Cookie | Session cookie value from `.env` → `RENERYO_SESSION_COOKIE` |
 
@@ -517,30 +517,37 @@ For each metric × asset combination, use the endpoint template and resource UUI
 
 | Metric | Unit | Line-1 Resource UUID | Line-2 Resource UUID | Line-3 Resource UUID |
 |--------|------|---------------------|---------------------|---------------------|
-| energy_per_unit | kWh/unit | 09881529-c1de-4135-bb9f-d564a58ad606 | 67afbdf6-1861-4bd4-b9b7-5887e031981f | 7e74b6be-b6a0-471e-85c0-9f3ced9a6850 |
-| energy_total | kWh | 292e9098-45e4-43df-8a49-5f952e57047c | 502eb30b-4d08-44dd-ada1-2f17db80a83b | 4ccbe92b-9d0b-4f40-bfa6-9e4585dfe1b9 |
-| peak_demand | kW | dbb8a24e-ec1d-470d-ad66-7cfd5770683b | d18a1ddd-13ec-4769-b6e9-317c03a6b776 | 52a93867-2126-4e6a-b70e-272e1e8eb559 |
-| peak_tariff_exposure | % | 6f8320a7-6b1e-468a-b328-1eab39e667c5 | f94d55e9-c673-4dcf-b62e-c8ee35b4f7e8 | 4aa1e468-86c9-47b4-bc4b-1c03929d53fa |
-| scrap_rate | % | 2f80230e-df7e-449f-baaf-c15e34974b57 | 3b34cdf1-0862-4e0f-a0b6-17611d64168e | — |
-| rework_rate | % | b57c52b5-cf70-4afe-80a4-d15ef5eb9c56 | af613087-836e-4d01-8f29-764fde05ecd8 | — |
-| material_efficiency | % | ac894e3e-5537-4fd3-b483-9518060760ed | 04a25d72-163b-4104-9fc3-9f03426d1bc8 | — |
-| recycled_content | % | eb1331f2-27cf-4812-85a8-8340f823a114 | c68bb89a-b341-4c77-906a-798103a549e9 | — |
-| oee | % | fb34799f-11ba-4319-94e0-e9e380edb937 | 13f9a2c3-647a-4158-a283-3fe63e01b3b9 | — |
-| throughput | units/hr | 7bfe59da-76e4-4425-992a-e01866e4ce94 | b61c5a08-23d5-4703-a754-d615d4379ab6 | — |
-| cycle_time | sec | 5d9ffa66-a8d0-44c1-a2c8-726b3e5821ab | a8c75ef2-319b-4a57-8496-ddb46ea9677f | — |
-| changeover_time | min | 5358b4c9-5729-42a8-9d0a-0a89814dd9f6 | 8d34c1e7-f360-4d34-b56c-5157f0cc5588 | — |
-| co2_per_unit | kg CO₂-eq/unit | c9a4bfe8-6838-43ae-943d-0b89e509532d | 5fb3da2f-3637-4a95-84c2-cb3c18a2f526 | — |
-| co2_total | kg CO₂-eq | d1ac87b6-01c9-49b9-885e-d4b71ca6ac2e | 521bb97d-1615-4aeb-9ae1-b52c6746b78d | — |
-| co2_per_batch | kg CO₂-eq/batch | a9068f7d-087d-4cfe-913c-3caa564a0ef4 | 4dc4f13b-f27e-4cda-b560-8a6c1845d500 | — |
-| supplier_lead_time | days | a453884f-a751-4169-8c08-153c9742c1ea | e4a488ca-3990-4973-8762-38b61198df18 | — |
-| supplier_defect_rate | % | 3dc67069-0497-496c-9072-68793864d217 | 942f05b5-8cee-41f4-838e-2330a3618794 | — |
-| supplier_on_time | % | fd74b87e-8a4b-4af0-9e0c-3c5bf8823cad | d3bde3fa-a416-4b1f-8811-7e45febd8baa | — |
-| supplier_co2_per_kg | kg CO₂/kg | c974d385-ce5a-4504-bc2f-bda12f1825c4 | ad7a7c55-19b3-4e19-9a57-7bf8d8194933 | — |
+| energy_per_unit | kWh/unit | 7f1c0c49-26d6-4778-a532-8f2bd366382c | a1365871-940a-4d7c-acb9-68acdbee6853 | a39f3b0b-83c5-4dbc-9cb0-5abef729fe1f |
+| energy_total | kWh | 9442bc7a-871f-4a19-872e-46093724ac81 | cc6cfbc3-638a-424d-9b6b-aabb7b822539 | cc2000a0-7baf-4309-96b2-9e44d87ccf55 |
+| peak_demand | kW | 82bf301f-f655-46e3-8075-cbec0a6678a2 | efd1a3e2-1aa8-4bc5-a445-5790c6b0f6b4 | 47c1abfe-95a1-4533-bf98-a26dccd7f77b |
+| peak_tariff_exposure | % | a3e4e71e-bb8b-43c4-bbaa-34dca52d4e95 | 1bdf71f6-aba0-4cfe-b2d4-d8719fc235c4 | 3ab0bf0e-4497-4df6-8a68-47d88757bf1d |
+| scrap_rate | % | 98145a02-507a-432a-a70b-9f18c2799a6a | 8c80630e-670a-40cf-aa08-747cbdd85d5e | d4bf3c9e-651c-4995-a267-a74e11045422 |
+| rework_rate | % | b3b7a011-1cbb-45c2-a6a4-9bfbc4ef525a | 89d618f0-406e-4c86-9d04-4b16c98a3234 | 54aa5ac4-9209-4370-9048-c4ac030b88cc |
+| material_efficiency | % | bbfd0a03-1e66-4c54-9fec-6fa46814ac9e | ac6139e8-58f6-4770-b2c9-3566925731ec | c77b7173-478f-4db5-8532-c601ef4f5a60 |
+| recycled_content | % | a04ccf25-e04e-461e-b3d5-cd149eb9c56c | 8c2a38c4-cf57-4cff-a184-77cc1f6204d1 | f2db2489-6029-4755-a995-1a5cd04a0f7d |
+| oee | % | a4770a92-2e78-494d-ba09-75165fba0df0 | 3965b245-c020-41c3-87f8-ee617faef290 | 262f22a2-cedf-48f4-ba22-37773cc9fd8b |
+| throughput | units/hr | 75cfcca1-7773-4745-ba4f-9c80ed1f57f3 | ba3c4737-e5ce-497a-b3cd-14c503bec348 | 21144b48-ae65-4853-86a2-b6f25b9884eb |
+| cycle_time | sec | 26e243de-bc3b-49cf-8fa8-54fa947ecbbd | 46b3379d-c5f1-413c-adb4-b680979d0273 | 16e370e0-c82d-444c-9e8d-23dc2d1b3e38 |
+| changeover_time | min | a98febf8-759b-4a6e-b0d1-e34e70d37bed | e7539386-74f2-4e45-9fc5-db5d54019082 | 27761840-b0fe-45cc-8ae1-4e4e8c1f8959 |
+| co2_per_unit | kg CO₂-eq/unit | fb6acfbf-b664-4ff5-8798-434d2c3b0f10 | ed5041da-3ba4-4a88-9ab7-dae26f6b5e37 | cdd39708-a27a-449b-a313-141e291e862a |
+| co2_total | kg CO₂-eq | 26faa7c1-2778-4e24-a556-8ca356e0d579 | 2944f358-731f-4ae7-8f18-623c4c7dc4e6 | 186459a7-055b-4d59-a8f5-4756ebcefa6b |
+| co2_per_batch | kg CO₂-eq/batch | a096123d-7694-48f7-a4d5-ec5c4a2c7e33 | 9f2afb6e-0559-4c56-9138-e8c618e9c3a5 | 3dbaa278-e226-4aa9-9146-99f5ff1c5af0 |
+| supplier_lead_time | days | fa1b8f40-f4f3-411b-8ed7-958e76851aa4 | 83f8e71a-4df4-415f-84c8-247bed7167f0 | b7ec4c7c-0c7f-4a3f-bc44-29dffb33612b |
+| supplier_defect_rate | % | ba368e93-1fb2-481e-a891-542039181597 | 7ca1da07-d8f2-42d5-963d-d31370944563 | 80aab750-da95-4f09-9ae4-b4178f90d1ec |
+| supplier_on_time | % | 24a9d3bf-4026-4dd5-8406-6f6e0f0c01ff | 1b73aaea-977f-4372-b80e-f451e2a34c7e | fa4c6aa3-35c5-4898-a1da-d7357ba86a1c |
+| supplier_co2_per_kg | kg CO₂/kg | 539ebc5b-27fc-44cc-b36b-2f4b6dec2fdf | 79b670c6-975e-4d8c-8f16-b879a54454ec | 07d8ea91-9298-46ab-a4e3-161ac2fe0097 |
+> **Important:** `tools/reneryo-data-generator/mapping_output.json` is the runtime source of truth for UUIDs.  
+> The table above is a quick reference sample; always prefer importing the JSON file in the wizard for exact current values.
 
 **Per-metric wizard entry:** For each row, create one mapping per asset. Example for `energy_per_unit` on Line-1:
-- Endpoint: `/u/measurement/metric/resource/09881529-c1de-4135-bb9f-d564a58ad606/values?period=RAW&count=1`
+- Endpoint: `/u/measurement/metric/resource/7f1c0c49-26d6-4778-a532-8f2bd366382c/values?period=RAW&count=1`
 - JSONPath: `$.records[-1].value`
 - Unit: `kWh/unit`
+
+**How to read the numbers (important):**
+- `57 mappings` = `19 canonical metrics × 3 assets (Line-1/2/3)` resource UUIDs in RENERYO.
+- Wizard metric mapping screen can show fewer manual rows because AVAROS can resolve per-asset UUIDs from imported `metric_resources`.
+- Intent count is different from mapping count (intents are voice commands; mappings are data-source links).
 
 ### Step 4 — Activate Intents
 
@@ -559,32 +566,32 @@ Enable the 19 KPI intents. Configure action intent bindings (control.turn_on, co
 ### Auth Test
 ```bash
 curl -s -H "Cookie: S=<cookie>" \
-  "http://deploys.int.arti.ac:31290/api/u/measurement/metric/item?count=5" | python3 -m json.tool
+  "http://10.33.10.110:30377/api/u/measurement/metric/item?count=5" | python3 -m json.tool
 ```
 
 ### Read Latest Daily Values
 ```bash
 curl -s -H "Cookie: S=<cookie>" \
-  "http://deploys.int.arti.ac:31290/api/u/measurement/metric/resource/<resource_id>/values?period=DAILY&datetimeMin=2026-03-10T00:00:00Z&datetimeMax=2026-03-12T23:59:59Z&count=10" | python3 -m json.tool
+  "http://10.33.10.110:30377/api/u/measurement/metric/resource/<resource_id>/values?period=DAILY&datetimeMin=2026-03-10T00:00:00Z&datetimeMax=2026-03-12T23:59:59Z&count=10" | python3 -m json.tool
 ```
 
 ### Write a Single Value
 ```bash
 curl -s -X POST -H "Cookie: S=<cookie>" -H "Content-Type: application/json" \
-  "http://deploys.int.arti.ac:31290/api/u/measurement/metric/item/<metric_id>/values" \
+  "http://10.33.10.110:30377/api/u/measurement/metric/item/<metric_id>/values" \
   -d '{"unit":"SCALAR","values":[{"value":42.5,"datetime":"2026-03-12T12:00:00.000Z"}],"labels":[]}' | python3 -m json.tool
 ```
 
 ### List SEUs
 ```bash
 curl -s -H "Cookie: S=<cookie>" \
-  "http://deploys.int.arti.ac:31290/api/u/measurement/seu/names" | python3 -m json.tool
+  "http://10.33.10.110:30377/api/u/measurement/seu/names" | python3 -m json.tool
 ```
 
 ### List Meters
 ```bash
 curl -s -H "Cookie: S=<cookie>" \
-  "http://deploys.int.arti.ac:31290/api/u/measurement/meter/item?datetimeMin=2025-01-01T00:00:00Z&datetimeMax=2026-12-31T23:59:59Z" | python3 -m json.tool
+  "http://10.33.10.110:30377/api/u/measurement/meter/item?datetimeMin=2025-01-01T00:00:00Z&datetimeMax=2026-12-31T23:59:59Z" | python3 -m json.tool
 ```
 
 ---

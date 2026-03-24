@@ -164,6 +164,17 @@ class TestLazyReload:
         # Assert: reload never called
         skill.adapter_factory.reload.assert_not_awaited()
 
+    def test_expected_platform_normalizes_rest_profiles_to_generic_rest(self):
+        """custom_rest/reneryo/mock profiles should map to GenericRest runtime platform."""
+        skill = _initialized_skill()
+        skill.settings_service = Mock()
+
+        for platform_type in ("custom_rest", "reneryo", "mock"):
+            skill.settings_service.get_profile.return_value = Mock(
+                platform_type=platform_type,
+            )
+            assert skill._expected_platform_for_profile("demo") == "generic_rest"
+
     def test_lazy_reload_handles_settings_service_none(self):
         """No crash when settings_service is None."""
         skill = _initialized_skill()
@@ -541,6 +552,50 @@ class TestAssetResolutionFromUtterance:
         msg.data = {"utterance": "show energy trend today", "asset": ""}
 
         assert skill._resolve_asset_id(msg) == "Line-1"
+
+    def test_resolve_asset_id_defaults_to_metric_ready_asset(self):
+        """Default asset should prefer rows that contain metric resources."""
+        skill = _make_skill()
+        skill.settings_service = Mock()
+        skill._get_asset_registry = Mock(return_value=[])
+        skill.settings_service.get_asset_mappings.return_value = {
+            "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4": {
+                "display_name": "Seu",
+                "asset_type": "machine",
+            },
+            "Line-2": {
+                "metric_resources": {"energy_per_unit": "rid-2"},
+            },
+            "Line-1": {
+                "metric_resources": {"energy_per_unit": "rid-1"},
+            },
+        }
+        msg = Mock()
+        msg.data = {"utterance": "show energy trend this week", "asset": ""}
+
+        assert skill._resolve_asset_id(msg) == "Line-1"
+
+    def test_resolve_compare_assets_defaults_to_metric_ready_assets(self):
+        """Compare defaults should use KPI-ready assets before registration-only rows."""
+        skill = _make_skill()
+        skill.settings_service = Mock()
+        skill._get_asset_registry = Mock(return_value=[])
+        skill.settings_service.get_asset_mappings.return_value = {
+            "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4": {
+                "display_name": "Seu",
+                "asset_type": "machine",
+            },
+            "Line-2": {
+                "metric_resources": {"energy_per_unit": "rid-2"},
+            },
+            "Line-1": {
+                "metric_resources": {"energy_per_unit": "rid-1"},
+            },
+        }
+        msg = Mock()
+        msg.data = {"utterance": "compare energy", "asset_a": "", "asset_b": ""}
+
+        assert skill._resolve_compare_assets(msg) == ("Line-1", "Line-2")
 
 
 class TestWhatIfAmountParsing:

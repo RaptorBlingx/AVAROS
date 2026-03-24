@@ -25,6 +25,10 @@ export type ProfileSelectorProps = {
 };
 
 const PROFILE_NAME_RE = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
+const MOCK_PRESET_URL =
+  (import.meta.env.VITE_MOCK_PRESET_URL || "http://reneryo-data-generator-api:8090").trim();
+
+type NewProfileMode = "api" | "mock";
 
 function validateProfileName(name: string): string {
   const trimmed = name.trim();
@@ -52,9 +56,7 @@ export default function ProfileSelector({
   const [switching, setSwitching] = useState(false);
   const [showNewForm, setShowNewForm] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newPlatformType, setNewPlatformType] = useState<
-    CreateProfileRequest["platform_type"]
-  >("custom_rest");
+  const [newProfileMode, setNewProfileMode] = useState<NewProfileMode>("api");
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -156,13 +158,17 @@ export default function ProfileSelector({
       const trimmed = newName.trim();
       const payload: CreateProfileRequest = {
         name: trimmed,
-        platform_type: newPlatformType,
-        api_url: "",
+        platform_type: "custom_rest",
+        api_url: newProfileMode === "mock" ? MOCK_PRESET_URL : "",
         api_key: "",
-        extra_settings: {},
+        extra_settings:
+          newProfileMode === "mock"
+            ? { auth_type: "none" }
+            : {},
       };
       await apiCreateProfile(payload);
       setNewName("");
+      setNewProfileMode("api");
       setShowNewForm(false);
       onNotify("success", `Profile \u201c${trimmed}\u201d created.`);
       await loadProfiles();
@@ -172,7 +178,13 @@ export default function ProfileSelector({
     } finally {
       setCreating(false);
     }
-  }, [newName, newPlatformType, onNotify, loadProfiles, selectProfile]);
+  }, [
+    newName,
+    newProfileMode,
+    onNotify,
+    loadProfiles,
+    selectProfile,
+  ]);
 
   const handleDelete = useCallback(async () => {
     const profile = profiles.find((p) => p.name === selectedName);
@@ -381,23 +393,22 @@ export default function ProfileSelector({
             </label>
             <label className="block">
               <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
-                Platform
+                Integration Mode
               </span>
               <select
-                value={newPlatformType}
+                value={newProfileMode}
                 onChange={(e) =>
-                  setNewPlatformType(
-                    e.target.value as CreateProfileRequest["platform_type"],
-                  )
+                  setNewProfileMode(e.target.value as NewProfileMode)
                 }
                 className={`rounded-lg border px-3 py-2 text-sm ${
                   isDark
                     ? "border-slate-600 bg-slate-800 text-slate-100"
                     : "border-slate-300 bg-white text-slate-900"
                 }`}
-                data-testid="profile-new-platform"
+                data-testid="profile-new-mode"
               >
-                <option value="custom_rest">REST API</option>
+                <option value="api">API Connection</option>
+                <option value="mock">Mock Preset</option>
               </select>
             </label>
             <button
@@ -414,6 +425,7 @@ export default function ProfileSelector({
               onClick={() => {
                 setShowNewForm(false);
                 setNewName("");
+                setNewProfileMode("api");
               }}
               className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
                 isDark
@@ -427,6 +439,8 @@ export default function ProfileSelector({
           </div>
           <p className="mt-1.5 text-xs text-slate-500">
             Lowercase letters, numbers, and hyphens only. 2\u201350 characters.
+            {" "}
+            Mock Preset creates a no-auth profile (<code>{MOCK_PRESET_URL}</code>).
           </p>
         </div>
       )}

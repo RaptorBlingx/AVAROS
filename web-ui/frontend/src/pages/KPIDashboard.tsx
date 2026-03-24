@@ -68,14 +68,13 @@ export default function KPIDashboard() {
 
     try {
       const statusData = await getStatus();
-      const isReneryoBlocked =
-        statusData.platform_type === "reneryo" &&
-        statusData.live_connection_verified !== true;
-      if (isReneryoBlocked) {
+      const isLiveBlocked =
+        statusData.configured && statusData.live_connection_verified !== true;
+      if (isLiveBlocked) {
         setShowLiveConnectionBlocked(true);
         setLiveConnectionMessage(
           statusData.live_connection_message ||
-            "Live RENERYO connection is not verified.",
+            "Live platform connection is not verified.",
         );
         setSiteProgress(null);
         setBaselines([]);
@@ -252,7 +251,7 @@ export default function KPIDashboard() {
 
       {!loading && !error && showLiveConnectionBlocked && (
         <EmptyState
-          title="Live RENERYO connection not verified"
+          title="Live platform connection not verified"
           message={`${liveConnectionMessage} KPI charts are hidden until the platform is reachable and authenticated.`}
           actionLabel="Go to Settings"
           onAction={() => navigate("/settings")}

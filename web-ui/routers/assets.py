@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -73,6 +76,31 @@ class GeneratorMappingResponse(BaseModel):
     imported_metrics: int
     imported_resources: int
     asset_mappings: dict[str, dict[str, Any]]
+
+
+def _default_generator_mapping_path() -> Path:
+    """Return default mapping_output.json path used for RENERYO quick bootstrap."""
+    configured = str(os.environ.get("AVAROS_GENERATOR_MAPPING_FILE", "")).strip()
+    if configured:
+        return Path(configured)
+    # assets.py -> web-ui/routers/assets.py -> project root (parents[2])
+    return Path(__file__).resolve().parents[2] / "tools" / "reneryo-data-generator" / "mapping_output.json"
+
+
+def _extract_mapping_payload(raw: dict[str, Any]) -> dict[str, dict[str, str]]:
+    """Normalize mapping payload supporting both wrapped and raw formats."""
+    candidate = raw.get("mapping", raw)
+    if not isinstance(candidate, dict):
+        return {}
+    normalized: dict[str, dict[str, str]] = {}
+    for metric_name, asset_map in candidate.items():
+        if not isinstance(asset_map, dict):
+            continue
+        normalized[str(metric_name)] = {
+            str(asset_id): str(resource_id)
+            for asset_id, resource_id in asset_map.items()
+        }
+    return normalized
 
 
 class AssetLinkingItem(BaseModel):
@@ -613,6 +641,56 @@ def import_generator_mapping(
 
     return GeneratorMappingResponse(
         imported_metrics=len(payload.mapping),
+        imported_resources=total_resources,
+        asset_mappings=settings_service.get_asset_mappings(),
+    )
+
+
+@router.post(
+    "/assets/import-generator-mapping/default",
+    response_model=GeneratorMappingResponse,
+)
+def import_default_generator_mapping(
+    settings_service: SettingsService = Depends(get_settings_service),
+) -> GeneratorMappingResponse:
+    """Import bundled mapping_output.json for RENERYO first-run bootstrap."""
+    path = _default_generator_mapping_path()
+    if not path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Default generator mapping file not found: {path}",
+        )
+
+    try:
+        payload_json = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Could not parse default generator mapping JSON: {exc}",
+        ) from exc
+
+    mapping = _extract_mapping_payload(payload_json)
+    _reject_unknown_metrics(mapping)
+    per_asset = _transform_generator_mapping(mapping)
+    if not per_asset:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No valid metric-resource mappings found in default file",
+        )
+
+    existing = settings_service.get_asset_mappings()
+    total_resources = _merge_generator_mapping(existing, per_asset)
+
+    try:
+        settings_service.set_asset_mappings(existing)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=exc.message,
+        ) from exc
+
+    return GeneratorMappingResponse(
+        imported_metrics=len(mapping),
         imported_resources=total_resources,
         asset_mappings=settings_service.get_asset_mappings(),
     )

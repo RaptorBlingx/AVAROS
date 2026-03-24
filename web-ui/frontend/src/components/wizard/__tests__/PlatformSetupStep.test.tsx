@@ -24,21 +24,29 @@ vi.mock("../../common/LoadingSpinner", () => ({
 
 const STATUS: SystemStatusResponse = {
   configured: false,
-  active_adapter: "mock",
-  platform_type: "mock",
+  active_adapter: "custom_rest",
+  platform_type: "custom_rest",
   loaded_intents: 0,
   database_connected: true,
   version: "0.1.0",
 };
 
-function renderStep(platformType: PlatformType = "custom_rest") {
+function renderStep(options?: {
+  platformType?: PlatformType;
+  isMockPresetActive?: boolean;
+}) {
+  const platformType = options?.platformType ?? "custom_rest";
+  const isMockPresetActive = options?.isMockPresetActive ?? false;
   const onUseReneryoQuickAction = vi.fn();
+  const onUseMockQuickAction = vi.fn();
+  const onUseApiMode = vi.fn();
   render(
     <PlatformSetupStep
       status={STATUS}
       statusLoading={false}
       statusError=""
       platformType={platformType}
+      isMockPresetActive={isMockPresetActive}
       authType="api_key"
       apiUrl=""
       apiKey=""
@@ -47,9 +55,9 @@ function renderStep(platformType: PlatformType = "custom_rest") {
       testError=""
       isTesting={false}
       isSaving={false}
-      onChooseExternalApi={vi.fn()}
-      onUseMockQuickAction={vi.fn()}
+      onUseMockQuickAction={onUseMockQuickAction}
       onUseReneryoQuickAction={onUseReneryoQuickAction}
+      onUseApiMode={onUseApiMode}
       onAuthTypeChange={vi.fn()}
       onApiUrlChange={vi.fn()}
       onApiKeyChange={vi.fn()}
@@ -57,7 +65,7 @@ function renderStep(platformType: PlatformType = "custom_rest") {
       onSaveAndContinue={vi.fn()}
     />,
   );
-  return { onUseReneryoQuickAction };
+  return { onUseReneryoQuickAction, onUseMockQuickAction, onUseApiMode };
 }
 
 describe("PlatformSetupStep", () => {
@@ -75,5 +83,23 @@ describe("PlatformSetupStep", () => {
     const { onUseReneryoQuickAction } = renderStep();
     fireEvent.click(screen.getByRole("button", { name: "Use RENERYO" }));
     expect(onUseReneryoQuickAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("triggers preset callback when Mock action is clicked", () => {
+    const { onUseMockQuickAction } = renderStep();
+    fireEvent.click(screen.getByRole("button", { name: "Use Mock" }));
+    expect(onUseMockQuickAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("triggers callback when Use API is clicked", () => {
+    const { onUseApiMode } = renderStep();
+    fireEvent.click(screen.getByRole("button", { name: "Use API" }));
+    expect(onUseApiMode).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides API form controls while mock preset is active", () => {
+    renderStep({ isMockPresetActive: true });
+    expect(screen.queryByLabelText("API URL")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Test Connection" })).toBeNull();
   });
 });

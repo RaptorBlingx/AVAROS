@@ -341,6 +341,10 @@ export type GeneratorMappingResponse = {
   asset_mappings: Record<string, AssetMappingItem>;
 };
 
+export type GeneratorMappingRequest = {
+  mapping: Record<string, Record<string, string>>;
+};
+
 export type AssetRecord = {
   asset_id: string;
   display_name: string;
@@ -350,9 +354,12 @@ export type AssetRecord = {
 };
 
 export type AssetDiscoveryResponse = {
-  platform_type: PlatformType;
+  platform_type: PlatformType | string;
   supports_discovery: boolean;
+  discovery_source?: "adapter" | "registered" | "none";
+  discovery_error?: string;
   assets: AssetRecord[];
+  registered_assets?: AssetRecord[];
   existing_mappings: Record<string, AssetMappingItem>;
 };
 

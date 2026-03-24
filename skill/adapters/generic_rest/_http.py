@@ -30,6 +30,25 @@ class GenericRestHttpMixin:
     _max_retries: int
     _backoff_factors: tuple[float, ...]
 
+    @staticmethod
+    async def _await_with_timeout(
+        coroutine,
+        timeout_seconds: int,
+    ):
+        """Await coroutine with Python 3.10/3.11 compatible timeout handling."""
+        safe_timeout = max(1, int(timeout_seconds))
+        timeout_ctx = getattr(asyncio, "timeout", None)
+        if callable(timeout_ctx):
+            async with timeout_ctx(safe_timeout):
+                return await coroutine
+        return await asyncio.wait_for(coroutine, timeout=safe_timeout)
+
+    async def _probe_status(self, method: str, url: str) -> int:
+        """Issue lightweight HTTP request and return status code."""
+        assert self._session is not None
+        async with self._session.request(method, url) as response:
+            return response.status
+
     async def _fetch(
         self,
         endpoint: str,
@@ -98,19 +117,21 @@ class GenericRestHttpMixin:
         probe_timeout = max(1, min(int(self._timeout), 10))
 
         try:
-            async with asyncio.timeout(probe_timeout):
-                async with self._session.head(self._api_url) as response:
-                    if response.status < 500:
-                        return
-                    raise AdapterError(
-                        message=(
-                            f"Base URL probe failed with status {response.status}: "
-                            f"{self._api_url}"
-                        ),
-                        code="GENERIC_REST_INIT_FAILED",
-                        platform="generic_rest",
-                        status_code=response.status,
-                    )
+            status_code = await self._await_with_timeout(
+                self._probe_status("HEAD", self._api_url),
+                probe_timeout,
+            )
+            if status_code < 500:
+                return
+            raise AdapterError(
+                message=(
+                    f"Base URL probe failed with status {status_code}: "
+                    f"{self._api_url}"
+                ),
+                code="GENERIC_REST_INIT_FAILED",
+                platform="generic_rest",
+                status_code=status_code,
+            )
         except aiohttp.ClientConnectorError as exc:
             raise AdapterError(
                 message=f"Could not reach API URL: {self._api_url}",
@@ -131,19 +152,21 @@ class GenericRestHttpMixin:
         except Exception:
             # Some APIs reject HEAD; GET is fallback.
             try:
-                async with asyncio.timeout(probe_timeout):
-                    async with self._session.get(self._api_url) as response:
-                        if response.status < 500:
-                            return
-                        raise AdapterError(
-                            message=(
-                                f"Base URL probe failed with status {response.status}: "
-                                f"{self._api_url}"
-                            ),
-                            code="GENERIC_REST_INIT_FAILED",
-                            platform="generic_rest",
-                            status_code=response.status,
-                        )
+                status_code = await self._await_with_timeout(
+                    self._probe_status("GET", self._api_url),
+                    probe_timeout,
+                )
+                if status_code < 500:
+                    return
+                raise AdapterError(
+                    message=(
+                        f"Base URL probe failed with status {status_code}: "
+                        f"{self._api_url}"
+                    ),
+                    code="GENERIC_REST_INIT_FAILED",
+                    platform="generic_rest",
+                    status_code=status_code,
+                )
             except AdapterError:
                 raise
             except aiohttp.ClientConnectorError as exc:

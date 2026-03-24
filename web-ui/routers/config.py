@@ -47,7 +47,12 @@ def _mask_api_key(api_key: str) -> str:
 
 
 def _to_response(config: PlatformConfig) -> PlatformConfigResponse:
-    """Convert service config into API-safe masked response."""
+    """Convert service config into API-safe masked response.
+
+    Public Web UI contract intentionally exposes only ``custom_rest`` and
+    ``unconfigured`` platform types. Internal profile aliases (for example
+    ``reneryo``) are normalized to ``custom_rest`` at the API boundary.
+    """
     raw = str(config.platform_type or "unconfigured").lower()
     platform_type = raw if raw in {"custom_rest", "unconfigured"} else "custom_rest"
     return PlatformConfigResponse(

@@ -364,6 +364,9 @@ class AVAROSSkill(FallbackSkill):
         try:
             config = self.settings_service.get_profile(profile_name)
             platform = ((config.platform_type if config is not None else "unconfigured") or "unconfigured").strip().lower()
+            if platform in {"custom_rest", "reneryo", "mock"}:
+                # All configured REST-style profiles are served by GenericRestAdapter.
+                return "generic_rest"
             return platform or "unconfigured"
         except Exception:
             return "unconfigured"

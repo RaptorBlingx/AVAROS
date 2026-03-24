@@ -174,12 +174,12 @@ class TestCreatePlatformConfig:
         assert response.status_code == 200
         mock_reload.assert_awaited_once()
 
-    def test_create_config_normalizes_to_reneryo_for_active_reneryo_profile(
+    def test_create_config_keeps_reneryo_storage_but_masks_response_as_custom_rest(
         self,
         client: TestClient,
         settings_service: SettingsService,
     ) -> None:
-        """Active reneryo profile should not drift to custom_rest on save."""
+        """Storage keeps reneryo, API contract still returns custom_rest."""
         settings_service.create_profile(
             "reneryo",
             PlatformConfig(
@@ -202,7 +202,7 @@ class TestCreatePlatformConfig:
         )
 
         assert response.status_code == 200
-        assert response.json()["platform_type"] == "reneryo"
+        assert response.json()["platform_type"] == "custom_rest"
         assert settings_service.get_platform_config().platform_type == "reneryo"
 
 

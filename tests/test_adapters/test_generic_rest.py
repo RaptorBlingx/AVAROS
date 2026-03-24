@@ -103,6 +103,36 @@ async def test_get_kpi_missing_mapping_raises_adapter_error(period: TimePeriod) 
 
 
 @pytest.mark.asyncio
+async def test_get_kpi_uses_auto_mapping_from_metric_resources(period: TimePeriod) -> None:
+    """Imported metric_resources should drive KPI calls without manual mapping rows."""
+    adapter = _build_asset_adapter(
+        {
+            "line-1": {
+                "display_name": "Line 1",
+                "asset_type": "line",
+                "metric_resources": {
+                    "energy_per_unit": "resource-123",
+                },
+            },
+        },
+    )
+    adapter._session = object()
+    adapter._retry_fetch = AsyncMock(return_value={"records": [{"value": 2.47}]})
+
+    result = await adapter.get_kpi(
+        metric=CanonicalMetric.ENERGY_PER_UNIT,
+        asset_id="Line-1",
+        period=period,
+    )
+
+    assert result.value == pytest.approx(2.47)
+    call_endpoint = adapter._retry_fetch.await_args.args[0]
+    call_params = adapter._retry_fetch.await_args.args[1]
+    assert call_endpoint == "/api/u/measurement/metric/resource/resource-123/values"
+    assert call_params["period"] == "RAW"
+
+
+@pytest.mark.asyncio
 async def test_get_kpi_invalid_json_path_raises_adapter_error(period: TimePeriod) -> None:
     """Missing json_path target raises mapping invalid error."""
     adapter = _build_adapter({
@@ -311,10 +341,10 @@ def test_supports_capability_false_for_unmapped_metric() -> None:
     assert adapter.supports_capability("energy_per_unit") is False
 
 
-def test_supports_asset_discovery_returns_false() -> None:
-    """Generic REST adapter should not claim live asset discovery support."""
+def test_supports_asset_discovery_returns_true_with_api_url() -> None:
+    """Generic REST adapter exposes best-effort discovery when URL exists."""
     adapter = _build_adapter({})
-    assert adapter.supports_asset_discovery() is False
+    assert adapter.supports_asset_discovery() is True
 
 
 @pytest.mark.asyncio
@@ -340,6 +370,34 @@ async def test_list_assets_returns_empty_without_saved_mappings() -> None:
     adapter = _build_asset_adapter({})
     assets = await adapter.list_assets()
     assert assets == []
+
+
+@pytest.mark.asyncio
+async def test_list_assets_discovers_from_api_when_no_saved_mappings() -> None:
+    """Live discovery should hydrate wizard suggestions on first run."""
+    adapter = _build_asset_adapter({})
+
+    with aioresponses() as mocked:
+        mocked.head("https://api.example.com", status=200)
+        mocked.get(
+            "https://api.example.com/api/u/measurement/seu/names?count=100",
+            status=200,
+            payload={
+                "records": [
+                    {
+                        "id": "seu-1",
+                        "name": "SEU Alpha",
+                        "energyResource": "ELECTRIC",
+                    },
+                ],
+            },
+        )
+        await adapter.initialize()
+        assets = await adapter.list_assets()
+        await adapter.shutdown()
+
+    assert [asset.asset_id for asset in assets] == ["seu-1"]
+    assert assets[0].display_name == "SEU Alpha"
 
 
 @pytest.mark.asyncio

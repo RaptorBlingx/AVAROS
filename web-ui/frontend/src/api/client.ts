@@ -1,5 +1,6 @@
 import type {
   ActivateProfileResponse,
+  AssetDiscoveryResponse,
   AssetLinkingSummaryResponse,
   AssetMappingsResponse,
   BaselineResponse,
@@ -12,6 +13,8 @@ import type {
   EmissionFactorPresetResponse,
   EmissionFactorRequest,
   EmissionFactorResponse,
+  GeneratorMappingRequest,
+  GeneratorMappingResponse,
   HealthResponse,
   IntentBinding,
   IntentBindingRequest,
@@ -501,6 +504,25 @@ export function saveConfiguredAssets(
 
 export function getAssetLinkingSummary(): Promise<AssetLinkingSummaryResponse> {
   return request<AssetLinkingSummaryResponse>("/api/v1/assets/linking-summary");
+}
+
+export function getAssetDiscovery(): Promise<AssetDiscoveryResponse> {
+  return request<AssetDiscoveryResponse>("/api/v1/assets/discover");
+}
+
+export function importGeneratorMapping(
+  payload: GeneratorMappingRequest,
+): Promise<GeneratorMappingResponse> {
+  return request<GeneratorMappingResponse>("/api/v1/assets/import-generator-mapping", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function importDefaultGeneratorMapping(): Promise<GeneratorMappingResponse> {
+  return request<GeneratorMappingResponse>("/api/v1/assets/import-generator-mapping/default", {
+    method: "POST",
+  });
 }
 
 // Backward-compatible aliases for existing callers.

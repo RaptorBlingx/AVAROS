@@ -7,7 +7,7 @@ interaction is exercised against an in-memory SQLite database.
 from __future__ import annotations
 
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -21,8 +21,9 @@ if _WEB_UI_DIR not in sys.path:
     sys.path.insert(0, _WEB_UI_DIR)
 
 from services.kpi_collector import KPICollector, _KPI_METRICS  # noqa: E402
-from skill.domain.models import CanonicalMetric, TimePeriod  # noqa: E402
-from skill.domain.results import KPIResult  # noqa: E402
+from skill.domain.kpi_baseline import KPIBaseline, KPISnapshot  # noqa: E402
+from skill.domain.models import CanonicalMetric, DataPoint, TimePeriod  # noqa: E402
+from skill.domain.results import KPIResult, TrendResult  # noqa: E402
 from skill.services.kpi_measurement import KPIMeasurementService  # noqa: E402
 from skill.services.database import Base  # noqa: E402
 from skill.services.settings import (  # noqa: E402
@@ -308,3 +309,125 @@ class TestErrorHandling:
         co2 = kpi.get_baseline("co2_total", "pilot-1")
         assert co2 is not None
         assert co2.baseline_value == pytest.approx(200.0)
+
+
+class TestTrendBackfill:
+    """Collector trend-based baseline/snapshot behavior."""
+
+    @pytest.mark.asyncio
+    async def test_seed_baselines_prefers_oldest_trend_point(self) -> None:
+        settings = _make_settings("my-api")
+        kpi = _make_kpi_service()
+        collector = KPICollector(settings, kpi)
+
+        start = datetime.now(tz=timezone.utc) - timedelta(days=7)
+        end = datetime.now(tz=timezone.utc)
+
+        adapter = _mock_adapter()
+        adapter.get_trend = AsyncMock(
+            side_effect=lambda metric, *_a, **_k: TrendResult(
+                metric=metric,
+                asset_id="Line-1",
+                data_points=[
+                    DataPoint(timestamp=start, value=10.0, unit=metric.default_unit),
+                    DataPoint(timestamp=end, value=12.0, unit=metric.default_unit),
+                ],
+                direction="up",
+                change_percent=20.0,
+                period=TimePeriod.last_month(),
+                granularity="daily",
+            ),
+        )
+
+        with patch.object(collector, "_create_adapter", return_value=adapter):
+            await collector.seed_baselines("pilot-1")
+
+        baseline = kpi.get_baseline("energy_per_unit", "pilot-1")
+        assert baseline is not None
+        assert baseline.baseline_value == pytest.approx(10.0)
+
+    @pytest.mark.asyncio
+    async def test_backfill_snapshots_from_trend_records_multiple_points(self) -> None:
+        settings = _make_settings("my-api")
+        kpi = _make_kpi_service()
+        collector = KPICollector(settings, kpi)
+
+        period = TimePeriod.last_month()
+        start = period.start.replace(tzinfo=timezone.utc)
+        middle = start + timedelta(days=7)
+        end = period.end.replace(tzinfo=timezone.utc)
+
+        adapter = _mock_adapter()
+        adapter.get_trend = AsyncMock(
+            side_effect=lambda metric, *_a, **_k: TrendResult(
+                metric=metric,
+                asset_id="Line-1",
+                data_points=[
+                    DataPoint(timestamp=start, value=9.0, unit=metric.default_unit),
+                    DataPoint(timestamp=middle, value=10.0, unit=metric.default_unit),
+                    DataPoint(timestamp=end, value=11.0, unit=metric.default_unit),
+                ],
+                direction="up",
+                change_percent=22.22,
+                period=period,
+                granularity="daily",
+            ),
+        )
+
+        with patch.object(collector, "_create_adapter", return_value=adapter):
+            count = await collector.backfill_snapshots_from_trend(
+                "pilot-1",
+                min_existing_points=10,
+            )
+
+        assert count == len(_KPI_METRICS) * 3
+        snapshots = kpi.get_snapshots("energy_per_unit", "pilot-1")
+        assert len(snapshots) == 3
+
+    def test_realign_baselines_uses_earliest_snapshot(self) -> None:
+        settings = _make_settings("my-api")
+        kpi = _make_kpi_service()
+        collector = KPICollector(settings, kpi)
+
+        baseline_time = datetime(2026, 3, 24, 12, 0, 0)
+        kpi.record_baseline(
+            KPIBaseline(
+                metric="energy_per_unit",
+                site_id="pilot-1",
+                baseline_value=1.0,
+                unit="kWh/unit",
+                recorded_at=baseline_time,
+                period_start=baseline_time.date(),
+                period_end=baseline_time.date(),
+                notes="seeded",
+            )
+        )
+        kpi.record_snapshot(
+            KPISnapshot(
+                metric="energy_per_unit",
+                site_id="pilot-1",
+                value=2.5,
+                unit="kWh/unit",
+                measured_at=datetime(2026, 3, 20, 8, 0, 0),
+                period_start=datetime(2026, 3, 20, 0, 0, 0).date(),
+                period_end=datetime(2026, 3, 20, 0, 0, 0).date(),
+            )
+        )
+        kpi.record_snapshot(
+            KPISnapshot(
+                metric="energy_per_unit",
+                site_id="pilot-1",
+                value=1.5,
+                unit="kWh/unit",
+                measured_at=datetime(2026, 3, 24, 8, 0, 0),
+                period_start=datetime(2026, 3, 24, 0, 0, 0).date(),
+                period_end=datetime(2026, 3, 24, 0, 0, 0).date(),
+            )
+        )
+
+        updated = collector.realign_baselines_to_earliest_snapshot("pilot-1")
+
+        assert updated == 1
+        aligned = kpi.get_baseline("energy_per_unit", "pilot-1")
+        assert aligned is not None
+        assert aligned.baseline_value == pytest.approx(2.5)

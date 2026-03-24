@@ -3,7 +3,9 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 
 import {
   createPlatformConfig,
+  getPlatformConfig,
   getStatus,
+  importDefaultGeneratorMapping,
   testConnection,
   toFriendlyErrorMessage,
 } from "../api/client";
@@ -34,7 +36,50 @@ type WizardState = {
   apiKey: string;
 };
 
-function buildPayload(state: WizardState): PlatformConfigRequest {
+type IntegrationPreset = "reneryo" | "mock" | null;
+
+const RENERYO_PRESET_URL = (
+  import.meta.env.VITE_RENERYO_PRESET_URL || "http://10.33.10.110:30377/"
+).trim();
+const MOCK_PRESET_URL =
+  (import.meta.env.VITE_MOCK_PRESET_URL || "http://reneryo-data-generator-api:8090").trim();
+
+function normalizeUrl(url: string): string {
+  return url.trim().replace(/\/+$/, "");
+}
+
+function isMockPresetUrl(url: string): boolean {
+  return normalizeUrl(url) === normalizeUrl(MOCK_PRESET_URL);
+}
+
+function isReneryoPresetUrl(url: string): boolean {
+  return normalizeUrl(url) === normalizeUrl(RENERYO_PRESET_URL);
+}
+
+function fromBackendAuthType(authType: string | undefined): WizardState["authType"] {
+  if (authType === "cookie") {
+    return "cookie";
+  }
+  if (authType === "none") {
+    return "none";
+  }
+  return "api_key";
+}
+
+function buildPayload(
+  state: WizardState,
+  integrationPreset: IntegrationPreset,
+): PlatformConfigRequest {
+  if (integrationPreset === "mock") {
+    return {
+      platform_type: "custom_rest",
+      api_url: MOCK_PRESET_URL,
+      api_key: "",
+      extra_settings: {
+        auth_type: "none",
+      },
+    };
+  }
   return {
     platform_type: "custom_rest",
     api_url: state.apiUrl.trim(),
@@ -57,7 +102,13 @@ function enableDashboardBypass(): void {
   );
 }
 
-function validateConnection(state: WizardState): string {
+function validateConnection(
+  state: WizardState,
+  integrationPreset: IntegrationPreset,
+): string {
+  if (integrationPreset === "mock") {
+    return "";
+  }
   const url = state.apiUrl.trim();
   const key = state.apiKey.trim();
   if (!url) {
@@ -101,6 +152,19 @@ export default function Wizard() {
     new Set(),
   );
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [integrationPreset, setIntegrationPreset] = useState<IntegrationPreset>(null);
+  const effectiveIntegrationPreset: IntegrationPreset = useMemo(() => {
+    if (integrationPreset === "mock") {
+      return "mock";
+    }
+    if (integrationPreset === "reneryo") {
+      return "reneryo";
+    }
+    if (isReneryoPresetUrl(state.apiUrl)) {
+      return "reneryo";
+    }
+    return null;
+  }, [integrationPreset, state.apiUrl]);
 
   const [headerError, setHeaderError] = useState("");
   const [nextBlocked, setNextBlocked] = useState(false);
@@ -155,6 +219,43 @@ export default function Wizard() {
   useEffect(() => {
     void loadStatus();
   }, [loadStatus]);
+
+  useEffect(() => {
+    const hydrateConnectionForm = async () => {
+      try {
+        const config = await getPlatformConfig();
+        if (config.platform_type === "unconfigured") {
+          return;
+        }
+        setState((prev) => ({
+          ...prev,
+          apiUrl: config.api_url ?? "",
+          authType: fromBackendAuthType(
+            typeof config.extra_settings?.auth_type === "string"
+              ? config.extra_settings.auth_type
+              : undefined,
+          ),
+          apiKey: "",
+        }));
+        if (
+          isMockPresetUrl(config.api_url ?? "") &&
+          fromBackendAuthType(
+            typeof config.extra_settings?.auth_type === "string"
+              ? config.extra_settings.auth_type
+              : undefined,
+          ) === "none"
+        ) {
+          setIntegrationPreset("mock");
+        } else if (isReneryoPresetUrl(config.api_url ?? "")) {
+          setIntegrationPreset("reneryo");
+        }
+      } catch {
+        // Wizard can still continue with manual entry when preload fails.
+      }
+    };
+
+    void hydrateConnectionForm();
+  }, []);
 
   useEffect(() => {
     setHeaderError("");
@@ -230,7 +331,7 @@ export default function Wizard() {
   ]);
 
   const handleTestConnection = useCallback(async () => {
-    const validationError = validateConnection(state);
+    const validationError = validateConnection(state, effectiveIntegrationPreset);
     setFormError(validationError);
     setTestError("");
     setTestResult(null);
@@ -239,17 +340,19 @@ export default function Wizard() {
     }
     setIsTesting(true);
     try {
-      const result = await testConnection(buildPayload(state));
+      const result = await testConnection(
+        buildPayload(state, effectiveIntegrationPreset),
+      );
       setTestResult(result);
     } catch (error: unknown) {
       setTestError(toFriendlyErrorMessage(error));
     } finally {
       setIsTesting(false);
     }
-  }, [state]);
+  }, [effectiveIntegrationPreset, state]);
 
   const handleSaveConnection = useCallback(async () => {
-    const validationError = validateConnection(state);
+    const validationError = validateConnection(state, effectiveIntegrationPreset);
     setFormError(validationError);
     setTestError("");
     if (validationError) {
@@ -258,7 +361,18 @@ export default function Wizard() {
 
     setIsSaving(true);
     try {
-      await createPlatformConfig(buildPayload(state));
+      await createPlatformConfig(buildPayload(state, effectiveIntegrationPreset));
+      if (effectiveIntegrationPreset === "reneryo") {
+        try {
+          await importDefaultGeneratorMapping();
+        } catch (error: unknown) {
+          setFormError(
+            `Connected to RENERYO, but default mapping import failed. ` +
+              `You can continue and import manually in Metric Mapping. ` +
+              `Details: ${toFriendlyErrorMessage(error)}`,
+          );
+        }
+      }
       markStepComplete(1);
       goToStep(2);
     } catch (error: unknown) {
@@ -266,7 +380,7 @@ export default function Wizard() {
     } finally {
       setIsSaving(false);
     }
-  }, [goToStep, markStepComplete, state]);
+  }, [effectiveIntegrationPreset, goToStep, markStepComplete, state]);
 
   const handleAssetRegistrationStepComplete = useCallback(() => {
     markStepComplete(2);
@@ -301,6 +415,7 @@ export default function Wizard() {
           statusLoading={loadingStatus}
           statusError={statusError}
           platformType={"custom_rest"}
+          isMockPresetActive={effectiveIntegrationPreset === "mock"}
           authType={state.authType}
           apiUrl={state.apiUrl}
           apiKey={state.apiKey}
@@ -318,6 +433,42 @@ export default function Wizard() {
           onApiKeyChange={(value) =>
             setState((prev) => ({ ...prev, apiKey: value }))
           }
+          onUseReneryoQuickAction={() => {
+            setIntegrationPreset("reneryo");
+            setFormError("");
+            setTestError("");
+            setTestResult(null);
+            setState((prev) => ({
+              ...prev,
+              authType: "cookie",
+              apiUrl: RENERYO_PRESET_URL,
+              apiKey: "",
+            }));
+          }}
+          onUseMockQuickAction={() => {
+            setIntegrationPreset("mock");
+            setFormError("");
+            setTestError("");
+            setTestResult(null);
+            setState((prev) => ({
+              ...prev,
+              authType: "none",
+              apiUrl: MOCK_PRESET_URL,
+              apiKey: "",
+            }));
+          }}
+          onUseApiMode={() => {
+            setIntegrationPreset(null);
+            setFormError("");
+            setTestError("");
+            setTestResult(null);
+            setState((prev) => ({
+              ...prev,
+              authType: prev.authType === "none" ? "api_key" : prev.authType,
+              apiUrl: isMockPresetUrl(prev.apiUrl) ? "" : prev.apiUrl,
+              apiKey: "",
+            }));
+          }}
           onTestConnection={handleTestConnection}
           onSaveAndContinue={handleSaveConnection}
         />
@@ -328,6 +479,7 @@ export default function Wizard() {
       return (
         <AssetRegistrationStep
           platformType={"custom_rest"}
+          integrationPreset={effectiveIntegrationPreset}
           onComplete={handleAssetRegistrationStepComplete}
           onSkip={handleAssetRegistrationStepComplete}
         />
@@ -337,6 +489,7 @@ export default function Wizard() {
     if (state.currentStep === 3) {
       return (
         <MetricMappingStep
+          integrationPreset={effectiveIntegrationPreset}
           onComplete={handleMetricStepComplete}
           onSkip={handleMetricStepComplete}
         />
@@ -378,6 +531,7 @@ export default function Wizard() {
     state.apiUrl,
     state.authType,
     state.currentStep,
+    effectiveIntegrationPreset,
     status,
     statusError,
     successStatus,

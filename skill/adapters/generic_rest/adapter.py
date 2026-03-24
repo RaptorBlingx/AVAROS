@@ -58,6 +58,10 @@ class GenericRestAdapter(
         "/api/health",
         "/health",
     )
+    _ASSET_DISCOVERY_ENDPOINTS: tuple[str, ...] = (
+        "/api/u/measurement/seu/names?count=100",
+        "/u/measurement/seu/names?count=100",
+    )
 
     def __init__(
         self,
@@ -95,7 +99,7 @@ class GenericRestAdapter(
             mapping=mapping,
             period=period,
             asset_id=asset_id,
-            extra_settings=self._string_settings(),
+            extra_settings=self._runtime_settings_for(metric.value, asset_id),
         )
         data = await self._retry_fetch(endpoint, params)
         return parse_mapped_kpi_response(data, mapping, metric, asset_id, period)
@@ -125,7 +129,7 @@ class GenericRestAdapter(
                 mapping=mapping,
                 period=period,
                 asset_id=asset_id,
-                extra_settings=self._string_settings(),
+                extra_settings=self._runtime_settings_for(metric.value, asset_id),
             )
             data = await self._retry_fetch(endpoint, params)
             value = extract_mapped_value(data, json_path, mapping)
@@ -166,6 +170,7 @@ class GenericRestAdapter(
 
         endpoint, params = self._resolve_trend_request(
             mapping=mapping,
+            metric_name=metric.value,
             period=period,
             asset_id=asset_id,
             granularity=granularity,
@@ -215,13 +220,13 @@ class GenericRestAdapter(
             mapping=mapping,
             period=period,
             asset_id=asset_id,
-            extra_settings=self._string_settings(),
+            extra_settings=self._runtime_settings_for(metric.value, asset_id),
             endpoint_key=endpoint_key,
         )
         return await self._retry_fetch(endpoint, params)
 
     async def list_assets(self) -> list[Asset]:
-        """Return assets from profile-scoped asset mappings."""
+        """Return profile assets, with live discovery fallback when empty."""
         mappings = self._load_asset_mappings()
         assets: list[Asset] = []
         for asset_id, mapping in sorted(mappings.items(), key=lambda item: item[0]):
@@ -230,11 +235,19 @@ class GenericRestAdapter(
             asset = self._build_asset_from_mapping(asset_id, mapping)
             if asset is not None:
                 assets.append(asset)
+        if assets:
+            return assets
+
+        # For first-run wizard flows, allow live discovery fallback when no
+        # profile assets are registered yet.
+        discovered_assets = await self._discover_assets_from_api()
+        if discovered_assets:
+            return discovered_assets
         return assets
 
     def supports_asset_discovery(self) -> bool:
-        """Generic REST adapter does not perform live asset discovery."""
-        return False
+        """Return whether lightweight discovery can be attempted."""
+        return bool(self._api_url)
 
     def supports_capability(self, capability: str) -> bool:
         """Return True only when capability maps to a configured metric."""
@@ -364,6 +377,67 @@ class GenericRestAdapter(
                 continue
 
         return None
+
+    async def _discover_assets_from_api(self) -> list[Asset]:
+        """Try common discovery endpoints and convert records to Assets."""
+        if self._session is None:
+            return []
+
+        seen_ids: set[str] = set()
+        for endpoint in self._ASSET_DISCOVERY_ENDPOINTS:
+            try:
+                url = self._build_request_url(endpoint)
+                async with self._session.get(url) as response:
+                    if response.status in {401, 403}:
+                        return []
+                    if response.status >= 400:
+                        continue
+                    payload = await response.json()
+            except Exception:  # noqa: BLE001 - discovery is best-effort
+                continue
+
+            records = payload.get("records", []) if isinstance(payload, dict) else []
+            if not isinstance(records, list):
+                continue
+
+            discovered: list[Asset] = []
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+
+                asset_id = str(record.get("id", "")).strip()
+                if not asset_id:
+                    continue
+                normalized_id = asset_id.lower()
+                if normalized_id in seen_ids:
+                    continue
+                seen_ids.add(normalized_id)
+
+                display_name = str(record.get("name", "")).strip() or asset_id
+                alias = display_name.lower().strip()
+                aliases = []
+                if alias and alias != asset_id.lower() and len(alias) <= 32:
+                    aliases = [alias]
+
+                metadata: dict[str, Any] = {"source": "api_discovery"}
+                energy_resource = str(record.get("energyResource", "")).strip()
+                if energy_resource:
+                    metadata["energy_resource"] = energy_resource
+
+                discovered.append(
+                    Asset(
+                        asset_id=asset_id,
+                        display_name=display_name,
+                        asset_type="machine",
+                        aliases=aliases,
+                        metadata=metadata,
+                    ),
+                )
+
+            if discovered:
+                return discovered
+
+        return []
 
     @property
     def platform_name(self) -> str:

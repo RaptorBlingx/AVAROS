@@ -7,6 +7,7 @@ const mockApi = vi.hoisted(() => ({
   createMetricMapping: vi.fn(),
   deleteMetricMapping: vi.fn(),
   getAssetLinkingSummary: vi.fn(),
+  importGeneratorMapping: vi.fn(),
   listMetricMappings: vi.fn(),
   toFriendlyErrorMessage: vi.fn((error: unknown) =>
     error instanceof Error ? error.message : "error",
@@ -33,6 +34,7 @@ describe("MetricMappingStep", () => {
     mockApi.createMetricMapping.mockReset();
     mockApi.deleteMetricMapping.mockReset();
     mockApi.getAssetLinkingSummary.mockReset();
+    mockApi.importGeneratorMapping.mockReset();
     mockApi.listMetricMappings.mockReset();
     mockApi.updateMetricMapping.mockReset();
 
@@ -48,6 +50,11 @@ describe("MetricMappingStep", () => {
     ]);
     mockApi.createMetricMapping.mockResolvedValue({});
     mockApi.deleteMetricMapping.mockResolvedValue(undefined);
+    mockApi.importGeneratorMapping.mockResolvedValue({
+      imported_metrics: 1,
+      imported_resources: 1,
+      asset_mappings: {},
+    });
     mockApi.getAssetLinkingSummary.mockResolvedValue({
       metric_coverage: [
         {
@@ -94,12 +101,11 @@ describe("MetricMappingStep", () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
 
-  it("renders read-only reneryo coverage summary and continues", async () => {
-    const onComplete = vi.fn();
+  it("renders RENERYO helper coverage while keeping manual mapping editable", async () => {
     render(
       <MetricMappingStep
-        platformType="reneryo"
-        onComplete={onComplete}
+        integrationPreset="reneryo"
+        onComplete={vi.fn()}
         onSkip={vi.fn()}
       />,
     );
@@ -108,11 +114,9 @@ describe("MetricMappingStep", () => {
       expect(mockApi.getAssetLinkingSummary).toHaveBeenCalledTimes(1);
     });
 
+    expect(screen.getByText("RENERYO Helper")).toBeTruthy();
     expect(screen.getByText("changeover_time")).toBeTruthy();
     expect(screen.getByText("Linked assets: 1/1")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Add Mapping" })).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Add Mapping" })).toBeTruthy();
   });
 });

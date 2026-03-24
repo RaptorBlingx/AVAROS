@@ -12,7 +12,7 @@ from skill.adapters.base import ManufacturingAdapter
 from skill.adapters.factory import AdapterFactory
 from skill.domain.kpi_baseline import KPIBaseline, KPISnapshot
 from skill.domain.models import CanonicalMetric, TimePeriod
-from skill.domain.results import KPIResult
+from skill.domain.results import KPIResult, TrendResult
 from skill.services.co2_service import CO2DerivationService
 from skill.services.kpi_measurement import KPIMeasurementService
 from skill.services.production_data import ProductionDataService
@@ -91,6 +91,54 @@ class KPICollector:
         finally:
             await adapter.shutdown()
 
+    async def backfill_snapshots_from_trend(
+        self,
+        site_id: str,
+        *,
+        min_existing_points: int = 6,
+    ) -> int:
+        """Backfill historical snapshots from trend endpoints when history is sparse."""
+        if not self._settings.is_configured():
+            return 0
+
+        adapter = await self._create_adapter()
+        try:
+            return await self._backfill_snapshots_from_trend_with_adapter(
+                adapter=adapter,
+                site_id=site_id,
+                min_existing_points=min_existing_points,
+            )
+        finally:
+            await adapter.shutdown()
+
+    def realign_baselines_to_earliest_snapshot(self, site_id: str) -> int:
+        """Align baseline values to earliest available snapshot per metric."""
+        updated = 0
+        baselines = self._kpi.get_all_baselines(site_id)
+        for baseline in baselines:
+            snapshots = self._kpi.get_snapshots(baseline.metric, site_id)
+            if len(snapshots) < 2:
+                continue
+            earliest = snapshots[0]
+            if (
+                baseline.baseline_value == earliest.value
+                and baseline.unit == earliest.unit
+            ):
+                continue
+            aligned = KPIBaseline(
+                metric=baseline.metric,
+                site_id=site_id,
+                baseline_value=earliest.value,
+                unit=earliest.unit or baseline.unit,
+                recorded_at=earliest.measured_at,
+                period_start=earliest.period_start,
+                period_end=earliest.period_end,
+                notes="auto-aligned to earliest historical snapshot",
+            )
+            self._kpi.record_baseline(aligned)
+            updated += 1
+        return updated
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -112,7 +160,7 @@ class KPICollector:
         cache: dict[CanonicalMetric, KPIResult] = {}
         for metric in metrics:
             try:
-                result = await self._resolve_metric_result(
+                result = await self._resolve_baseline_result(
                     adapter=adapter,
                     metric=metric,
                     period=period,
@@ -206,15 +254,21 @@ class KPICollector:
         if metric in cache:
             return cache[metric]
 
+        metric_asset_id = self._resolve_metric_asset_id(metric)
         try:
-            direct = await adapter.get_kpi(metric, _DEFAULT_ASSET_ID, period)
+            direct = await adapter.get_kpi(metric, metric_asset_id, period)
             cache[metric] = direct
             return direct
         except Exception:
             logger.debug("Direct metric fetch failed for %s", metric.value, exc_info=True)
 
         if metric == CanonicalMetric.CO2_TOTAL:
-            derived = await self._derive_co2_total(adapter, period, cache)
+            derived = await self._derive_co2_total(
+                adapter,
+                period,
+                cache,
+                asset_id=metric_asset_id,
+            )
             if derived is not None:
                 cache[metric] = derived
             return derived
@@ -227,11 +281,115 @@ class KPICollector:
 
         return None
 
+    async def _resolve_baseline_result(
+        self,
+        adapter: ManufacturingAdapter,
+        metric: CanonicalMetric,
+        period: TimePeriod,
+        cache: dict[CanonicalMetric, KPIResult],
+    ) -> KPIResult | None:
+        """Resolve baseline value preferring the oldest trend point in period."""
+        asset_id = self._resolve_metric_asset_id(metric)
+        try:
+            trend = await adapter.get_trend(
+                metric=metric,
+                asset_id=asset_id,
+                period=period,
+                granularity="daily",
+            )
+            if isinstance(trend, TrendResult) and trend.data_points:
+                first_point = min(trend.data_points, key=lambda point: point.timestamp)
+                return KPIResult(
+                    metric=metric,
+                    value=first_point.value,
+                    unit=first_point.unit or metric.default_unit,
+                    asset_id=asset_id,
+                    period=period,
+                    timestamp=self._normalize_measurement_time(first_point.timestamp),
+                )
+        except Exception:
+            logger.debug(
+                "Baseline trend lookup failed for %s, falling back to direct KPI",
+                metric.value,
+                exc_info=True,
+            )
+
+        return await self._resolve_metric_result(
+            adapter=adapter,
+            metric=metric,
+            period=period,
+            cache=cache,
+        )
+
+    async def _backfill_snapshots_from_trend_with_adapter(
+        self,
+        *,
+        adapter: ManufacturingAdapter,
+        site_id: str,
+        min_existing_points: int,
+    ) -> int:
+        """Persist trend points as snapshots when period history is insufficient."""
+        period = TimePeriod.last_month()
+        recorded = 0
+        for metric in _KPI_METRICS:
+            existing = self._kpi.get_snapshots(
+                metric=metric.value,
+                site_id=site_id,
+                start_date=period.start.date(),
+                end_date=period.end.date(),
+            )
+            if len(existing) >= min_existing_points:
+                continue
+
+            asset_id = self._resolve_metric_asset_id(metric)
+            try:
+                trend = await adapter.get_trend(
+                    metric=metric,
+                    asset_id=asset_id,
+                    period=period,
+                    granularity="daily",
+                )
+            except Exception:
+                logger.debug(
+                    "Trend backfill failed for %s",
+                    metric.value,
+                    exc_info=True,
+                )
+                continue
+
+            if not isinstance(trend, TrendResult) or not trend.data_points:
+                continue
+
+            existing_timestamps = {
+                self._normalize_measurement_time(snapshot.measured_at)
+                for snapshot in existing
+            }
+            for point in trend.data_points:
+                measured_at = self._normalize_measurement_time(point.timestamp)
+                if measured_at in existing_timestamps:
+                    continue
+                snapshot = KPISnapshot(
+                    metric=metric.value,
+                    site_id=site_id,
+                    value=point.value,
+                    unit=point.unit or metric.default_unit,
+                    measured_at=measured_at,
+                    period_start=trend.period.start.date(),
+                    period_end=trend.period.end.date(),
+                )
+                self._kpi.record_snapshot(snapshot)
+                existing_timestamps.add(measured_at)
+                recorded += 1
+
+        return recorded
+
     async def _derive_co2_total(
         self,
         adapter: ManufacturingAdapter,
         period: TimePeriod,
         cache: dict[CanonicalMetric, KPIResult],
+        *,
+        asset_id: str,
     ) -> KPIResult | None:
         """Derive CO2 total using energy_total and configured factor."""
         energy_total = cache.get(CanonicalMetric.ENERGY_TOTAL)
@@ -239,7 +397,7 @@ class KPICollector:
             try:
                 energy_total = await adapter.get_kpi(
                     CanonicalMetric.ENERGY_TOTAL,
-                    _DEFAULT_ASSET_ID,
+                    asset_id,
                     period,
                 )
                 cache[CanonicalMetric.ENERGY_TOTAL] = energy_total
@@ -251,7 +409,7 @@ class KPICollector:
             return self._co2.derive_co2_total(
                 energy_kwh=energy_total.value,
                 energy_source=self._resolve_energy_source(),
-                asset_id=_DEFAULT_ASSET_ID,
+                asset_id=asset_id,
                 period=period,
             )
         except Exception:
@@ -286,3 +444,34 @@ class KPICollector:
         except Exception:
             logger.debug("Collector energy source lookup failed", exc_info=True)
             return "electricity"
+
+    def _resolve_metric_asset_id(self, metric: CanonicalMetric) -> str:
+        """Choose a concrete asset for metrics backed by per-asset resources."""
+        try:
+            mappings = self._settings.get_asset_mappings()
+        except Exception:
+            logger.debug("Asset mapping lookup failed, using default asset", exc_info=True)
+            return _DEFAULT_ASSET_ID
+
+        if not isinstance(mappings, dict) or not mappings:
+            return _DEFAULT_ASSET_ID
+
+        metric_name = metric.value
+        for asset_id, mapping in mappings.items():
+            if not isinstance(mapping, dict):
+                continue
+            metric_resources = mapping.get("metric_resources", {})
+            if not isinstance(metric_resources, dict):
+                continue
+            resource_id = str(metric_resources.get(metric_name, "")).strip()
+            if resource_id:
+                return str(asset_id)
+
+        return _DEFAULT_ASSET_ID
+
+    @staticmethod
+    def _normalize_measurement_time(value: datetime) -> datetime:
+        """Normalize timestamps to UTC-naive precision for DB consistency."""
+        if value.tzinfo is not None:
+            return value.astimezone(timezone.utc).replace(tzinfo=None, microsecond=0)
+        return value.replace(microsecond=0)

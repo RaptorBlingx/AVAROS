@@ -182,10 +182,9 @@ def _resolve_default_compare_assets(self) -> tuple[str, str] | None:
         except Exception:
             mappings = {}
         if isinstance(mappings, dict):
-            asset_ids = [str(key).strip() for key in mappings.keys() if str(key).strip()]
+            asset_ids = _ranked_mapping_asset_ids(mappings)
             if len(asset_ids) >= 2:
-                ordered = sorted(asset_ids)
-                return ordered[0], ordered[1]
+                return asset_ids[0], asset_ids[1]
 
     try:
         assets = self._get_asset_registry()
@@ -213,11 +212,7 @@ def _resolve_default_asset_id(self, *, fallback: str) -> str:
         except Exception:
             mappings = {}
         if isinstance(mappings, dict):
-            asset_ids = sorted(
-                str(key).strip()
-                for key in mappings.keys()
-                if str(key).strip()
-            )
+            asset_ids = _ranked_mapping_asset_ids(mappings)
             if asset_ids:
                 return asset_ids[0]
 
@@ -234,3 +229,33 @@ def _resolve_default_asset_id(self, *, fallback: str) -> str:
         return registry_ids[0]
 
     return fallback
+
+
+def _ranked_mapping_asset_ids(mappings: dict[str, object]) -> list[str]:
+    """Rank configured mapping keys by KPI readiness then lexical order.
+
+    Assets with non-empty ``metric_resources`` are preferred over plain
+    registration-only rows. This avoids selecting discovery-only UUID rows
+    as implicit defaults for KPI/trend intents.
+    """
+    with_resources: list[str] = []
+    without_resources: list[str] = []
+    for raw_key, raw_mapping in mappings.items():
+        asset_id = str(raw_key).strip()
+        if not asset_id:
+            continue
+        if _has_metric_resources(raw_mapping):
+            with_resources.append(asset_id)
+        else:
+            without_resources.append(asset_id)
+    return sorted(with_resources) + sorted(without_resources)
+
+
+def _has_metric_resources(raw_mapping: object) -> bool:
+    """Return True when mapping contains at least one metric resource."""
+    if not isinstance(raw_mapping, dict):
+        return False
+    resources = raw_mapping.get("metric_resources")
+    if not isinstance(resources, dict):
+        return False
+    return any(str(resource_id).strip() for resource_id in resources.values())

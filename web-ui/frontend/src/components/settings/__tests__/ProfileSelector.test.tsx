@@ -428,6 +428,58 @@ describe("ProfileSelector", () => {
     });
   });
 
+  it("creates profile in mock preset mode with no-auth payload", async () => {
+    const newConfig: ProfileDetailResponse = {
+      name: "mock-profile",
+      platform_type: "custom_rest",
+      api_url: "http://reneryo-data-generator-api:8090",
+      api_key: "****",
+      extra_settings: { auth_type: "none" },
+      is_builtin: false,
+      is_active: false,
+    };
+    mockCreateProfile.mockResolvedValue(newConfig);
+    mockGetProfile.mockImplementation(async (name: string) => {
+      if (name === "mock-profile") return newConfig;
+      if (name === "unconfigured") return MOCK_PROFILE_CONFIG;
+      return RENERYO_PROFILE_CONFIG;
+    });
+
+    render(
+      <ProfileSelector onProfileChange={onProfileChange} onNotify={onNotify} />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-new-btn")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("profile-new-btn"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-new-name")).toBeTruthy();
+      expect(screen.getByTestId("profile-new-mode")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByTestId("profile-new-name"), {
+      target: { value: "mock-profile" },
+    });
+    fireEvent.change(screen.getByTestId("profile-new-mode"), {
+      target: { value: "mock" },
+    });
+
+    fireEvent.click(screen.getByTestId("profile-create-btn"));
+
+    await waitFor(() => {
+      expect(mockCreateProfile).toHaveBeenCalledWith({
+        name: "mock-profile",
+        platform_type: "custom_rest",
+        api_url: "http://reneryo-data-generator-api:8090",
+        api_key: "",
+        extra_settings: { auth_type: "none" },
+      });
+    });
+  });
+
   it("returns null when no profiles are loaded and not loading", async () => {
     mockListProfiles.mockResolvedValue({
       profiles: [],

@@ -288,6 +288,30 @@ def test_import_generator_mapping_rejects_unknown_metric_names(
     assert settings_service.get_asset_mappings() == {"line-1": {"display_name": "Line 1"}}
 
 
+def test_import_default_generator_mapping_uses_file_payload(
+    client: TestClient,
+    settings_service: SettingsService,
+    custom_rest_profile: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default mapping import should load mapping_output.json from configured file path."""
+    mapping_file = tmp_path / "mapping_output.json"
+    mapping_file.write_text(
+        '{"mapping":{"energy_total":{"Line-1":"uuid-1","Line-2":"uuid-2"}}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AVAROS_GENERATOR_MAPPING_FILE", str(mapping_file))
+
+    response = client.post("/api/v1/assets/import-generator-mapping/default")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["imported_metrics"] == 1
+    assert body["imported_resources"] == 2
+    assert body["asset_mappings"]["Line-1"]["metric_resources"]["energy_total"] == "uuid-1"
+    assert body["asset_mappings"]["Line-2"]["metric_resources"]["energy_total"] == "uuid-2"
+
+
 def test_config_assets_preserves_existing_metric_resources_when_missing_in_payload(
     client: TestClient,
     settings_service: SettingsService,

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
+  getAssetDiscovery,
   getConfiguredAssets,
   saveConfiguredAssets,
   toFriendlyErrorMessage,
@@ -25,6 +26,7 @@ type RegistrationRow = {
 
 type AssetRegistrationStepProps = {
   platformType: PlatformType | null;
+  integrationPreset?: "reneryo" | "mock" | null;
   onComplete: () => void;
   onSkip: () => void;
 };
@@ -93,11 +95,29 @@ function toRegistrationRows(
       ];
 }
 
+function sanitizeAliasList(aliases: string[]): string[] {
+  const deduped = new Set<string>();
+  for (const rawAlias of aliases) {
+    const alias = rawAlias.trim();
+    if (!alias || alias.length > 32) {
+      continue;
+    }
+    deduped.add(alias);
+    if (deduped.size >= 5) {
+      break;
+    }
+  }
+  return Array.from(deduped);
+}
+
 export default function AssetRegistrationStep({
   platformType,
+  integrationPreset = null,
   onComplete,
   onSkip,
 }: AssetRegistrationStepProps) {
+  const shouldAttemptDiscovery =
+    platformType !== "unconfigured" && integrationPreset !== "mock";
   const [rows, setRows] = useState<RegistrationRow[]>([]);
   const [storedMappings, setStoredMappings] = useState<
     Record<string, AssetMappingItem>
@@ -105,6 +125,16 @@ export default function AssetRegistrationStep({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [discoveryError, setDiscoveryError] = useState("");
+  const [suggestedAssets, setSuggestedAssets] = useState<
+    Array<{
+      asset_id: string;
+      display_name: string;
+      asset_type: "line" | "machine" | "sensor";
+      aliases: string[];
+    }>
+  >([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -115,12 +145,62 @@ export default function AssetRegistrationStep({
       const registrationRows = toRegistrationRows(existingMappings);
       setStoredMappings(existingMappings);
       setRows(registrationRows);
+
+      if (shouldAttemptDiscovery) {
+        setDiscoveryLoading(true);
+        setDiscoveryError("");
+        try {
+          const discovery = await getAssetDiscovery();
+          const nextSuggestions = (discovery.assets ?? [])
+            .filter((asset) => typeof asset.asset_id === "string" && asset.asset_id.trim())
+            .map((asset) => ({
+              asset_id: asset.asset_id.trim(),
+              display_name: asset.display_name?.trim() || asset.asset_id.trim(),
+              asset_type:
+                asset.asset_type === "line" ||
+                asset.asset_type === "sensor"
+                  ? asset.asset_type
+                  : "machine",
+              aliases: sanitizeAliasList(
+                Array.isArray(asset.aliases)
+                  ? asset.aliases.map((alias) => String(alias))
+                  : [],
+              ),
+            }));
+          setSuggestedAssets(nextSuggestions);
+          if (Object.keys(existingMappings).length === 0 && nextSuggestions.length > 0) {
+            setRows(
+              nextSuggestions.map((asset) => ({
+                rowId: createRowId(asset.asset_id),
+                assetId: asset.asset_id,
+                displayName: asset.display_name,
+                assetType: asset.asset_type,
+                aliases: aliasesToCsv(asset.aliases),
+                isExisting: false,
+                existingAssetId: null,
+              })),
+            );
+          }
+          if (discovery.discovery_error) {
+            setDiscoveryError(discovery.discovery_error);
+          }
+        } catch (discoverErr: unknown) {
+          setDiscoveryError(toFriendlyErrorMessage(discoverErr));
+          setSuggestedAssets([]);
+        } finally {
+          setDiscoveryLoading(false);
+        }
+      } else {
+        setDiscoveryLoading(false);
+        setDiscoveryError("");
+        setSuggestedAssets([]);
+      }
     } catch (err: unknown) {
       setError(toFriendlyErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [shouldAttemptDiscovery]);
 
   useEffect(() => {
     void load();
@@ -244,6 +324,49 @@ export default function AssetRegistrationStep({
     }
   }, [onComplete, rows, storedMappings, validationError]);
 
+  const importSuggestedAsset = useCallback(
+    (assetId: string) => {
+      const candidate = suggestedAssets.find((asset) => asset.asset_id === assetId);
+      if (!candidate) {
+        return;
+      }
+      setRows((prev) => {
+        const existingIds = new Set(
+          prev
+            .map((row) => (row.existingAssetId ?? row.assetId).trim().toLowerCase())
+            .filter(Boolean),
+        );
+        if (existingIds.has(candidate.asset_id.toLowerCase())) {
+          return prev;
+        }
+        const draftRows = [...prev];
+        const onlyBlankDraft =
+          draftRows.length === 1 &&
+          !draftRows[0].assetId.trim() &&
+          !draftRows[0].displayName.trim() &&
+          !draftRows[0].aliases.trim();
+        const nextRows = onlyBlankDraft ? [] : draftRows;
+        nextRows.push({
+          rowId: createRowId(candidate.asset_id),
+          assetId: candidate.asset_id,
+          displayName: candidate.display_name,
+          assetType: candidate.asset_type,
+          aliases: aliasesToCsv(sanitizeAliasList(candidate.aliases)),
+          isExisting: false,
+          existingAssetId: null,
+        });
+        return nextRows;
+      });
+    },
+    [suggestedAssets],
+  );
+
+  const importAllSuggestedAssets = useCallback(() => {
+    for (const asset of suggestedAssets) {
+      importSuggestedAsset(asset.asset_id);
+    }
+  }, [importSuggestedAsset, suggestedAssets]);
+
   const subtitle =
     platformType === "unconfigured"
       ? "Define your factory vocabulary even in demo mode."
@@ -288,6 +411,67 @@ export default function AssetRegistrationStep({
             <p className="m-0 text-xs text-slate-500 dark:text-slate-400">
               Existing Asset IDs are immutable. Add a new row to register a new asset ID.
             </p>
+
+            {shouldAttemptDiscovery && (
+              <div className="rounded-xl border border-slate-300 bg-white/90 p-3 dark:border-slate-600 dark:bg-slate-800/80">
+                <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                  Live Asset Suggestions
+                </p>
+                <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Import assets discovered from the active API connection.
+                </p>
+                {discoveryLoading && (
+                  <p className="m-0 mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    Discovering assets from live API...
+                  </p>
+                )}
+                {!discoveryLoading && discoveryError && (
+                  <p className="m-0 mt-2 text-xs text-amber-700 dark:text-amber-300">
+                    Discovery warning: {discoveryError}
+                  </p>
+                )}
+                {!discoveryLoading && suggestedAssets.length === 0 && !discoveryError && (
+                  <p className="m-0 mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    No live assets discovered yet. You can continue with manual registration.
+                  </p>
+                )}
+                {!discoveryLoading && suggestedAssets.length > 0 && (
+                  <div className="mt-2 space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
+                        onClick={importAllSuggestedAssets}
+                      >
+                        Import All ({suggestedAssets.length})
+                      </button>
+                    </div>
+                    {suggestedAssets.slice(0, 8).map((asset) => (
+                      <div
+                        key={asset.asset_id}
+                        className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700"
+                      >
+                        <div>
+                          <p className="m-0 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            {asset.display_name}
+                          </p>
+                          <p className="m-0 text-xs text-slate-500 dark:text-slate-400">
+                            {asset.asset_id} · {asset.asset_type}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
+                          onClick={() => importSuggestedAsset(asset.asset_id)}
+                        >
+                          Add
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {rows.map((row, index) => (
               <div

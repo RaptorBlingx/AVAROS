@@ -113,15 +113,38 @@ services:
       - HIVEMIND_CLIENT_NAME=${HIVEMIND_CLIENT_NAME:-avaros-web-client}
       - HIVEMIND_CLIENT_KEY=${HIVEMIND_CLIENT_KEY:-}
       - HIVEMIND_CLIENT_SECRET=${HIVEMIND_CLIENT_SECRET:-}
+      - AVAROS_GENERATOR_MAPPING_FILE=/opt/avaros/tools/reneryo-data-generator/mapping_output.json
     volumes:
       - avaros-data:/data
       - ./skill:/opt/avaros/skill:ro
+      - ./tools/reneryo-data-generator:/opt/avaros/tools/reneryo-data-generator:ro
     ports:
       - "8080:8080"
     networks:
       - avaros-network
     depends_on:
       - avaros
+
+  reneryo-data-generator-api:
+    build:
+      context: ./tools/reneryo-data-generator
+    container_name: reneryo-data-generator-api
+    restart: unless-stopped
+    ports:
+      - "${MOCK_RENERYO_PORT:-8090}:8090"
+    networks:
+      - avaros-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   # =========================================================================
   # HiveMind-core (WebSocket Proxy for Voice — DEC-026)

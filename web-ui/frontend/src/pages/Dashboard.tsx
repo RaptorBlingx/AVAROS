@@ -55,8 +55,7 @@ export default function Dashboard() {
         getStatus(),
       ]);
       const shouldLoadLiveKpis =
-        statusData.platform_type !== "reneryo" ||
-        statusData.live_connection_verified === true;
+        statusData.configured && statusData.live_connection_verified === true;
       let progressData: SiteProgressResponse | null = null;
       if (shouldLoadLiveKpis) {
         try {
@@ -120,10 +119,11 @@ export default function Dashboard() {
   }, []);
 
   const healthy = useMemo(() => health?.status === "ok", [health]);
-  const isReneryo = status?.platform_type === "reneryo";
   const isLiveConnectionVerified = status?.live_connection_verified === true;
-  const isReneryoLiveBlocked = isReneryo && !isLiveConnectionVerified;
-  const systemHealthy = healthy && (!isReneryo || isLiveConnectionVerified);
+  const isLiveConnectionBlocked =
+    status?.configured === true && !isLiveConnectionVerified;
+  const systemHealthy =
+    healthy && (!status?.configured || isLiveConnectionVerified);
   const cards = useMemo(
     () => (status ? buildDashboardStatusCards(status) : []),
     [status],
@@ -135,7 +135,7 @@ export default function Dashboard() {
   const showKpiEmptyState =
     !loading &&
     !error &&
-    !isReneryoLiveBlocked &&
+    !isLiveConnectionBlocked &&
     (siteProgress?.progress.length ?? 0) === 0;
 
   return (
@@ -184,7 +184,7 @@ export default function Dashboard() {
                 </p>
               </div>
             )}
-            {!loading && isReneryoLiveBlocked && (
+            {!loading && isLiveConnectionBlocked && (
               <span
                 className={`rounded-lg border px-3 py-2 text-center text-sm font-semibold ${
                   isDark
@@ -192,7 +192,7 @@ export default function Dashboard() {
                     : "border-amber-200 bg-amber-50/80 text-amber-700"
                 }`}
               >
-                Live RENERYO connection is not verified.
+                Live platform connection is not verified.
               </span>
             )}
             {!loading && status && !status.configured && (
@@ -222,14 +222,14 @@ export default function Dashboard() {
             Quick Access WASABI KPIs
           </h3>
         </div>
-        {isReneryoLiveBlocked ? (
+        {isLiveConnectionBlocked ? (
           <div className="brand-surface rounded-xl px-5 py-6 text-center">
             <p className="m-0 text-sm font-semibold text-slate-900 dark:text-slate-100">
-              Live KPI cards are hidden until RENERYO connection is verified.
+              Live KPI cards are hidden until platform connection is verified.
             </p>
             <p className="m-0 mt-2 text-sm text-slate-600 dark:text-slate-300">
               {status?.live_connection_message ||
-                "Test and save a valid RENERYO connection in Settings."}
+                "Test and save a valid platform connection in Settings."}
             </p>
             <div className="mt-3 flex justify-center gap-3">
               <Link

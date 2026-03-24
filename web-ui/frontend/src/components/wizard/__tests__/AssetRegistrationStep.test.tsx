@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockApi = vi.hoisted(() => ({
+  getAssetDiscovery: vi.fn(),
   getConfiguredAssets: vi.fn(),
   saveConfiguredAssets: vi.fn(),
   toFriendlyErrorMessage: vi.fn(() => "error"),
@@ -15,8 +16,15 @@ import AssetRegistrationStep from "../AssetRegistrationStep";
 
 describe("AssetRegistrationStep", () => {
   beforeEach(() => {
+    mockApi.getAssetDiscovery.mockReset();
     mockApi.getConfiguredAssets.mockReset();
     mockApi.saveConfiguredAssets.mockReset();
+    mockApi.getAssetDiscovery.mockResolvedValue({
+      platform_type: "custom_rest",
+      supports_discovery: false,
+      assets: [],
+      existing_mappings: {},
+    });
 
     mockApi.getConfiguredAssets.mockResolvedValue({
       asset_mappings: {
@@ -49,6 +57,9 @@ describe("AssetRegistrationStep", () => {
     await waitFor(() => {
       expect(mockApi.getConfiguredAssets).toHaveBeenCalledTimes(1);
     });
+    await waitFor(() => {
+      expect(mockApi.getAssetDiscovery).toHaveBeenCalledTimes(1);
+    });
 
     expect(screen.getByDisplayValue("line-1")).toBeTruthy();
     expect(screen.getByDisplayValue("Line 1")).toBeTruthy();
@@ -57,6 +68,23 @@ describe("AssetRegistrationStep", () => {
     expect(
       screen.queryByRole("button", { name: "Import Mapping" }),
     ).toBeNull();
+  });
+
+  it("does not call discovery when mock preset is active", async () => {
+    render(
+      <AssetRegistrationStep
+        platformType="custom_rest"
+        integrationPreset="mock"
+        onComplete={vi.fn()}
+        onSkip={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(mockApi.getConfiguredAssets).toHaveBeenCalledTimes(1);
+    });
+    expect(mockApi.getAssetDiscovery).toHaveBeenCalledTimes(0);
+    expect(screen.queryByText("Live Asset Suggestions")).toBeNull();
   });
 
   it("saves edited registration rows", async () => {
