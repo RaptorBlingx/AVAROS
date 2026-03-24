@@ -421,3 +421,42 @@ def test_none_auth_sends_no_headers() -> None:
     adapter._api_key = "unused"
 
     assert adapter._build_auth_headers() == {}
+
+
+@pytest.mark.asyncio
+async def test_test_connection_cookie_auth_rejected_returns_failure() -> None:
+    """401 on auth probe endpoint should fail connection test."""
+    adapter = _build_adapter({}, auth_type="cookie")
+    adapter._api_key = "invalid-cookie"
+
+    with aioresponses() as mocked:
+        mocked.head("https://api.example.com", status=200)
+        mocked.get(
+            "https://api.example.com/api/u/measurement/seu/names?count=1",
+            status=401,
+            payload={"detail": "unauthorized"},
+        )
+        result = await adapter.test_connection()
+
+    assert result.success is False
+    assert result.error_code == "GENERIC_REST_AUTH_FAILED"
+    assert "Authentication failed" in result.message
+
+
+@pytest.mark.asyncio
+async def test_test_connection_cookie_auth_accepted_returns_success() -> None:
+    """200 on auth probe endpoint should pass connection test."""
+    adapter = _build_adapter({}, auth_type="cookie")
+    adapter._api_key = "valid-cookie"
+
+    with aioresponses() as mocked:
+        mocked.head("https://api.example.com", status=200)
+        mocked.get(
+            "https://api.example.com/api/u/measurement/seu/names?count=1",
+            status=200,
+            payload={"records": []},
+        )
+        result = await adapter.test_connection()
+
+    assert result.success is True
+    assert result.error_code == ""

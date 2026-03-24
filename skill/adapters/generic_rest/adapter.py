@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING, Any
 
 try:
@@ -27,7 +28,13 @@ from skill.adapters.generic_rest._mapping_helpers import (
 from skill.adapters.generic_rest._settings_mixin import GenericRestSettingsMixin
 from skill.domain.exceptions import AdapterError
 from skill.domain.models import Asset, CanonicalMetric, TimePeriod
-from skill.domain.results import ComparisonItem, ComparisonResult, KPIResult, TrendResult
+from skill.domain.results import (
+    ComparisonItem,
+    ComparisonResult,
+    ConnectionTestResult,
+    KPIResult,
+    TrendResult,
+)
 
 if TYPE_CHECKING:
     from skill.services.settings import SettingsService
@@ -42,6 +49,15 @@ class GenericRestAdapter(
     ManufacturingAdapter,
 ):
     """Platform-agnostic adapter driven by metric mappings."""
+
+    _AUTH_PROBE_ENDPOINTS: tuple[str, ...] = (
+        "/api/u/measurement/seu/names?count=1",
+        "/u/measurement/seu/names?count=1",
+        "/api/status",
+        "/status",
+        "/api/health",
+        "/health",
+    )
 
     def __init__(
         self,
@@ -267,12 +283,87 @@ class GenericRestAdapter(
             self._max_retries,
         )
 
+    async def test_connection(self) -> ConnectionTestResult:
+        """Probe connectivity and verify auth with known protected endpoints."""
+        start = time.monotonic()
+        try:
+            await self.initialize()
+            auth_error = await self._probe_authenticated_endpoint()
+            if auth_error:
+                elapsed = (time.monotonic() - start) * 1000
+                return ConnectionTestResult(
+                    success=False,
+                    latency_ms=round(elapsed, 1),
+                    message=auth_error,
+                    adapter_name=self.platform_name,
+                    error_code="GENERIC_REST_AUTH_FAILED",
+                    error_details=auth_error,
+                )
+
+            elapsed = (time.monotonic() - start) * 1000
+            return ConnectionTestResult(
+                success=True,
+                latency_ms=round(elapsed, 1),
+                message="Connection established",
+                adapter_name=self.platform_name,
+            )
+        except Exception as exc:  # noqa: BLE001
+            elapsed = (time.monotonic() - start) * 1000
+            return ConnectionTestResult(
+                success=False,
+                latency_ms=round(elapsed, 1),
+                message=str(exc),
+                adapter_name=self.platform_name,
+                error_code=getattr(exc, "code", "UNKNOWN"),
+                error_details=str(exc),
+            )
+        finally:
+            await self.shutdown()
+
     async def shutdown(self) -> None:
         """Close HTTP session gracefully."""
         if self._session is not None:
             await self._session.close()
             self._session = None
         logger.info("GenericRestAdapter shut down")
+
+    async def _probe_authenticated_endpoint(self) -> str | None:
+        """Return auth error when credentials are rejected, otherwise None."""
+        if self._auth_type == "none":
+            return None
+        if self._session is None:
+            return "Adapter session is not initialized"
+
+        custom_probe = str(
+            self._extra_settings.get("connection_test_endpoint", ""),
+        ).strip()
+        candidates = []
+        if custom_probe:
+            candidates.append(custom_probe)
+        candidates.extend(self._AUTH_PROBE_ENDPOINTS)
+
+        visited: set[str] = set()
+        for endpoint in candidates:
+            cleaned = endpoint.strip()
+            if not cleaned or cleaned in visited:
+                continue
+            visited.add(cleaned)
+
+            url = self._build_request_url(cleaned)
+            try:
+                async with self._session.get(url) as response:
+                    if response.status in {401, 403}:
+                        return (
+                            "Authentication failed. Check API key/cookie settings and try again."
+                        )
+                    if 200 <= response.status < 300:
+                        return None
+                    if response.status in {404, 405}:
+                        continue
+            except Exception:
+                continue
+
+        return None
 
     @property
     def platform_name(self) -> str:
