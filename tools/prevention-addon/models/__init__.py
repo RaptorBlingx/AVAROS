@@ -1,0 +1,1 @@
+"""AVAROS addon models package."""

@@ -305,7 +305,7 @@ class TestCheckAnomaly:
         logs = audit_logger.get_recent_logs(limit=1)
         assert len(logs) == 1
         assert logs[0].query_type == "check_anomaly"
-        assert "not yet available" in logs[0].response_summary.lower()
+        assert "not available" in logs[0].response_summary.lower()
 
 
 # ══════════════════════════════════════════════════════════

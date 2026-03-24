@@ -219,11 +219,11 @@ class TestAnomalyPipeline:
         self,
         dispatcher: QueryDispatcher,
     ) -> None:
-        """The dispatcher should admit PREVENTION is still pending."""
+        """The dispatcher should admit PREVENTION is not configured."""
         with pytest.raises(AVAROSError) as exc_info:
             dispatcher.check_anomaly(CanonicalMetric.OEE, "Line-1")
 
-        assert "not yet available" in exc_info.value.user_message.lower()
+        assert "not available" in exc_info.value.user_message.lower()
 
 
 # ══════════════════════════════════════════════════════════

@@ -22,6 +22,7 @@ from routers.production_data import router as production_data_router
 from routers.profiles import router as profiles_router
 from routers.status import router as status_router
 from routers.voice import router as voice_router
+from routers.prevention import router as prevention_router
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -101,6 +102,7 @@ app.include_router(metrics_router)
 app.include_router(production_data_router)
 app.include_router(kpi_progress_router)
 app.include_router(voice_router)
+app.include_router(prevention_router)
 
 
 @app.get("/{full_path:path}", include_in_schema=False)

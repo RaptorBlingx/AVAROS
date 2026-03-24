@@ -159,9 +159,13 @@ class AVAROSSkill(FallbackSkill):
         self.settings_service = settings_service
         self.adapter_factory = AdapterFactory(settings_service=self.settings_service)
         adapter = self.adapter_factory.create()
+
+        prevention_client = self._create_prevention_client(settings_service)
+
         self.dispatcher = QueryDispatcher(
             adapter=adapter,
             settings_service=self.settings_service,
+            prevention_client=prevention_client,
         )
         try:
             self.dispatcher._run_async(adapter.initialize())
@@ -265,6 +269,34 @@ class AVAROSSkill(FallbackSkill):
             return self.settings_service.get_active_profile_name()
         except Exception:
             return "unconfigured"
+
+    def _create_prevention_client(self, settings_service):
+        """Create the appropriate PreventionClient based on settings."""
+        from skill.clients.prevention import MockPreventionClient
+
+        if settings_service and settings_service.is_prevention_enabled():
+            from skill.clients.prevention_http import HttpPreventionClient
+
+            url = settings_service.get_prevention_url()
+            addon = settings_service.get_prevention_addon_name()
+            client = HttpPreventionClient(base_url=url, addon_name=addon)
+            self.log.info("PREVENTION client: HttpPreventionClient (%s)", url)
+        else:
+            client = MockPreventionClient()
+            self.log.info("PREVENTION client: MockPreventionClient (demo mode)")
+
+        try:
+            from skill.use_cases.query_dispatcher import QueryDispatcher
+            # Reuse dispatcher's async runner if available, otherwise inline
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(client.initialize())
+            finally:
+                loop.close()
+        except Exception as exc:
+            self.log.warning("PreventionClient initialize failed: %s", exc)
+
+        return client
 
     def _handle_profile_switch(self, message: Message) -> None:
         profile_name = message.data.get("profile", "")

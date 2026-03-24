@@ -1,0 +1,172 @@
+# PREVENTION Analytics Platform — Docker Compose
+#
+# Deploys the PREVENTION predictive analytics platform alongside AVAROS.
+# PREVENTION provides anomaly detection and drift monitoring via GraphQL.
+#
+# Architecture: 4 containers
+#   - prevention:           GraphQL analytics platform (Flask + Graphene)
+#   - prevention-mongo:     MongoDB data store for analytics data
+#   - prevention-keycloak:  Identity and access management (OAuth2)
+#   - prevention-kc-db:     Keycloak PostgreSQL backend
+#
+# Usage:
+#   docker compose -f docker-compose.avaros.yml -f docker-compose.prevention.yml up -d
+#
+# For development (skip auth):
+#   Set PREVENTION_AUTH_ENABLED=false in .env — PREVENTION starts with --auth False
+
+services:
+  prevention-kc-db:
+    container_name: prevention-kc-db
+    hostname: prevention-kc-db
+    image: postgres:15-alpine
+    restart: unless-stopped
+
+    networks:
+      - ovos
+
+    environment:
+      POSTGRES_USER: ${PREVENTION_KC_DB_USER:-keycloak}
+      POSTGRES_PASSWORD: ${PREVENTION_KC_DB_PASSWORD:-keycloak}
+      POSTGRES_DB: keycloak
+
+    volumes:
+      - prevention_kc_pgdata:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PREVENTION_KC_DB_USER:-keycloak}"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+
+  prevention-keycloak:
+    container_name: prevention-keycloak
+    hostname: prevention-keycloak
+    image: quay.io/keycloak/keycloak:22.0
+    restart: unless-stopped
+
+    depends_on:
+      prevention-kc-db:
+        condition: service_healthy
+
+    networks:
+      - ovos
+
+    ports:
+      - "${PREVENTION_KEYCLOAK_PORT:-9080}:8080"
+
+    environment:
+      KEYCLOAK_ADMIN: ${PREVENTION_KC_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${PREVENTION_KC_ADMIN_PASSWORD:-admin}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://prevention-kc-db:5432/keycloak
+      KC_DB_USERNAME: ${PREVENTION_KC_DB_USER:-keycloak}
+      KC_DB_PASSWORD: ${PREVENTION_KC_DB_PASSWORD:-keycloak}
+
+    command: start-dev
+
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080; echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3; cat <&3 | grep -q '200 OK' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  prevention-mongo:
+    container_name: prevention-mongo
+    hostname: prevention-mongo
+    image: mongo:7
+    restart: unless-stopped
+
+    networks:
+      - ovos
+
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${PREVENTION_MONGO_USER:-prevention}
+      MONGO_INITDB_ROOT_PASSWORD: ${PREVENTION_MONGO_PASSWORD:-prevention}
+
+    volumes:
+      - prevention_mongodata:/data/db
+
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  prevention:
+    container_name: prevention
+    hostname: prevention
+    build:
+      context: ${PREVENTION_REPO_PATH:-../../prevention_upd}
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+
+    depends_on:
+      prevention-mongo:
+        condition: service_healthy
+
+    networks:
+      - ovos
+
+    ports:
+      - "${PREVENTION_PORT:-8082}:8081"
+
+    environment:
+      - MONGO_HOST=prevention-mongo
+      - MONGO_PORT=27017
+      - MONGO_USER=${PREVENTION_MONGO_USER:-prevention}
+      - MONGO_PASSWORD=${PREVENTION_MONGO_PASSWORD:-prevention}
+      - KEYCLOAK_URL=http://prevention-keycloak:8080
+      - PREVENTION_AUTH=${PREVENTION_AUTH_ENABLED:-false}
+
+    volumes:
+      # Mount AVAROS addon from our repo into PREVENTION's addons directory
+      - ../tools/prevention-addon:/app/addons/avaros:ro
+      # Shared volume for data sync (RENERYO → PREVENTION)
+      - prevention_data:/app/addons/avaros/data:rw
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+networks:
+  ovos:
+    external: true
+
+volumes:
+  prevention_kc_pgdata:
+    driver: local
+  prevention_mongodata:
+    driver: local
+  prevention_data:
+    driver: local

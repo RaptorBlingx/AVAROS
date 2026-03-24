@@ -25,6 +25,7 @@ from skill.clients.prevention import (
     MockPreventionClient,
     PreventionClient,
 )
+from skill.clients.prevention_http import HttpPreventionClient
 
 __all__ = [
     "ExternalServiceClient",
@@ -32,4 +33,5 @@ __all__ = [
     "MockDocuBotClient",
     "PreventionClient",
     "MockPreventionClient",
+    "HttpPreventionClient",
 ]

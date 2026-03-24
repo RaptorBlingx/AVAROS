@@ -1272,6 +1272,59 @@ class SettingsService(ProfileMixin):
             self._initialized = False
             logger.info("SettingsService closed")
 
+    # =====================================================================
+    # PREVENTION Configuration (DEC-019)
+    # =====================================================================
+
+    def get_prevention_url(self) -> str:
+        """
+        Get the PREVENTION platform GraphQL base URL.
+
+        Falls back to PREVENTION_URL env var, then empty string.
+
+        Returns:
+            PREVENTION base URL or empty string if not configured
+        """
+        return self.get_setting(
+            "prevention_url",
+            default=os.environ.get("PREVENTION_URL", ""),
+        )
+
+    def get_prevention_addon_name(self) -> str:
+        """
+        Get the PREVENTION addon name for AVAROS.
+
+        Returns:
+            Addon name (default: "avaros")
+        """
+        return self.get_setting(
+            "prevention_addon_name",
+            default=os.environ.get("PREVENTION_ADDON_NAME", "avaros"),
+        )
+
+    def is_prevention_enabled(self) -> bool:
+        """
+        Check if PREVENTION integration is enabled.
+
+        Returns:
+            True if a PREVENTION URL is configured
+        """
+        url = self.get_prevention_url()
+        return bool(url and url.strip())
+
+    def get_prevention_config(self) -> dict:
+        """
+        Get all PREVENTION configuration as a dictionary.
+
+        Returns:
+            Dictionary with prevention_url, addon_name, enabled
+        """
+        return {
+            "prevention_url": self.get_prevention_url(),
+            "addon_name": self.get_prevention_addon_name(),
+            "enabled": self.is_prevention_enabled(),
+        }
+
 
 def _is_env_flag_enabled(name: str) -> bool:
     """Return True when env flag is one of: 1, true, yes, on."""

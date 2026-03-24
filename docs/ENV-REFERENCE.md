@@ -90,6 +90,25 @@ These variables configure the `tools/reneryo-data-generator/generator.py` daemon
 
 ---
 
+## PREVENTION Analytics Platform
+
+These variables configure the PREVENTION anomaly detection and drift monitoring integration.
+
+| Variable | Required | Default | Used By | Description |
+|----------|----------|---------|---------|-------------|
+| `PREVENTION_URL` | No | *(empty)* | Skill | PREVENTION GraphQL base URL (e.g. `http://prevention:8082`). When set, enables real anomaly detection. When empty, `MockPreventionClient` is used. |
+| `PREVENTION_ADDON_NAME` | No | `avaros` | Skill | PREVENTION addon name registered for AVAROS |
+| `PREVENTION_PORT` | No | `8082` | PREVENTION | Internal port for the PREVENTION Flask server |
+| `PREVENTION_AUTH_ENABLED` | No | `false` | PREVENTION | Enable Keycloak authentication (`true`/`false`) |
+| `PREVENTION_MONGO_USER` | No | `prevention` | PREVENTION MongoDB | MongoDB username for PREVENTION data storage |
+| `PREVENTION_MONGO_PASSWORD` | No | `prevention` | PREVENTION MongoDB | MongoDB password |
+| `PREVENTION_KC_ADMIN` | No | `admin` | PREVENTION Keycloak | Keycloak admin username |
+| `PREVENTION_KC_ADMIN_PASSWORD` | No | `admin` | PREVENTION Keycloak | Keycloak admin password |
+| `PREVENTION_KC_DB_USER` | No | `keycloak` | PREVENTION KC DB | Keycloak PostgreSQL username |
+| `PREVENTION_KC_DB_PASSWORD` | No | `keycloak` | PREVENTION KC DB | Keycloak PostgreSQL password |
+
+> **Docker Compose:** Use `docker/docker-compose.prevention.yml` to deploy the full PREVENTION stack (4 containers: PREVENTION app, MongoDB, Keycloak, Keycloak-Postgres).
+
 ## Quick Setup
 
 For a standard Docker deployment, one variable typically needs customization:

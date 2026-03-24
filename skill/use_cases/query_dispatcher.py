@@ -21,7 +21,7 @@ import asyncio
 import concurrent.futures
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING
 import uuid
 
 from skill.domain.exceptions import AVAROSError, MetricNotSupportedError
@@ -31,9 +31,11 @@ from skill.services.audit import AuditLogger
 
 if TYPE_CHECKING:
     from skill.adapters.base import ManufacturingAdapter
+    from skill.clients.prevention import PreventionClient
     from skill.domain.models import TimePeriod, WhatIfScenario
     from skill.domain.production import ProductionSummary
     from skill.domain.results import (
+        AnomalyResult,
         ComparisonResult,
         TrendResult,
         WhatIfResult,
@@ -44,6 +46,24 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+
+def _build_anomaly_list(detection, metric):
+    """Convert AnomalyDetectionResult into a list of Anomaly domain objects."""
+    from skill.domain.models import Anomaly
+
+    if not detection.is_anomalous:
+        return []
+    return [
+        Anomaly(
+            timestamp=datetime.fromisoformat(detection.detected_at),
+            metric=metric,
+            expected_value=0.0,
+            actual_value=0.0,
+            deviation=detection.confidence * 3.0,
+            description=detection.description,
+        ),
+    ]
 
 
 class QueryDispatcher:
@@ -91,6 +111,7 @@ class QueryDispatcher:
         co2_service: CO2DerivationService | None = None,
         production_data_service: ProductionDataService | None = None,
         settings_service: SettingsService | None = None,
+        prevention_client: PreventionClient | None = None,
     ) -> None:
         """
         Initialize dispatcher with an adapter.
@@ -103,12 +124,15 @@ class QueryDispatcher:
                 supplementary data (production counts, material usage)
             settings_service: Optional SettingsService for profile-driven
                 energy source resolution in CO₂ derivation
+            prevention_client: Optional PreventionClient for anomaly
+                detection via PREVENTION platform (DEC-019)
         """
         self._adapter = adapter
         self._audit_logger = audit_logger or AuditLogger()
         self._co2_service = co2_service
         self._production_service = production_data_service
         self._settings_service = settings_service
+        self._prevention_client = prevention_client
         self._loop: asyncio.AbstractEventLoop | None = None
         self._executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=1,
@@ -290,17 +314,23 @@ class QueryDispatcher:
         metric: CanonicalMetric,
         asset_id: str,
         threshold: float | None = None,
-    ) -> NoReturn:
+    ) -> AnomalyResult:
         """
-        Admit that anomaly detection is not yet available.
+        Check a metric for anomalies via the PREVENTION client.
+        
+        Delegates to the configured PreventionClient (real or mock).
+        Falls back to an error if no client is available.
         
         Args:
             metric: Canonical metric to check
             asset_id: Target asset identifier
             threshold: Optional sensitivity threshold
             
+        Returns:
+            AnomalyResult with detection findings
+            
         Raises:
-            AVAROSError: Always, until PREVENTION integration is available.
+            AVAROSError: If no PreventionClient is configured.
         """
         query_id = self._generate_query_id()
         
@@ -309,17 +339,58 @@ class QueryDispatcher:
             query_id, metric.value, asset_id, threshold,
         )
 
-        message = (
-            "Anomaly detection is not yet available. This feature requires "
-            "the PREVENTION service which is pending."
+        if self._prevention_client is None:
+            message = (
+                "Anomaly detection is not available. "
+                "No PREVENTION service is configured."
+            )
+            error = AVAROSError(
+                message=message,
+                code="ANOMALY_NOT_AVAILABLE",
+                user_message=message,
+            )
+            self._log_audit(
+                "check_anomaly", query_id, metric.value, asset_id, error,
+            )
+            raise error
+
+        result = self._dispatch_anomaly_check(
+            metric, asset_id, threshold or 2.0, query_id,
         )
-        error = AVAROSError(
-            message=message,
-            code="ANOMALY_NOT_AVAILABLE",
-            user_message=message,
+        self._log_audit(
+            "check_anomaly", query_id, metric.value, asset_id, result,
         )
-        self._log_audit("check_anomaly", query_id, metric.value, asset_id, error)
-        raise error
+        return result
+
+    def _dispatch_anomaly_check(
+        self,
+        metric: CanonicalMetric,
+        asset_id: str,
+        threshold: float,
+        query_id: str,
+    ) -> AnomalyResult:
+        """Run the async prevention client call and map to AnomalyResult."""
+        from skill.domain.models import Anomaly, DataPoint
+        from skill.domain.results import AnomalyResult
+
+        detection = self._run_async(
+            self._prevention_client.detect_anomaly(
+                metric=metric,
+                data_points=[],
+                threshold=threshold,
+            ),
+        )
+
+        anomalies = _build_anomaly_list(detection, metric)
+
+        return AnomalyResult(
+            is_anomalous=detection.is_anomalous,
+            anomalies=anomalies,
+            severity=detection.severity,
+            asset_id=asset_id,
+            metric=metric,
+            recommendation_id=query_id,
+        )
     
     # =========================================================================
     # Query Type 5: What-If Simulation (INTELLIGENCE - Phase 3)
