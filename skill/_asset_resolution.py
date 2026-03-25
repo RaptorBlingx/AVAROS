@@ -189,17 +189,38 @@ def _match_asset_from_registry(token: str, assets: list[Asset]) -> Asset | None:
     if exact is not None:
         return exact
 
-    if len(query_key) >= 3:
-        for candidate_key, candidate_asset in lookup.items():
-            if len(candidate_key) >= 3 and (
-                query_key in candidate_key or candidate_key in query_key
-            ):
-                return candidate_asset
+    contained = _best_contained_match(query_key, lookup)
+    if contained is not None:
+        return contained
 
     close = difflib.get_close_matches(query_key, lookup.keys(), n=1, cutoff=0.82)
     if close:
         return lookup[close[0]]
     return None
+
+
+def _best_contained_match(query_key: str, lookup: dict[str, Asset]) -> Asset | None:
+    """Return longest contained phrase match for full-utterance fallbacks."""
+    if len(query_key) < 3:
+        return None
+
+    padded_query = f" {query_key} "
+    best_asset: Asset | None = None
+    best_score: tuple[int, int] = (0, 0)
+
+    for candidate_key, candidate_asset in lookup.items():
+        if len(candidate_key) < 3:
+            continue
+        if f" {candidate_key} " not in padded_query:
+            continue
+
+        # Prefer longer, more specific phrases ("seu 4 for reporting" > "seu").
+        score = (len(candidate_key), candidate_key.count(" ") + 1)
+        if score > best_score:
+            best_score = score
+            best_asset = candidate_asset
+
+    return best_asset
 
 
 def _build_lookup(assets: list[Asset]) -> dict[str, Asset]:

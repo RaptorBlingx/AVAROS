@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import logging
 import time
 from typing import TYPE_CHECKING, Any
@@ -59,8 +60,14 @@ class GenericRestAdapter(
         "/health",
     )
     _ASSET_DISCOVERY_ENDPOINTS: tuple[str, ...] = (
+        "/api/u/measurement/seu/item?datetimeMin=2021-02-01T00:00:00.000Z&datetimeMax=2027-02-01T00:00:00.000Z",
+        "/u/measurement/seu/item?datetimeMin=2021-02-01T00:00:00.000Z&datetimeMax=2027-02-01T00:00:00.000Z",
         "/api/u/measurement/seu/names?count=100",
         "/u/measurement/seu/names?count=100",
+    )
+    _SEU_ITEM_ENDPOINTS: tuple[str, ...] = (
+        "/api/u/measurement/seu/item",
+        "/u/measurement/seu/item",
     )
 
     def __init__(
@@ -93,6 +100,22 @@ class GenericRestAdapter(
     ) -> KPIResult:
         """Fetch KPI from mapped endpoint and parse mapped value."""
         self._ensure_initialized()
+        native_binding = self._resolve_native_metric_binding(metric=metric, asset_id=asset_id)
+        if native_binding is not None:
+            return await self._query_native_metric_kpi(
+                metric=metric,
+                asset_id=asset_id,
+                period=period,
+                binding=native_binding,
+            )
+
+        if self._is_energy_only_asset(asset_id):
+            self._raise_asset_metric_unavailable(
+                metric=metric,
+                asset_id=asset_id,
+                supported_metrics=(CanonicalMetric.ENERGY_TOTAL,),
+            )
+
         mapping = self._require_metric_mapping(metric)
 
         endpoint, params = resolve_request(
@@ -117,6 +140,18 @@ class GenericRestAdapter(
                 message="Comparison requires at least two asset IDs",
                 code="GENERIC_REST_COMPARE_INVALID",
                 platform="generic_rest",
+            )
+
+        unsupported = [asset_id for asset_id in asset_ids if self._is_energy_only_asset(asset_id)]
+        if unsupported:
+            raise AdapterError(
+                message=f"Comparison is not available for energy-only assets: {unsupported}",
+                code="ASSET_METRIC_UNAVAILABLE",
+                platform="generic_rest",
+                user_message=(
+                    "Comparison is not available for energy-only assets in the current source. "
+                    "Use assets with full metric mappings for comparison commands."
+                ),
             )
 
         mapping = self._require_metric_mapping(metric)
@@ -166,6 +201,17 @@ class GenericRestAdapter(
     ) -> TrendResult:
         """Fetch trend endpoint and parse generic time-series payload."""
         self._ensure_initialized()
+        if self._is_energy_only_asset(asset_id):
+            raise AdapterError(
+                message=f"Trend is not available for energy-only asset '{asset_id}'",
+                code="ASSET_METRIC_UNAVAILABLE",
+                platform="generic_rest",
+                user_message=(
+                    f"Trend is not available for {asset_id} from the current source. "
+                    "This asset currently exposes aggregate energy consumption only."
+                ),
+            )
+
         mapping = self._require_metric_mapping(metric)
 
         endpoint, params = self._resolve_trend_request(
@@ -213,6 +259,13 @@ class GenericRestAdapter(
     ) -> dict | list:
         """Fetch and return mapped endpoint payload without normalization."""
         self._ensure_initialized()
+        if self._is_energy_only_asset(asset_id):
+            self._raise_asset_metric_unavailable(
+                metric=metric,
+                asset_id=asset_id,
+                supported_metrics=(CanonicalMetric.ENERGY_TOTAL,),
+            )
+
         mapping = self._require_metric_mapping(metric)
 
         endpoint_key = "raw_endpoint" if str(mapping.get("raw_endpoint", "")).strip() else "endpoint"
@@ -245,6 +298,11 @@ class GenericRestAdapter(
             return discovered_assets
         return assets
 
+    async def discover_assets(self) -> list[Asset]:
+        """Return live-discovered upstream assets for wizard discovery views."""
+        self._ensure_initialized()
+        return await self._discover_assets_from_api()
+
     def supports_asset_discovery(self) -> bool:
         """Return whether lightweight discovery can be attempted."""
         return bool(self._api_url)
@@ -254,17 +312,33 @@ class GenericRestAdapter(
         metric_name = self._normalize_metric_name(capability)
         if not metric_name:
             return False
-        return self._lookup_metric_mapping_by_name(metric_name) is not None
+        if self._lookup_metric_mapping_by_name(metric_name) is not None:
+            return True
+        return metric_name in self._list_native_supported_metric_names()
 
     def get_supported_metrics(self) -> list[CanonicalMetric]:
         """List canonical metrics that currently have mappings configured."""
         mappings = self._list_metric_mappings()
         supported: list[CanonicalMetric] = []
+        seen: set[CanonicalMetric] = set()
         for metric_name in mappings.keys():
             try:
-                supported.append(CanonicalMetric.from_string(metric_name))
+                metric = CanonicalMetric.from_string(metric_name)
+                if metric in seen:
+                    continue
+                supported.append(metric)
+                seen.add(metric)
             except ValueError:
                 logger.debug("Ignoring unknown mapped metric name: %s", metric_name)
+        for metric_name in sorted(self._list_native_supported_metric_names()):
+            try:
+                metric = CanonicalMetric.from_string(metric_name)
+            except ValueError:
+                continue
+            if metric in seen:
+                continue
+            supported.append(metric)
+            seen.add(metric)
         return supported
 
     async def initialize(self) -> None:
@@ -403,9 +477,13 @@ class GenericRestAdapter(
             discovered: list[Asset] = []
             for record in records:
                 if not isinstance(record, dict):
+                    # Ignore non-object entries to avoid guessing synthetic asset IDs.
                     continue
 
                 asset_id = str(record.get("id", "")).strip()
+                display_name = str(record.get("name", "")).strip() or asset_id
+                energy_resource = str(record.get("energyResource", "")).strip()
+
                 if not asset_id:
                     continue
                 normalized_id = asset_id.lower()
@@ -413,14 +491,12 @@ class GenericRestAdapter(
                     continue
                 seen_ids.add(normalized_id)
 
-                display_name = str(record.get("name", "")).strip() or asset_id
                 alias = display_name.lower().strip()
                 aliases = []
                 if alias and alias != asset_id.lower() and len(alias) <= 32:
                     aliases = [alias]
 
                 metadata: dict[str, Any] = {"source": "api_discovery"}
-                energy_resource = str(record.get("energyResource", "")).strip()
                 if energy_resource:
                     metadata["energy_resource"] = energy_resource
 
@@ -443,6 +519,197 @@ class GenericRestAdapter(
     def platform_name(self) -> str:
         """Return platform name used in logs/UI."""
         return "GENERIC_REST"
+
+    def _list_native_supported_metric_names(self) -> set[str]:
+        """Return canonical metric names exposed via native asset bindings."""
+        metric_names: set[str] = set()
+        for mapping in self._load_asset_mappings().values():
+            if not isinstance(mapping, dict):
+                continue
+            raw_bindings = mapping.get("native_metric_bindings")
+            if not isinstance(raw_bindings, dict):
+                continue
+            for metric_name in raw_bindings.keys():
+                normalized = str(metric_name).strip()
+                if normalized:
+                    metric_names.add(normalized)
+        return metric_names
+
+    def _resolve_asset_mapping(self, asset_id: str) -> dict[str, Any] | None:
+        """Resolve an asset mapping row by id, display name, or alias."""
+        target = self._normalize_asset_lookup(asset_id)
+        if not target:
+            return None
+
+        mappings = self._load_asset_mappings()
+        for key, mapping in mappings.items():
+            if not isinstance(mapping, dict):
+                continue
+            lookup_values = [str(key)]
+            display_name = str(mapping.get("display_name", "")).strip()
+            if display_name:
+                lookup_values.append(display_name)
+            raw_aliases = mapping.get("aliases", [])
+            if isinstance(raw_aliases, list):
+                lookup_values.extend(str(alias).strip() for alias in raw_aliases if str(alias).strip())
+            if any(self._normalize_asset_lookup(value) == target for value in lookup_values):
+                return mapping
+        return None
+
+    def _is_energy_only_asset(self, asset_id: str) -> bool:
+        """Return True when asset mapping is marked as energy-only."""
+        mapping = self._resolve_asset_mapping(asset_id)
+        if not isinstance(mapping, dict):
+            return False
+        capability_mode = str(mapping.get("capability_mode", "")).strip().lower()
+        return capability_mode == "energy_only"
+
+    def _resolve_native_metric_binding(
+        self,
+        *,
+        metric: CanonicalMetric,
+        asset_id: str,
+    ) -> dict[str, Any] | None:
+        """Resolve native metric binding config for an asset-specific metric."""
+        mapping = self._resolve_asset_mapping(asset_id)
+        if not isinstance(mapping, dict):
+            return None
+        native_bindings = mapping.get("native_metric_bindings")
+        if not isinstance(native_bindings, dict):
+            return None
+        raw_binding = native_bindings.get(metric.value)
+        if not isinstance(raw_binding, dict):
+            return None
+        return raw_binding
+
+    def _asset_display_name(self, asset_id: str) -> str:
+        """Resolve human-friendly asset label for user-facing messages."""
+        mapping = self._resolve_asset_mapping(asset_id)
+        if not isinstance(mapping, dict):
+            return asset_id
+        display_name = str(mapping.get("display_name", "")).strip()
+        return display_name or asset_id
+
+    def _raise_asset_metric_unavailable(
+        self,
+        *,
+        metric: CanonicalMetric,
+        asset_id: str,
+        supported_metrics: tuple[CanonicalMetric, ...],
+    ) -> None:
+        """Raise a normalized asset-level unsupported metric error."""
+        display_name = self._asset_display_name(asset_id)
+        supported_label = ", ".join(m.display_name for m in supported_metrics)
+        raise AdapterError(
+            message=(
+                f"Metric '{metric.value}' is not available for asset '{asset_id}' "
+                "under current native bindings"
+            ),
+            code="ASSET_METRIC_UNAVAILABLE",
+            platform="generic_rest",
+            user_message=(
+                f"{metric.display_name} is not available for {display_name} from the current source. "
+                f"Available metric for this asset: {supported_label}."
+            ),
+        )
+
+    async def _query_native_metric_kpi(
+        self,
+        *,
+        metric: CanonicalMetric,
+        asset_id: str,
+        period: TimePeriod,
+        binding: dict[str, Any],
+    ) -> KPIResult:
+        """Resolve KPI values from asset-native bindings."""
+        strategy = str(binding.get("strategy", "")).strip().lower()
+        if strategy == "asset_consumption_total":
+            return await self._query_seu_energy_total(asset_id=asset_id, period=period)
+        raise AdapterError(
+            message=f"Unsupported native binding strategy '{strategy}' for {metric.value}",
+            code="GENERIC_REST_NATIVE_BINDING_INVALID",
+            platform="generic_rest",
+        )
+
+    async def _query_seu_energy_total(self, *, asset_id: str, period: TimePeriod) -> KPIResult:
+        """Fetch aggregate energy consumption from item endpoint."""
+        start_iso = self._to_reneryo_iso(period.start)
+        end_iso = self._to_reneryo_iso(period.end)
+        params = {"datetimeMin": start_iso, "datetimeMax": end_iso}
+
+        payload: dict | list | None = None
+        for endpoint in self._SEU_ITEM_ENDPOINTS:
+            try:
+                payload = await self._retry_fetch(endpoint, params)
+            except AdapterError as exc:
+                if exc.code in {"GENERIC_REST_ENDPOINT_NOT_FOUND", "GENERIC_REST_UNEXPECTED_STATUS"}:
+                    continue
+                raise
+            else:
+                break
+
+        if not isinstance(payload, dict):
+            raise AdapterError(
+                message="SEU energy endpoint returned invalid payload",
+                code="GENERIC_REST_MAPPING_INVALID",
+                platform="generic_rest",
+            )
+
+        records = payload.get("records", [])
+        if not isinstance(records, list):
+            records = []
+
+        target = self._normalize_asset_lookup(asset_id)
+        selected: dict[str, Any] | None = None
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            candidate_id = str(record.get("id", "")).strip()
+            candidate_name = str(record.get("name", "")).strip()
+            if not candidate_id and not candidate_name:
+                continue
+            if self._normalize_asset_lookup(candidate_id) == target:
+                selected = record
+                break
+            if candidate_name and self._normalize_asset_lookup(candidate_name) == target:
+                selected = record
+                break
+
+        if selected is None:
+            raise AdapterError(
+                message=f"No SEU record found for '{asset_id}' in requested period",
+                code="EMPTY_RESPONSE",
+                platform="generic_rest",
+                user_message=(
+                    f"I couldn't find energy consumption data for {self._asset_display_name(asset_id)} "
+                    f"over {period.display_name}."
+                ),
+            )
+
+        try:
+            value = float(selected.get("consumption"))
+        except (TypeError, ValueError) as exc:
+            raise AdapterError(
+                message=f"SEU record has non-numeric consumption for '{asset_id}'",
+                code="GENERIC_REST_MAPPING_INVALID",
+                platform="generic_rest",
+            ) from exc
+
+        return KPIResult(
+            metric=CanonicalMetric.ENERGY_TOTAL,
+            value=value,
+            unit="kWh",
+            asset_id=asset_id,
+            period=period,
+            timestamp=datetime.now(tz=timezone.utc),
+        )
+
+    @staticmethod
+    def _to_reneryo_iso(value: datetime) -> str:
+        """Format datetime for upstream query parameters."""
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
     def _require_metric_mapping(self, metric: CanonicalMetric) -> MetricMapping:
         """Load mapping for metric or raise clear missing-mapping error."""

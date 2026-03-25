@@ -13,6 +13,7 @@ import type {
   EmissionFactorPresetResponse,
   EmissionFactorRequest,
   EmissionFactorResponse,
+  GeneratorAssetPreviewResponse,
   GeneratorMappingRequest,
   GeneratorMappingResponse,
   HealthResponse,
@@ -504,6 +505,10 @@ export function saveConfiguredAssets(
 
 export function getAssetLinkingSummary(): Promise<AssetLinkingSummaryResponse> {
   return request<AssetLinkingSummaryResponse>("/api/v1/assets/linking-summary");
+}
+
+export function getGeneratorAssetPreview(): Promise<GeneratorAssetPreviewResponse> {
+  return request<GeneratorAssetPreviewResponse>("/api/v1/assets/generator-mapping-preview");
 }
 
 export function getAssetDiscovery(): Promise<AssetDiscoveryResponse> {

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
@@ -167,7 +168,10 @@ class AVAROSSkill(FallbackSkill):
             self.dispatcher._run_async(adapter.initialize())
         except Exception as exc:
             self.log.warning("Adapter initialize failed at startup: %s", exc)
-        self.response_builder = ResponseBuilder(verbosity="normal")
+        self.response_builder = ResponseBuilder(
+            verbosity="normal",
+            asset_name_resolver=self._resolve_asset_name_for_voice,
+        )
 
         self._loaded_profile = self._resolve_active_profile()
         self._loaded_platform = adapter.platform_name.lower()
@@ -266,6 +270,79 @@ class AVAROSSkill(FallbackSkill):
         except Exception:
             return "unconfigured"
 
+    @staticmethod
+    def _normalize_asset_lookup_key(value: str) -> str:
+        """Normalize free-form identifiers for robust asset comparisons."""
+        lowered = value.lower().strip()
+        return re.sub(r"[^a-z0-9]", "", lowered)
+
+    def _resolve_asset_name_for_voice(self, asset_id: str) -> str:
+        """Resolve display-friendly asset label for speech responses."""
+        raw_asset_id = str(asset_id).strip()
+        if not raw_asset_id:
+            return asset_id
+
+        target = self._normalize_asset_lookup_key(raw_asset_id)
+        if not target:
+            return raw_asset_id
+
+        settings_service = self.settings_service
+        if settings_service is not None:
+            try:
+                mappings = settings_service.get_asset_mappings()
+            except Exception:
+                mappings = {}
+            if isinstance(mappings, dict):
+                for key, mapping in mappings.items():
+                    if not isinstance(mapping, dict):
+                        continue
+                    lookup_values = [str(key)]
+                    display_name = str(mapping.get("display_name", "")).strip()
+                    if display_name:
+                        lookup_values.append(display_name)
+                    raw_aliases = mapping.get("aliases", [])
+                    if isinstance(raw_aliases, list):
+                        lookup_values.extend(
+                            str(alias).strip()
+                            for alias in raw_aliases
+                            if str(alias).strip()
+                        )
+                    if any(
+                        self._normalize_asset_lookup_key(value) == target
+                        for value in lookup_values
+                    ):
+                        return display_name or str(key)
+
+        try:
+            assets = self._get_asset_registry()
+        except Exception:
+            assets = []
+
+        for asset in assets:
+            lookup_values = [
+                str(getattr(asset, "asset_id", "")),
+                str(getattr(asset, "display_name", "")),
+            ]
+            raw_aliases = getattr(asset, "aliases", [])
+            if isinstance(raw_aliases, list):
+                lookup_values.extend(
+                    str(alias).strip()
+                    for alias in raw_aliases
+                    if str(alias).strip()
+                )
+            if any(
+                self._normalize_asset_lookup_key(value) == target
+                for value in lookup_values
+            ):
+                display_name = str(getattr(asset, "display_name", "")).strip()
+                if display_name:
+                    return display_name
+                asset_name = str(getattr(asset, "asset_id", "")).strip()
+                if asset_name:
+                    return asset_name
+
+        return raw_asset_id
+
     def _handle_profile_switch(self, message: Message) -> None:
         profile_name = message.data.get("profile", "")
         self.log.info("Profile switch event received: '%s'", profile_name)
@@ -303,7 +380,10 @@ class AVAROSSkill(FallbackSkill):
             settings_service=self.settings_service,
         )
         if self.response_builder is None:
-            self.response_builder = ResponseBuilder(verbosity="normal")
+            self.response_builder = ResponseBuilder(
+                verbosity="normal",
+                asset_name_resolver=self._resolve_asset_name_for_voice,
+            )
         self._loaded_profile = self._resolve_active_profile()
         self._loaded_platform = new_adapter.platform_name.lower()
         self._asset_registry_cache = None
@@ -353,7 +433,10 @@ class AVAROSSkill(FallbackSkill):
             settings_service=self.settings_service,
         )
         if self.response_builder is None:
-            self.response_builder = ResponseBuilder(verbosity="normal")
+            self.response_builder = ResponseBuilder(
+                verbosity="normal",
+                asset_name_resolver=self._resolve_asset_name_for_voice,
+            )
         self._loaded_profile = "unconfigured"
         self._loaded_platform = "unconfigured"
         self.log.info("Forced UnconfiguredAdapter fallback")
@@ -445,7 +528,10 @@ class AVAROSSkill(FallbackSkill):
 
         if self.response_builder is None:
             self.log.warning("Response builder missing in %s; recovering", handler_name)
-            self.response_builder = ResponseBuilder(verbosity="normal")
+            self.response_builder = ResponseBuilder(
+                verbosity="normal",
+                asset_name_resolver=self._resolve_asset_name_for_voice,
+            )
 
         self._check_profile_mismatch()
 

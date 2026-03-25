@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Literal
 
@@ -23,6 +24,25 @@ router = APIRouter(prefix="/api/v1", tags=["assets"])
 logger = logging.getLogger(__name__)
 _CANONICAL_METRICS = {metric.value for metric in CanonicalMetric}
 _SORTED_CANONICAL_METRICS = sorted(_CANONICAL_METRICS)
+_UUID_ASSET_ID_PATTERN = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+_NATIVE_SEU_ENERGY_BINDING: dict[str, dict[str, Any]] = {
+    "energy_total": {
+        "strategy": "asset_consumption_total",
+        "unit": "kWh",
+        "trend_supported": False,
+        "compare_supported": False,
+        "default_period_mode": "aggregate_total",
+        "aggregate_start_iso": "2021-02-01T00:00:00.000Z",
+    }
+}
+
+
+def _compat_layer_enabled() -> bool:
+    """Return True when optional platform compatibility layer is enabled."""
+    raw = str(os.environ.get("AVAROS_ENABLE_PLATFORM_COMPAT_LAYER", "")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 class AssetItem(BaseModel):
@@ -78,6 +98,27 @@ class GeneratorMappingResponse(BaseModel):
     asset_mappings: dict[str, dict[str, Any]]
 
 
+class GeneratorAssetPreviewItem(BaseModel):
+    """Read-only generator mapping preview item for wizard registration UX."""
+
+    asset_id: str
+    display_name: str
+    asset_type: str
+    metric_count: int = 0
+    metrics: list[str] = Field(default_factory=list)
+    source: Literal["generator"] = "generator"
+
+
+class GeneratorAssetPreviewResponse(BaseModel):
+    """Preview payload for mapping_output.json without mutating profile mappings."""
+
+    available: bool
+    source_path: str
+    imported_metrics: int = 0
+    assets: list[GeneratorAssetPreviewItem] = Field(default_factory=list)
+    error: str = ""
+
+
 def _default_generator_mapping_path() -> Path:
     """Return default mapping_output.json path used for RENERYO quick bootstrap."""
     configured = str(os.environ.get("AVAROS_GENERATOR_MAPPING_FILE", "")).strip()
@@ -103,6 +144,44 @@ def _extract_mapping_payload(raw: dict[str, Any]) -> dict[str, dict[str, str]]:
     return normalized
 
 
+def _to_display_name(asset_id: str) -> str:
+    """Convert an asset id into a human-friendly display name."""
+    return (
+        asset_id.replace("_", " ")
+        .replace("-", " ")
+        .strip()
+        .title()
+    ) or asset_id
+
+
+def _infer_asset_type(asset_id: str) -> str:
+    """Infer a pragmatic asset type from common AVAROS ids."""
+    normalized = asset_id.lower().replace("_", "-")
+    if normalized.startswith("line-"):
+        return "line"
+    return "machine"
+
+
+def _build_generator_asset_preview(
+    mapping: dict[str, dict[str, str]],
+) -> list[GeneratorAssetPreviewItem]:
+    """Create per-asset preview rows from generator mapping payload."""
+    per_asset = _transform_generator_mapping(mapping)
+    rows: list[GeneratorAssetPreviewItem] = []
+    for asset_id in sorted(per_asset.keys()):
+        metric_names = sorted(set(per_asset.get(asset_id, {}).keys()))
+        rows.append(
+            GeneratorAssetPreviewItem(
+                asset_id=asset_id,
+                display_name=_to_display_name(asset_id),
+                asset_type=_infer_asset_type(asset_id),
+                metric_count=len(metric_names),
+                metrics=metric_names,
+            ),
+        )
+    return rows
+
+
 class AssetLinkingItem(BaseModel):
     """Asset-level resource-linking status for wizard steps."""
 
@@ -111,7 +190,11 @@ class AssetLinkingItem(BaseModel):
     asset_type: str
     aliases: list[str] = Field(default_factory=list)
     source: Literal["imported", "registered", "discovered"]
+    mapping_mode: Literal["full_kpi", "energy_only", "registration_only"] = "registration_only"
+    mapping_source: Literal["manual", "generator", "live_discovery"] = "manual"
     linked_metrics: list[str] = Field(default_factory=list)
+    native_metrics: list[str] = Field(default_factory=list)
+    supported_metrics: list[str] = Field(default_factory=list)
     missing_metrics: list[str] = Field(default_factory=list)
     linked_metric_count: int = 0
     total_metrics: int = 0
@@ -192,6 +275,10 @@ def _merge_generator_mapping(
         if not isinstance(old_resources, dict):
             old_resources = {}
         entry["metric_resources"] = {**old_resources, **metric_resources}
+        if str(entry.get("mapping_source", "")).strip() not in {"manual", "generator", "live_discovery"}:
+            entry["mapping_source"] = "generator"
+        if str(entry.get("capability_mode", "")).strip() not in {"full_kpi", "energy_only"}:
+            entry["capability_mode"] = "full_kpi"
         existing[asset_id] = entry
         total_resources += len(metric_resources)
     return total_resources
@@ -240,6 +327,40 @@ def _normalize_metric_resources(mapping: dict[str, Any]) -> dict[str, str]:
     return normalized
 
 
+def _normalize_native_metric_bindings(
+    mapping: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Return canonical native metric bindings with dict payloads."""
+    raw_bindings = mapping.get("native_metric_bindings", {})
+    if not isinstance(raw_bindings, dict):
+        return {}
+    normalized: dict[str, dict[str, Any]] = {}
+    for metric_name, binding in raw_bindings.items():
+        if metric_name not in _CANONICAL_METRICS:
+            continue
+        if not isinstance(binding, dict):
+            continue
+        normalized[metric_name] = dict(binding)
+    return normalized
+
+
+def _resolve_mapping_mode(
+    mapping: dict[str, Any],
+    *,
+    linked_metrics: list[str],
+    native_metrics: list[str],
+) -> Literal["full_kpi", "energy_only", "registration_only"]:
+    """Resolve how this mapping should be interpreted by wizard readiness."""
+    capability_mode = str(mapping.get("capability_mode", "")).strip().lower()
+    if capability_mode == "energy_only":
+        return "energy_only"
+    if native_metrics and not linked_metrics:
+        return "energy_only"
+    if linked_metrics:
+        return "full_kpi"
+    return "registration_only"
+
+
 def _build_asset_linking_item(
     *,
     asset_id: str,
@@ -247,10 +368,15 @@ def _build_asset_linking_item(
     asset_type: str,
     aliases: list[str],
     source: Literal["imported", "registered", "discovered"],
+    mapping_mode: Literal["full_kpi", "energy_only", "registration_only"],
+    mapping_source: Literal["manual", "generator", "live_discovery"],
     linked_metrics: list[str],
+    native_metrics: list[str],
 ) -> AssetLinkingItem:
     """Build a linking item with derived missing/coverage fields."""
     linked_sorted = sorted(set(linked_metrics))
+    native_sorted = sorted(set(native_metrics))
+    supported_metrics = sorted(set(linked_sorted + native_sorted))
     missing = [metric for metric in _SORTED_CANONICAL_METRICS if metric not in linked_sorted]
     return AssetLinkingItem(
         asset_id=asset_id,
@@ -258,7 +384,11 @@ def _build_asset_linking_item(
         asset_type=asset_type,
         aliases=aliases,
         source=source,
+        mapping_mode=mapping_mode,
+        mapping_source=mapping_source,
         linked_metrics=linked_sorted,
+        native_metrics=native_sorted,
+        supported_metrics=supported_metrics,
         missing_metrics=missing,
         linked_metric_count=len(linked_sorted),
         total_metrics=len(_SORTED_CANONICAL_METRICS),
@@ -276,15 +406,32 @@ def _build_mapping_linking_groups(
         if not isinstance(mapping, dict):
             continue
         linked_metrics = list(_normalize_metric_resources(mapping).keys())
+        native_metrics = list(_normalize_native_metric_bindings(mapping).keys())
+        combined_linked = sorted(set(linked_metrics + native_metrics))
+        mapping_mode = _resolve_mapping_mode(
+            mapping,
+            linked_metrics=linked_metrics,
+            native_metrics=native_metrics,
+        )
+        raw_mapping_source = str(mapping.get("mapping_source", "")).strip().lower()
+        if raw_mapping_source in {"manual", "generator", "live_discovery"}:
+            mapping_source: Literal["manual", "generator", "live_discovery"] = raw_mapping_source  # type: ignore[assignment]
+        elif mapping_mode == "energy_only":
+            mapping_source = "live_discovery"
+        else:
+            mapping_source = "manual"
         item = _build_asset_linking_item(
             asset_id=asset_id,
             display_name=str(mapping.get("display_name") or asset_id),
             asset_type=str(mapping.get("asset_type") or "machine"),
             aliases=_normalize_aliases(mapping.get("aliases")),
-            source="imported" if linked_metrics else "registered",
-            linked_metrics=linked_metrics,
+            source="imported" if combined_linked else "registered",
+            mapping_mode=mapping_mode,
+            mapping_source=mapping_source,
+            linked_metrics=combined_linked,
+            native_metrics=native_metrics,
         )
-        if linked_metrics:
+        if combined_linked:
             imported.append(item)
         else:
             unlinked.append(item)
@@ -353,10 +500,95 @@ def _build_discovered_linking_items(
                 asset_type=discovered.asset_type,
                 aliases=discovered.aliases,
                 source="discovered",
+                mapping_mode="registration_only",
+                mapping_source="live_discovery",
                 linked_metrics=[],
+                native_metrics=[],
             ),
         )
     return items
+
+
+def _is_uuid_asset_id(value: str) -> bool:
+    """Return True when asset id looks like a RENERYO UUID key."""
+    return bool(_UUID_ASSET_ID_PATTERN.match((value or "").strip()))
+
+
+def _has_linked_metric_resources(mapping: dict[str, Any]) -> bool:
+    """Return True when mapping includes any non-empty metric resource id."""
+    return bool(_normalize_metric_resources(mapping))
+
+
+def _promote_discovered_seu_assets_to_energy_only(
+    *,
+    mappings: dict[str, dict[str, Any]],
+    discovered_assets: list[Asset],
+) -> tuple[dict[str, dict[str, Any]], bool]:
+    """Auto-promote registered RENERYO SEU rows to energy-only mode.
+
+    This heals legacy rows that were saved before ``capability_mode`` /
+    ``native_metric_bindings`` existed.
+    """
+    if not mappings or not discovered_assets:
+        return mappings, False
+
+    discovered_ids = {
+        str(asset.asset_id).strip()
+        for asset in discovered_assets
+        if isinstance(asset, Asset) and _is_uuid_asset_id(str(asset.asset_id))
+    }
+    if not discovered_ids:
+        return mappings, False
+
+    promoted = False
+    updated: dict[str, dict[str, Any]] = {}
+    for asset_id, raw_mapping in mappings.items():
+        mapping = dict(raw_mapping) if isinstance(raw_mapping, dict) else {}
+        row_promoted = False
+        if asset_id in discovered_ids and mapping:
+            if not _has_linked_metric_resources(mapping):
+                native_bindings = _normalize_native_metric_bindings(mapping)
+                if not native_bindings:
+                    mapping["native_metric_bindings"] = {
+                        metric_name: dict(config)
+                        for metric_name, config in _NATIVE_SEU_ENERGY_BINDING.items()
+                    }
+                    row_promoted = True
+                else:
+                    merged_native = dict(native_bindings)
+                    default_energy = dict(_NATIVE_SEU_ENERGY_BINDING["energy_total"])
+                    current_energy = native_bindings.get("energy_total")
+                    if isinstance(current_energy, dict):
+                        current_strategy = str(
+                            current_energy.get("strategy", ""),
+                        ).strip().lower()
+                        if current_strategy == "asset_consumption_total":
+                            merged_energy = dict(default_energy)
+                            merged_energy.update(current_energy)
+                            if merged_energy != current_energy:
+                                merged_native["energy_total"] = merged_energy
+                                row_promoted = True
+                    else:
+                        merged_native["energy_total"] = default_energy
+                        row_promoted = True
+
+                    if row_promoted:
+                        mapping["native_metric_bindings"] = merged_native
+
+                if str(mapping.get("capability_mode", "")).strip().lower() != "energy_only":
+                    mapping["capability_mode"] = "energy_only"
+                    row_promoted = True
+
+                if str(mapping.get("mapping_source", "")).strip().lower() != "live_discovery":
+                    mapping["mapping_source"] = "live_discovery"
+                    row_promoted = True
+
+        if row_promoted:
+            promoted = True
+
+        updated[asset_id] = mapping
+
+    return updated, promoted
 
 
 def _get_current_platform(settings_service: SettingsService) -> str:
@@ -410,10 +642,10 @@ def _merge_with_existing_metric_resources(
     incoming: dict[str, dict[str, Any]],
     existing: dict[str, dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
-    """Merge incoming mappings while preserving existing metric resources.
+    """Merge incoming mappings while preserving existing linkage metadata.
 
     Frontend asset editors may submit asset rows without ``metric_resources``.
-    Without this merge, imported generator mappings are unintentionally lost.
+    Without this merge, imported/native mappings are unintentionally lost.
     """
     merged: dict[str, dict[str, Any]] = {}
     for asset_id, incoming_mapping in incoming.items():
@@ -424,6 +656,21 @@ def _merge_with_existing_metric_resources(
             existing_resources = current.get("metric_resources")
             if isinstance(existing_resources, dict) and existing_resources:
                 next_mapping["metric_resources"] = dict(existing_resources)
+
+        if "native_metric_bindings" not in next_mapping:
+            native_bindings = current.get("native_metric_bindings")
+            if isinstance(native_bindings, dict) and native_bindings:
+                next_mapping["native_metric_bindings"] = dict(native_bindings)
+
+        if "capability_mode" not in next_mapping:
+            capability_mode = str(current.get("capability_mode", "")).strip()
+            if capability_mode in {"full_kpi", "energy_only"}:
+                next_mapping["capability_mode"] = capability_mode
+
+        if "mapping_source" not in next_mapping:
+            mapping_source = str(current.get("mapping_source", "")).strip()
+            if mapping_source in {"manual", "generator", "live_discovery"}:
+                next_mapping["mapping_source"] = mapping_source
 
         merged[asset_id] = next_mapping
     return merged
@@ -519,7 +766,7 @@ async def discover_assets(
     if supports_discovery:
         try:
             await adapter.initialize()
-            discovered_assets = await adapter.list_assets()
+            discovered_assets = await adapter.discover_assets()
         except Exception as exc:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
@@ -549,38 +796,26 @@ async def get_asset_linking_summary(
     settings_service: SettingsService = Depends(get_settings_service),
     adapter_factory: AdapterFactory = Depends(get_adapter_factory),
 ) -> AssetLinkingSummaryResponse:
-    """Return a unified RENERYO-friendly linking summary for wizard steps."""
+    """Return linking summary for wizard readiness and diagnostics."""
     platform_type = _get_current_platform(settings_service)
     mappings = settings_service.get_asset_mappings()
-    imported_assets, unlinked_assets = _build_mapping_linking_groups(mappings)
-    metric_coverage = _build_metric_coverage(imported_assets)
 
     supports_discovery = False
-    discovery_source: Literal["adapter", "registered", "none"] = (
-        "registered" if imported_assets or unlinked_assets else "none"
-    )
+    discovery_source: Literal["adapter", "registered", "none"] = "none"
     discovery_error = ""
     discovered_items: list[AssetLinkingItem] = []
+    discovered_assets: list[Asset] = []
 
     adapter = adapter_factory.create()
     supports_discovery = adapter.supports_asset_discovery()
     if supports_discovery:
         try:
             await asyncio.wait_for(adapter.initialize(), timeout=5.0)
-            discovered_assets = await asyncio.wait_for(
-                adapter.list_assets(),
-                timeout=12.0,
-            )
-            existing_asset_ids = {
-                _normalize_asset_key(asset.asset_id)
-                for asset in imported_assets + unlinked_assets
-            }
-            discovered_items = _build_discovered_linking_items(
-                discovered_assets if isinstance(discovered_assets, list) else [],
-                existing_asset_ids,
-            )
-            if discovered_items:
-                discovery_source = "adapter"
+            discovered = await asyncio.wait_for(adapter.discover_assets(), timeout=12.0)
+            if isinstance(discovered, list):
+                discovered_assets = [asset for asset in discovered if isinstance(asset, Asset)]
+                if discovered_assets:
+                    discovery_source = "adapter"
         except Exception as exc:  # noqa: BLE001 - endpoint degrades by design
             discovery_error = str(exc)
             logger.warning("Asset linking summary discovery failed: %s", exc)
@@ -589,6 +824,34 @@ async def get_asset_linking_summary(
                 await asyncio.wait_for(adapter.shutdown(), timeout=5.0)
             except Exception as exc:  # pragma: no cover - defensive cleanup
                 logger.warning("Adapter shutdown for linking summary failed: %s", exc)
+
+    if _compat_layer_enabled():
+        mappings, promoted = _promote_discovered_seu_assets_to_energy_only(
+            mappings=mappings,
+            discovered_assets=discovered_assets,
+        )
+        if promoted:
+            settings_service.set_asset_mappings(mappings)
+
+    imported_assets, unlinked_assets = _build_mapping_linking_groups(mappings)
+    full_kpi_assets = [
+        asset
+        for asset in imported_assets
+        if asset.mapping_mode == "full_kpi"
+    ]
+    metric_coverage = _build_metric_coverage(full_kpi_assets)
+
+    if discovery_source == "none" and (imported_assets or unlinked_assets):
+        discovery_source = "registered"
+
+    existing_asset_ids = {
+        _normalize_asset_key(asset_id)
+        for asset_id in mappings.keys()
+    }
+    discovered_items = _build_discovered_linking_items(
+        discovered_assets,
+        existing_asset_ids,
+    )
 
     return AssetLinkingSummaryResponse(
         platform_type=platform_type,
@@ -600,6 +863,47 @@ async def get_asset_linking_summary(
         unlinked_assets=unlinked_assets,
         discovered_assets=discovered_items,
         metric_coverage=metric_coverage,
+    )
+
+
+@router.get(
+    "/assets/generator-mapping-preview",
+    response_model=GeneratorAssetPreviewResponse,
+)
+def get_generator_mapping_preview() -> GeneratorAssetPreviewResponse:
+    """Preview bundled generator mapping assets without persisting anything."""
+    path = _default_generator_mapping_path()
+    if not path.exists():
+        return GeneratorAssetPreviewResponse(
+            available=False,
+            source_path=str(path),
+            error=f"Generator mapping file not found: {path}",
+        )
+
+    try:
+        payload_json = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 - return graceful preview state
+        return GeneratorAssetPreviewResponse(
+            available=False,
+            source_path=str(path),
+            error=f"Could not parse generator mapping JSON: {exc}",
+        )
+
+    mapping = _extract_mapping_payload(payload_json)
+    try:
+        _reject_unknown_metrics(mapping)
+    except HTTPException as exc:
+        return GeneratorAssetPreviewResponse(
+            available=False,
+            source_path=str(path),
+            error=str(exc.detail),
+        )
+
+    return GeneratorAssetPreviewResponse(
+        available=True,
+        source_path=str(path),
+        imported_metrics=len(mapping),
+        assets=_build_generator_asset_preview(mapping),
     )
 
 

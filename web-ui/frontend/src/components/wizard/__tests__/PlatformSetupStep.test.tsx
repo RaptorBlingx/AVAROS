@@ -37,7 +37,6 @@ function renderStep(options?: {
 }) {
   const platformType = options?.platformType ?? "custom_rest";
   const isMockPresetActive = options?.isMockPresetActive ?? false;
-  const onUseReneryoQuickAction = vi.fn();
   const onUseMockQuickAction = vi.fn();
   const onUseApiMode = vi.fn();
   render(
@@ -56,7 +55,6 @@ function renderStep(options?: {
       isTesting={false}
       isSaving={false}
       onUseMockQuickAction={onUseMockQuickAction}
-      onUseReneryoQuickAction={onUseReneryoQuickAction}
       onUseApiMode={onUseApiMode}
       onAuthTypeChange={vi.fn()}
       onApiUrlChange={vi.fn()}
@@ -65,24 +63,18 @@ function renderStep(options?: {
       onSaveAndContinue={vi.fn()}
     />,
   );
-  return { onUseReneryoQuickAction, onUseMockQuickAction, onUseApiMode };
+  return { onUseMockQuickAction, onUseApiMode };
 }
 
 describe("PlatformSetupStep", () => {
-  it("always renders the RENERYO preset action", () => {
+  it("does not render a platform-specific RENERYO action", () => {
     renderStep();
-    expect(screen.getByRole("button", { name: "Use RENERYO" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Use RENERYO" })).toBeNull();
   });
 
   it("always renders the Mock preset action", () => {
     renderStep();
     expect(screen.getByRole("button", { name: "Use Mock" })).toBeTruthy();
-  });
-
-  it("triggers preset callback when RENERYO action is clicked", () => {
-    const { onUseReneryoQuickAction } = renderStep();
-    fireEvent.click(screen.getByRole("button", { name: "Use RENERYO" }));
-    expect(onUseReneryoQuickAction).toHaveBeenCalledTimes(1);
   });
 
   it("triggers preset callback when Mock action is clicked", () => {

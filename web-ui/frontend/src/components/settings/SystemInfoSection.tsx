@@ -65,7 +65,7 @@ export default function SystemInfoSection({ onNotify }: SystemInfoSectionProps) 
           <div className="brand-surface rounded-xl p-4">
             <p className="m-0 text-xs font-semibold uppercase text-slate-500">Live Connection</p>
             <p className="m-0 mt-2 text-base font-semibold text-slate-900">
-              {(status.live_connection_state ?? "unknown").replaceAll("_", " ")}
+              {(status.live_connection_state ?? "unknown").replace(/_/g, " ")}
             </p>
           </div>
           <div className="brand-surface rounded-xl p-4">

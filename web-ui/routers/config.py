@@ -25,17 +25,8 @@ logger = logging.getLogger(__name__)
 
 def _resolve_effective_platform_type(
     payload: PlatformConfigRequest,
-    settings_service: SettingsService,
 ) -> str:
-    """Return platform type, repairing known profile drift cases."""
-    active_profile = settings_service.get_active_profile_name().strip().lower()
-    if active_profile == "reneryo" and payload.platform_type != "reneryo":
-        logger.warning(
-            "Normalizing platform_type to reneryo for active profile 'reneryo' "
-            "(received=%s)",
-            payload.platform_type,
-        )
-        return "reneryo"
+    """Return requested platform type without profile-specific overrides."""
     return payload.platform_type
 
 
@@ -50,8 +41,8 @@ def _to_response(config: PlatformConfig) -> PlatformConfigResponse:
     """Convert service config into API-safe masked response.
 
     Public Web UI contract intentionally exposes only ``custom_rest`` and
-    ``unconfigured`` platform types. Internal profile aliases (for example
-    ``reneryo``) are normalized to ``custom_rest`` at the API boundary.
+    ``unconfigured`` platform types. Unknown internal aliases are surfaced
+    as ``custom_rest`` at the API boundary.
     """
     raw = str(config.platform_type or "unconfigured").lower()
     platform_type = raw if raw in {"custom_rest", "unconfigured"} else "custom_rest"
@@ -70,7 +61,7 @@ async def upsert_platform_config(
     adapter_factory: AdapterFactory = Depends(get_adapter_factory),
 ) -> PlatformConfigResponse:
     """Create or update platform configuration and hot-reload adapter."""
-    platform_type = _resolve_effective_platform_type(payload, settings_service)
+    platform_type = _resolve_effective_platform_type(payload)
     config = PlatformConfig(
         platform_type=platform_type,
         api_url=payload.api_url,

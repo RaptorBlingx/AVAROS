@@ -10,6 +10,18 @@ export type SystemStatusResponse = {
   loaded_intents: number;
   database_connected: boolean;
   version: string;
+  live_connection_state?:
+    | "healthy"
+    | "auth_failed"
+    | "unreachable"
+    | "misconfigured"
+    | "unconfigured"
+    | "unknown"
+    | string;
+  live_connection_verified?: boolean;
+  live_connection_message?: string;
+  live_connection_error_code?: string;
+  live_connection_checked_at?: string | null;
 };
 
 export type PlatformType = "unconfigured" | "custom_rest";
@@ -321,13 +333,24 @@ export type DeleteProfileResponse = {
 };
 
 export type MetricResourceMap = Record<string, string>;
+export type NativeMetricBinding = {
+  strategy: string;
+  unit?: string;
+  trend_supported?: boolean;
+  compare_supported?: boolean;
+  [key: string]: unknown;
+};
+export type NativeMetricBindings = Record<string, NativeMetricBinding>;
 
 export type AssetMappingItem = {
   display_name?: string;
-  asset_type?: "machine" | "line" | "sensor";
+  asset_type?: "machine" | "line" | "sensor" | "seu";
   aliases?: string[];
+  mapping_source?: "manual" | "generator" | "live_discovery";
+  capability_mode?: "full_kpi" | "energy_only";
   endpoint_template?: string;
   metric_resources?: MetricResourceMap;
+  native_metric_bindings?: NativeMetricBindings;
   [key: string]: unknown;
 };
 
@@ -345,10 +368,27 @@ export type GeneratorMappingRequest = {
   mapping: Record<string, Record<string, string>>;
 };
 
-export type AssetRecord = {
+export type GeneratorAssetPreviewItem = {
   asset_id: string;
   display_name: string;
   asset_type: "machine" | "line" | "sensor";
+  metric_count: number;
+  metrics: CanonicalMetricName[];
+  source: "generator";
+};
+
+export type GeneratorAssetPreviewResponse = {
+  available: boolean;
+  source_path: string;
+  imported_metrics: number;
+  assets: GeneratorAssetPreviewItem[];
+  error: string;
+};
+
+export type AssetRecord = {
+  asset_id: string;
+  display_name: string;
+  asset_type: "machine" | "line" | "sensor" | "seu";
   aliases: string[];
   metadata?: Record<string, unknown>;
 };
@@ -382,7 +422,11 @@ export type AssetLinkingSummaryResponse = {
     asset_type: string;
     aliases: string[];
     source: "imported" | "registered" | "discovered";
+    mapping_mode: "full_kpi" | "energy_only" | "registration_only";
+    mapping_source: "manual" | "generator" | "live_discovery";
     linked_metrics: string[];
+    native_metrics: string[];
+    supported_metrics: string[];
     missing_metrics: string[];
     linked_metric_count: number;
     total_metrics: number;
@@ -393,7 +437,11 @@ export type AssetLinkingSummaryResponse = {
     asset_type: string;
     aliases: string[];
     source: "imported" | "registered" | "discovered";
+    mapping_mode: "full_kpi" | "energy_only" | "registration_only";
+    mapping_source: "manual" | "generator" | "live_discovery";
     linked_metrics: string[];
+    native_metrics: string[];
+    supported_metrics: string[];
     missing_metrics: string[];
     linked_metric_count: number;
     total_metrics: number;
@@ -404,7 +452,11 @@ export type AssetLinkingSummaryResponse = {
     asset_type: string;
     aliases: string[];
     source: "imported" | "registered" | "discovered";
+    mapping_mode: "full_kpi" | "energy_only" | "registration_only";
+    mapping_source: "manual" | "generator" | "live_discovery";
     linked_metrics: string[];
+    native_metrics: string[];
+    supported_metrics: string[];
     missing_metrics: string[];
     linked_metric_count: number;
     total_metrics: number;

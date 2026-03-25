@@ -24,7 +24,7 @@ Usage:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from skill.domain.results import (
@@ -55,14 +55,21 @@ class ResponseBuilder:
         skill.speak(text)
     """
     
-    def __init__(self, verbosity: str = "normal"):
+    def __init__(
+        self,
+        verbosity: str = "normal",
+        asset_name_resolver: Callable[[str], str] | None = None,
+    ):
         """
         Initialize response builder.
         
         Args:
             verbosity: Response detail level ("brief", "normal", "detailed")
+            asset_name_resolver: Optional callback to resolve human-friendly
+                asset names from canonical IDs.
         """
         self.verbosity = verbosity
+        self._asset_name_resolver = asset_name_resolver
     
     # =========================================================================
     # KPI Results
@@ -245,6 +252,15 @@ class ResponseBuilder:
     
     def _format_asset_name(self, asset_id: str) -> str:
         """Format asset ID into natural speech."""
+        if self._asset_name_resolver is not None:
+            try:
+                resolved = str(self._asset_name_resolver(asset_id)).strip()
+                if resolved:
+                    return resolved
+            except Exception:
+                # Resolver failures should never break voice output.
+                pass
+
         # Convert "Line-1" → "Line 1", "Compressor-2" → "Compressor 2"
         return asset_id.replace("-", " ").replace("_", " ")
     

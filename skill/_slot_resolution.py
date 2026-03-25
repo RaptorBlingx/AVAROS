@@ -117,6 +117,14 @@ def resolve_asset_id(self, message: Message, default: str = "default") -> str:
                 slot_value,
                 raise_on_unknown=True,
             )
+            utterance_asset = self._canonicalize_asset_id(utterance_text)
+            if (
+                utterance_asset
+                and utterance_asset != utterance_text
+                and utterance_asset != slot_asset
+                and _is_more_specific_utterance_asset(slot_value, utterance_text)
+            ):
+                return utterance_asset
             return slot_asset
         except AssetNotFoundError:
             utterance_assets = self._extract_line_assets_from_text(utterance_text)
@@ -259,3 +267,27 @@ def _has_metric_resources(raw_mapping: object) -> bool:
     if not isinstance(resources, dict):
         return False
     return any(str(resource_id).strip() for resource_id in resources.values())
+
+
+def _is_more_specific_utterance_asset(slot_value: str, utterance_text: str) -> bool:
+    """Return True when utterance names a longer, more specific asset phrase."""
+    slot_normalized = _normalize_phrase(slot_value)
+    utterance_normalized = _normalize_phrase(utterance_text)
+    if not slot_normalized or not utterance_normalized:
+        return False
+    if slot_normalized == utterance_normalized:
+        return False
+
+    slot_tokens = slot_normalized.split()
+    utterance_tokens = utterance_normalized.split()
+    if len(utterance_tokens) <= len(slot_tokens):
+        return False
+    return f" {slot_normalized} " in f" {utterance_normalized} "
+
+
+def _normalize_phrase(value: str) -> str:
+    """Normalize phrase for loose token containment checks."""
+    lowered = value.lower().strip()
+    lowered = re.sub(r"[^a-z0-9\s-]", " ", lowered)
+    lowered = lowered.replace("-", " ")
+    return re.sub(r"\s+", " ", lowered).strip()

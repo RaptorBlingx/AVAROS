@@ -778,6 +778,80 @@ class TestMetricFallback:
         skill.dispatcher.get_kpi.assert_not_called()
         skill.speak.assert_not_called()
 
+    def test_metric_query_fallback_energy_total_uses_aggregate_when_period_not_spoken(self):
+        """Fallback should ignore implicit today slot when utterance has no period phrase."""
+        skill = _initialized_skill()
+        skill._check_profile_mismatch = Mock()
+        skill.dispatcher = Mock()
+        skill.dispatcher.get_kpi.return_value = Mock()
+        skill.response_builder = Mock()
+        skill.response_builder.format_kpi_result.return_value = "energy total response"
+        skill.speak = Mock()
+        skill._resolve_asset_id = Mock(return_value="620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4")
+        skill.settings_service = Mock()
+        skill.settings_service.get_asset_mappings.return_value = {
+            "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4": {
+                "display_name": "Seu",
+                "capability_mode": "energy_only",
+                "native_metric_bindings": {
+                    "energy_total": {
+                        "strategy": "asset_consumption_total",
+                        "default_period_mode": "aggregate_total",
+                        "aggregate_start_iso": "2021-02-01T00:00:00.000Z",
+                    },
+                },
+            },
+        }
+
+        msg = Mock()
+        msg.data = {
+            "utterance": "what is total energy for seu",
+            "utterances": ["what is total energy for seu"],
+            "period": "today",
+        }
+
+        handled = skill.handle_metric_query_fallback(msg)
+
+        assert handled is True
+        dispatched_period = skill.dispatcher.get_kpi.call_args.kwargs["period"]
+        assert dispatched_period.display_name == "in total"
+        skill.speak.assert_called_once_with("energy total response")
+
+    def test_metric_query_fallback_energy_total_today_keeps_today_when_spoken(self):
+        """Fallback should keep today when user explicitly says today."""
+        skill = _initialized_skill()
+        skill._check_profile_mismatch = Mock()
+        skill.dispatcher = Mock()
+        skill.dispatcher.get_kpi.return_value = Mock()
+        skill.response_builder = Mock()
+        skill.response_builder.format_kpi_result.return_value = "energy total response"
+        skill.speak = Mock()
+        skill._resolve_asset_id = Mock(return_value="620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4")
+        skill.settings_service = Mock()
+        skill.settings_service.get_asset_mappings.return_value = {
+            "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4": {
+                "display_name": "Seu",
+                "capability_mode": "energy_only",
+                "native_metric_bindings": {
+                    "energy_total": {
+                        "strategy": "asset_consumption_total",
+                        "default_period_mode": "aggregate_total",
+                        "aggregate_start_iso": "2021-02-01T00:00:00.000Z",
+                    },
+                },
+            },
+        }
+
+        msg = Mock()
+        msg.data = {"utterance": "what is total energy for seu today", "period": "today"}
+
+        handled = skill.handle_metric_query_fallback(msg)
+
+        assert handled is True
+        dispatched_period = skill.dispatcher.get_kpi.call_args.kwargs["period"]
+        assert dispatched_period.display_name == "today"
+        skill.speak.assert_called_once_with("energy total response")
+
 
 class TestIntentFailureRecovery:
     """Tests for intent_failure bus recovery path."""

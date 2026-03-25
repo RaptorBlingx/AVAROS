@@ -133,6 +133,109 @@ async def test_get_kpi_uses_auto_mapping_from_metric_resources(period: TimePerio
 
 
 @pytest.mark.asyncio
+async def test_get_kpi_energy_total_uses_native_seu_binding(period: TimePeriod) -> None:
+    """Energy-only SEU assets should resolve energy_total via native binding."""
+    seu_id = "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4"
+    adapter = _build_asset_adapter(
+        {
+            seu_id: {
+                "display_name": "Seu",
+                "asset_type": "machine",
+                "mapping_source": "live_discovery",
+                "capability_mode": "energy_only",
+                "native_metric_bindings": {
+                    "energy_total": {
+                        "strategy": "asset_consumption_total",
+                        "unit": "kWh",
+                        "trend_supported": False,
+                        "compare_supported": False,
+                    },
+                },
+            },
+        },
+    )
+    adapter._session = object()
+    adapter._retry_fetch = AsyncMock(
+        return_value={
+            "records": [
+                {"id": seu_id, "name": "Seu", "consumption": 8654.14},
+            ],
+        },
+    )
+
+    result = await adapter.get_kpi(
+        metric=CanonicalMetric.ENERGY_TOTAL,
+        asset_id=seu_id,
+        period=period,
+    )
+
+    assert result.metric == CanonicalMetric.ENERGY_TOTAL
+    assert result.value == pytest.approx(8654.14)
+    assert result.unit == "kWh"
+    call_endpoint = adapter._retry_fetch.await_args.args[0]
+    assert call_endpoint == "/api/u/measurement/seu/item"
+
+
+@pytest.mark.asyncio
+async def test_get_kpi_non_energy_metric_on_energy_only_asset_raises_unavailable(
+    period: TimePeriod,
+) -> None:
+    """Energy-only SEU assets should reject non-native KPI metrics cleanly."""
+    seu_id = "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4"
+    adapter = _build_asset_adapter(
+        {
+            seu_id: {
+                "display_name": "Seu",
+                "asset_type": "machine",
+                "capability_mode": "energy_only",
+                "native_metric_bindings": {
+                    "energy_total": {"strategy": "asset_consumption_total"},
+                },
+            },
+        },
+    )
+    adapter._session = object()
+
+    with pytest.raises(AdapterError) as exc_info:
+        await adapter.get_kpi(
+            metric=CanonicalMetric.OEE,
+            asset_id=seu_id,
+            period=period,
+        )
+
+    assert exc_info.value.code == "ASSET_METRIC_UNAVAILABLE"
+    assert "Available metric for this asset" in exc_info.value.user_message
+
+
+@pytest.mark.asyncio
+async def test_get_trend_energy_only_asset_raises_unavailable(period: TimePeriod) -> None:
+    """Energy-only SEU assets should not expose trend endpoint in V1."""
+    seu_id = "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4"
+    adapter = _build_asset_adapter(
+        {
+            seu_id: {
+                "display_name": "Seu",
+                "asset_type": "machine",
+                "capability_mode": "energy_only",
+                "native_metric_bindings": {
+                    "energy_total": {"strategy": "asset_consumption_total"},
+                },
+            },
+        },
+    )
+    adapter._session = object()
+
+    with pytest.raises(AdapterError) as exc_info:
+        await adapter.get_trend(
+            metric=CanonicalMetric.ENERGY_TOTAL,
+            asset_id=seu_id,
+            period=period,
+        )
+
+    assert exc_info.value.code == "ASSET_METRIC_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
 async def test_get_kpi_invalid_json_path_raises_adapter_error(period: TimePeriod) -> None:
     """Missing json_path target raises mapping invalid error."""
     adapter = _build_adapter({
@@ -341,6 +444,24 @@ def test_supports_capability_false_for_unmapped_metric() -> None:
     assert adapter.supports_capability("energy_per_unit") is False
 
 
+def test_supports_capability_true_for_native_energy_only_metric() -> None:
+    """Native asset bindings should expose supported metric capabilities."""
+    adapter = _build_asset_adapter(
+        {
+            "seu-1": {
+                "display_name": "Seu",
+                "capability_mode": "energy_only",
+                "native_metric_bindings": {
+                    "energy_total": {"strategy": "asset_consumption_total"},
+                },
+            },
+        },
+    )
+
+    assert adapter.supports_capability("energy_total") is True
+    assert CanonicalMetric.ENERGY_TOTAL in adapter.get_supported_metrics()
+
+
 def test_supports_asset_discovery_returns_true_with_api_url() -> None:
     """Generic REST adapter exposes best-effort discovery when URL exists."""
     adapter = _build_adapter({})
@@ -398,6 +519,72 @@ async def test_list_assets_discovers_from_api_when_no_saved_mappings() -> None:
 
     assert [asset.asset_id for asset in assets] == ["seu-1"]
     assert assets[0].display_name == "SEU Alpha"
+
+
+@pytest.mark.asyncio
+async def test_list_assets_prefers_seu_item_discovery_with_uuid_ids() -> None:
+    """SEU item discovery should preserve real UUID-based asset IDs."""
+    adapter = _build_asset_adapter({})
+
+    with aioresponses() as mocked:
+        mocked.head("https://api.example.com", status=200)
+        mocked.get(
+            "https://api.example.com/api/u/measurement/seu/item?datetimeMin=2021-02-01T00:00:00.000Z&datetimeMax=2027-02-01T00:00:00.000Z",
+            status=200,
+            payload={
+                "records": [
+                    {
+                        "id": "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4",
+                        "name": "Seu",
+                        "energyResource": "ELECTRIC",
+                    },
+                    {
+                        "id": "8e7a03ca-2992-4ca1-aea4-2cdcfc911c5d",
+                        "name": "Seu 4 for reporting",
+                        "energyResource": "ELECTRIC",
+                    },
+                ],
+            },
+        )
+        await adapter.initialize()
+        assets = await adapter.list_assets()
+        await adapter.shutdown()
+
+    assert [asset.asset_id for asset in assets] == [
+        "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4",
+        "8e7a03ca-2992-4ca1-aea4-2cdcfc911c5d",
+    ]
+    assert assets[0].display_name == "Seu"
+    assert assets[1].display_name == "Seu 4 for reporting"
+
+
+@pytest.mark.asyncio
+async def test_list_assets_ignores_plain_name_discovery_records() -> None:
+    """Plain-string discovery responses should not be converted to fake assets."""
+    adapter = _build_asset_adapter({})
+
+    with aioresponses() as mocked:
+        mocked.head("https://api.example.com", status=200)
+        mocked.get(
+            "https://api.example.com/api/u/measurement/seu/item?datetimeMin=2021-02-01T00:00:00.000Z&datetimeMax=2027-02-01T00:00:00.000Z",
+            status=404,
+            payload={"detail": "not found"},
+        )
+        mocked.get(
+            "https://api.example.com/u/measurement/seu/item?datetimeMin=2021-02-01T00:00:00.000Z&datetimeMax=2027-02-01T00:00:00.000Z",
+            status=404,
+            payload={"detail": "not found"},
+        )
+        mocked.get(
+            "https://api.example.com/api/u/measurement/seu/names?count=100",
+            status=200,
+            payload={"records": ["Line-1", "Line-2", "seu"]},
+        )
+        await adapter.initialize()
+        assets = await adapter.list_assets()
+        await adapter.shutdown()
+
+    assert assets == []
 
 
 @pytest.mark.asyncio

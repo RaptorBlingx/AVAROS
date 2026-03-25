@@ -507,6 +507,14 @@ Register these assets (ID = display name for RENERYO):
 | Line-2 | Line 2 | line |
 | Line-3 | Line 3 | line |
 
+**Important distinction (wizard UX):**
+- **KPI-ready generator assets** (`Line-1`, `Line-2`, `Line-3`) come from `mapping_output.json` and are the primary AVAROS query assets.
+- **Live RENERYO resources** (SEUs like `Seu 4 for reporting`) come from `/u/measurement/seu/item`.
+- They are intentionally shown as separate sources in the wizard:
+  - use `Line-*` assets for KPI and voice query flow
+  - use discovered SEUs as live resource references you can optionally register or link
+- **SEU behavior in V1:** discovered SEUs are `energy-only` assets. They support `energy_total` (consumption) only; non-energy KPIs, compare, and trend are intentionally unavailable for SEUs in this rollout.
+
 ### Step 3 — Map Metrics
 
 For each metric × asset combination, use the endpoint template and resource UUID from `mapping_output.json`. The endpoint uses `{asset_id}` placeholder — the wizard substitutes the asset ID (e.g. `Line-1`).

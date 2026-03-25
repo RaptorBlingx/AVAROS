@@ -10,3 +10,9 @@ energy total
 what is total energy for {asset}
 what is the total energy for {asset}
 show me total energy for {asset}
+what is total energy {period}
+what is the total energy {period}
+what is total energy for {asset} {period}
+what is the total energy for {asset} {period}
+show me total energy for {asset} {period}
+energy total {period}

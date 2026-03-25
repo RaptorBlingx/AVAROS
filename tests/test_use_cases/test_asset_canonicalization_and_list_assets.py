@@ -45,6 +45,32 @@ def test_canonicalize_asset_id_resolves_registry_alias() -> None:
     assert resolved == "line-1"
 
 
+def test_canonicalize_asset_id_prefers_longest_contained_match() -> None:
+    """Utterance fallback should not let short aliases shadow specific SEU names."""
+    skill = _build_skill()
+    skill._get_asset_registry.return_value = [
+        Asset(
+            asset_id="620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4",
+            display_name="Seu",
+            asset_type="machine",
+            aliases=["seu"],
+        ),
+        Asset(
+            asset_id="8e7a03ca-2992-4ca1-aea4-2cdcfc911c5d",
+            display_name="Seu 4 for reporting",
+            asset_type="machine",
+            aliases=["seu 4 for reporting"],
+        ),
+    ]
+
+    resolved = skill._canonicalize_asset_id(
+        "what is total energy for seu 4 for reporting",
+        raise_on_unknown=True,
+    )
+
+    assert resolved == "8e7a03ca-2992-4ca1-aea4-2cdcfc911c5d"
+
+
 def test_canonicalize_asset_id_unknown_raises_with_suggestions() -> None:
     """Unknown slot asset should raise AssetNotFoundError with available assets."""
     skill = _build_skill()
@@ -91,6 +117,34 @@ def test_resolve_asset_id_ignores_noisy_slot_and_uses_utterance() -> None:
     )
 
     assert resolved == "Line-1"
+
+
+def test_resolve_asset_id_prefers_specific_utterance_over_generic_slot() -> None:
+    """Generic slot 'seu' should not shadow a specific SEU phrase in utterance."""
+    skill = _build_skill()
+    skill._get_asset_registry.return_value = [
+        Asset(
+            asset_id="620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4",
+            display_name="Seu",
+            asset_type="machine",
+            aliases=["seu"],
+        ),
+        Asset(
+            asset_id="8ce88962-956e-4773-912e-42230d1d0a9b",
+            display_name="Seu With Manually Selected Slice",
+            asset_type="machine",
+            aliases=["seu with manually selected slice"],
+        ),
+    ]
+
+    resolved = skill._resolve_asset_id(
+        _message(
+            asset="seu",
+            utterance="what is total energy for seu with manually selected slice",
+        ),
+    )
+
+    assert resolved == "8ce88962-956e-4773-912e-42230d1d0a9b"
 
 
 def test_list_assets_handler_speaks_formatted_asset_list() -> None:

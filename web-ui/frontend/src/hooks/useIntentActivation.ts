@@ -7,7 +7,11 @@ import {
   setIntentActive,
   toFriendlyErrorMessage,
 } from "../api/client";
-import type { IntentState, MetricMapping } from "../api/types";
+import type {
+  AssetLinkingSummaryResponse,
+  IntentState,
+  MetricMapping,
+} from "../api/types";
 import type { IntentViewModel } from "../components/common/IntentActivationList";
 
 type ErrorHandler =
@@ -53,6 +57,8 @@ export default function useIntentActivation({
 }: UseIntentActivationOptions) {
   const [intents, setIntents] = useState<IntentState[]>([]);
   const [mappedMetrics, setMappedMetrics] = useState<Set<string>>(new Set());
+  const [linkingSummary, setLinkingSummary] =
+    useState<AssetLinkingSummaryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingIntent, setSavingIntent] = useState<string | null>(null);
   const [bulkAction, setBulkAction] = useState<"enable" | "disable" | null>(null);
@@ -90,12 +96,37 @@ export default function useIntentActivation({
 
       try {
         const summary = await getAssetLinkingSummary();
+        const normalizeAssets = (
+          assets: NonNullable<AssetLinkingSummaryResponse["imported_assets"]>,
+        ) =>
+          assets.map((asset) => ({
+            ...asset,
+            mapping_mode:
+              asset.mapping_mode ??
+              (asset.linked_metric_count > 0 ? "full_kpi" : "registration_only"),
+            mapping_source: asset.mapping_source ?? "manual",
+            native_metrics: asset.native_metrics ?? [],
+            supported_metrics: asset.supported_metrics ?? asset.linked_metrics ?? [],
+          }));
+        setLinkingSummary({
+          ...summary,
+          imported_assets: normalizeAssets(summary.imported_assets ?? []),
+          unlinked_assets: normalizeAssets(summary.unlinked_assets ?? []),
+          discovered_assets: normalizeAssets(summary.discovered_assets ?? []),
+          metric_coverage: summary.metric_coverage ?? [],
+        });
         mapped = new Set(
           summary.metric_coverage
             .filter((item) => item.linked_assets > 0)
             .map((item) => item.metric_name),
         );
+        for (const asset of summary.imported_assets ?? []) {
+          for (const metricName of asset.supported_metrics ?? []) {
+            mapped.add(metricName);
+          }
+        }
       } catch {
+        setLinkingSummary(null);
         const mappings = await listMetricMappings();
         mapped = new Set(
           mappings.map((m: MetricMapping) => m.canonical_metric),
@@ -192,6 +223,7 @@ export default function useIntentActivation({
 
   return {
     intentView,
+    linkingSummary,
     loading,
     savingIntent,
     bulkAction,

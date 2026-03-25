@@ -360,9 +360,8 @@ export default function PlatformConfigSection({
   const handleProfileSwitchInternal = useCallback(
     (profileName: string, voiceReloaded: boolean) => {
       onProfileSwitch?.(profileName, voiceReloaded);
-      void loadConfig();
     },
-    [loadConfig, onProfileSwitch],
+    [onProfileSwitch],
   );
 
   return (

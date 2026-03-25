@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import Tooltip from "../common/Tooltip";
 import EmptyState from "../common/EmptyState";
@@ -24,6 +24,7 @@ export default function IntentActivationStep({
 
   const {
     intentView,
+    linkingSummary,
     loading,
     savingIntent,
     bulkAction,
@@ -34,6 +35,30 @@ export default function IntentActivationStep({
     errorHandler: { mode: "state", setError },
     activeProfile,
   });
+
+  const kpiIntentReadinessByAsset = useMemo(() => {
+    const importedAssets = linkingSummary?.imported_assets ?? [];
+    const kpiIntents = intentView.filter((intent) => intent.category === "kpi");
+    if (importedAssets.length === 0 || kpiIntents.length === 0) {
+      return [];
+    }
+    return importedAssets.map((asset) => {
+      const linkedMetrics = new Set(asset.supported_metrics);
+      const readyIntents = kpiIntents.filter((intent) =>
+        intent.required_metrics.every((metric) => linkedMetrics.has(metric)),
+      );
+      return {
+        assetId: asset.asset_id,
+        displayName: asset.display_name,
+        mappingMode: asset.mapping_mode,
+        mappingSource: asset.mapping_source,
+        linkedMetricCount: asset.linked_metric_count,
+        totalMetrics: asset.total_metrics,
+        supportedMetrics: asset.supported_metrics,
+        readyIntents,
+      };
+    });
+  }, [intentView, linkingSummary]);
 
   return (
     <section className="space-y-4">
@@ -81,6 +106,51 @@ export default function IntentActivationStep({
                 }}
               />
             </div>
+
+            {kpiIntentReadinessByAsset.length > 0 && (
+              <div className="mb-4 rounded-xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                <h3 className="m-0 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  KPI Intent Readiness by Asset
+                </h3>
+                <p className="mb-3 mt-1 text-xs text-slate-600 dark:text-slate-300">
+                  Shows which assets have enough mapped metrics to activate KPI intents confidently.
+                </p>
+                <div className="space-y-2">
+                  {kpiIntentReadinessByAsset.map((item) => (
+                    <div
+                      key={item.assetId}
+                      className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="m-0 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                          {item.displayName}
+                        </p>
+                        <span
+                          className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${
+                            item.mappingMode === "energy_only"
+                              ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                              : "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"
+                          }`}
+                        >
+                          {item.readyIntents.length} KPI intents ready
+                        </span>
+                      </div>
+                      <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        {item.assetId} · {item.linkedMetricCount}/{item.totalMetrics} mapped · mode: {item.mappingMode} · source: {item.mappingSource}
+                      </p>
+                      <p className="m-0 mt-1 text-xs text-slate-600 dark:text-slate-300">
+                        {item.readyIntents.length > 0
+                          ? item.readyIntents.map((intent) => intent.intent_name).join(", ")
+                          : "No KPI intent is fully ready for this asset yet."}
+                      </p>
+                      <p className="m-0 mt-1 text-xs text-slate-600 dark:text-slate-300">
+                        Supported metrics: {item.supportedMetrics.length > 0 ? item.supportedMetrics.join(", ") : "None"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {error && (
               <div className="mb-4">

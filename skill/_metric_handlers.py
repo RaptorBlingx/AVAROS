@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import re
 import logging
-from typing import TYPE_CHECKING
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
 
 from skill.domain.exceptions import AdapterError
-from skill.domain.models import CanonicalMetric
+from skill.domain.models import CanonicalMetric, TimePeriod
 from skill.domain.results import AnomalyResult, ComparisonResult, KPIResult, TrendResult, WhatIfResult
 
 if TYPE_CHECKING:
@@ -14,6 +16,181 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+_ENERGY_TOTAL_NATIVE_STRATEGY = "asset_consumption_total"
+_AGGREGATE_TOTAL_PERIOD_MODE = "aggregate_total"
+_AGGREGATE_TOTAL_LABEL = "in total"
+_DEFAULT_AGGREGATE_START_ISO = "2021-02-01T00:00:00.000Z"
+_PERIOD_PHRASE_PATTERN = re.compile(
+    r"\b(today|this week|last week|past week|last month|past month)\b",
+)
+_SUPPORTED_PERIOD_PHRASES = (
+    "this week",
+    "last week",
+    "past week",
+    "last month",
+    "past month",
+    "today",
+)
+
+
+def _normalize_asset_lookup(value: str) -> str:
+    """Normalize asset identifiers for tolerant lookups."""
+    return re.sub(r"[^a-z0-9]", "", value.lower().strip())
+
+
+def _parse_utc_iso(value: str) -> datetime | None:
+    """Parse ISO datetime string with optional trailing Z."""
+    raw = str(value).strip()
+    if not raw:
+        return None
+    normalized = raw.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _utterance_mentions_period(message) -> bool:
+    """Return True when explicit utterance text contains period phrases."""
+    data = getattr(message, "data", {}) or {}
+
+    raw_utterance = data.get("utterance")
+    if isinstance(raw_utterance, str) and raw_utterance.strip():
+        return _PERIOD_PHRASE_PATTERN.search(raw_utterance.strip().lower()) is not None
+
+    raw_utterances = data.get("utterances")
+    if isinstance(raw_utterances, list):
+        normalized_utterances = [
+            str(item).strip().lower()
+            for item in raw_utterances
+            if isinstance(item, str) and str(item).strip()
+        ]
+        if normalized_utterances:
+            primary = normalized_utterances[0]
+            return _PERIOD_PHRASE_PATTERN.search(primary) is not None
+
+    return False
+
+
+def _extract_supported_period_phrase(raw: str) -> str | None:
+    """Extract a supported period phrase from raw period slot text."""
+    normalized = str(raw or "").strip().lower()
+    if not normalized:
+        return None
+    for phrase in _SUPPORTED_PERIOD_PHRASES:
+        if re.search(rf"\b{re.escape(phrase)}\b", normalized):
+            return phrase
+    return None
+
+
+def _resolve_asset_mapping(
+    skill: "AVAROSSkill",
+    *,
+    asset_id: str,
+) -> dict[str, Any] | None:
+    """Resolve an asset mapping row from settings by id/name/alias."""
+    settings_service = getattr(skill, "settings_service", None)
+    if settings_service is None:
+        return None
+
+    try:
+        mappings = settings_service.get_asset_mappings()
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.warning("Could not read asset mappings while resolving KPI period: %s", exc)
+        return None
+
+    if not isinstance(mappings, dict):
+        return None
+
+    direct = mappings.get(asset_id)
+    if isinstance(direct, dict):
+        return direct
+
+    target = _normalize_asset_lookup(asset_id)
+    if not target:
+        return None
+
+    for key, raw_mapping in mappings.items():
+        if not isinstance(raw_mapping, dict):
+            continue
+        lookup_values: list[str] = [str(key), str(raw_mapping.get("display_name", ""))]
+        aliases = raw_mapping.get("aliases")
+        if isinstance(aliases, list):
+            lookup_values.extend(str(alias) for alias in aliases)
+        if any(_normalize_asset_lookup(value) == target for value in lookup_values if value):
+            return raw_mapping
+    return None
+
+
+def _resolve_kpi_period(
+    skill: "AVAROSSkill",
+    *,
+    metric: CanonicalMetric,
+    asset_id: str,
+    message,
+) -> TimePeriod:
+    """Resolve KPI period, with aggregate default for energy-only native totals."""
+    data = getattr(message, "data", {}) or {}
+    explicit_period = str(data.get("period", "")).strip()
+    utterance_mentions_period = _utterance_mentions_period(message)
+    period_phrase = _extract_supported_period_phrase(explicit_period)
+    if period_phrase and (
+        period_phrase != "today"
+        or utterance_mentions_period
+    ):
+        return skill._parse_period(period_phrase)
+
+    default_period = skill._parse_period("today")
+    if metric is not CanonicalMetric.ENERGY_TOTAL:
+        return default_period
+
+    mapping = _resolve_asset_mapping(skill, asset_id=asset_id)
+    if not isinstance(mapping, dict):
+        return default_period
+
+    capability_mode = str(mapping.get("capability_mode", "")).strip().lower()
+    if capability_mode != "energy_only":
+        return default_period
+
+    native_bindings = mapping.get("native_metric_bindings")
+    if not isinstance(native_bindings, dict):
+        return default_period
+
+    binding = native_bindings.get(metric.value)
+    if not isinstance(binding, dict):
+        return default_period
+
+    strategy = str(binding.get("strategy", "")).strip().lower()
+    if strategy != _ENERGY_TOTAL_NATIVE_STRATEGY:
+        return default_period
+
+    period_mode = str(binding.get("default_period_mode", "")).strip().lower()
+    if period_mode and period_mode != _AGGREGATE_TOTAL_PERIOD_MODE:
+        return default_period
+
+    start = _parse_utc_iso(str(binding.get("aggregate_start_iso", "")).strip())
+    if start is None:
+        start = _parse_utc_iso(_DEFAULT_AGGREGATE_START_ISO)
+    if start is None:
+        logger.warning(
+            "Energy-only aggregate mode enabled for '%s' but aggregate_start_iso is missing/invalid",
+            asset_id,
+        )
+        return default_period
+
+    end = datetime.now(tz=timezone.utc)
+    if start >= end:
+        logger.warning(
+            "Energy-only aggregate mode start (%s) is not before now for '%s'",
+            start.isoformat(),
+            asset_id,
+        )
+        return default_period
+
+    return TimePeriod(start=start, end=end, display_name=_AGGREGATE_TOTAL_LABEL)
 
 
 def _is_metric_mapped_for_active_adapter(
@@ -121,7 +298,12 @@ def dispatch_kpi_for_metric(
 
     def _execute() -> None:
         asset_id = skill._resolve_asset_id(message)
-        period = skill._parse_period(message.data.get("period", "today"))
+        period = _resolve_kpi_period(
+            skill,
+            metric=metric,
+            asset_id=asset_id,
+            message=message,
+        )
 
         result: KPIResult = skill.dispatcher.get_kpi(
             metric=metric,

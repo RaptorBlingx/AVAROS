@@ -749,6 +749,21 @@ class TestFormatAssetName:
         """Name without separators is unchanged."""
         assert builder._format_asset_name("PlantA") == "PlantA"
 
+    def test_format_asset_name_uses_resolver_when_available(self) -> None:
+        """Configured resolver should override raw asset id speech."""
+        builder = ResponseBuilder(
+            asset_name_resolver=lambda _asset_id: "Seu 4 for reporting",
+        )
+        assert (
+            builder._format_asset_name("8e7a03ca-2992-4ca1-aea4-2cdcfc911c5d")
+            == "Seu 4 for reporting"
+        )
+
+    def test_format_asset_name_falls_back_when_resolver_empty(self) -> None:
+        """Empty resolver output should keep legacy separator formatting."""
+        builder = ResponseBuilder(asset_name_resolver=lambda _asset_id: "")
+        assert builder._format_asset_name("Line-1") == "Line 1"
+
 
 # ══════════════════════════════════════════════════════════
 # 9. _is_lower_better

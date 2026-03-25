@@ -27,7 +27,6 @@ type PlatformSetupStepProps = {
   onAuthTypeChange: (value: AuthType) => void;
   onApiUrlChange: (value: string) => void;
   onApiKeyChange: (value: string) => void;
-  onUseReneryoQuickAction: () => void;
   onUseMockQuickAction: () => void;
   onUseApiMode: () => void;
   onTestConnection: () => void;
@@ -51,7 +50,6 @@ export default function PlatformSetupStep({
   onAuthTypeChange,
   onApiUrlChange,
   onApiKeyChange,
-  onUseReneryoQuickAction,
   onUseMockQuickAction,
   onUseApiMode,
   onTestConnection,
@@ -145,14 +143,6 @@ export default function PlatformSetupStep({
                 disabled={isTesting || isSaving}
               >
                 Use Mock
-              </button>
-              <button
-                type="button"
-                className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
-                onClick={onUseReneryoQuickAction}
-                disabled={isTesting || isSaving}
-              >
-                Use RENERYO
               </button>
             </div>
           </div>

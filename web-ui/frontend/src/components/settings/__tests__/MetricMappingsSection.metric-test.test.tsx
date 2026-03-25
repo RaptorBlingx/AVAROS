@@ -122,7 +122,7 @@ describe("MetricMappingsSection mapping test action", () => {
     fireEvent.click(testButtons[0]);
 
     await waitFor(() => {
-      expect(screen.getAllByText("✕").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("Retry").length).toBeGreaterThan(0);
     });
 
     const updatedButtons = screen.getAllByRole("button", {

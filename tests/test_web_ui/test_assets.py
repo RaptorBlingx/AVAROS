@@ -49,7 +49,7 @@ def test_discover_assets_uses_adapter_factory_dependency(
     adapter.initialize = AsyncMock(return_value=None)
     adapter.shutdown = AsyncMock(return_value=None)
     adapter.supports_asset_discovery.return_value = True
-    adapter.list_assets = AsyncMock(
+    adapter.discover_assets = AsyncMock(
         return_value=[
             Asset(
                 asset_id="line-a",
@@ -69,7 +69,7 @@ def test_discover_assets_uses_adapter_factory_dependency(
         app.dependency_overrides.pop(get_adapter_factory, None)
 
     assert response.status_code == 200
-    adapter.list_assets.assert_awaited_once()
+    adapter.discover_assets.assert_awaited_once()
     body = response.json()
     assert body["assets"] == [
         {
@@ -89,7 +89,7 @@ def test_discover_assets_skips_live_discovery_when_adapter_disables_it(
     adapter = Mock()
     adapter.initialize = AsyncMock(return_value=None)
     adapter.shutdown = AsyncMock(return_value=None)
-    adapter.list_assets = AsyncMock(return_value=[])
+    adapter.discover_assets = AsyncMock(return_value=[])
     adapter.supports_asset_discovery.return_value = False
     factory = Mock()
     factory.create.return_value = adapter
@@ -105,7 +105,7 @@ def test_discover_assets_skips_live_discovery_when_adapter_disables_it(
     assert body["supports_discovery"] is False
     assert body["assets"] == []
     adapter.initialize.assert_not_awaited()
-    adapter.list_assets.assert_not_awaited()
+    adapter.discover_assets.assert_not_awaited()
     adapter.shutdown.assert_not_awaited()
 
 
@@ -312,6 +312,51 @@ def test_import_default_generator_mapping_uses_file_payload(
     assert body["asset_mappings"]["Line-2"]["metric_resources"]["energy_total"] == "uuid-2"
 
 
+def test_generator_mapping_preview_returns_per_asset_rows(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Preview endpoint should expose generator assets without saving mappings."""
+    mapping_file = tmp_path / "mapping_output.json"
+    mapping_file.write_text(
+        (
+            '{"mapping":{"energy_total":{"Line-1":"uuid-1","Line-2":"uuid-2"},'
+            '"oee":{"Line-1":"uuid-3"}}}'
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AVAROS_GENERATOR_MAPPING_FILE", str(mapping_file))
+
+    response = client.get("/api/v1/assets/generator-mapping-preview")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["available"] is True
+    assert body["imported_metrics"] == 2
+    assert [row["asset_id"] for row in body["assets"]] == ["Line-1", "Line-2"]
+    assert body["assets"][0]["metric_count"] == 2
+    assert body["assets"][1]["metric_count"] == 1
+
+
+def test_generator_mapping_preview_reports_missing_file(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Preview endpoint should return a graceful unavailable state when missing."""
+    monkeypatch.setenv(
+        "AVAROS_GENERATOR_MAPPING_FILE",
+        str(tmp_path / "missing_mapping_output.json"),
+    )
+
+    response = client.get("/api/v1/assets/generator-mapping-preview")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["available"] is False
+    assert body["assets"] == []
+    assert "not found" in body["error"].lower()
+
+
 def test_config_assets_preserves_existing_metric_resources_when_missing_in_payload(
     client: TestClient,
     settings_service: SettingsService,
@@ -349,3 +394,178 @@ def test_config_assets_preserves_existing_metric_resources_when_missing_in_paylo
     assert line1["seu_id"] == "new-seu"
     assert line1["metric_resources"]["oee"] == "uuid-oee-1"
     assert line1["metric_resources"]["energy_total"] == "uuid-energy-1"
+
+
+def test_linking_summary_classifies_energy_only_assets_as_imported(
+    client: TestClient,
+    settings_service: SettingsService,
+    custom_rest_profile: None,
+) -> None:
+    """Energy-only SEU rows should be imported (not 0/19 unlinked)."""
+    settings_service.set_asset_mappings(
+        {
+            "Line-1": {
+                "display_name": "Line 1",
+                "asset_type": "line",
+                "mapping_source": "generator",
+                "capability_mode": "full_kpi",
+                "metric_resources": {"energy_total": "uuid-line-energy"},
+            },
+            "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4": {
+                "display_name": "Seu",
+                "asset_type": "machine",
+                "mapping_source": "live_discovery",
+                "capability_mode": "energy_only",
+                "native_metric_bindings": {
+                    "energy_total": {
+                        "strategy": "asset_consumption_total",
+                        "unit": "kWh",
+                        "trend_supported": False,
+                        "compare_supported": False,
+                    },
+                },
+            },
+        },
+    )
+
+    response = client.get("/api/v1/assets/linking-summary")
+    assert response.status_code == 200
+    body = response.json()
+
+    imported_ids = {item["asset_id"] for item in body["imported_assets"]}
+    assert "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4" in imported_ids
+
+    seu_item = next(
+        item
+        for item in body["imported_assets"]
+        if item["asset_id"] == "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4"
+    )
+    assert seu_item["mapping_mode"] == "energy_only"
+    assert seu_item["mapping_source"] == "live_discovery"
+    assert seu_item["supported_metrics"] == ["energy_total"]
+    assert "energy_total" in seu_item["linked_metrics"]
+
+    unlinked_ids = {item["asset_id"] for item in body["unlinked_assets"]}
+    assert "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4" not in unlinked_ids
+
+
+def test_linking_summary_auto_promotes_discovered_uuid_assets_to_energy_only(
+    client: TestClient,
+    settings_service: SettingsService,
+    custom_rest_profile: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy SEU rows without native mappings should auto-heal to energy-only."""
+    monkeypatch.setenv("AVAROS_ENABLE_PLATFORM_COMPAT_LAYER", "true")
+    asset_id = "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4"
+    settings_service.set_asset_mappings(
+        {
+            asset_id: {
+                "display_name": "Seu",
+                "asset_type": "machine",
+                "aliases": ["seu"],
+                "mapping_source": "manual",
+                "capability_mode": "full_kpi",
+            },
+        },
+    )
+
+    adapter = Mock()
+    adapter.initialize = AsyncMock(return_value=None)
+    adapter.shutdown = AsyncMock(return_value=None)
+    adapter.supports_asset_discovery.return_value = True
+    adapter.discover_assets = AsyncMock(
+        return_value=[
+            Asset(
+                asset_id=asset_id,
+                display_name="Seu",
+                asset_type="machine",
+                aliases=["seu"],
+                metadata={"source": "api_discovery", "energy_resource": "ELECTRIC"},
+            ),
+        ],
+    )
+    factory = Mock()
+    factory.create.return_value = adapter
+
+    app.dependency_overrides[get_adapter_factory] = lambda: factory
+    try:
+        response = client.get("/api/v1/assets/linking-summary")
+    finally:
+        app.dependency_overrides.pop(get_adapter_factory, None)
+
+    assert response.status_code == 200
+    body = response.json()
+    seu_item = next(
+        item
+        for item in body["imported_assets"]
+        if item["asset_id"] == asset_id
+    )
+    assert seu_item["mapping_mode"] == "energy_only"
+    assert seu_item["mapping_source"] == "live_discovery"
+    assert seu_item["supported_metrics"] == ["energy_total"]
+    assert seu_item["linked_metrics"] == ["energy_total"]
+
+    stored = settings_service.get_asset_mappings()[asset_id]
+    assert stored["capability_mode"] == "energy_only"
+    assert stored["mapping_source"] == "live_discovery"
+    assert stored["native_metric_bindings"]["energy_total"]["strategy"] == "asset_consumption_total"
+
+
+def test_linking_summary_backfills_legacy_energy_only_native_binding_defaults(
+    client: TestClient,
+    settings_service: SettingsService,
+    custom_rest_profile: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Legacy native bindings should receive aggregate period defaults automatically."""
+    monkeypatch.setenv("AVAROS_ENABLE_PLATFORM_COMPAT_LAYER", "true")
+    asset_id = "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4"
+    settings_service.set_asset_mappings(
+        {
+            asset_id: {
+                "display_name": "Seu",
+                "asset_type": "machine",
+                "aliases": ["seu"],
+                "mapping_source": "live_discovery",
+                "capability_mode": "energy_only",
+                "native_metric_bindings": {
+                    "energy_total": {
+                        "strategy": "asset_consumption_total",
+                        "unit": "kWh",
+                    },
+                },
+            },
+        },
+    )
+
+    adapter = Mock()
+    adapter.initialize = AsyncMock(return_value=None)
+    adapter.shutdown = AsyncMock(return_value=None)
+    adapter.supports_asset_discovery.return_value = True
+    adapter.discover_assets = AsyncMock(
+        return_value=[
+            Asset(
+                asset_id=asset_id,
+                display_name="Seu",
+                asset_type="machine",
+                aliases=["seu"],
+                metadata={"source": "api_discovery", "energy_resource": "ELECTRIC"},
+            ),
+        ],
+    )
+    factory = Mock()
+    factory.create.return_value = adapter
+
+    app.dependency_overrides[get_adapter_factory] = lambda: factory
+    try:
+        response = client.get("/api/v1/assets/linking-summary")
+    finally:
+        app.dependency_overrides.pop(get_adapter_factory, None)
+
+    assert response.status_code == 200
+    stored = settings_service.get_asset_mappings()[asset_id]
+    energy_binding = stored["native_metric_bindings"]["energy_total"]
+    assert energy_binding["strategy"] == "asset_consumption_total"
+    assert energy_binding["default_period_mode"] == "aggregate_total"
+    assert energy_binding["aggregate_start_iso"] == "2021-02-01T00:00:00.000Z"

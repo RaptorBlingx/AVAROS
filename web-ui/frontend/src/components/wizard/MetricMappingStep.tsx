@@ -10,6 +10,7 @@ import {
   updateMetricMapping,
 } from "../../api/client";
 import type {
+  AssetLinkingSummaryResponse,
   CanonicalMetricName,
   MetricMapping,
   MetricCoverageItem,
@@ -60,6 +61,15 @@ export default function MetricMappingStep({
   const [rows, setRows] = useState<MetricMappingRow[]>([]);
   const [existingByMetric, setExistingByMetric] = useState<Partial<Record<CanonicalMetricName, MetricMapping>>>({});
   const [metricCoverage, setMetricCoverage] = useState<MetricCoverageItem[]>([]);
+  const [importedAssets, setImportedAssets] = useState<
+    AssetLinkingSummaryResponse["imported_assets"]
+  >([]);
+  const [unlinkedRegisteredAssets, setUnlinkedRegisteredAssets] = useState<
+    AssetLinkingSummaryResponse["unlinked_assets"]
+  >([]);
+  const [discoveredAssets, setDiscoveredAssets] = useState<
+    AssetLinkingSummaryResponse["discovered_assets"]
+  >([]);
   const [errorsByRow, setErrorsByRow] = useState<Record<string, MetricRowError>>({});
   const [formError, setFormError] = useState("");
   const [helperError, setHelperError] = useState("");
@@ -72,6 +82,18 @@ export default function MetricMappingStep({
   const usedMetrics = useMemo(() => new Set(rows.map((row) => row.canonical_metric)), [rows]);
   const unMappedMetrics = useMemo(() => METRIC_OPTIONS.filter((option) => !usedMetrics.has(option.value)), [usedMetrics]);
   const canAddRow = unMappedMetrics.length > 0;
+  const fullKpiAssets = useMemo(
+    () => importedAssets.filter((asset) => asset.mapping_mode === "full_kpi"),
+    [importedAssets],
+  );
+  const energyOnlyAssets = useMemo(
+    () => importedAssets.filter((asset) => asset.mapping_mode === "energy_only"),
+    [importedAssets],
+  );
+  const registrationOnlyAssets = useMemo(
+    () => unlinkedRegisteredAssets.filter((asset) => asset.mapping_mode === "registration_only"),
+    [unlinkedRegisteredAssets],
+  );
 
   const resolveRow = useCallback((rowId: string) => rows.find((row) => row.id === rowId), [rows]);
 
@@ -90,6 +112,9 @@ export default function MetricMappingStep({
   const refreshLinkingSummary = useCallback(async () => {
     if (!isReneryoHelper) {
       setMetricCoverage([]);
+      setImportedAssets([]);
+      setUnlinkedRegisteredAssets([]);
+      setDiscoveredAssets([]);
       setHelperError("");
       return;
     }
@@ -97,10 +122,28 @@ export default function MetricMappingStep({
     setHelperError("");
     try {
       const summary = await getAssetLinkingSummary();
+      const normalizeAssets = (
+        assets: AssetLinkingSummaryResponse["imported_assets"],
+      ) =>
+        assets.map((asset) => ({
+          ...asset,
+          mapping_mode:
+            asset.mapping_mode ??
+            (asset.linked_metric_count > 0 ? "full_kpi" : "registration_only"),
+          mapping_source: asset.mapping_source ?? "manual",
+          native_metrics: asset.native_metrics ?? [],
+          supported_metrics: asset.supported_metrics ?? asset.linked_metrics ?? [],
+        }));
       setMetricCoverage(summary.metric_coverage);
+      setImportedAssets(normalizeAssets(summary.imported_assets));
+      setUnlinkedRegisteredAssets(normalizeAssets(summary.unlinked_assets));
+      setDiscoveredAssets(normalizeAssets(summary.discovered_assets));
     } catch (error: unknown) {
       setHelperError(toFriendlyErrorMessage(error));
       setMetricCoverage([]);
+      setImportedAssets([]);
+      setUnlinkedRegisteredAssets([]);
+      setDiscoveredAssets([]);
     } finally {
       setHelperLoading(false);
     }
@@ -422,6 +465,112 @@ export default function MetricMappingStep({
                         </div>
                       );
                     })}
+                  </div>
+                )}
+
+                {fullKpiAssets.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                      KPI-ready Assets (Full KPI)
+                    </p>
+                    {fullKpiAssets.map((asset) => (
+                      <div
+                        key={`imported-${asset.asset_id}`}
+                        className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2 dark:border-emerald-700/60 dark:bg-emerald-900/20"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="m-0 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            {asset.display_name}
+                          </p>
+                          <span className="inline-flex rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                            {asset.linked_metric_count}/{asset.total_metrics} mapped
+                          </span>
+                        </div>
+                        <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          {asset.asset_id} · {asset.asset_type} · source: {asset.mapping_source}
+                        </p>
+                        <p className="m-0 mt-1 text-xs text-slate-600 dark:text-slate-300">
+                          Metrics: {asset.linked_metrics.length > 0 ? asset.linked_metrics.join(", ") : "None"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {energyOnlyAssets.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                      Energy-only Assets (RENERYO SEU)
+                    </p>
+                    {energyOnlyAssets.map((asset) => (
+                      <div
+                        key={`energy-only-${asset.asset_id}`}
+                        className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 dark:border-amber-700/50 dark:bg-amber-900/20"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="m-0 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            {asset.display_name}
+                          </p>
+                          <span className="inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                            Energy only
+                          </span>
+                        </div>
+                        <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          {asset.asset_id} · {asset.asset_type} · source: {asset.mapping_source}
+                        </p>
+                        <p className="m-0 mt-1 text-xs text-slate-600 dark:text-slate-300">
+                          Supported metrics: {asset.supported_metrics.length > 0 ? asset.supported_metrics.join(", ") : "None"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {registrationOnlyAssets.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                      Registered Assets Without Metric Resources
+                    </p>
+                    {registrationOnlyAssets.map((asset) => (
+                      <div
+                        key={`unlinked-${asset.asset_id}`}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900/60"
+                      >
+                        <p className="m-0 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                          {asset.display_name}
+                        </p>
+                        <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          {asset.asset_id} · {asset.asset_type}
+                        </p>
+                        <p className="m-0 mt-1 text-xs text-slate-600 dark:text-slate-300">
+                          Linked metrics: {asset.linked_metric_count}/{asset.total_metrics}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {discoveredAssets.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                      Live RENERYO Resources (Discovered)
+                    </p>
+                    {discoveredAssets.map((asset) => (
+                      <div
+                        key={`discovered-${asset.asset_id}`}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900/60"
+                      >
+                        <p className="m-0 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                          {asset.display_name}
+                        </p>
+                        <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          {asset.asset_id} · {asset.asset_type}
+                        </p>
+                        <p className="m-0 mt-1 text-xs text-slate-600 dark:text-slate-300">
+                          Discovered from live API. Import from Step 2 if you want to register this as a query asset.
+                        </p>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

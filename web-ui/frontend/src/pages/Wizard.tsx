@@ -5,7 +5,6 @@ import {
   createPlatformConfig,
   getPlatformConfig,
   getStatus,
-  importDefaultGeneratorMapping,
   testConnection,
   toFriendlyErrorMessage,
 } from "../api/client";
@@ -36,11 +35,7 @@ type WizardState = {
   apiKey: string;
 };
 
-type IntegrationPreset = "reneryo" | "mock" | null;
-
-const RENERYO_PRESET_URL = (
-  import.meta.env.VITE_RENERYO_PRESET_URL || "http://10.33.10.110:30377/"
-).trim();
+type IntegrationPreset = "mock" | null;
 const MOCK_PRESET_URL =
   (import.meta.env.VITE_MOCK_PRESET_URL || "http://reneryo-data-generator-api:8090").trim();
 
@@ -50,10 +45,6 @@ function normalizeUrl(url: string): string {
 
 function isMockPresetUrl(url: string): boolean {
   return normalizeUrl(url) === normalizeUrl(MOCK_PRESET_URL);
-}
-
-function isReneryoPresetUrl(url: string): boolean {
-  return normalizeUrl(url) === normalizeUrl(RENERYO_PRESET_URL);
 }
 
 function fromBackendAuthType(authType: string | undefined): WizardState["authType"] {
@@ -153,18 +144,10 @@ export default function Wizard() {
   );
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [integrationPreset, setIntegrationPreset] = useState<IntegrationPreset>(null);
-  const effectiveIntegrationPreset: IntegrationPreset = useMemo(() => {
-    if (integrationPreset === "mock") {
-      return "mock";
-    }
-    if (integrationPreset === "reneryo") {
-      return "reneryo";
-    }
-    if (isReneryoPresetUrl(state.apiUrl)) {
-      return "reneryo";
-    }
-    return null;
-  }, [integrationPreset, state.apiUrl]);
+  const effectiveIntegrationPreset: IntegrationPreset = useMemo(
+    () => (integrationPreset === "mock" ? "mock" : null),
+    [integrationPreset],
+  );
 
   const [headerError, setHeaderError] = useState("");
   const [nextBlocked, setNextBlocked] = useState(false);
@@ -246,8 +229,6 @@ export default function Wizard() {
           ) === "none"
         ) {
           setIntegrationPreset("mock");
-        } else if (isReneryoPresetUrl(config.api_url ?? "")) {
-          setIntegrationPreset("reneryo");
         }
       } catch {
         // Wizard can still continue with manual entry when preload fails.
@@ -362,17 +343,6 @@ export default function Wizard() {
     setIsSaving(true);
     try {
       await createPlatformConfig(buildPayload(state, effectiveIntegrationPreset));
-      if (effectiveIntegrationPreset === "reneryo") {
-        try {
-          await importDefaultGeneratorMapping();
-        } catch (error: unknown) {
-          setFormError(
-            `Connected to RENERYO, but default mapping import failed. ` +
-              `You can continue and import manually in Metric Mapping. ` +
-              `Details: ${toFriendlyErrorMessage(error)}`,
-          );
-        }
-      }
       markStepComplete(1);
       goToStep(2);
     } catch (error: unknown) {
@@ -433,18 +403,6 @@ export default function Wizard() {
           onApiKeyChange={(value) =>
             setState((prev) => ({ ...prev, apiKey: value }))
           }
-          onUseReneryoQuickAction={() => {
-            setIntegrationPreset("reneryo");
-            setFormError("");
-            setTestError("");
-            setTestResult(null);
-            setState((prev) => ({
-              ...prev,
-              authType: "cookie",
-              apiUrl: RENERYO_PRESET_URL,
-              apiKey: "",
-            }));
-          }}
           onUseMockQuickAction={() => {
             setIntegrationPreset("mock");
             setFormError("");

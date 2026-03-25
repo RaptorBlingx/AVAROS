@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from skill._metric_handlers import _resolve_kpi_period as _resolve_kpi_period_impl
 from skill.domain.models import CanonicalMetric
 from skill.domain.results import ComparisonResult, KPIResult, TrendResult
 
@@ -33,7 +34,12 @@ def dispatch_kpi_for_metric(
 
     def _execute() -> None:
         asset_id = skill._resolve_asset_id(message)
-        period = skill._parse_period(message.data.get("period", "today"))
+        period = _resolve_kpi_period_impl(
+            skill,
+            metric=metric,
+            asset_id=asset_id,
+            message=message,
+        )
 
         result: KPIResult = skill.dispatcher.get_kpi(
             metric=metric,
@@ -147,9 +153,13 @@ def handle_metric_query_fallback(skill: "AVAROSSkill", message: Message) -> bool
         return False
 
     def _execute() -> bool:
-        data = getattr(message, "data", {}) or {}
         asset_id = skill._resolve_asset_id(message)
-        period = skill._parse_period(data.get("period", "today"))
+        period = _resolve_kpi_period_impl(
+            skill,
+            metric=metric,
+            asset_id=asset_id,
+            message=message,
+        )
         result: KPIResult = skill.dispatcher.get_kpi(
             metric=metric,
             asset_id=asset_id,
@@ -183,9 +193,13 @@ def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
         return
 
     def _execute() -> None:
-        data = getattr(message, "data", {}) or {}
         asset_id = skill._resolve_asset_id(message)
-        period = skill._parse_period(data.get("period", "today"))
+        period = _resolve_kpi_period_impl(
+            skill,
+            metric=metric,
+            asset_id=asset_id,
+            message=message,
+        )
         result: KPIResult = skill.dispatcher.get_kpi(
             metric=metric,
             asset_id=asset_id,

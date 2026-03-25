@@ -217,6 +217,14 @@ class ManufacturingAdapter(ABC):
     async def list_assets(self) -> list[Asset]:
         """Return all assets available on this platform."""
         ...
+
+    async def discover_assets(self) -> list[Asset]:
+        """Return live upstream assets for discovery-oriented UI flows.
+
+        Default behavior falls back to ``list_assets`` so adapters without a
+        specialized discovery path keep working.
+        """
+        return await self.list_assets()
     
     # =========================================================================
     # Capability Discovery

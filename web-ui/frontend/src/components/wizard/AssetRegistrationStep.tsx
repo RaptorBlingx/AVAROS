@@ -3,10 +3,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getAssetDiscovery,
   getConfiguredAssets,
+  getGeneratorAssetPreview,
   saveConfiguredAssets,
   toFriendlyErrorMessage,
 } from "../../api/client";
-import type { AssetMappingItem, PlatformType } from "../../api/types";
+import type {
+  AssetMappingItem,
+  NativeMetricBindings,
+  PlatformType,
+} from "../../api/types";
 import {
   aliasesToCsv,
   csvToAliases,
@@ -20,8 +25,28 @@ type RegistrationRow = {
   displayName: string;
   assetType: "line" | "machine" | "sensor";
   aliases: string;
+  mappingSource: "manual" | "generator" | "live_discovery";
+  capabilityMode: "full_kpi" | "energy_only";
+  nativeMetricBindings: NativeMetricBindings;
   isExisting: boolean;
   existingAssetId: string | null;
+};
+
+type SuggestedAsset = {
+  asset_id: string;
+  display_name: string;
+  asset_type: "line" | "machine" | "sensor";
+  aliases: string[];
+  metric_count?: number;
+  source: "live" | "generator";
+};
+
+type SuggestionInput = {
+  asset_id: string;
+  display_name: string;
+  asset_type: string;
+  aliases?: string[];
+  metric_count?: number;
 };
 
 type AssetRegistrationStepProps = {
@@ -37,6 +62,16 @@ const ASSET_TYPES: RegistrationRow["assetType"][] = [
   "sensor",
 ];
 const LINE_ASSET_ID_PATTERN = /^line[-_ ]?\d+$/i;
+const NATIVE_SEU_ENERGY_BINDINGS: NativeMetricBindings = {
+  energy_total: {
+    strategy: "asset_consumption_total",
+    unit: "kWh",
+    trend_supported: false,
+    compare_supported: false,
+    default_period_mode: "aggregate_total",
+    aggregate_start_iso: "2021-02-01T00:00:00.000Z",
+  },
+};
 
 function createRowId(seed?: string): string {
   const base = seed ? seed.replace(/[^a-zA-Z0-9_-]/g, "") : "asset";
@@ -71,15 +106,30 @@ function inferAssetType(
 function toRegistrationRows(
   mappings: Record<string, AssetMappingItem>,
 ): RegistrationRow[] {
-  const rows = Object.entries(mappings).map(([assetId, item]) => ({
-    rowId: createRowId(assetId),
-    assetId,
-    displayName: toDisplayName(assetId, item.display_name),
-    assetType: inferAssetType(assetId, item.asset_type),
-    aliases: aliasesToCsv(item.aliases),
-    isExisting: true,
-    existingAssetId: assetId,
-  }));
+  const rows = Object.entries(mappings).map(([assetId, item]) => {
+    const mappingSource: RegistrationRow["mappingSource"] =
+      item.mapping_source === "generator" || item.mapping_source === "live_discovery"
+        ? item.mapping_source
+        : "manual";
+    const capabilityMode: RegistrationRow["capabilityMode"] =
+      item.capability_mode === "energy_only" ? "energy_only" : "full_kpi";
+
+    return {
+      rowId: createRowId(assetId),
+      assetId,
+      displayName: toDisplayName(assetId, item.display_name),
+      assetType: inferAssetType(assetId, item.asset_type),
+      aliases: aliasesToCsv(item.aliases),
+      mappingSource,
+      capabilityMode,
+      nativeMetricBindings:
+        item.native_metric_bindings && typeof item.native_metric_bindings === "object"
+          ? (item.native_metric_bindings as NativeMetricBindings)
+          : {},
+      isExisting: true,
+      existingAssetId: assetId,
+    };
+  });
   return rows.length > 0
     ? rows
     : [
@@ -89,6 +139,9 @@ function toRegistrationRows(
           displayName: "",
           assetType: "machine",
           aliases: "",
+          mappingSource: "manual",
+          capabilityMode: "full_kpi",
+          nativeMetricBindings: {},
           isExisting: false,
           existingAssetId: null,
         },
@@ -110,6 +163,41 @@ function sanitizeAliasList(aliases: string[]): string[] {
   return Array.from(deduped);
 }
 
+function normalizeSuggestedAsset(
+  asset: SuggestionInput,
+  source: "live" | "generator",
+): SuggestedAsset {
+  const assetId = asset.asset_id.trim();
+  const rawAliases =
+    "aliases" in asset && Array.isArray(asset.aliases)
+      ? asset.aliases.map((item) => String(item))
+      : [];
+  const aliases = sanitizeAliasList(rawAliases);
+
+  return {
+    asset_id: assetId,
+    display_name: asset.display_name.trim() || assetId,
+    asset_type: inferAssetType(assetId, asset.asset_type),
+    aliases,
+    metric_count:
+      source === "generator" && typeof asset.metric_count === "number"
+        ? asset.metric_count
+        : undefined,
+    source,
+  };
+}
+
+function hasMetricResources(mapping: AssetMappingItem | undefined): boolean {
+  if (!mapping || typeof mapping !== "object") {
+    return false;
+  }
+  const resources = mapping.metric_resources;
+  if (!resources || typeof resources !== "object") {
+    return false;
+  }
+  return Object.values(resources).some((value) => String(value).trim().length > 0);
+}
+
 export default function AssetRegistrationStep({
   platformType,
   integrationPreset = null,
@@ -117,7 +205,8 @@ export default function AssetRegistrationStep({
   onSkip,
 }: AssetRegistrationStepProps) {
   const shouldAttemptDiscovery =
-    platformType !== "unconfigured" && integrationPreset !== "mock";
+    platformType !== "unconfigured" && integrationPreset === "reneryo";
+  const shouldLoadGeneratorPreview = integrationPreset === "reneryo";
   const [rows, setRows] = useState<RegistrationRow[]>([]);
   const [storedMappings, setStoredMappings] = useState<
     Record<string, AssetMappingItem>
@@ -127,14 +216,10 @@ export default function AssetRegistrationStep({
   const [error, setError] = useState("");
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [discoveryError, setDiscoveryError] = useState("");
-  const [suggestedAssets, setSuggestedAssets] = useState<
-    Array<{
-      asset_id: string;
-      display_name: string;
-      asset_type: "line" | "machine" | "sensor";
-      aliases: string[];
-    }>
-  >([]);
+  const [liveSuggestedAssets, setLiveSuggestedAssets] = useState<SuggestedAsset[]>([]);
+  const [generatorLoading, setGeneratorLoading] = useState(false);
+  const [generatorError, setGeneratorError] = useState("");
+  const [generatorAssets, setGeneratorAssets] = useState<SuggestedAsset[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -146,6 +231,34 @@ export default function AssetRegistrationStep({
       setStoredMappings(existingMappings);
       setRows(registrationRows);
 
+      if (shouldLoadGeneratorPreview) {
+        setGeneratorLoading(true);
+        setGeneratorError("");
+        try {
+          const preview = await getGeneratorAssetPreview();
+          if (preview.available) {
+            const nextGeneratorAssets = (preview.assets ?? [])
+              .filter((asset) => typeof asset.asset_id === "string" && asset.asset_id.trim())
+              .map((asset) => normalizeSuggestedAsset(asset, "generator"));
+            setGeneratorAssets(nextGeneratorAssets);
+          } else {
+            setGeneratorAssets([]);
+            if (preview.error) {
+              setGeneratorError(preview.error);
+            }
+          }
+        } catch (generatorErr: unknown) {
+          setGeneratorError(toFriendlyErrorMessage(generatorErr));
+          setGeneratorAssets([]);
+        } finally {
+          setGeneratorLoading(false);
+        }
+      } else {
+        setGeneratorLoading(false);
+        setGeneratorError("");
+        setGeneratorAssets([]);
+      }
+
       if (shouldAttemptDiscovery) {
         setDiscoveryLoading(true);
         setDiscoveryError("");
@@ -153,54 +266,57 @@ export default function AssetRegistrationStep({
           const discovery = await getAssetDiscovery();
           const nextSuggestions = (discovery.assets ?? [])
             .filter((asset) => typeof asset.asset_id === "string" && asset.asset_id.trim())
-            .map((asset) => ({
-              asset_id: asset.asset_id.trim(),
-              display_name: asset.display_name?.trim() || asset.asset_id.trim(),
-              asset_type:
-                asset.asset_type === "line" ||
-                asset.asset_type === "sensor"
-                  ? asset.asset_type
-                  : "machine",
-              aliases: sanitizeAliasList(
-                Array.isArray(asset.aliases)
-                  ? asset.aliases.map((alias) => String(alias))
-                  : [],
-              ),
-            }));
-          setSuggestedAssets(nextSuggestions);
-          if (Object.keys(existingMappings).length === 0 && nextSuggestions.length > 0) {
-            setRows(
-              nextSuggestions.map((asset) => ({
-                rowId: createRowId(asset.asset_id),
-                assetId: asset.asset_id,
-                displayName: asset.display_name,
-                assetType: asset.asset_type,
-                aliases: aliasesToCsv(asset.aliases),
-                isExisting: false,
-                existingAssetId: null,
-              })),
-            );
-          }
+            .map((asset) => normalizeSuggestedAsset(asset, "live"));
+          setLiveSuggestedAssets(nextSuggestions);
+          setRows((prev) =>
+            prev.map((row) => {
+              const rowAssetId = (row.existingAssetId ?? row.assetId).trim().toLowerCase();
+              if (!rowAssetId) {
+                return row;
+              }
+              const isLiveAsset = nextSuggestions.some(
+                (asset) => asset.asset_id.toLowerCase() === rowAssetId,
+              );
+              if (!isLiveAsset) {
+                return row;
+              }
+
+              const currentMapping = existingMappings[row.existingAssetId ?? row.assetId];
+              if (hasMetricResources(currentMapping)) {
+                return row;
+              }
+
+              return {
+                ...row,
+                mappingSource: "live_discovery",
+                capabilityMode: "energy_only",
+                nativeMetricBindings:
+                  Object.keys(row.nativeMetricBindings ?? {}).length > 0
+                    ? row.nativeMetricBindings
+                    : { ...NATIVE_SEU_ENERGY_BINDINGS },
+              };
+            }),
+          );
           if (discovery.discovery_error) {
             setDiscoveryError(discovery.discovery_error);
           }
         } catch (discoverErr: unknown) {
           setDiscoveryError(toFriendlyErrorMessage(discoverErr));
-          setSuggestedAssets([]);
+          setLiveSuggestedAssets([]);
         } finally {
           setDiscoveryLoading(false);
         }
       } else {
         setDiscoveryLoading(false);
         setDiscoveryError("");
-        setSuggestedAssets([]);
+        setLiveSuggestedAssets([]);
       }
     } catch (err: unknown) {
       setError(toFriendlyErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  }, [shouldAttemptDiscovery]);
+  }, [shouldAttemptDiscovery, shouldLoadGeneratorPreview]);
 
   useEffect(() => {
     void load();
@@ -230,6 +346,9 @@ export default function AssetRegistrationStep({
         displayName: "",
         assetType: "machine",
         aliases: "",
+        mappingSource: "manual",
+        capabilityMode: "full_kpi",
+        nativeMetricBindings: {},
         isExisting: false,
         existingAssetId: null,
       },
@@ -248,6 +367,9 @@ export default function AssetRegistrationStep({
               displayName: "",
               assetType: "machine",
               aliases: "",
+              mappingSource: "manual",
+              capabilityMode: "full_kpi",
+              nativeMetricBindings: {},
               isExisting: false,
               existingAssetId: null,
             },
@@ -309,6 +431,10 @@ export default function AssetRegistrationStep({
             display_name: row.displayName.trim() || targetId,
             asset_type: row.assetType,
             aliases: csvToAliases(row.aliases),
+            mapping_source: row.mappingSource,
+            capability_mode: row.capabilityMode,
+            native_metric_bindings:
+              row.capabilityMode === "energy_only" ? row.nativeMetricBindings : {},
           };
           return acc;
         },
@@ -324,48 +450,95 @@ export default function AssetRegistrationStep({
     }
   }, [onComplete, rows, storedMappings, validationError]);
 
-  const importSuggestedAsset = useCallback(
+  const importAssetCandidate = useCallback((candidate: SuggestedAsset) => {
+    setRows((prev) => {
+      const candidateId = candidate.asset_id.toLowerCase();
+      const existingIndex = prev.findIndex(
+        (row) => (row.existingAssetId ?? row.assetId).trim().toLowerCase() === candidateId,
+      );
+      if (existingIndex >= 0) {
+        if (candidate.source !== "live") {
+          return prev;
+        }
+
+        const current = prev[existingIndex];
+        const currentMapping = storedMappings[current.existingAssetId ?? current.assetId];
+        if (hasMetricResources(currentMapping)) {
+          return prev;
+        }
+
+        const next = [...prev];
+        next[existingIndex] = {
+          ...current,
+          displayName: current.displayName.trim() ? current.displayName : candidate.display_name,
+          assetType: current.assetType || candidate.asset_type,
+          mappingSource: "live_discovery",
+          capabilityMode: "energy_only",
+          nativeMetricBindings:
+            Object.keys(current.nativeMetricBindings ?? {}).length > 0
+              ? current.nativeMetricBindings
+              : { ...NATIVE_SEU_ENERGY_BINDINGS },
+        };
+        return next;
+      }
+
+      const draftRows = [...prev];
+      const onlyBlankDraft =
+        draftRows.length === 1 &&
+        !draftRows[0].assetId.trim() &&
+        !draftRows[0].displayName.trim() &&
+        !draftRows[0].aliases.trim();
+      const nextRows = onlyBlankDraft ? [] : draftRows;
+      nextRows.push({
+        rowId: createRowId(candidate.asset_id),
+        assetId: candidate.asset_id,
+        displayName: candidate.display_name,
+        assetType: candidate.asset_type,
+        aliases: aliasesToCsv(sanitizeAliasList(candidate.aliases)),
+        mappingSource: candidate.source === "generator" ? "generator" : "live_discovery",
+        capabilityMode: candidate.source === "generator" ? "full_kpi" : "energy_only",
+        nativeMetricBindings:
+          candidate.source === "generator" ? {} : { ...NATIVE_SEU_ENERGY_BINDINGS },
+        isExisting: false,
+        existingAssetId: null,
+      });
+      return nextRows;
+    });
+  }, [storedMappings]);
+
+  const importLiveSuggestedAsset = useCallback(
     (assetId: string) => {
-      const candidate = suggestedAssets.find((asset) => asset.asset_id === assetId);
+      const candidate = liveSuggestedAssets.find((asset) => asset.asset_id === assetId);
       if (!candidate) {
         return;
       }
-      setRows((prev) => {
-        const existingIds = new Set(
-          prev
-            .map((row) => (row.existingAssetId ?? row.assetId).trim().toLowerCase())
-            .filter(Boolean),
-        );
-        if (existingIds.has(candidate.asset_id.toLowerCase())) {
-          return prev;
-        }
-        const draftRows = [...prev];
-        const onlyBlankDraft =
-          draftRows.length === 1 &&
-          !draftRows[0].assetId.trim() &&
-          !draftRows[0].displayName.trim() &&
-          !draftRows[0].aliases.trim();
-        const nextRows = onlyBlankDraft ? [] : draftRows;
-        nextRows.push({
-          rowId: createRowId(candidate.asset_id),
-          assetId: candidate.asset_id,
-          displayName: candidate.display_name,
-          assetType: candidate.asset_type,
-          aliases: aliasesToCsv(sanitizeAliasList(candidate.aliases)),
-          isExisting: false,
-          existingAssetId: null,
-        });
-        return nextRows;
-      });
+      importAssetCandidate(candidate);
     },
-    [suggestedAssets],
+    [importAssetCandidate, liveSuggestedAssets],
   );
 
-  const importAllSuggestedAssets = useCallback(() => {
-    for (const asset of suggestedAssets) {
-      importSuggestedAsset(asset.asset_id);
+  const importAllLiveSuggestedAssets = useCallback(() => {
+    for (const asset of liveSuggestedAssets) {
+      importAssetCandidate(asset);
     }
-  }, [importSuggestedAsset, suggestedAssets]);
+  }, [importAssetCandidate, liveSuggestedAssets]);
+
+  const importGeneratorAsset = useCallback(
+    (assetId: string) => {
+      const candidate = generatorAssets.find((asset) => asset.asset_id === assetId);
+      if (!candidate) {
+        return;
+      }
+      importAssetCandidate(candidate);
+    },
+    [generatorAssets, importAssetCandidate],
+  );
+
+  const importAllGeneratorAssets = useCallback(() => {
+    for (const asset of generatorAssets) {
+      importAssetCandidate(asset);
+    }
+  }, [generatorAssets, importAssetCandidate]);
 
   const subtitle =
     platformType === "unconfigured"
@@ -412,13 +585,77 @@ export default function AssetRegistrationStep({
               Existing Asset IDs are immutable. Add a new row to register a new asset ID.
             </p>
 
+            {shouldLoadGeneratorPreview && (
+              <div className="rounded-xl border border-slate-300 bg-white/90 p-3 dark:border-slate-600 dark:bg-slate-800/80">
+                <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+                  KPI-ready Generator Assets
+                </p>
+                <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Preview assets found in mapping_output.json. These are AVAROS query assets like Line-1 / Line-2 / Line-3.
+                </p>
+                {generatorLoading && (
+                  <p className="m-0 mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    Loading generator asset preview...
+                  </p>
+                )}
+                {!generatorLoading && generatorError && (
+                  <p className="m-0 mt-2 text-xs text-amber-700 dark:text-amber-300">
+                    Generator preview warning: {generatorError}
+                  </p>
+                )}
+                {!generatorLoading && generatorAssets.length === 0 && !generatorError && (
+                  <p className="m-0 mt-2 text-xs text-slate-500 dark:text-slate-400">
+                    No generator-backed assets detected yet. You can still add assets manually.
+                  </p>
+                )}
+                {!generatorLoading && generatorAssets.length > 0 && (
+                  <div className="mt-2 space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
+                        onClick={importAllGeneratorAssets}
+                      >
+                        Import All ({generatorAssets.length})
+                      </button>
+                    </div>
+                    {generatorAssets.slice(0, 8).map((asset) => (
+                      <div
+                        key={asset.asset_id}
+                        className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700"
+                      >
+                        <div>
+                          <p className="m-0 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            {asset.display_name}
+                          </p>
+                          <p className="m-0 text-xs text-slate-500 dark:text-slate-400">
+                            {asset.asset_id} · {asset.asset_type} · {asset.metric_count ?? 0}/19 metrics
+                          </p>
+                          <p className="m-0 mt-1 text-xs text-emerald-700 dark:text-emerald-300">
+                            Full KPI coverage
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
+                          onClick={() => importGeneratorAsset(asset.asset_id)}
+                        >
+                          Add
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {shouldAttemptDiscovery && (
               <div className="rounded-xl border border-slate-300 bg-white/90 p-3 dark:border-slate-600 dark:bg-slate-800/80">
                 <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                  Live Asset Suggestions
+                  Live RENERYO Resources
                 </p>
                 <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  Import assets discovered from the active API connection.
+                  Import assets discovered from the active API connection (SEU list).
                 </p>
                 {discoveryLoading && (
                   <p className="m-0 mt-2 text-xs text-slate-500 dark:text-slate-400">
@@ -430,23 +667,23 @@ export default function AssetRegistrationStep({
                     Discovery warning: {discoveryError}
                   </p>
                 )}
-                {!discoveryLoading && suggestedAssets.length === 0 && !discoveryError && (
+                {!discoveryLoading && liveSuggestedAssets.length === 0 && !discoveryError && (
                   <p className="m-0 mt-2 text-xs text-slate-500 dark:text-slate-400">
                     No live assets discovered yet. You can continue with manual registration.
                   </p>
                 )}
-                {!discoveryLoading && suggestedAssets.length > 0 && (
+                {!discoveryLoading && liveSuggestedAssets.length > 0 && (
                   <div className="mt-2 space-y-2">
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
                         className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
-                        onClick={importAllSuggestedAssets}
+                        onClick={importAllLiveSuggestedAssets}
                       >
-                        Import All ({suggestedAssets.length})
+                        Import All ({liveSuggestedAssets.length})
                       </button>
                     </div>
-                    {suggestedAssets.slice(0, 8).map((asset) => (
+                    {liveSuggestedAssets.slice(0, 8).map((asset) => (
                       <div
                         key={asset.asset_id}
                         className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700"
@@ -458,11 +695,14 @@ export default function AssetRegistrationStep({
                           <p className="m-0 text-xs text-slate-500 dark:text-slate-400">
                             {asset.asset_id} · {asset.asset_type}
                           </p>
+                          <p className="m-0 mt-1 text-xs text-amber-700 dark:text-amber-300">
+                            Energy-only capability
+                          </p>
                         </div>
                         <button
                           type="button"
                           className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
-                          onClick={() => importSuggestedAsset(asset.asset_id)}
+                          onClick={() => importLiveSuggestedAsset(asset.asset_id)}
                         >
                           Add
                         </button>
@@ -525,6 +765,11 @@ export default function AssetRegistrationStep({
                   className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900 md:col-span-2"
                 />
                 <div className="md:col-span-5">
+                  {integrationPreset === "reneryo" && (
+                    <p className="m-0 mb-2 text-xs text-slate-500 dark:text-slate-400">
+                      Mode: {row.capabilityMode === "energy_only" ? "Energy only (compatibility)" : "Full KPI"}
+                    </p>
+                  )}
                   <button
                     type="button"
                     className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold dark:border-slate-600"
