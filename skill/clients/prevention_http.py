@@ -80,12 +80,10 @@ def _build_graphql_query(analytics_goal: str) -> str:
     """Build a PREVENTION GraphQL resultRequest query."""
     return (
         "query avaros_check {\n"
-        "  resultRequest(request: {\n"
-        f'    request: "{analytics_goal}"\n'
-        '    requestFrom: "DA"\n'
-        "  }) {\n"
+        '  resultRequest(request: [{\n'
+        f'    request: ["{analytics_goal}"]\n'
+        '  }]) {\n'
         "    results\n"
-        "    reason\n"
         "  }\n"
         "}"
     )
@@ -236,7 +234,7 @@ class HttpPreventionClient(PreventionClient):
     @property
     def _graphql_url(self) -> str:
         """Full GraphQL endpoint URL."""
-        return f"{self._base_url}/{self._addon_name}"
+        return f"{self._base_url}/graphql"
 
     # =====================================================================
     # Lifecycle Methods (ExternalServiceClient)

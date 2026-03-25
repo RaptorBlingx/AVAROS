@@ -69,12 +69,17 @@ CATEGORY_FILES: dict[str, str] = {
 DEFAULT_ASSETS = ["Line-1", "Line-2", "Line-3"]
 
 
-def _build_headers(session_cookie: str) -> dict[str, str]:
-    """Build HTTP headers with RENERYO auth cookie."""
-    return {
-        "Cookie": session_cookie,
-        "Accept": "application/json",
-    }
+def _build_headers(
+    session_cookie: str = "",
+    api_token: str = "",
+) -> dict[str, str]:
+    """Build HTTP headers with RENERYO auth (cookie or X-Token)."""
+    headers: dict[str, str] = {"Accept": "application/json"}
+    if api_token:
+        headers["X-Token"] = api_token
+    elif session_cookie:
+        headers["Cookie"] = session_cookie
+    return headers
 
 
 def _fetch_metric_values(
@@ -82,17 +87,17 @@ def _fetch_metric_values(
     api_url: str,
     resource_id: str,
     days: int = 7,
-    count: int = 200,
 ) -> list[dict[str, Any]]:
     """
     Fetch time-series values for a single metric resource.
+
+    Paginates automatically (API max 100 records per page).
 
     Args:
         client: httpx client with auth headers
         api_url: RENERYO base API URL
         resource_id: Metric resource ID in RENERYO
         days: Number of days of history to fetch
-        count: Maximum number of records
 
     Returns:
         List of {timestamp, value} dictionaries
@@ -104,23 +109,40 @@ def _fetch_metric_values(
         f"{api_url}/u/measurement/metric/resource/"
         f"{resource_id}/values"
     )
-    params = {
-        "period": "RAW",
-        "datetimeMin": start.isoformat(),
-        "datetimeMax": now.isoformat(),
-        "count": count,
-    }
 
-    try:
-        resp = client.get(url, params=params, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        return data.get("records", [])
-    except (httpx.HTTPError, ValueError) as exc:
-        logger.warning(
-            "Failed to fetch resource %s: %s", resource_id, exc,
-        )
-        return []
+    all_records: list[dict[str, Any]] = []
+    page = 1
+    page_size = 100  # API maximum
+
+    while True:
+        params = {
+            "period": "RAW",
+            "datetimeMin": start.isoformat(),
+            "datetimeMax": now.isoformat(),
+            "count": page_size,
+            "page": page,
+        }
+
+        try:
+            resp = client.get(url, params=params, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning(
+                "Failed to fetch resource %s (page %d): %s",
+                resource_id, page, exc,
+            )
+            break
+
+        records = data.get("records", [])
+        all_records.extend(records)
+
+        total = data.get("recordCount", 0)
+        if len(all_records) >= total or len(records) < page_size:
+            break
+        page += 1
+
+    return all_records
 
 
 def _load_mapping_file(mapping_path: str) -> dict[str, dict[str, str]]:
@@ -213,11 +235,12 @@ def export_category_data(
 
 def run_export(
     api_url: str,
-    session_cookie: str,
-    mapping_path: str,
-    output_dir: str,
+    session_cookie: str = "",
+    mapping_path: str = "",
+    output_dir: str = "./data",
     assets: list[str] | None = None,
     days: int = 7,
+    api_token: str = "",
 ) -> int:
     """
     Run a full data export from RENERYO to PREVENTION data files.
@@ -229,6 +252,7 @@ def run_export(
         output_dir: Output directory for JSON files
         assets: Asset IDs to export (default: Line-1/2/3)
         days: Days of history
+        api_token: RENERYO personal token (preferred over cookie)
 
     Returns:
         Total number of records exported
@@ -241,7 +265,7 @@ def run_export(
         logger.error("No metric mapping available. Run data generator first.")
         return 0
 
-    headers = _build_headers(session_cookie)
+    headers = _build_headers(session_cookie=session_cookie, api_token=api_token)
     out_path = Path(output_dir)
     total = 0
 
@@ -299,6 +323,7 @@ def main() -> None:
 
     api_url = os.environ.get("RENERYO_API_URL", "")
     session_cookie = os.environ.get("RENERYO_SESSION_COOKIE", "")
+    api_token = os.environ.get("RENERYO_API_TOKEN", "")
 
     if not api_url:
         logger.error("RENERYO_API_URL not set")
@@ -315,6 +340,7 @@ def main() -> None:
                 mapping_path=args.mapping,
                 output_dir=args.output,
                 days=args.days,
+                api_token=api_token,
             )
             time.sleep(args.interval)
     else:
@@ -324,6 +350,7 @@ def main() -> None:
             mapping_path=args.mapping,
             output_dir=args.output,
             days=args.days,
+            api_token=api_token,
         )
 
 

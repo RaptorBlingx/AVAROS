@@ -61,15 +61,14 @@ class TestBuildGraphqlQuery:
         assert "resultRequest" in query
 
     def test_contains_request_from(self) -> None:
-        """Query must include requestFrom: DA."""
+        """Query must wrap goal in request list (real PREVENTION schema)."""
         query = _build_graphql_query("TEST_GOAL")
-        assert '"DA"' in query
+        assert 'request: ["TEST_GOAL"]' in query
 
     def test_requests_results_and_reason(self) -> None:
-        """Query must request both results and reason fields."""
+        """Query must request the results field."""
         query = _build_graphql_query("TEST_GOAL")
         assert "results" in query
-        assert "reason" in query
 
 
 # =========================================================================
@@ -243,8 +242,8 @@ class TestHttpPreventionClientLifecycle:
         assert await http_client.health_check() is False
 
     def test_graphql_url(self, http_client: HttpPreventionClient) -> None:
-        """GraphQL URL must combine base_url and addon_name."""
-        assert http_client._graphql_url == "http://prevention:8082/avaros"
+        """GraphQL URL must use /graphql endpoint."""
+        assert http_client._graphql_url == "http://prevention:8082/graphql"
 
 
 # =========================================================================
