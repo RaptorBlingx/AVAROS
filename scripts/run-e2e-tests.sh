@@ -13,38 +13,113 @@
 # Usage:
 #   ./scripts/run-e2e-tests.sh
 # =================================================================
-set -e
+set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 COMPOSE_FILE="$PROJECT_ROOT/docker/docker-compose.e2e.yml"
-STARTUP_WAIT=20  # seconds to wait for skill registration
+BUILD_RETRIES=2
+READINESS_RETRIES=30
+READINESS_INTERVAL=2
 
 echo "=== AVAROS E2E Voice Pipeline Tests ==="
 echo "Project root: $PROJECT_ROOT"
 echo ""
 
+build_images() {
+    local attempt
+    for attempt in $(seq 1 "$BUILD_RETRIES"); do
+        echo "Building Docker images (attempt ${attempt}/${BUILD_RETRIES})..."
+        if docker compose -f "$COMPOSE_FILE" build --quiet; then
+            return 0
+        fi
+        echo "Build attempt $attempt failed."
+        if [ "$attempt" -lt "$BUILD_RETRIES" ]; then
+            echo "Retrying build..."
+            sleep 3
+        fi
+    done
+    return 1
+}
+
+wait_for_voice_ready() {
+    local try=1
+    while [ "$try" -le "$READINESS_RETRIES" ]; do
+        if docker compose -f "$COMPOSE_FILE" exec -T e2e-runner python - <<'PY'
+import threading
+try:
+    from ovos_bus_client import MessageBusClient, Message
+except ImportError:
+    from mycroft_bus_client import MessageBusClient, Message
+
+client = MessageBusClient(host="ovos_messagebus", port=8181, route="/core")
+client.run_in_thread()
+event = threading.Event()
+
+def on_speak(msg):
+    text = str(msg.data.get("utterance", "")).lower()
+    if text.strip():
+        event.set()
+
+client.on("speak", on_speak)
+try:
+    client.emit(
+        Message(
+            "avaros-manufacturing.avaros:kpi.oee.intent",
+            {"asset": "Line-1", "period": "today"},
+        )
+    )
+    ok = event.wait(timeout=4.0)
+finally:
+    client.remove("speak", on_speak)
+    client.close()
+
+raise SystemExit(0 if ok else 1)
+PY
+        then
+            echo "Voice readiness probe passed."
+            return 0
+        fi
+
+        echo "Voice readiness probe not ready yet (attempt ${try}/${READINESS_RETRIES})..."
+        sleep "$READINESS_INTERVAL"
+        try=$((try + 1))
+    done
+    return 1
+}
+
 # ── Build ────────────────────────────────────────────────
-echo "Building Docker images..."
-docker compose -f "$COMPOSE_FILE" build --quiet
+if ! build_images; then
+    echo "Image build failed after retries."
+    exit 1
+fi
 
 # ── Start ────────────────────────────────────────────────
 echo "Starting all services..."
 docker compose -f "$COMPOSE_FILE" up -d
-
-# ── Wait for readiness ────────────────────────────────────
-echo "Waiting ${STARTUP_WAIT}s for services to initialise..."
-sleep "$STARTUP_WAIT"
 
 # Quick health check
 echo "Checking service health..."
 docker compose -f "$COMPOSE_FILE" ps --format "table {{.Name}}\t{{.Status}}"
 echo ""
 
+echo "Probing voice pipeline readiness..."
+if ! wait_for_voice_ready; then
+    echo "Voice readiness probe failed."
+    echo ""
+    echo "=== avaros-skill logs ==="
+    docker compose -f "$COMPOSE_FILE" logs --tail=120 avaros-skill || true
+    echo ""
+    echo "=== ovos-messagebus logs ==="
+    docker compose -f "$COMPOSE_FILE" logs --tail=80 ovos_messagebus || true
+    docker compose -f "$COMPOSE_FILE" down -v
+    exit 1
+fi
+
 # ── Run tests ────────────────────────────────────────────
 echo "Running E2E tests..."
 docker compose -f "$COMPOSE_FILE" exec -T e2e-runner \
-    pytest tests/test_e2e/ -v --tb=short --timeout=60 -m e2e
+    pytest tests/test_e2e/test_helpers.py tests/test_e2e/test_voice_pipeline.py -v --tb=short --timeout=60 -m e2e
 
 EXIT_CODE=$?
 
@@ -55,7 +130,7 @@ if [ "$EXIT_CODE" -ne 0 ]; then
     docker compose -f "$COMPOSE_FILE" logs --tail=80 avaros-skill
     echo ""
     echo "=== ovos-messagebus logs ==="
-    docker compose -f "$COMPOSE_FILE" logs --tail=40 ovos-messagebus
+    docker compose -f "$COMPOSE_FILE" logs --tail=40 ovos_messagebus
 fi
 
 # ── Cleanup ──────────────────────────────────────────────

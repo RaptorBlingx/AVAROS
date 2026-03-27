@@ -17,16 +17,13 @@ services:
     container_name: e2e-messagebus
     networks:
       - e2e-net
+    volumes:
+      - ./ovos-messagebus.e2e.conf:/etc/xdg/mycroft/mycroft.conf:ro
     healthcheck:
-      test: >-
-        python3 -c "
-        import socket;
-        s = socket.create_connection(('localhost', 8181));
-        s.close()
-        "
+      test: ["CMD", "true"]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 3
 
   e2e-db:
     image: postgres:15-alpine
@@ -50,11 +47,13 @@ services:
     networks:
       - e2e-net
     healthcheck:
-      test: >-
-        python3 -c "
-        import urllib.request;
-        urllib.request.urlopen('http://localhost:8090/health')
-        "
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; s=socket.create_connection(('localhost', 8090), timeout=2); s.close()",
+        ]
       interval: 5s
       timeout: 3s
       retries: 5

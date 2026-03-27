@@ -168,8 +168,15 @@ pytest tests/ -v
 # With coverage
 pytest tests/ --cov=skill --cov-report=html
 
-# E2E voice test (requires Docker)
-python test_e2e.py
+# E2E tests are excluded by default in pytest.ini
+# Run only E2E-marked tests:
+pytest tests/test_e2e/ -m e2e -v
+
+# Full E2E stack run (Docker)
+./scripts/run-e2e-tests.sh
+
+# Voice + HiveMind path E2E run (Docker)
+./scripts/run-voice-e2e.sh
 ```
 
 ### Test Coverage Targets

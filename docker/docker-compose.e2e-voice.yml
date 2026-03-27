@@ -19,7 +19,7 @@
 
 services:
   ovos-core:
-    image: smartgic/ovos-core:latest
+    image: smartgic/ovos-core:0.1.0
     container_name: e2e-ovos-core
     depends_on:
       ovos_messagebus:
@@ -81,8 +81,6 @@ services:
         condition: service_started
     networks:
       - e2e-net
-    ports:
-      - "5678:5678"
     environment:
       - OVOS_BUS_HOST=e2e-messagebus
       - OVOS_BUS_PORT=8181

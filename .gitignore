@@ -62,6 +62,7 @@ docker/nginx/ssl/*.pem
 *.tmp
 *.bak
 *.backup
+tools/reneryo-data-generator/seu_live_feed_temp.py
 
 # Lead-only local files (not pushed to repo)
 # Agents, instructions, and docs are local workflow tools for the Lead developer.

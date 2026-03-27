@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -29,7 +30,9 @@ except ImportError:
 
 _DEFAULT_HOST = "localhost"
 _DEFAULT_PORT = 8181
-_CONNECT_WAIT_S = 5
+_CONNECT_WAIT_S = 1
+_READY_WAIT_S = 30
+_READY_PROBE_INTERVAL_S = 1
 _DEFAULT_TIMEOUT_S = 15
 _SKILL_ID = "avaros-manufacturing.avaros"
 
@@ -41,6 +44,7 @@ def send_intent_and_wait(
     client: MessageBusClient,
     intent_name: str,
     data: dict[str, Any] | None = None,
+    response_filter: Callable[[Message], bool] | None = None,
     timeout: float = _DEFAULT_TIMEOUT_S,
 ) -> dict[str, Any] | None:
     """Send an intent message and wait for the ``speak`` response.
@@ -49,6 +53,7 @@ def send_intent_and_wait(
         client: Connected OVOS ``MessageBusClient``.
         intent_name: Full intent message type (e.g. ``kpi.oee.intent``).
         data: Optional data payload (asset, period, …).
+        response_filter: Optional predicate to ignore unrelated ``speak`` messages.
         timeout: Maximum seconds to wait for a response.
 
     Returns:
@@ -59,6 +64,8 @@ def send_intent_and_wait(
     full_intent_name = f"{_SKILL_ID}:{intent_name}"
 
     def _on_speak(msg: Message) -> None:
+        if response_filter is not None and not response_filter(msg):
+            return
         response.append(msg.data)
         event.set()
 
@@ -89,8 +96,27 @@ def bus_client() -> MessageBusClient:
     client = MessageBusClient(host=host, port=port, route="/core")
     client.run_in_thread()
 
-    # Wait for the skill to register its intents on the bus.
+    # Give websocket loop a brief moment before readiness probing.
     time.sleep(_CONNECT_WAIT_S)
+
+    # Poll for skill readiness instead of relying on a fixed long sleep.
+    deadline = time.monotonic() + _READY_WAIT_S
+    while time.monotonic() < deadline:
+        probe = send_intent_and_wait(
+            client,
+            "kpi.oee.intent",
+            {"asset": "Line-1", "period": "today"},
+            timeout=2.0,
+        )
+        if probe is not None:
+            break
+        time.sleep(_READY_PROBE_INTERVAL_S)
+    else:
+        client.close()
+        pytest.fail(
+            f"E2E bus_client readiness probe failed after {_READY_WAIT_S}s: "
+            "no speak response for kpi.oee.intent",
+        )
 
     yield client
 

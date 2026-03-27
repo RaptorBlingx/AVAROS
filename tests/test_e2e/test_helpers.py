@@ -89,6 +89,36 @@ class TestSendIntentAndWait:
         assert msg.data["asset"] == "Line-1"
         assert msg.data["period"] == "today"
 
+    def test_response_filter_ignores_unrelated_speak(self) -> None:
+        """Response filter should ignore unrelated speaks before matching one."""
+        client = MagicMock()
+        speak_callback = None
+
+        def _capture_on(event: str, callback: Any) -> None:
+            nonlocal speak_callback
+            if event == "speak":
+                speak_callback = callback
+
+        client.on.side_effect = _capture_on
+        client.remove = MagicMock()
+
+        def _emit_side_effect(msg: Any) -> None:
+            if speak_callback:
+                speak_callback(Message("speak", {"utterance": "noise"}))
+                speak_callback(Message("speak", {"utterance": "oee is 85 percent"}))
+
+        client.emit.side_effect = _emit_side_effect
+
+        result = send_intent_and_wait(
+            client,
+            "kpi.oee.intent",
+            response_filter=lambda m: "oee" in str(m.data.get("utterance", "")).lower(),
+            timeout=2,
+        )
+
+        assert result is not None
+        assert "oee" in result["utterance"].lower()
+
     def test_removes_speak_listener_after_response(self) -> None:
         """Speak listener is cleaned up after response to avoid leakage."""
         client = MagicMock()
