@@ -86,10 +86,7 @@ export default function IntentBindingsSection({
   const [loading, setLoading] = useState(true);
   const [savingRowId, setSavingRowId] = useState<string | null>(null);
 
-  const isUnconfiguredProfile = useMemo(
-    () => activeProfile === "unconfigured",
-    [activeProfile],
-  );
+  const isUnconfiguredProfile = false;
 
   const usedIntents = useMemo(
     () => new Set(rows.map((row) => row.intent_name)),
@@ -147,9 +144,6 @@ export default function IntentBindingsSection({
   }, []);
 
   const addRow = useCallback(() => {
-    if (isUnconfiguredProfile) {
-      return;
-    }
     const candidate = INTENT_OPTIONS.find((option) => !usedIntents.has(option.value));
     if (!candidate) {
       onNotify("error", "All non-metric intents are already bound.");
@@ -165,12 +159,9 @@ export default function IntentBindingsSection({
         ...EMPTY_ROW_DEFAULTS,
       },
     ]);
-  }, [isUnconfiguredProfile, onNotify, usedIntents]);
+  }, [onNotify, usedIntents]);
 
   const saveRow = useCallback(async (rowId: string) => {
-    if (isUnconfiguredProfile) {
-      return;
-    }
     const row = rows.find((item) => item.id === rowId);
     if (!row) return;
     if (!validateRow(row, rows)) {
@@ -216,12 +207,9 @@ export default function IntentBindingsSection({
     } finally {
       setSavingRowId(null);
     }
-  }, [isUnconfiguredProfile, onNotify, rows, validateRow]);
+  }, [onNotify, rows, validateRow]);
 
   const removeRow = useCallback(async (row: IntentBindingRow) => {
-    if (isUnconfiguredProfile) {
-      return;
-    }
     try {
       if (row.persisted) {
         await deleteIntentBinding(row.originalIntent ?? row.intent_name);
@@ -236,7 +224,7 @@ export default function IntentBindingsSection({
     } catch (error: unknown) {
       onNotify("error", toFriendlyErrorMessage(error));
     }
-  }, [isUnconfiguredProfile, onNotify]);
+  }, [onNotify]);
 
   return (
     <section className="space-y-3">
@@ -244,7 +232,6 @@ export default function IntentBindingsSection({
         <button
           type="button"
           onClick={addRow}
-          disabled={isUnconfiguredProfile}
           className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
             isDark
               ? "border-slate-500 bg-slate-700 text-slate-100 hover:bg-slate-600"
@@ -261,11 +248,6 @@ export default function IntentBindingsSection({
         </div>
       ) : (
         <div className="reveal-in">
-          {isUnconfiguredProfile && (
-            <div className="mb-3 rounded-lg bg-blue-50 p-3 text-sm text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-              Unconfigured profile uses built-in demo data. Intent bindings are not configurable.
-            </div>
-          )}
           {rows.length === 0 ? (
             <EmptyState
               title="No intent bindings"
@@ -292,7 +274,6 @@ export default function IntentBindingsSection({
                       <td className="px-3 py-3 align-top min-w-[220px]">
                         <select
                           value={row.intent_name}
-                          disabled={isUnconfiguredProfile}
                           onChange={(event) =>
                             updateRow(row.id, "intent_name", event.target.value as NonMetricIntentName)
                           }
@@ -311,7 +292,6 @@ export default function IntentBindingsSection({
                       <td className="px-3 py-3 align-top min-w-[120px]">
                         <select
                           value={row.method}
-                          disabled={isUnconfiguredProfile}
                           onChange={(event) =>
                             updateRow(row.id, "method", event.target.value as IntentBindingMethod)
                           }
@@ -326,7 +306,6 @@ export default function IntentBindingsSection({
                         <input
                           type="text"
                           value={row.endpoint}
-                          disabled={isUnconfiguredProfile}
                           onChange={(event) => updateRow(row.id, "endpoint", event.target.value)}
                           className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                         />
@@ -338,7 +317,6 @@ export default function IntentBindingsSection({
                         <input
                           type="text"
                           value={row.json_path}
-                          disabled={isUnconfiguredProfile}
                           onChange={(event) => updateRow(row.id, "json_path", event.target.value)}
                           className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                         />
@@ -350,7 +328,6 @@ export default function IntentBindingsSection({
                         <input
                           type="text"
                           value={row.success_path}
-                          disabled={isUnconfiguredProfile}
                           onChange={(event) => updateRow(row.id, "success_path", event.target.value)}
                           className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
                         />
@@ -360,7 +337,7 @@ export default function IntentBindingsSection({
                           <button
                             type="button"
                             onClick={() => void saveRow(row.id)}
-                            disabled={isUnconfiguredProfile || savingRowId === row.id}
+                            disabled={savingRowId === row.id}
                             className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${
                               isDark
                                 ? "border-slate-400 bg-white text-slate-900"
@@ -372,7 +349,6 @@ export default function IntentBindingsSection({
                           <button
                             type="button"
                             onClick={() => void removeRow(row)}
-                            disabled={isUnconfiguredProfile}
                             className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${
                               isDark
                                 ? "border-rose-400 bg-rose-950/60 text-rose-200"

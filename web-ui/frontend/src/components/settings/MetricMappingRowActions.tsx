@@ -70,7 +70,7 @@ export default function MetricMappingRowActions({
       <button
         type="button"
         onClick={() => onSave(rowId)}
-        disabled={isUnconfiguredProfile || savingRowId === rowId}
+        disabled={savingRowId === rowId}
         className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${
           isDark
             ? "border-slate-400 bg-white text-slate-900"
@@ -82,7 +82,7 @@ export default function MetricMappingRowActions({
       <button
         type="button"
         onClick={() => onTest(rowId)}
-        disabled={isUnconfiguredProfile || savingRowId === rowId || isTesting}
+        disabled={savingRowId === rowId || isTesting}
         title={testTitle}
         aria-label={`Test mapping for ${metricName}`}
         className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${testClassName}`}
@@ -92,7 +92,6 @@ export default function MetricMappingRowActions({
       <button
         type="button"
         onClick={() => onRemove(rowId)}
-        disabled={isUnconfiguredProfile}
         className={`w-full rounded border px-2 py-1.5 text-xs font-semibold sm:w-auto md:min-w-[84px] ${
           isDark
             ? "border-rose-400 bg-rose-950/60 text-rose-200"

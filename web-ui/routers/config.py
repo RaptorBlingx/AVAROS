@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 
 from fastapi import APIRouter, Depends
+
+try:
+    import websocket  # websocket-client
+except ImportError:  # pragma: no cover
+    websocket = None  # type: ignore[assignment]
 
 from dependencies import get_adapter_factory, get_settings_service
 from schemas.config import (
@@ -21,6 +28,37 @@ from skill.services.settings import PlatformConfig, SettingsService
 
 router = APIRouter(prefix="/api/v1/config", tags=["config"])
 logger = logging.getLogger(__name__)
+
+_MESSAGEBUS_URL = os.environ.get(
+    "OVOS_MESSAGEBUS_URL", "ws://ovos_messagebus:8181/core",
+)
+
+
+def _notify_skill_profile_changed(profile_name: str) -> bool:
+    """Send profile activation event so the OVOS skill reloads its adapter.
+
+    Best-effort — returns False on failure, never raises.
+    """
+    try:
+        if websocket is None:
+            logger.warning("websocket-client not installed — cannot notify skill")
+            return False
+        ws = websocket.create_connection(_MESSAGEBUS_URL, timeout=3)
+        msg = {
+            "type": "avaros.profile.activated",
+            "data": {"profile": profile_name},
+            "context": {},
+        }
+        ws.send(json.dumps(msg))
+        ws.close()
+        logger.info(
+            "Sent avaros.profile.activated to messagebus (profile='%s')",
+            profile_name,
+        )
+        return True
+    except Exception as exc:
+        logger.warning("Could not notify skill via messagebus: %s", exc)
+        return False
 
 
 def _resolve_effective_platform_type(
@@ -78,6 +116,9 @@ async def upsert_platform_config(
             "Platform config saved but adapter reload failed: %s",
             exc,
         )
+
+    profile_name = settings_service.get_active_profile_name()
+    _notify_skill_profile_changed(profile_name)
 
     return _to_response(settings_service.get_platform_config())
 

@@ -130,6 +130,13 @@ def resolve_asset_id(self, message: Message, default: str = "default") -> str:
             utterance_assets = self._extract_line_assets_from_text(utterance_text)
             if utterance_assets:
                 return utterance_assets[0]
+            # Slot collision fallback: Padatious may have split a
+            # multi-word asset across {asset} and {period} slots.
+            # Re-try using the full utterance text which still
+            # contains the complete asset name.
+            utterance_alias = self._canonicalize_asset_id(utterance_text)
+            if utterance_alias and utterance_alias != utterance_text:
+                return utterance_alias
             raise
 
     utterance_assets = self._extract_line_assets_from_text(utterance_text)

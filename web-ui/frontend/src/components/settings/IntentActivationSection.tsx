@@ -37,11 +37,6 @@ export default function IntentActivationSection({
         </div>
       ) : (
         <div className="reveal-in">
-          {isUnconfiguredProfile && (
-            <div className="mb-3 rounded-lg bg-blue-50 p-3 text-sm text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-              Unconfigured profile uses built-in demo data. Intent activation is not configurable.
-            </div>
-          )}
           {intentView.length === 0 ? (
             <EmptyState
               title="No intents available"
@@ -54,7 +49,7 @@ export default function IntentActivationSection({
               intents={intentView}
               savingIntent={savingIntent}
               bulkAction={bulkAction}
-              readOnly={isUnconfiguredProfile}
+              readOnly={false}
               onEnableAll={() => void setAll(true)}
               onDisableAll={() => void setAll(false)}
               onToggle={(intentName, active) => void toggleIntent(intentName, active)}

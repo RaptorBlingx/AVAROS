@@ -159,8 +159,12 @@ def resolve_json_path(payload: dict | list, json_path: str) -> Any:
         if index >= len(current):
             raise AdapterError(
                 message=f"json_path index out of range in {json_path}",
-                code="GENERIC_REST_MAPPING_INVALID",
+                code="GENERIC_REST_NO_DATA",
                 platform="generic_rest",
+                user_message=(
+                    "I couldn't find data for that time period. "
+                    "Try a different range like last week or last month."
+                ),
             )
         current = current[index]
 

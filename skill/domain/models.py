@@ -12,7 +12,7 @@ Usage:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Literal
 
@@ -196,14 +196,14 @@ class TimePeriod:
     @classmethod
     def today(cls) -> TimePeriod:
         """Create a period for today."""
-        now = datetime.now()
+        now = datetime.now(tz=timezone.utc)
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         return cls(start=start, end=now, display_name="today")
     
     @classmethod
     def this_week(cls) -> TimePeriod:
         """Create a period for the current week (Monday to now)."""
-        now = datetime.now()
+        now = datetime.now(tz=timezone.utc)
         start = now - timedelta(days=now.weekday())
         start = start.replace(hour=0, minute=0, second=0, microsecond=0)
         return cls(start=start, end=now, display_name="this week")
@@ -211,7 +211,7 @@ class TimePeriod:
     @classmethod
     def last_week(cls) -> TimePeriod:
         """Create a period for the previous week."""
-        now = datetime.now()
+        now = datetime.now(tz=timezone.utc)
         end = now - timedelta(days=now.weekday())
         end = end.replace(hour=0, minute=0, second=0, microsecond=0)
         start = end - timedelta(days=7)
@@ -220,7 +220,7 @@ class TimePeriod:
     @classmethod
     def last_month(cls) -> TimePeriod:
         """Create a period for the last 30 days."""
-        now = datetime.now()
+        now = datetime.now(tz=timezone.utc)
         start = now - timedelta(days=30)
         return cls(start=start, end=now, display_name="last month")
     

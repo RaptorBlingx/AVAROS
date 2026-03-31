@@ -13,6 +13,7 @@ import type {
   PlatformConfigRequest,
   SystemStatusResponse,
 } from "../api/types";
+import AssetMetricLinkingStep from "../components/wizard/AssetMetricLinkingStep";
 import AssetRegistrationStep from "../components/wizard/AssetRegistrationStep";
 import IntentActivationStep from "../components/wizard/IntentActivationStep";
 import MetricMappingStep from "../components/wizard/MetricMappingStep";
@@ -26,7 +27,7 @@ import {
   type OnboardingRerunDetail,
 } from "../components/common/onboarding";
 
-type StepNumber = 1 | 2 | 3 | 4 | 5;
+type StepNumber = 1 | 2 | 3 | 4 | 5 | 6;
 
 type WizardState = {
   currentStep: StepNumber;
@@ -257,7 +258,8 @@ export default function Wizard() {
     if (state.currentStep === 1) return "Platform Setup";
     if (state.currentStep === 2) return "Asset Registration";
     if (state.currentStep === 3) return "Metric Mapping";
-    if (state.currentStep === 4) return "Intent Activation";
+    if (state.currentStep === 4) return "Asset-Metric Linking";
+    if (state.currentStep === 5) return "Intent Activation";
     return "Complete";
   }, [state.currentStep]);
 
@@ -266,6 +268,7 @@ export default function Wizard() {
       "Platform Setup",
       "Asset Registration",
       "Metric Mapping",
+      "Asset-Metric Linking",
       "Intent Activation",
       "Success",
     ],
@@ -283,7 +286,7 @@ export default function Wizard() {
   const goForwardStep = useCallback(() => {
     setHeaderError("");
 
-    if (state.currentStep === 5) {
+    if (state.currentStep === 6) {
       return;
     }
 
@@ -303,6 +306,11 @@ export default function Wizard() {
     }
 
     if (state.currentStep === 4) {
+      triggerBlockedNext("Complete or skip asset-metric linking to continue.");
+      return;
+    }
+
+    if (state.currentStep === 5) {
       triggerBlockedNext("Complete or skip intent activation to continue.");
       return;
     }
@@ -362,6 +370,11 @@ export default function Wizard() {
     goToStep(4);
   }, [goToStep, markStepComplete]);
 
+  const handleLinkingStepComplete = useCallback(() => {
+    markStepComplete(4);
+    goToStep(5);
+  }, [goToStep, markStepComplete]);
+
   const finalizeWizard = useCallback(async () => {
     setHeaderError("");
     try {
@@ -370,8 +383,8 @@ export default function Wizard() {
         enableDashboardBypass();
       }
       setSuccessStatus(latestStatus);
-      markStepComplete(4);
-      goToStep(5);
+      markStepComplete(5);
+      goToStep(6);
     } catch (error: unknown) {
       setFormError(toFriendlyErrorMessage(error));
     }
@@ -456,6 +469,15 @@ export default function Wizard() {
 
     if (state.currentStep === 4) {
       return (
+        <AssetMetricLinkingStep
+          onComplete={handleLinkingStepComplete}
+          onSkip={handleLinkingStepComplete}
+        />
+      );
+    }
+
+    if (state.currentStep === 5) {
+      return (
         <IntentActivationStep
           onComplete={() => void finalizeWizard()}
           onSkip={() => void finalizeWizard()}
@@ -478,6 +500,7 @@ export default function Wizard() {
     finalizeWizard,
     formError,
     handleAssetRegistrationStepComplete,
+    handleLinkingStepComplete,
     handleMetricStepComplete,
     handleSaveConnection,
     handleTestConnection,
@@ -516,7 +539,7 @@ export default function Wizard() {
           </p>
           <div className="flex items-center gap-2">
             <p className="m-0 text-xs font-medium text-slate-500 dark:text-slate-400">
-              {state.currentStep} / 5
+              {state.currentStep} / 6
             </p>
             <button
               type="button"
@@ -530,7 +553,7 @@ export default function Wizard() {
               ref={nextButtonRef}
               type="button"
               onClick={goForwardStep}
-              disabled={state.currentStep === 5}
+              disabled={state.currentStep === 6}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
                 nextBlocked
                   ? "border border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-500 dark:bg-rose-900/40 dark:text-rose-200"

@@ -147,10 +147,7 @@ export default function useIntentActivation({
     void loadData();
   }, [loadData, refreshKey, activeProfile]);
 
-  const isUnconfiguredProfile = useMemo(
-    () => activeProfile === "unconfigured",
-    [activeProfile],
-  );
+  const isUnconfiguredProfile = false;
 
   const intentView = useMemo<IntentViewModel[]>(
     () =>
@@ -163,7 +160,6 @@ export default function useIntentActivation({
 
   const toggleIntent = useCallback(
     async (intentName: string, nextValue: boolean) => {
-      if (isUnconfiguredProfile) return;
       const intent = intents.find((i) => i.intent_name === intentName);
       if (intent && !isKpiMapped(intent, mappedMetrics)) return;
       setSavingIntent(intentName);
@@ -183,12 +179,12 @@ export default function useIntentActivation({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [intents, isUnconfiguredProfile, mappedMetrics, reportError, reportSuccess],
+    [intents, mappedMetrics, reportError, reportSuccess],
   );
 
   const setAll = useCallback(
     async (active: boolean) => {
-      if (isUnconfiguredProfile || intents.length === 0) return;
+      if (intents.length === 0) return;
       setBulkAction(active ? "enable" : "disable");
       if (errorHandler.mode === "state") errorHandler.setError("");
       try {
@@ -218,7 +214,7 @@ export default function useIntentActivation({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isUnconfiguredProfile, intents, mappedMetrics, reportError, reportSuccess],
+    [intents, mappedMetrics, reportError, reportSuccess],
   );
 
   return {

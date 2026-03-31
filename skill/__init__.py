@@ -232,7 +232,13 @@ class AVAROSSkill(FallbackSkill):
         if force:
             self._registered_entity_files.clear()
 
-        for entity_file in ("asset.entity", "asset_a.entity", "asset_b.entity"):
+        entity_files = (
+            "asset.entity",
+            "asset_a.entity",
+            "asset_b.entity",
+            "period.entity",
+        )
+        for entity_file in entity_files:
             if not force and entity_file in self._registered_entity_files:
                 continue
             try:
@@ -357,7 +363,13 @@ class AVAROSSkill(FallbackSkill):
             self._force_unconfigured_fallback()
 
     def _handle_asset_entities_updated(self, message: Message) -> None:
-        """Refresh loaded entity files after dynamic regeneration."""
+        """Regenerate and re-register entity files after asset changes.
+
+        The web-ui container mounts skill/ as read-only, so entity files
+        written there are silently lost.  This handler regenerates them
+        inside the skill container (which owns the files) before asking
+        the intent parser to reload.
+        """
         profile_name = str(message.data.get("profile", "")).strip()
         self.log.info(
             "Asset entity update event received (profile='%s')",
@@ -365,7 +377,38 @@ class AVAROSSkill(FallbackSkill):
         )
         self._asset_registry_cache = None
         self._asset_registry_profile = ""
+        self._regenerate_entity_files_from_settings(
+            profile_name or self._resolve_active_profile(),
+        )
         self._register_entity_files(force=True)
+
+    def _regenerate_entity_files_from_settings(self, profile: str) -> None:
+        """Write fresh entity files from the current asset registry.
+
+        Calls the file-writing helpers directly to avoid re-emitting the
+        bus event (which ``_regenerate_asset_entity_files`` does), preventing
+        an infinite notification loop.
+        """
+        if self.settings_service is None:
+            self.log.warning("No SettingsService — cannot regenerate entities")
+            return
+        try:
+            from skill.services.entity_generator import (
+                regenerate_asset_entities_for_all_locales,
+            )
+
+            assets = self.settings_service._asset_models_for_profile(profile)
+            locale_root = self.settings_service._locale_root_path()
+            regenerate_asset_entities_for_all_locales(
+                assets=assets,
+                locale_root=locale_root,
+            )
+            self.log.info(
+                "Regenerated entity files inside skill container (%d assets)",
+                len(assets),
+            )
+        except Exception as exc:
+            self.log.warning("Entity file regeneration failed: %s", exc)
 
     def _reload_adapter(self, profile_name: str) -> None:
         """Reload adapter and rebuild QueryDispatcher for active profile."""

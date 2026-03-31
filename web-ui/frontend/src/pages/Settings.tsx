@@ -12,6 +12,7 @@ import EmissionFactorsSection from "../components/settings/EmissionFactorsSectio
 import AssetManagementSection from "../components/settings/AssetManagementSection";
 import MetricMappingsSection from "../components/settings/MetricMappingsSection";
 import PlatformConfigSection from "../components/settings/PlatformConfigSection";
+import AssetMetricLinkingStep from "../components/wizard/AssetMetricLinkingStep";
 import SystemInfoSection from "../components/settings/SystemInfoSection";
 import VoiceSettingsSection from "../components/settings/VoiceSettingsSection";
 
@@ -109,6 +110,11 @@ export default function Settings() {
         title: "Asset Management",
         description: "Discover, add, edit, and save assets used by voice and adapters.",
         selector: '[data-onboarding-target="settings-assets"]',
+      },
+      {
+        title: "Asset–Metric Linking",
+        description: "Map each asset to per-metric resource IDs so endpoint placeholders resolve correctly.",
+        selector: '[data-onboarding-target="settings-asset-metric-linking"]',
       },
       {
         title: "Intent Activation",
@@ -249,6 +255,17 @@ export default function Settings() {
           onNotify={notify}
           refreshKey={profileRefreshKey}
           activeProfile={activeProfileName}
+        />
+      </Section>
+
+      <Section
+        title="Asset–Metric Linking"
+        helpText="Connect each asset to its platform-specific resource IDs so AVAROS can resolve endpoint placeholders per-asset."
+        targetId="settings-asset-metric-linking"
+      >
+        <AssetMetricLinkingStep
+          mode="settings"
+          onComplete={() => notify("success", "Asset-metric linking saved.")}
         />
       </Section>
 

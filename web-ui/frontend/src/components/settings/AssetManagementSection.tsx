@@ -43,7 +43,7 @@ export default function AssetManagementSection({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const isUnconfigured = resolvedPlatform === "unconfigured";
+  const isUnconfigured = false;
 
   const resolvePlatform = useCallback(() => {
     if (platformType) {
@@ -97,13 +97,6 @@ export default function AssetManagementSection({
   }, []);
 
   const save = useCallback(async () => {
-    if (isUnconfigured) {
-      if (mode === "wizard" && onComplete) {
-        onComplete();
-      }
-      return;
-    }
-
     setSaving(true);
     setError("");
     try {
@@ -120,7 +113,7 @@ export default function AssetManagementSection({
     } finally {
       setSaving(false);
     }
-  }, [isUnconfigured, mode, onComplete, onNotify, resolvedPlatform, rows]);
+  }, [mode, onComplete, onNotify, resolvedPlatform, rows]);
 
   return (
     <section className="space-y-4">
@@ -132,20 +125,16 @@ export default function AssetManagementSection({
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="m-0 text-sm text-slate-600 dark:text-slate-300">
-          {isUnconfigured
-            ? "These are demo assets. Connect a real platform to configure your assets."
-            : "Manage asset mappings used by voice and KPI queries."}
+          Manage asset mappings used by voice and KPI queries.
         </p>
         <div className="flex items-center gap-2">
-          {!isUnconfigured && (
-            <button
+          <button
               type="button"
               className="btn-brand-subtle rounded-lg px-3 py-2 text-sm font-semibold"
               onClick={addRow}
             >
               Add Asset
             </button>
-          )}
         </div>
       </div>
 
@@ -180,9 +169,7 @@ export default function AssetManagementSection({
           {saving
             ? "Saving..."
             : mode === "wizard"
-              ? isUnconfigured
-                ? "Continue"
-                : "Save Mapping & Continue"
+              ? "Save Mapping & Continue"
               : "Save Assets"}
         </button>
       </div>

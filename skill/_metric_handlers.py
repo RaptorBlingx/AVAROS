@@ -20,6 +20,7 @@ _ENERGY_TOTAL_NATIVE_STRATEGY = "asset_consumption_total"
 _AGGREGATE_TOTAL_PERIOD_MODE = "aggregate_total"
 _AGGREGATE_TOTAL_LABEL = "in total"
 _DEFAULT_AGGREGATE_START_ISO = "2021-02-01T00:00:00.000Z"
+_DEFAULT_WIDE_START_ISO = "2021-02-01T00:00:00.000Z"
 _PERIOD_PHRASE_PATTERN = re.compile(
     r"\b(today|this week|last week|past week|last month|past month)\b",
 )
@@ -86,6 +87,13 @@ def _extract_supported_period_phrase(raw: str) -> str | None:
     return None
 
 
+def _wide_default_period() -> TimePeriod:
+    """Return a wide default period (2021-02-01 → now) for implicit queries."""
+    start = datetime(2021, 2, 1, tzinfo=timezone.utc)
+    end = datetime.now(tz=timezone.utc)
+    return TimePeriod(start=start, end=end, display_name="")
+
+
 def _resolve_asset_mapping(
     skill: "AVAROSSkill",
     *,
@@ -143,7 +151,14 @@ def _resolve_kpi_period(
     ):
         return skill._parse_period(period_phrase)
 
-    default_period = skill._parse_period("today")
+    # When the user did not mention a period at all, use a wide default
+    # range so the adapter returns the latest available record regardless
+    # of data recency.  Only narrow to "today" when the user explicitly
+    # asked for it.
+    if utterance_mentions_period:
+        default_period = skill._parse_period("today")
+    else:
+        default_period = _wide_default_period()
     if metric is not CanonicalMetric.ENERGY_TOTAL:
         return default_period
 
@@ -317,12 +332,24 @@ def dispatch_kpi_for_metric(
     skill._safe_dispatch(handler_name, _execute)
 
 
+def _resolve_handler_period(skill: "AVAROSSkill", message, default: str = "today") -> TimePeriod:
+    """Resolve period from message, falling back to wide default when implicit."""
+    data = getattr(message, "data", {}) or {}
+    explicit = str(data.get("period", "")).strip()
+    phrase = _extract_supported_period_phrase(explicit)
+    if phrase and (phrase != "today" or _utterance_mentions_period(message)):
+        return skill._parse_period(phrase)
+    if _utterance_mentions_period(message):
+        return skill._parse_period(default)
+    return _wide_default_period()
+
+
 def handle_compare_energy(skill: "AVAROSSkill", message) -> None:
     """Handle: 'Compare energy between {asset_a} and {asset_b}'."""
 
     def _execute() -> None:
         asset_a, asset_b = skill._resolve_compare_assets(message)
-        period = skill._parse_period(message.data.get("period", "today"))
+        period = _resolve_handler_period(skill, message)
 
         result: ComparisonResult = skill.dispatcher.compare(
             metric=CanonicalMetric.ENERGY_PER_UNIT,
@@ -343,9 +370,8 @@ def handle_compare_metric(skill: "AVAROSSkill", message) -> None:
         return
 
     def _execute() -> None:
-        data = getattr(message, "data", {}) or {}
         asset_a, asset_b = skill._resolve_compare_assets(message)
-        period = skill._parse_period(data.get("period", "today"))
+        period = _resolve_handler_period(skill, message)
         result: ComparisonResult = skill.dispatcher.compare(
             metric=metric,
             asset_ids=[asset_a, asset_b],
@@ -362,7 +388,7 @@ def handle_trend_scrap(skill: "AVAROSSkill", message) -> None:
 
     def _execute() -> None:
         asset_id = skill._resolve_asset_id(message)
-        period = skill._parse_period(message.data.get("period", "last week"))
+        period = _resolve_handler_period(skill, message, default="last week")
         granularity = message.data.get("granularity", "daily")
 
         result: TrendResult = _query_trend_with_period_fallback(
@@ -388,7 +414,7 @@ def handle_trend_metric(skill: "AVAROSSkill", message) -> None:
     def _execute() -> None:
         data = getattr(message, "data", {}) or {}
         asset_id = skill._resolve_asset_id(message)
-        period = skill._parse_period(data.get("period", "last week"))
+        period = _resolve_handler_period(skill, message, default="last week")
         granularity = data.get("granularity", "daily")
 
         result: TrendResult = _query_trend_with_period_fallback(
@@ -410,7 +436,7 @@ def handle_trend_energy(skill: "AVAROSSkill", message) -> None:
 
     def _execute() -> None:
         asset_id = skill._resolve_asset_id(message)
-        period = skill._parse_period(message.data.get("period", "last week"))
+        period = _resolve_handler_period(skill, message, default="last week")
         granularity = message.data.get("granularity", "daily")
         if period.duration_days < 2 and granularity == "daily":
             granularity = "hourly"

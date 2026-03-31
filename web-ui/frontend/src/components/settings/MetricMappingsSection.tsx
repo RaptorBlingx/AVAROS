@@ -44,10 +44,7 @@ export default function MetricMappingsSection({
     [rows],
   );
 
-  const isUnconfiguredProfile = useMemo(
-    () => activeProfile === "unconfigured",
-    [activeProfile],
-  );
+  const isUnconfiguredProfile = false;
 
   const resolveRow = useCallback((rowId: string) => (
     rows.find((row) => row.id === rowId)
@@ -59,7 +56,7 @@ export default function MetricMappingsSection({
     resetRowTestState,
     clearAllTestState,
   } = useMetricMappingTest({
-    disabled: isUnconfiguredProfile,
+    disabled: false,
     resolveRow,
     onError: (message) => {
       onNotify("error", message);
@@ -129,9 +126,6 @@ export default function MetricMappingsSection({
   }, []);
 
   const addRow = useCallback(() => {
-    if (isUnconfiguredProfile) {
-      return;
-    }
     const existing = new Set(rows.map((row) => row.canonical_metric));
     const candidate = METRIC_OPTIONS.find((option) => !existing.has(option.value));
     if (!candidate) {
@@ -148,12 +142,9 @@ export default function MetricMappingsSection({
         ...EMPTY_SETTINGS_ROW_DEFAULTS,
       },
     ]);
-  }, [isUnconfiguredProfile, onNotify, rows]);
+  }, [onNotify, rows]);
 
   const saveRow = useCallback(async (rowId: string) => {
-    if (isUnconfiguredProfile) {
-      return;
-    }
     const row = rows.find((item) => item.id === rowId);
     if (!row) return;
     if (!validateRow(row, rows)) {
@@ -199,12 +190,9 @@ export default function MetricMappingsSection({
     } finally {
       setSavingRowId(null);
     }
-  }, [isUnconfiguredProfile, onNotify, resetRowTestState, rows, validateRow]);
+  }, [onNotify, resetRowTestState, rows, validateRow]);
 
   const removeRow = useCallback(async (rowId: string) => {
-    if (isUnconfiguredProfile) {
-      return;
-    }
     const row = rows.find((item) => item.id === rowId);
     if (!row) {
       return;
@@ -224,7 +212,7 @@ export default function MetricMappingsSection({
     } catch (error: unknown) {
       onNotify("error", toFriendlyErrorMessage(error));
     }
-  }, [isUnconfiguredProfile, onNotify, resetRowTestState, rows]);
+  }, [onNotify, resetRowTestState, rows]);
 
   return (
     <section className="space-y-3">
@@ -232,7 +220,6 @@ export default function MetricMappingsSection({
         <button
           type="button"
           onClick={addRow}
-          disabled={isUnconfiguredProfile}
           className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
             isDark
               ? "border-slate-500 bg-slate-700 text-slate-100 hover:bg-slate-600"
@@ -249,11 +236,6 @@ export default function MetricMappingsSection({
         </div>
       ) : (
         <div className="reveal-in">
-          {isUnconfiguredProfile && (
-            <div className="mb-3 rounded-lg bg-blue-50 p-3 text-sm text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-              Unconfigured profile uses built-in demo data. Metric mappings are not configurable.
-            </div>
-          )}
           {rows.length === 0 ? (
             <EmptyState
               title="No metric mappings"
@@ -266,7 +248,7 @@ export default function MetricMappingsSection({
               rows={rows}
               errorsByRow={errorsByRow}
               usedMetrics={usedMetrics}
-              readOnly={isUnconfiguredProfile}
+              readOnly={false}
               onChange={updateBaseRow}
               renderActions={(row) => {
                 return (
