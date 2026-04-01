@@ -15,6 +15,7 @@ import ErrorMessage from "../common/ErrorMessage";
 import LoadingSpinner from "../common/LoadingSpinner";
 import Tooltip from "../common/Tooltip";
 import { METRIC_OPTIONS } from "../common/metricMapping";
+import { loadWizardPreset } from "./wizardPreset";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -152,6 +153,34 @@ export default function AssetMetricLinkingStep({
         return { ...row, resources: filled };
       }),
     );
+  }, []);
+
+  const [presetLoading, setPresetLoading] = useState(false);
+  const [presetError, setPresetError] = useState("");
+
+  const loadPreset = useCallback(async () => {
+    setPresetLoading(true);
+    setPresetError("");
+    try {
+      const preset = await loadWizardPreset();
+      setRows((prev) =>
+        prev.map((row) => {
+          const presetLinking = preset.linking[row.assetId];
+          if (!presetLinking) {
+            return row;
+          }
+          const filled: Record<string, string> = {};
+          for (const metric of Object.keys(row.resources)) {
+            filled[metric] = presetLinking[metric] ?? row.resources[metric] ?? "";
+          }
+          return { ...row, resources: filled };
+        }),
+      );
+    } catch (err: unknown) {
+      setPresetError(err instanceof Error ? err.message : "Failed to load preset.");
+    } finally {
+      setPresetLoading(false);
+    }
   }, []);
 
   const handleSave = useCallback(async () => {
@@ -301,6 +330,15 @@ export default function AssetMetricLinkingStep({
               </span>
               <button
                 type="button"
+                onClick={() => void loadPreset()}
+                disabled={presetLoading}
+                className="btn-brand-primary rounded-lg px-3 py-1.5 text-xs font-semibold"
+                title="Load all resource IDs from preset file (wizard-preset-reneryo.json)"
+              >
+                {presetLoading ? "Loading…" : "Load Preset"}
+              </button>
+              <button
+                type="button"
                 onClick={autoFillAssetId}
                 className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
                 title="Auto-fill empty resource IDs with the asset ID (works when asset_id = resource_id)"
@@ -309,6 +347,10 @@ export default function AssetMetricLinkingStep({
               </button>
             </div>
           </div>
+
+          {presetError && (
+            <p className="m-0 text-xs text-rose-700 dark:text-rose-300">{presetError}</p>
+          )}
 
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">

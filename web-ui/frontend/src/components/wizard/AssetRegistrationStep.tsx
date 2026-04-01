@@ -18,6 +18,7 @@ import {
   toAssetId,
 } from "../settings/assetManagementSection.helpers";
 import Tooltip from "../common/Tooltip";
+import { loadWizardPreset } from "./wizardPreset";
 
 type RegistrationRow = {
   rowId: string;
@@ -540,6 +541,34 @@ export default function AssetRegistrationStep({
     }
   }, [generatorAssets, importAssetCandidate]);
 
+  const [presetLoading, setPresetLoading] = useState(false);
+  const [presetError, setPresetError] = useState("");
+
+  const loadPreset = useCallback(async () => {
+    setPresetLoading(true);
+    setPresetError("");
+    try {
+      const preset = await loadWizardPreset();
+      const newRows: RegistrationRow[] = preset.assets.map((asset) => ({
+        rowId: createRowId(asset.asset_id),
+        assetId: asset.asset_id,
+        displayName: asset.display_name,
+        assetType: asset.asset_type,
+        aliases: asset.aliases,
+        mappingSource: "manual" as const,
+        capabilityMode: "full_kpi" as const,
+        nativeMetricBindings: {},
+        isExisting: false,
+        existingAssetId: null,
+      }));
+      setRows(newRows);
+    } catch (err: unknown) {
+      setPresetError(err instanceof Error ? err.message : "Failed to load preset.");
+    } finally {
+      setPresetLoading(false);
+    }
+  }, []);
+
   const subtitle =
     platformType === "unconfigured"
       ? "Define your factory vocabulary even in demo mode."
@@ -584,6 +613,30 @@ export default function AssetRegistrationStep({
             <p className="m-0 text-xs text-slate-500 dark:text-slate-400">
               Existing Asset IDs are immutable. Add a new row to register a new asset ID.
             </p>
+
+            <div className="rounded-xl border border-cyan-200 bg-cyan-50/60 p-3 dark:border-cyan-700/40 dark:bg-cyan-900/20">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-700 dark:text-cyan-300">
+                    Quick Fill
+                  </p>
+                  <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Load all 9 RENERYO assets (6 meters + 3 lines) from preset file.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn-brand-primary rounded-lg px-4 py-2 text-xs font-semibold"
+                  onClick={() => void loadPreset()}
+                  disabled={presetLoading}
+                >
+                  {presetLoading ? "Loading…" : "Load Preset"}
+                </button>
+              </div>
+              {presetError && (
+                <p className="m-0 mt-2 text-xs text-rose-700 dark:text-rose-300">{presetError}</p>
+              )}
+            </div>
 
             {shouldLoadGeneratorPreview && (
               <div className="rounded-xl border border-slate-300 bg-white/90 p-3 dark:border-slate-600 dark:bg-slate-800/80">

@@ -28,6 +28,7 @@ import {
   EMPTY_WIZARD_ROW_DEFAULTS,
   toMappingRequestPayload,
 } from "./metricMappingStep.helpers";
+import { loadWizardPreset } from "./wizardPreset";
 
 type MetricMappingStepProps = {
   integrationPreset?: "reneryo" | "mock" | null;
@@ -357,6 +358,34 @@ export default function MetricMappingStep({
     }
   }, []);
 
+  const [presetLoading, setPresetLoading] = useState(false);
+  const [presetError, setPresetError] = useState("");
+
+  const loadPreset = useCallback(async () => {
+    setPresetLoading(true);
+    setPresetError("");
+    try {
+      const preset = await loadWizardPreset();
+      const newRows: MetricMappingRow[] = preset.metrics.mappings.map((m) => ({
+        id: `${m.canonical_metric}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        canonical_metric: m.canonical_metric,
+        endpoint: m.endpoint ?? preset.metrics.endpoint,
+        json_path: m.json_path ?? preset.metrics.json_path,
+        unit: m.unit,
+        transform: "",
+        source: "manual" as const,
+      }));
+      setRows(newRows);
+      clearAllTestState();
+      setErrorsByRow({});
+      setFormError("");
+    } catch (err: unknown) {
+      setPresetError(err instanceof Error ? err.message : "Failed to load preset.");
+    } finally {
+      setPresetLoading(false);
+    }
+  }, [clearAllTestState]);
+
   return (
     <section className="space-y-4">
       <header className="brand-hero rounded-2xl p-6 backdrop-blur-sm">
@@ -575,6 +604,30 @@ export default function MetricMappingStep({
                 )}
               </div>
             )}
+
+            <div className="mb-4 rounded-xl border border-cyan-200 bg-cyan-50/60 p-3 dark:border-cyan-700/40 dark:bg-cyan-900/20">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-700 dark:text-cyan-300">
+                    Quick Fill
+                  </p>
+                  <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Load all 19 metric mappings with endpoint, JSON path, and units from preset file.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn-brand-primary rounded-lg px-4 py-2 text-xs font-semibold"
+                  onClick={() => void loadPreset()}
+                  disabled={presetLoading}
+                >
+                  {presetLoading ? "Loading…" : "Load Preset"}
+                </button>
+              </div>
+              {presetError && (
+                <p className="m-0 mt-2 text-xs text-rose-700 dark:text-rose-300">{presetError}</p>
+              )}
+            </div>
 
             <MetricMappingsTable
               rows={rows}
