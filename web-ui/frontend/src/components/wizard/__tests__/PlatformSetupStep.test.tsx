@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { PlatformType, SystemStatusResponse } from "../../../api/types";
+import type { SystemStatusResponse } from "../../../api/types";
 import PlatformSetupStep from "../PlatformSetupStep";
 
 vi.mock("../../common/Tooltip", () => ({
@@ -22,6 +22,13 @@ vi.mock("../../common/LoadingSpinner", () => ({
   default: () => null,
 }));
 
+vi.mock("../../../api/client", () => ({
+  listProfiles: vi.fn().mockResolvedValue({ active_profile: "reneryo", profiles: [{ name: "reneryo", platform_type: "custom_rest", is_builtin: false, is_active: true }] }),
+  createProfile: vi.fn(),
+  activateProfile: vi.fn(),
+  getProfile: vi.fn(),
+}));
+
 const STATUS: SystemStatusResponse = {
   configured: false,
   active_adapter: "custom_rest",
@@ -31,21 +38,12 @@ const STATUS: SystemStatusResponse = {
   version: "0.1.0",
 };
 
-function renderStep(options?: {
-  platformType?: PlatformType;
-  isMockPresetActive?: boolean;
-}) {
-  const platformType = options?.platformType ?? "custom_rest";
-  const isMockPresetActive = options?.isMockPresetActive ?? false;
-  const onUseMockQuickAction = vi.fn();
-  const onUseApiMode = vi.fn();
+function renderStep() {
   render(
     <PlatformSetupStep
       status={STATUS}
       statusLoading={false}
       statusError=""
-      platformType={platformType}
-      isMockPresetActive={isMockPresetActive}
       authType="api_key"
       apiUrl=""
       apiKey=""
@@ -54,8 +52,8 @@ function renderStep(options?: {
       testError=""
       isTesting={false}
       isSaving={false}
-      onUseMockQuickAction={onUseMockQuickAction}
-      onUseApiMode={onUseApiMode}
+      selectedProfile="reneryo"
+      onProfileChange={vi.fn()}
       onAuthTypeChange={vi.fn()}
       onApiUrlChange={vi.fn()}
       onApiKeyChange={vi.fn()}
@@ -63,35 +61,26 @@ function renderStep(options?: {
       onSaveAndContinue={vi.fn()}
     />,
   );
-  return { onUseMockQuickAction, onUseApiMode };
 }
 
 describe("PlatformSetupStep", () => {
-  it("does not render a platform-specific RENERYO action", () => {
+  it("renders the step header", () => {
     renderStep();
-    expect(screen.queryByRole("button", { name: "Use RENERYO" })).toBeNull();
+    expect(screen.getByText("Platform Setup")).toBeTruthy();
   });
 
-  it("always renders the Mock preset action", () => {
+  it("renders the Save & Continue button", () => {
     renderStep();
-    expect(screen.getByRole("button", { name: "Use Mock" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save & Continue" })).toBeTruthy();
   });
 
-  it("triggers preset callback when Mock action is clicked", () => {
-    const { onUseMockQuickAction } = renderStep();
-    fireEvent.click(screen.getByRole("button", { name: "Use Mock" }));
-    expect(onUseMockQuickAction).toHaveBeenCalledTimes(1);
+  it("renders the Test Connection button", () => {
+    renderStep();
+    expect(screen.getByRole("button", { name: "Test Connection" })).toBeTruthy();
   });
 
-  it("triggers callback when Use API is clicked", () => {
-    const { onUseApiMode } = renderStep();
-    fireEvent.click(screen.getByRole("button", { name: "Use API" }));
-    expect(onUseApiMode).toHaveBeenCalledTimes(1);
-  });
-
-  it("hides API form controls while mock preset is active", () => {
-    renderStep({ isMockPresetActive: true });
-    expect(screen.queryByLabelText("API URL")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Test Connection" })).toBeNull();
+  it("renders the + New Profile button", () => {
+    renderStep();
+    expect(screen.getByRole("button", { name: "+ New Profile" })).toBeTruthy();
   });
 });

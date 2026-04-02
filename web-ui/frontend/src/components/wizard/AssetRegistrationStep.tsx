@@ -53,6 +53,7 @@ type SuggestionInput = {
 type AssetRegistrationStepProps = {
   platformType: PlatformType | null;
   integrationPreset?: "reneryo" | "mock" | null;
+  profileName?: string;
   onComplete: () => void;
   onSkip: () => void;
 };
@@ -202,6 +203,7 @@ function hasMetricResources(mapping: AssetMappingItem | undefined): boolean {
 export default function AssetRegistrationStep({
   platformType,
   integrationPreset = null,
+  profileName,
   onComplete,
   onSkip,
 }: AssetRegistrationStepProps) {
@@ -548,7 +550,7 @@ export default function AssetRegistrationStep({
     setPresetLoading(true);
     setPresetError("");
     try {
-      const preset = await loadWizardPreset();
+      const preset = await loadWizardPreset(profileName);
       const newRows: RegistrationRow[] = preset.assets.map((asset) => ({
         rowId: createRowId(asset.asset_id),
         assetId: asset.asset_id,
@@ -567,7 +569,7 @@ export default function AssetRegistrationStep({
     } finally {
       setPresetLoading(false);
     }
-  }, []);
+  }, [profileName]);
 
   const subtitle =
     platformType === "unconfigured"
@@ -578,7 +580,7 @@ export default function AssetRegistrationStep({
     <section className="space-y-4">
       <header className="brand-hero rounded-2xl p-6 backdrop-blur-sm">
         <p className="m-0 text-xs font-semibold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">
-          Step 2 of 5
+          Step 2 of 6
         </p>
         <div className="mt-2 inline-flex items-center gap-2">
           <h2 className="m-0 text-2xl font-semibold text-slate-900 dark:text-slate-100">

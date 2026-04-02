@@ -1,0 +1,119 @@
+{
+  "_description": "AVAROS Wizard Preset — HumanEnerDIA Energy Management System (EnMS / ISO 50001). Auto-fills Steps 1-4 with all 8 machines and 8 verified metrics. Different API design from RENERYO proves platform-agnostic architecture. Public URL: https://wasabi.intel50001.com",
+  "_updated": "2026-04-02",
+
+  "platform": {
+    "api_url": "http://10.33.10.104:8080",
+    "auth_type": "none",
+    "credential": ""
+  },
+
+  "assets": [
+    { "asset_id": "Compressor-1", "display_name": "Compressor-1", "asset_type": "machine", "aliases": "compressor, compressor 1, compressor one" },
+    { "asset_id": "HVAC-Main", "display_name": "HVAC Main", "asset_type": "machine", "aliases": "hvac, hvac main, air conditioning, heating ventilation" },
+    { "asset_id": "Conveyor-A", "display_name": "Conveyor A", "asset_type": "machine", "aliases": "conveyor, conveyor a, belt" },
+    { "asset_id": "Hydraulic-Pump-1", "display_name": "Hydraulic Pump 1", "asset_type": "machine", "aliases": "hydraulic pump, pump, pump 1, hydraulic" },
+    { "asset_id": "Injection-Molding-1", "display_name": "Injection Molding 1", "asset_type": "machine", "aliases": "injection molding, molding machine, IM-1, im one" },
+    { "asset_id": "Compressor-EU-1", "display_name": "Compressor EU-1", "asset_type": "machine", "aliases": "compressor eu, european compressor, EU compressor, compressor eu 1" },
+    { "asset_id": "HVAC-EU-North", "display_name": "HVAC EU North", "asset_type": "machine", "aliases": "hvac eu, hvac north, eu hvac, european hvac" },
+    { "asset_id": "Boiler-1", "display_name": "Boiler 1", "asset_type": "machine", "aliases": "boiler, boiler 1, boiler one" }
+  ],
+
+  "metrics": {
+    "endpoint": "/api/analytics/api/v1/kpi/all?machine_id={resource_id}&start={start_date}&end={end_date}",
+    "json_path": "$.kpis.sec.value",
+    "mappings": [
+      { "canonical_metric": "energy_per_unit", "unit": "kWh/unit" },
+      { "canonical_metric": "energy_total", "unit": "kWh", "json_path": "$.totals.total_energy_kwh" },
+      { "canonical_metric": "peak_demand", "unit": "kW", "json_path": "$.kpis.peak_demand.value" },
+      { "canonical_metric": "peak_tariff_exposure", "unit": "%", "json_path": "$.kpis.load_factor.percent" },
+      { "canonical_metric": "co2_total", "unit": "kg CO₂", "json_path": "$.kpis.carbon_intensity.value" },
+      { "canonical_metric": "co2_per_unit", "unit": "kg CO₂/unit", "json_path": "$.kpis.carbon_intensity.co2_per_unit" },
+      { "canonical_metric": "throughput", "unit": "units/hour", "endpoint": "/api/analytics/api/v1/production/{resource_id}?start_time={start_date}&end_time={end_date}&interval=1day", "json_path": "$.summary.avg_throughput_units_per_hour" },
+      { "canonical_metric": "material_efficiency", "unit": "%", "endpoint": "/api/analytics/api/v1/production/{resource_id}?start_time={start_date}&end_time={end_date}&interval=1day", "json_path": "$.summary.avg_yield_percent" }
+    ]
+  },
+
+  "linking": {
+    "Compressor-1": {
+      "energy_per_unit": "c0000000-0000-0000-0000-000000000001",
+      "energy_total": "c0000000-0000-0000-0000-000000000001",
+      "peak_demand": "c0000000-0000-0000-0000-000000000001",
+      "peak_tariff_exposure": "c0000000-0000-0000-0000-000000000001",
+      "co2_total": "c0000000-0000-0000-0000-000000000001",
+      "co2_per_unit": "c0000000-0000-0000-0000-000000000001",
+      "throughput": "c0000000-0000-0000-0000-000000000001",
+      "material_efficiency": "c0000000-0000-0000-0000-000000000001"
+    },
+    "HVAC-Main": {
+      "energy_per_unit": "c0000000-0000-0000-0000-000000000002",
+      "energy_total": "c0000000-0000-0000-0000-000000000002",
+      "peak_demand": "c0000000-0000-0000-0000-000000000002",
+      "peak_tariff_exposure": "c0000000-0000-0000-0000-000000000002",
+      "co2_total": "c0000000-0000-0000-0000-000000000002",
+      "co2_per_unit": "c0000000-0000-0000-0000-000000000002",
+      "throughput": "c0000000-0000-0000-0000-000000000002",
+      "material_efficiency": "c0000000-0000-0000-0000-000000000002"
+    },
+    "Conveyor-A": {
+      "energy_per_unit": "c0000000-0000-0000-0000-000000000003",
+      "energy_total": "c0000000-0000-0000-0000-000000000003",
+      "peak_demand": "c0000000-0000-0000-0000-000000000003",
+      "peak_tariff_exposure": "c0000000-0000-0000-0000-000000000003",
+      "co2_total": "c0000000-0000-0000-0000-000000000003",
+      "co2_per_unit": "c0000000-0000-0000-0000-000000000003",
+      "throughput": "c0000000-0000-0000-0000-000000000003",
+      "material_efficiency": "c0000000-0000-0000-0000-000000000003"
+    },
+    "Hydraulic-Pump-1": {
+      "energy_per_unit": "c0000000-0000-0000-0000-000000000004",
+      "energy_total": "c0000000-0000-0000-0000-000000000004",
+      "peak_demand": "c0000000-0000-0000-0000-000000000004",
+      "peak_tariff_exposure": "c0000000-0000-0000-0000-000000000004",
+      "co2_total": "c0000000-0000-0000-0000-000000000004",
+      "co2_per_unit": "c0000000-0000-0000-0000-000000000004",
+      "throughput": "c0000000-0000-0000-0000-000000000004",
+      "material_efficiency": "c0000000-0000-0000-0000-000000000004"
+    },
+    "Injection-Molding-1": {
+      "energy_per_unit": "c0000000-0000-0000-0000-000000000005",
+      "energy_total": "c0000000-0000-0000-0000-000000000005",
+      "peak_demand": "c0000000-0000-0000-0000-000000000005",
+      "peak_tariff_exposure": "c0000000-0000-0000-0000-000000000005",
+      "co2_total": "c0000000-0000-0000-0000-000000000005",
+      "co2_per_unit": "c0000000-0000-0000-0000-000000000005",
+      "throughput": "c0000000-0000-0000-0000-000000000005",
+      "material_efficiency": "c0000000-0000-0000-0000-000000000005"
+    },
+    "Compressor-EU-1": {
+      "energy_per_unit": "c0000000-0000-0000-0000-000000000006",
+      "energy_total": "c0000000-0000-0000-0000-000000000006",
+      "peak_demand": "c0000000-0000-0000-0000-000000000006",
+      "peak_tariff_exposure": "c0000000-0000-0000-0000-000000000006",
+      "co2_total": "c0000000-0000-0000-0000-000000000006",
+      "co2_per_unit": "c0000000-0000-0000-0000-000000000006",
+      "throughput": "c0000000-0000-0000-0000-000000000006",
+      "material_efficiency": "c0000000-0000-0000-0000-000000000006"
+    },
+    "HVAC-EU-North": {
+      "energy_per_unit": "c0000000-0000-0000-0000-000000000007",
+      "energy_total": "c0000000-0000-0000-0000-000000000007",
+      "peak_demand": "c0000000-0000-0000-0000-000000000007",
+      "peak_tariff_exposure": "c0000000-0000-0000-0000-000000000007",
+      "co2_total": "c0000000-0000-0000-0000-000000000007",
+      "co2_per_unit": "c0000000-0000-0000-0000-000000000007",
+      "throughput": "c0000000-0000-0000-0000-000000000007",
+      "material_efficiency": "c0000000-0000-0000-0000-000000000007"
+    },
+    "Boiler-1": {
+      "energy_per_unit": "c0000000-0000-0000-0000-000000000008",
+      "energy_total": "c0000000-0000-0000-0000-000000000008",
+      "peak_demand": "c0000000-0000-0000-0000-000000000008",
+      "peak_tariff_exposure": "c0000000-0000-0000-0000-000000000008",
+      "co2_total": "c0000000-0000-0000-0000-000000000008",
+      "co2_per_unit": "c0000000-0000-0000-0000-000000000008",
+      "throughput": "c0000000-0000-0000-0000-000000000008",
+      "material_efficiency": "c0000000-0000-0000-0000-000000000008"
+    }
+  }
+}

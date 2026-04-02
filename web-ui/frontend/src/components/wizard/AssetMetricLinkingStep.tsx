@@ -25,6 +25,7 @@ type AssetMetricLinkingStepProps = {
   onComplete: () => void;
   onSkip?: () => void;
   mode?: "wizard" | "settings";
+  profileName?: string;
 };
 
 /** One row in the linking matrix: one asset's resource IDs per metric. */
@@ -61,6 +62,7 @@ export default function AssetMetricLinkingStep({
   onComplete,
   onSkip,
   mode = "wizard",
+  profileName,
 }: AssetMetricLinkingStepProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -162,7 +164,7 @@ export default function AssetMetricLinkingStep({
     setPresetLoading(true);
     setPresetError("");
     try {
-      const preset = await loadWizardPreset();
+      const preset = await loadWizardPreset(profileName);
       setRows((prev) =>
         prev.map((row) => {
           const presetLinking = preset.linking[row.assetId];
@@ -181,7 +183,7 @@ export default function AssetMetricLinkingStep({
     } finally {
       setPresetLoading(false);
     }
-  }, []);
+  }, [profileName]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);

@@ -41,21 +41,41 @@ export type WizardPreset = {
 /*  Loader (fetches from public/ at runtime — fully editable)          */
 /* ------------------------------------------------------------------ */
 
-let _cache: WizardPreset | null = null;
+const _cache: Record<string, WizardPreset> = {};
 
-export async function loadWizardPreset(): Promise<WizardPreset> {
-  if (_cache) {
-    return _cache;
+export async function loadWizardPreset(profileName?: string): Promise<WizardPreset> {
+  const key = profileName ?? "reneryo";
+  if (_cache[key]) {
+    return _cache[key];
   }
-  const response = await fetch("/wizard-preset-reneryo.json");
+  const response = await fetch(`/wizard-preset-${key}.json`);
   if (!response.ok) {
-    throw new Error(`Failed to load wizard preset (HTTP ${response.status})`);
+    throw new Error(`No preset file found for profile "${key}" (HTTP ${response.status})`);
   }
   const data = (await response.json()) as WizardPreset;
-  _cache = data;
+  _cache[key] = data;
   return data;
 }
 
-export function clearPresetCache(): void {
-  _cache = null;
+export async function hasWizardPreset(profileName?: string): Promise<boolean> {
+  const key = profileName ?? "reneryo";
+  if (_cache[key]) {
+    return true;
+  }
+  try {
+    const response = await fetch(`/wizard-preset-${key}.json`, { method: "HEAD" });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+export function clearPresetCache(profileName?: string): void {
+  if (profileName) {
+    delete _cache[profileName];
+  } else {
+    for (const k of Object.keys(_cache)) {
+      delete _cache[k];
+    }
+  }
 }

@@ -37,16 +37,6 @@ type WizardState = {
 };
 
 type IntegrationPreset = "mock" | null;
-const MOCK_PRESET_URL =
-  (import.meta.env.VITE_MOCK_PRESET_URL || "http://reneryo-data-generator-api:8090").trim();
-
-function normalizeUrl(url: string): string {
-  return url.trim().replace(/\/+$/, "");
-}
-
-function isMockPresetUrl(url: string): boolean {
-  return normalizeUrl(url) === normalizeUrl(MOCK_PRESET_URL);
-}
 
 function fromBackendAuthType(authType: string | undefined): WizardState["authType"] {
   if (authType === "cookie") {
@@ -60,18 +50,8 @@ function fromBackendAuthType(authType: string | undefined): WizardState["authTyp
 
 function buildPayload(
   state: WizardState,
-  integrationPreset: IntegrationPreset,
+  _integrationPreset: IntegrationPreset,
 ): PlatformConfigRequest {
-  if (integrationPreset === "mock") {
-    return {
-      platform_type: "custom_rest",
-      api_url: MOCK_PRESET_URL,
-      api_key: "",
-      extra_settings: {
-        auth_type: "none",
-      },
-    };
-  }
   return {
     platform_type: "custom_rest",
     api_url: state.apiUrl.trim(),
@@ -96,23 +76,19 @@ function enableDashboardBypass(): void {
 
 function validateConnection(
   state: WizardState,
-  integrationPreset: IntegrationPreset,
 ): string {
-  if (integrationPreset === "mock") {
-    return "";
-  }
   const url = state.apiUrl.trim();
   const key = state.apiKey.trim();
   if (!url) {
-    return "URL is required for this platform.";
+    return "API URL is required.";
   }
   if (!/^https?:\/\//i.test(url)) {
     return "URL must start with http:// or https://.";
   }
   if (state.authType !== "none" && !key) {
     return state.authType === "cookie"
-      ? "Session cookie is required for this platform."
-      : "API key is required for this platform.";
+      ? "Session cookie is required."
+      : "API key is required.";
   }
   return "";
 }
@@ -143,12 +119,8 @@ export default function Wizard() {
   const [completedSteps, setCompletedSteps] = useState<Set<StepNumber>>(
     new Set(),
   );
+  const [selectedProfile, setSelectedProfile] = useState("");
   const [onboardingOpen, setOnboardingOpen] = useState(false);
-  const [integrationPreset, setIntegrationPreset] = useState<IntegrationPreset>(null);
-  const effectiveIntegrationPreset: IntegrationPreset = useMemo(
-    () => (integrationPreset === "mock" ? "mock" : null),
-    [integrationPreset],
-  );
 
   const [headerError, setHeaderError] = useState("");
   const [nextBlocked, setNextBlocked] = useState(false);
@@ -221,16 +193,6 @@ export default function Wizard() {
           ),
           apiKey: "",
         }));
-        if (
-          isMockPresetUrl(config.api_url ?? "") &&
-          fromBackendAuthType(
-            typeof config.extra_settings?.auth_type === "string"
-              ? config.extra_settings.auth_type
-              : undefined,
-          ) === "none"
-        ) {
-          setIntegrationPreset("mock");
-        }
       } catch {
         // Wizard can still continue with manual entry when preload fails.
       }
@@ -320,7 +282,7 @@ export default function Wizard() {
   ]);
 
   const handleTestConnection = useCallback(async () => {
-    const validationError = validateConnection(state, effectiveIntegrationPreset);
+    const validationError = validateConnection(state);
     setFormError(validationError);
     setTestError("");
     setTestResult(null);
@@ -330,7 +292,7 @@ export default function Wizard() {
     setIsTesting(true);
     try {
       const result = await testConnection(
-        buildPayload(state, effectiveIntegrationPreset),
+        buildPayload(state, null),
       );
       setTestResult(result);
     } catch (error: unknown) {
@@ -338,10 +300,10 @@ export default function Wizard() {
     } finally {
       setIsTesting(false);
     }
-  }, [effectiveIntegrationPreset, state]);
+  }, [state]);
 
   const handleSaveConnection = useCallback(async () => {
-    const validationError = validateConnection(state, effectiveIntegrationPreset);
+    const validationError = validateConnection(state);
     setFormError(validationError);
     setTestError("");
     if (validationError) {
@@ -350,7 +312,20 @@ export default function Wizard() {
 
     setIsSaving(true);
     try {
-      await createPlatformConfig(buildPayload(state, effectiveIntegrationPreset));
+      const payload = buildPayload(state, null);
+      if (selectedProfile) {
+        // Update the selected profile with the form values, then activate it
+        const { updateProfile, activateProfile } = await import("../api/client");
+        await updateProfile(selectedProfile, {
+          platform_type: payload.platform_type as Exclude<typeof payload.platform_type, "unconfigured">,
+          api_url: payload.api_url,
+          api_key: payload.api_key,
+          extra_settings: (payload.extra_settings ?? {}) as Record<string, string>,
+        });
+        await activateProfile(selectedProfile);
+      } else {
+        await createPlatformConfig(payload);
+      }
       markStepComplete(1);
       goToStep(2);
     } catch (error: unknown) {
@@ -358,7 +333,7 @@ export default function Wizard() {
     } finally {
       setIsSaving(false);
     }
-  }, [effectiveIntegrationPreset, goToStep, markStepComplete, state]);
+  }, [goToStep, markStepComplete, selectedProfile, state]);
 
   const handleAssetRegistrationStepComplete = useCallback(() => {
     markStepComplete(2);
@@ -397,8 +372,6 @@ export default function Wizard() {
           status={status}
           statusLoading={loadingStatus}
           statusError={statusError}
-          platformType={"custom_rest"}
-          isMockPresetActive={effectiveIntegrationPreset === "mock"}
           authType={state.authType}
           apiUrl={state.apiUrl}
           apiKey={state.apiKey}
@@ -407,6 +380,8 @@ export default function Wizard() {
           testError={testError}
           isTesting={isTesting}
           isSaving={isSaving}
+          selectedProfile={selectedProfile}
+          onProfileChange={setSelectedProfile}
           onAuthTypeChange={(value) =>
             setState((prev) => ({ ...prev, authType: value }))
           }
@@ -416,30 +391,6 @@ export default function Wizard() {
           onApiKeyChange={(value) =>
             setState((prev) => ({ ...prev, apiKey: value }))
           }
-          onUseMockQuickAction={() => {
-            setIntegrationPreset("mock");
-            setFormError("");
-            setTestError("");
-            setTestResult(null);
-            setState((prev) => ({
-              ...prev,
-              authType: "none",
-              apiUrl: MOCK_PRESET_URL,
-              apiKey: "",
-            }));
-          }}
-          onUseApiMode={() => {
-            setIntegrationPreset(null);
-            setFormError("");
-            setTestError("");
-            setTestResult(null);
-            setState((prev) => ({
-              ...prev,
-              authType: prev.authType === "none" ? "api_key" : prev.authType,
-              apiUrl: isMockPresetUrl(prev.apiUrl) ? "" : prev.apiUrl,
-              apiKey: "",
-            }));
-          }}
           onTestConnection={handleTestConnection}
           onSaveAndContinue={handleSaveConnection}
         />
@@ -450,7 +401,8 @@ export default function Wizard() {
       return (
         <AssetRegistrationStep
           platformType={"custom_rest"}
-          integrationPreset={effectiveIntegrationPreset}
+          integrationPreset={null}
+          profileName={selectedProfile}
           onComplete={handleAssetRegistrationStepComplete}
           onSkip={handleAssetRegistrationStepComplete}
         />
@@ -460,7 +412,8 @@ export default function Wizard() {
     if (state.currentStep === 3) {
       return (
         <MetricMappingStep
-          integrationPreset={effectiveIntegrationPreset}
+          integrationPreset={null}
+          profileName={selectedProfile}
           onComplete={handleMetricStepComplete}
           onSkip={handleMetricStepComplete}
         />
@@ -470,6 +423,7 @@ export default function Wizard() {
     if (state.currentStep === 4) {
       return (
         <AssetMetricLinkingStep
+          profileName={selectedProfile}
           onComplete={handleLinkingStepComplete}
           onSkip={handleLinkingStepComplete}
         />
@@ -512,7 +466,7 @@ export default function Wizard() {
     state.apiUrl,
     state.authType,
     state.currentStep,
-    effectiveIntegrationPreset,
+    selectedProfile,
     status,
     statusError,
     successStatus,
