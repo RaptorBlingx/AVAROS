@@ -856,7 +856,20 @@ class SettingsService(ProfileMixin):
         normalized = self._normalize_asset_mappings(mappings)
         key = self._asset_mappings_storage_key(target_profile)
         self.set_setting(key, normalized)
-        self._regenerate_asset_entity_files(target_profile)
+        self._regenerate_asset_entity_files(target_profile, notify=True)
+
+    def regenerate_asset_entity_files(
+        self,
+        profile: str | None = None,
+        *,
+        notify: bool = False,
+    ) -> None:
+        """Public helper to regenerate dynamic asset entities for a profile."""
+        self._ensure_initialized()
+        target_profile = self._resolve_asset_profile(profile)
+        if target_profile == self.DEFAULT_PROFILE:
+            return
+        self._regenerate_asset_entity_files(target_profile, notify=notify)
 
     def get_asset_list(self, profile: str | None = None) -> list[dict[str, Any]]:
         """Return a normalized list view of configured assets."""
@@ -1150,22 +1163,34 @@ class SettingsService(ProfileMixin):
             normalized[normalized_id] = deepcopy(mapping)
         return normalized
 
-    def _regenerate_asset_entity_files(self, profile: str) -> None:
+    def _regenerate_asset_entity_files(self, profile: str, *, notify: bool) -> None:
         """Regenerate locale entity files from current asset registry."""
+        skip_generation_raw = str(
+            os.environ.get("AVAROS_SKIP_ENTITY_REGEN", ""),
+        ).strip().lower()
+        skip_generation = skip_generation_raw in {"1", "true", "yes", "on"}
+
         try:
-            assets = self._asset_models_for_profile(profile)
-            regenerate_asset_entities_for_all_locales(
-                assets=assets,
-                locale_root=self._locale_root_path(),
-            )
-            logger.info(
-                "Regenerated asset entity files for profile '%s' (%d assets)",
-                profile,
-                len(assets),
-            )
+            if skip_generation:
+                logger.info(
+                    "Skipping local entity regeneration (profile='%s') because AVAROS_SKIP_ENTITY_REGEN is enabled",
+                    profile,
+                )
+            else:
+                assets = self._asset_models_for_profile(profile)
+                regenerate_asset_entities_for_all_locales(
+                    assets=assets,
+                    locale_root=self._locale_root_path(),
+                )
+                logger.info(
+                    "Regenerated asset entity files for profile '%s' (%d assets)",
+                    profile,
+                    len(assets),
+                )
         except Exception as exc:
             logger.warning("Asset entity regeneration failed: %s", exc)
-        self._notify_entity_refresh(profile)
+        if notify:
+            self._notify_entity_refresh(profile)
 
     @staticmethod
     def _notify_entity_refresh(profile_name: str) -> bool:

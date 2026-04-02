@@ -127,7 +127,7 @@ export default function IntentActivationStep({
                         </p>
                         <span
                           className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${
-                            item.mappingMode === "energy_only"
+                            item.mappingMode === "partial"
                               ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
                               : "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"
                           }`}

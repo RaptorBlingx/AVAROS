@@ -419,7 +419,7 @@ describe("ProfileSelector", () => {
         platform_type: "custom_rest",
         api_url: "",
         api_key: "",
-        extra_settings: {},
+        extra_settings: { integration_preset: "api" },
       });
       expect(onNotify).toHaveBeenCalledWith(
         "success",
@@ -475,7 +475,7 @@ describe("ProfileSelector", () => {
         platform_type: "custom_rest",
         api_url: "http://reneryo-data-generator-api:8090",
         api_key: "",
-        extra_settings: { auth_type: "none" },
+        extra_settings: { auth_type: "none", integration_preset: "mock" },
       });
     });
   });

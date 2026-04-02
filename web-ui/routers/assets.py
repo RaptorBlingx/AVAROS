@@ -6,7 +6,6 @@ import asyncio
 import json
 import logging
 import os
-import re
 from pathlib import Path
 from typing import Any, Literal
 
@@ -24,10 +23,7 @@ router = APIRouter(prefix="/api/v1", tags=["assets"])
 logger = logging.getLogger(__name__)
 _CANONICAL_METRICS = {metric.value for metric in CanonicalMetric}
 _SORTED_CANONICAL_METRICS = sorted(_CANONICAL_METRICS)
-_UUID_ASSET_ID_PATTERN = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-)
-_NATIVE_SEU_ENERGY_BINDING: dict[str, dict[str, Any]] = {
+_NATIVE_DISCOVERY_ENERGY_BINDING: dict[str, dict[str, Any]] = {
     "energy_total": {
         "strategy": "asset_consumption_total",
         "unit": "kWh",
@@ -190,7 +186,7 @@ class AssetLinkingItem(BaseModel):
     asset_type: str
     aliases: list[str] = Field(default_factory=list)
     source: Literal["imported", "registered", "discovered"]
-    mapping_mode: Literal["full_kpi", "energy_only", "registration_only"] = "registration_only"
+    mapping_mode: Literal["full_kpi", "partial", "registration_only"] = "registration_only"
     mapping_source: Literal["manual", "generator", "live_discovery"] = "manual"
     linked_metrics: list[str] = Field(default_factory=list)
     native_metrics: list[str] = Field(default_factory=list)
@@ -349,15 +345,16 @@ def _resolve_mapping_mode(
     *,
     linked_metrics: list[str],
     native_metrics: list[str],
-) -> Literal["full_kpi", "energy_only", "registration_only"]:
+) -> Literal["full_kpi", "partial", "registration_only"]:
     """Resolve how this mapping should be interpreted by wizard readiness."""
     capability_mode = str(mapping.get("capability_mode", "")).strip().lower()
     if capability_mode == "energy_only":
-        return "energy_only"
-    if native_metrics and not linked_metrics:
-        return "energy_only"
-    if linked_metrics:
-        return "full_kpi"
+        return "partial"
+    linked_count = len(set(linked_metrics))
+    if linked_count > 0:
+        return "full_kpi" if linked_count >= len(_SORTED_CANONICAL_METRICS) else "partial"
+    if native_metrics:
+        return "partial"
     return "registration_only"
 
 
@@ -368,7 +365,7 @@ def _build_asset_linking_item(
     asset_type: str,
     aliases: list[str],
     source: Literal["imported", "registered", "discovered"],
-    mapping_mode: Literal["full_kpi", "energy_only", "registration_only"],
+    mapping_mode: Literal["full_kpi", "partial", "registration_only"],
     mapping_source: Literal["manual", "generator", "live_discovery"],
     linked_metrics: list[str],
     native_metrics: list[str],
@@ -397,8 +394,11 @@ def _build_asset_linking_item(
 
 def _build_mapping_linking_groups(
     mappings: dict[str, dict[str, Any]],
+    *,
+    global_metric_names: set[str] | None = None,
 ) -> tuple[list[AssetLinkingItem], list[AssetLinkingItem]]:
     """Split stored mappings into imported vs unlinked groups."""
+    resolved_global = {name for name in (global_metric_names or set()) if name in _CANONICAL_METRICS}
     imported: list[AssetLinkingItem] = []
     unlinked: list[AssetLinkingItem] = []
     for asset_id in sorted(mappings.keys()):
@@ -407,16 +407,25 @@ def _build_mapping_linking_groups(
             continue
         linked_metrics = list(_normalize_metric_resources(mapping).keys())
         native_metrics = list(_normalize_native_metric_bindings(mapping).keys())
-        combined_linked = sorted(set(linked_metrics + native_metrics))
-        mapping_mode = _resolve_mapping_mode(
+        base_mode = _resolve_mapping_mode(
             mapping,
             linked_metrics=linked_metrics,
             native_metrics=native_metrics,
         )
+        combined_linked = sorted(set(linked_metrics + native_metrics))
+        if resolved_global and base_mode != "partial":
+            combined_linked = sorted(set(combined_linked + list(resolved_global)))
+        mapping_mode = base_mode
+        if mapping_mode == "registration_only" and combined_linked:
+            mapping_mode = (
+                "full_kpi"
+                if len(set(combined_linked)) >= len(_SORTED_CANONICAL_METRICS)
+                else "partial"
+            )
         raw_mapping_source = str(mapping.get("mapping_source", "")).strip().lower()
         if raw_mapping_source in {"manual", "generator", "live_discovery"}:
             mapping_source: Literal["manual", "generator", "live_discovery"] = raw_mapping_source  # type: ignore[assignment]
-        elif mapping_mode == "energy_only":
+        elif mapping_mode == "partial":
             mapping_source = "live_discovery"
         else:
             mapping_source = "manual"
@@ -509,22 +518,17 @@ def _build_discovered_linking_items(
     return items
 
 
-def _is_uuid_asset_id(value: str) -> bool:
-    """Return True when asset id looks like a RENERYO UUID key."""
-    return bool(_UUID_ASSET_ID_PATTERN.match((value or "").strip()))
-
-
 def _has_linked_metric_resources(mapping: dict[str, Any]) -> bool:
     """Return True when mapping includes any non-empty metric resource id."""
     return bool(_normalize_metric_resources(mapping))
 
 
-def _promote_discovered_seu_assets_to_energy_only(
+def _promote_discovered_energy_assets_to_energy_only(
     *,
     mappings: dict[str, dict[str, Any]],
     discovered_assets: list[Asset],
 ) -> tuple[dict[str, dict[str, Any]], bool]:
-    """Auto-promote registered RENERYO SEU rows to energy-only mode.
+    """Auto-promote discovered energy assets to energy-only mode.
 
     This heals legacy rows that were saved before ``capability_mode`` /
     ``native_metric_bindings`` existed.
@@ -535,7 +539,11 @@ def _promote_discovered_seu_assets_to_energy_only(
     discovered_ids = {
         str(asset.asset_id).strip()
         for asset in discovered_assets
-        if isinstance(asset, Asset) and _is_uuid_asset_id(str(asset.asset_id))
+        if isinstance(asset, Asset)
+        and str(asset.asset_id).strip()
+        and str(
+            (asset.metadata or {}).get("energy_resource", ""),
+        ).strip()
     }
     if not discovered_ids:
         return mappings, False
@@ -551,12 +559,12 @@ def _promote_discovered_seu_assets_to_energy_only(
                 if not native_bindings:
                     mapping["native_metric_bindings"] = {
                         metric_name: dict(config)
-                        for metric_name, config in _NATIVE_SEU_ENERGY_BINDING.items()
+                        for metric_name, config in _NATIVE_DISCOVERY_ENERGY_BINDING.items()
                     }
                     row_promoted = True
                 else:
                     merged_native = dict(native_bindings)
-                    default_energy = dict(_NATIVE_SEU_ENERGY_BINDING["energy_total"])
+                    default_energy = dict(_NATIVE_DISCOVERY_ENERGY_BINDING["energy_total"])
                     current_energy = native_bindings.get("energy_total")
                     if isinstance(current_energy, dict):
                         current_strategy = str(
@@ -671,6 +679,20 @@ def _merge_with_existing_metric_resources(
             mapping_source = str(current.get("mapping_source", "")).strip()
             if mapping_source in {"manual", "generator", "live_discovery"}:
                 next_mapping["mapping_source"] = mapping_source
+
+        if _compat_layer_enabled():
+            metadata_raw = next_mapping.get("metadata", {})
+            metadata = metadata_raw if isinstance(metadata_raw, dict) else {}
+            has_energy_resource = bool(str(metadata.get("energy_resource", "")).strip())
+            has_metric_resources = bool(_normalize_metric_resources(next_mapping))
+            has_native_bindings = bool(_normalize_native_metric_bindings(next_mapping))
+            if has_energy_resource and not has_metric_resources and not has_native_bindings:
+                next_mapping["capability_mode"] = "energy_only"
+                next_mapping["mapping_source"] = "live_discovery"
+                next_mapping["native_metric_bindings"] = {
+                    metric_name: dict(config)
+                    for metric_name, config in _NATIVE_DISCOVERY_ENERGY_BINDING.items()
+                }
 
         merged[asset_id] = next_mapping
     return merged
@@ -799,6 +821,11 @@ async def get_asset_linking_summary(
     """Return linking summary for wizard readiness and diagnostics."""
     platform_type = _get_current_platform(settings_service)
     mappings = settings_service.get_asset_mappings()
+    global_metric_names = {
+        metric_name
+        for metric_name, mapping in settings_service.list_metric_mappings().items()
+        if isinstance(mapping, dict) and metric_name in _CANONICAL_METRICS
+    }
 
     supports_discovery = False
     discovery_source: Literal["adapter", "registered", "none"] = "none"
@@ -826,20 +853,18 @@ async def get_asset_linking_summary(
                 logger.warning("Adapter shutdown for linking summary failed: %s", exc)
 
     if _compat_layer_enabled():
-        mappings, promoted = _promote_discovered_seu_assets_to_energy_only(
+        mappings, promoted = _promote_discovered_energy_assets_to_energy_only(
             mappings=mappings,
             discovered_assets=discovered_assets,
         )
         if promoted:
             settings_service.set_asset_mappings(mappings)
 
-    imported_assets, unlinked_assets = _build_mapping_linking_groups(mappings)
-    full_kpi_assets = [
-        asset
-        for asset in imported_assets
-        if asset.mapping_mode == "full_kpi"
-    ]
-    metric_coverage = _build_metric_coverage(full_kpi_assets)
+    imported_assets, unlinked_assets = _build_mapping_linking_groups(
+        mappings,
+        global_metric_names=global_metric_names,
+    )
+    metric_coverage = _build_metric_coverage(imported_assets)
 
     if discovery_source == "none" and (imported_assets or unlinked_assets):
         discovery_source = "registered"

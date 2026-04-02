@@ -60,7 +60,7 @@ export default function MetricMappingStep({
   onComplete,
   onSkip,
 }: MetricMappingStepProps) {
-  const isReneryoHelper = integrationPreset === "reneryo";
+  const helperEnabled = integrationPreset !== "mock";
   const [rows, setRows] = useState<MetricMappingRow[]>([]);
   const [existingByMetric, setExistingByMetric] = useState<Partial<Record<CanonicalMetricName, MetricMapping>>>({});
   const [metricCoverage, setMetricCoverage] = useState<MetricCoverageItem[]>([]);
@@ -89,8 +89,8 @@ export default function MetricMappingStep({
     () => importedAssets.filter((asset) => asset.mapping_mode === "full_kpi"),
     [importedAssets],
   );
-  const energyOnlyAssets = useMemo(
-    () => importedAssets.filter((asset) => asset.mapping_mode === "energy_only"),
+  const partialAssets = useMemo(
+    () => importedAssets.filter((asset) => asset.mapping_mode === "partial"),
     [importedAssets],
   );
   const registrationOnlyAssets = useMemo(
@@ -113,7 +113,7 @@ export default function MetricMappingStep({
   });
 
   const refreshLinkingSummary = useCallback(async () => {
-    if (!isReneryoHelper) {
+    if (!helperEnabled) {
       setMetricCoverage([]);
       setImportedAssets([]);
       setUnlinkedRegisteredAssets([]);
@@ -150,7 +150,7 @@ export default function MetricMappingStep({
     } finally {
       setHelperLoading(false);
     }
-  }, [isReneryoHelper]);
+  }, [helperEnabled]);
 
   const loadMappings = useCallback(async () => {
     setLoading(true);
@@ -424,10 +424,10 @@ export default function MetricMappingStep({
               </div>
             )}
 
-            {isReneryoHelper && (
+            {helperEnabled && (
               <div className="mb-4 rounded-xl border border-slate-300 bg-white/80 p-4 dark:border-slate-600 dark:bg-slate-800/80">
                 <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                  RENERYO Helper
+                  Mapping Helper
                 </p>
                 <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
                   Optional: import mapping_output.json and review coverage while keeping manual mapping editable.
@@ -528,14 +528,14 @@ export default function MetricMappingStep({
                   </div>
                 )}
 
-                {energyOnlyAssets.length > 0 && (
+                {partialAssets.length > 0 && (
                   <div className="mt-4 space-y-2">
                     <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                      Energy-only Assets (RENERYO SEU)
+                      Partially Mapped Assets
                     </p>
-                    {energyOnlyAssets.map((asset) => (
+                    {partialAssets.map((asset) => (
                       <div
-                        key={`energy-only-${asset.asset_id}`}
+                        key={`partial-${asset.asset_id}`}
                         className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 dark:border-amber-700/50 dark:bg-amber-900/20"
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -543,7 +543,7 @@ export default function MetricMappingStep({
                             {asset.display_name}
                           </p>
                           <span className="inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                            Energy only
+                            {asset.linked_metric_count}/{asset.total_metrics} mapped
                           </span>
                         </div>
                         <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -584,7 +584,7 @@ export default function MetricMappingStep({
                 {discoveredAssets.length > 0 && (
                   <div className="mt-4 space-y-2">
                     <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                      Live RENERYO Resources (Discovered)
+                      Live API Resources (Discovered)
                     </p>
                     {discoveredAssets.map((asset) => (
                       <div

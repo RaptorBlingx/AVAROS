@@ -39,6 +39,7 @@ type SuggestedAsset = {
   asset_type: "line" | "machine" | "sensor";
   aliases: string[];
   metric_count?: number;
+  metadata?: Record<string, unknown>;
   source: "live" | "generator";
 };
 
@@ -48,6 +49,7 @@ type SuggestionInput = {
   asset_type: string;
   aliases?: string[];
   metric_count?: number;
+  metadata?: Record<string, unknown>;
 };
 
 type AssetRegistrationStepProps = {
@@ -185,6 +187,10 @@ function normalizeSuggestedAsset(
       source === "generator" && typeof asset.metric_count === "number"
         ? asset.metric_count
         : undefined,
+    metadata:
+      source === "live" && asset.metadata && typeof asset.metadata === "object"
+        ? { ...asset.metadata }
+        : undefined,
     source,
   };
 }
@@ -200,6 +206,14 @@ function hasMetricResources(mapping: AssetMappingItem | undefined): boolean {
   return Object.values(resources).some((value) => String(value).trim().length > 0);
 }
 
+function hasNativeEnergyHint(asset: SuggestedAsset | undefined): boolean {
+  if (!asset || !asset.metadata || typeof asset.metadata !== "object") {
+    return false;
+  }
+  const energyResource = (asset.metadata as Record<string, unknown>).energy_resource;
+  return typeof energyResource === "string" && energyResource.trim().length > 0;
+}
+
 export default function AssetRegistrationStep({
   platformType,
   integrationPreset = null,
@@ -207,9 +221,10 @@ export default function AssetRegistrationStep({
   onComplete,
   onSkip,
 }: AssetRegistrationStepProps) {
-  const shouldAttemptDiscovery =
-    platformType !== "unconfigured" && integrationPreset === "reneryo";
-  const shouldLoadGeneratorPreview = integrationPreset === "reneryo";
+  const isConfiguredPlatform = platformType !== "unconfigured";
+  const isMockPreset = integrationPreset === "mock";
+  const shouldAttemptDiscovery = isConfiguredPlatform && !isMockPreset;
+  const shouldLoadGeneratorPreview = isConfiguredPlatform && !isMockPreset;
   const [rows, setRows] = useState<RegistrationRow[]>([]);
   const [storedMappings, setStoredMappings] = useState<
     Record<string, AssetMappingItem>
@@ -277,15 +292,23 @@ export default function AssetRegistrationStep({
               if (!rowAssetId) {
                 return row;
               }
-              const isLiveAsset = nextSuggestions.some(
+              const discoveredAsset = nextSuggestions.find(
                 (asset) => asset.asset_id.toLowerCase() === rowAssetId,
               );
-              if (!isLiveAsset) {
+              if (!discoveredAsset) {
                 return row;
               }
 
               const currentMapping = existingMappings[row.existingAssetId ?? row.assetId];
               if (hasMetricResources(currentMapping)) {
+                return row;
+              }
+              const currentMode = String(currentMapping?.capability_mode ?? "")
+                .trim()
+                .toLowerCase();
+              const shouldUseNativeEnergyMode =
+                currentMode === "energy_only" || hasNativeEnergyHint(discoveredAsset);
+              if (!shouldUseNativeEnergyMode) {
                 return row;
               }
 
@@ -469,6 +492,14 @@ export default function AssetRegistrationStep({
         if (hasMetricResources(currentMapping)) {
           return prev;
         }
+        const currentMode = String(currentMapping?.capability_mode ?? "")
+          .trim()
+          .toLowerCase();
+        const shouldUseNativeEnergyMode =
+          currentMode === "energy_only" || hasNativeEnergyHint(candidate);
+        if (!shouldUseNativeEnergyMode) {
+          return prev;
+        }
 
         const next = [...prev];
         next[existingIndex] = {
@@ -492,6 +523,8 @@ export default function AssetRegistrationStep({
         !draftRows[0].displayName.trim() &&
         !draftRows[0].aliases.trim();
       const nextRows = onlyBlankDraft ? [] : draftRows;
+      const useNativeEnergyMode =
+        candidate.source === "live" && hasNativeEnergyHint(candidate);
       nextRows.push({
         rowId: createRowId(candidate.asset_id),
         assetId: candidate.asset_id,
@@ -499,9 +532,14 @@ export default function AssetRegistrationStep({
         assetType: candidate.asset_type,
         aliases: aliasesToCsv(sanitizeAliasList(candidate.aliases)),
         mappingSource: candidate.source === "generator" ? "generator" : "live_discovery",
-        capabilityMode: candidate.source === "generator" ? "full_kpi" : "energy_only",
+        capabilityMode:
+          candidate.source === "generator" || !useNativeEnergyMode
+            ? "full_kpi"
+            : "energy_only",
         nativeMetricBindings:
-          candidate.source === "generator" ? {} : { ...NATIVE_SEU_ENERGY_BINDINGS },
+          candidate.source === "generator" || !useNativeEnergyMode
+            ? {}
+            : { ...NATIVE_SEU_ENERGY_BINDINGS },
         isExisting: false,
         existingAssetId: null,
       });
@@ -707,10 +745,10 @@ export default function AssetRegistrationStep({
             {shouldAttemptDiscovery && (
               <div className="rounded-xl border border-slate-300 bg-white/90 p-3 dark:border-slate-600 dark:bg-slate-800/80">
                 <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                  Live RENERYO Resources
+                  Live API Resources
                 </p>
                 <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  Import assets discovered from the active API connection (SEU list).
+                  Import assets discovered from the active API connection.
                 </p>
                 {discoveryLoading && (
                   <p className="m-0 mt-2 text-xs text-slate-500 dark:text-slate-400">
@@ -751,7 +789,7 @@ export default function AssetRegistrationStep({
                             {asset.asset_id} · {asset.asset_type}
                           </p>
                           <p className="m-0 mt-1 text-xs text-amber-700 dark:text-amber-300">
-                            Energy-only capability
+                            Partial metric coverage
                           </p>
                         </div>
                         <button
@@ -820,9 +858,9 @@ export default function AssetRegistrationStep({
                   className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900 md:col-span-2"
                 />
                 <div className="md:col-span-5">
-                  {integrationPreset === "reneryo" && (
+                  {(row.capabilityMode === "energy_only" || row.mappingSource === "live_discovery") && (
                     <p className="m-0 mb-2 text-xs text-slate-500 dark:text-slate-400">
-                      Mode: {row.capabilityMode === "energy_only" ? "Energy only (compatibility)" : "Full KPI"}
+                      Mode: {row.capabilityMode === "energy_only" ? "Partial (compatibility)" : "Full KPI"}
                     </p>
                   )}
                   <button

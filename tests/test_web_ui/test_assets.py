@@ -440,7 +440,7 @@ def test_linking_summary_classifies_energy_only_assets_as_imported(
         for item in body["imported_assets"]
         if item["asset_id"] == "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4"
     )
-    assert seu_item["mapping_mode"] == "energy_only"
+    assert seu_item["mapping_mode"] == "partial"
     assert seu_item["mapping_source"] == "live_discovery"
     assert seu_item["supported_metrics"] == ["energy_total"]
     assert "energy_total" in seu_item["linked_metrics"]
@@ -501,7 +501,7 @@ def test_linking_summary_auto_promotes_discovered_uuid_assets_to_energy_only(
         for item in body["imported_assets"]
         if item["asset_id"] == asset_id
     )
-    assert seu_item["mapping_mode"] == "energy_only"
+    assert seu_item["mapping_mode"] == "partial"
     assert seu_item["mapping_source"] == "live_discovery"
     assert seu_item["supported_metrics"] == ["energy_total"]
     assert seu_item["linked_metrics"] == ["energy_total"]

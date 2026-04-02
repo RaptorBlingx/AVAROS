@@ -120,6 +120,7 @@ class AVAROSSkill(FallbackSkill):
         self.response_builder: ResponseBuilder | None = None
         self._loaded_profile: str = "unconfigured"
         self._loaded_platform: str = "unconfigured"
+        self._loaded_runtime_signature: str = ""
         self._is_initialized: bool = False
         self._asset_registry_profile: str = ""
         self._asset_registry_cache: list[Any] | None = None
@@ -175,6 +176,9 @@ class AVAROSSkill(FallbackSkill):
 
         self._loaded_profile = self._resolve_active_profile()
         self._loaded_platform = adapter.platform_name.lower()
+        self._loaded_runtime_signature = self._resolve_platform_runtime_signature(
+            self._loaded_profile,
+        )
         self._register_intent_handlers()
 
         if not self._bus_event_handlers_registered:
@@ -375,6 +379,19 @@ class AVAROSSkill(FallbackSkill):
             "Asset entity update event received (profile='%s')",
             profile_name or "unknown",
         )
+        if self.settings_service is not None:
+            try:
+                target_profile = profile_name or self.settings_service.get_active_profile_name()
+                self.settings_service.regenerate_asset_entity_files(
+                    profile=target_profile,
+                    notify=False,
+                )
+            except Exception as exc:
+                self.log.warning(
+                    "Local asset entity regeneration failed (profile='%s'): %s",
+                    profile_name or "active",
+                    exc,
+                )
         self._asset_registry_cache = None
         self._asset_registry_profile = ""
         self._regenerate_entity_files_from_settings(
@@ -429,6 +446,9 @@ class AVAROSSkill(FallbackSkill):
             )
         self._loaded_profile = self._resolve_active_profile()
         self._loaded_platform = new_adapter.platform_name.lower()
+        self._loaded_runtime_signature = self._resolve_platform_runtime_signature(
+            self._loaded_profile,
+        )
         self._asset_registry_cache = None
         self._asset_registry_profile = ""
         self.log.info(
@@ -482,6 +502,7 @@ class AVAROSSkill(FallbackSkill):
             )
         self._loaded_profile = "unconfigured"
         self._loaded_platform = "unconfigured"
+        self._loaded_runtime_signature = ""
         self.log.info("Forced UnconfiguredAdapter fallback")
 
     def _expected_platform_for_profile(self, profile_name: str) -> str:
@@ -496,6 +517,21 @@ class AVAROSSkill(FallbackSkill):
             return platform or "unconfigured"
         except Exception:
             return "unconfigured"
+
+    def _resolve_platform_runtime_signature(self, profile_name: str) -> str:
+        """Return signature of active runtime config that must trigger adapter reload."""
+        if self.settings_service is None:
+            return ""
+        try:
+            profile = self.settings_service.get_profile(profile_name)
+        except Exception:
+            return ""
+        if profile is None:
+            return ""
+        auth_type = str((profile.extra_settings or {}).get("auth_type", "")).strip().lower()
+        api_url = str(profile.api_url or "").strip().rstrip("/")
+        api_key = str(profile.api_key or "")
+        return "|".join([api_url, auth_type, api_key])
 
     def _ensure_runtime_services(self) -> None:
         """Recreate SettingsService / AdapterFactory if missing at runtime."""
@@ -523,20 +559,23 @@ class AVAROSSkill(FallbackSkill):
         try:
             current = self.settings_service.get_active_profile_name()
             expected_platform = self._expected_platform_for_profile(current)
+            current_signature = self._resolve_platform_runtime_signature(current)
             if (
                 current != self._loaded_profile
                 or expected_platform != self._loaded_platform
+                or current_signature != self._loaded_runtime_signature
             ):
                 self.log.info(
                     (
                         "Profile/platform mismatch: loaded_profile='%s', "
                         "active_profile='%s', loaded_platform='%s', "
-                        "expected_platform='%s'. Reloading."
+                        "expected_platform='%s', runtime_config_changed='%s'. Reloading."
                     ),
                     self._loaded_profile,
                     current,
                     self._loaded_platform,
                     expected_platform,
+                    str(current_signature != self._loaded_runtime_signature).lower(),
                 )
                 self._reload_adapter(current)
         except Exception as exc:

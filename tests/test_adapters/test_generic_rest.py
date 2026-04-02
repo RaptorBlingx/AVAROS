@@ -51,13 +51,17 @@ def _build_adapter(mappings: dict[str, dict], auth_type: str = "bearer") -> Gene
     )
 
 
-def _build_asset_adapter(asset_mappings: dict[str, dict]) -> GenericRestAdapter:
+def _build_asset_adapter(
+    asset_mappings: dict[str, dict],
+    extra_settings: dict | None = None,
+) -> GenericRestAdapter:
     return GenericRestAdapter(
         api_url="https://api.example.com",
         api_key="secret-token",
         auth_type="bearer",
         settings_service=_StubSettingsService({}, asset_mappings=asset_mappings),
         profile_name="custom",
+        extra_settings=extra_settings or {},
     )
 
 
@@ -177,6 +181,62 @@ async def test_get_kpi_energy_total_uses_native_seu_binding(period: TimePeriod) 
 
 
 @pytest.mark.asyncio
+async def test_get_kpi_energy_total_falls_back_to_mapping_when_native_binding_fails(
+    period: TimePeriod,
+) -> None:
+    """If SEU-native endpoint is incompatible, energy_total should use metric mapping fallback."""
+    asset_id = "c0000000-0000-0000-0000-000000000008"
+    adapter = GenericRestAdapter(
+        api_url="https://api.example.com",
+        api_key="secret-token",
+        auth_type="none",
+        settings_service=_StubSettingsService(
+            mappings={
+                "energy_total": {
+                    "endpoint": "/kpi/{asset_id}",
+                    "json_path": "$.totals.total_energy_kwh",
+                    "unit": "kWh",
+                },
+            },
+            asset_mappings={
+                asset_id: {
+                    "display_name": "Boiler-1",
+                    "asset_type": "machine",
+                    "mapping_source": "live_discovery",
+                    "capability_mode": "energy_only",
+                    "native_metric_bindings": {
+                        "energy_total": {"strategy": "asset_consumption_total"},
+                    },
+                },
+            },
+        ),
+        profile_name="custom",
+    )
+    adapter._session = object()
+    adapter._retry_fetch = AsyncMock(
+        side_effect=[
+            {"records": []},
+            {"totals": {"total_energy_kwh": 205.678}},
+        ],
+    )
+
+    result = await adapter.get_kpi(
+        metric=CanonicalMetric.ENERGY_TOTAL,
+        asset_id=asset_id,
+        period=period,
+    )
+
+    assert result.metric == CanonicalMetric.ENERGY_TOTAL
+    assert result.value == pytest.approx(205.678)
+    assert result.unit == "kWh"
+    assert adapter._retry_fetch.await_count == 2
+    first_endpoint = adapter._retry_fetch.await_args_list[0].args[0]
+    second_endpoint = adapter._retry_fetch.await_args_list[1].args[0]
+    assert first_endpoint == "/api/u/measurement/seu/item"
+    assert second_endpoint == "/kpi/c0000000-0000-0000-0000-000000000008"
+
+
+@pytest.mark.asyncio
 async def test_get_kpi_non_energy_metric_on_energy_only_asset_raises_unavailable(
     period: TimePeriod,
 ) -> None:
@@ -205,6 +265,51 @@ async def test_get_kpi_non_energy_metric_on_energy_only_asset_raises_unavailable
 
     assert exc_info.value.code == "ASSET_METRIC_UNAVAILABLE"
     assert "Available metric for this asset" in exc_info.value.user_message
+
+
+@pytest.mark.asyncio
+async def test_get_kpi_allows_asset_id_mapped_metric_even_if_asset_marked_energy_only(
+    period: TimePeriod,
+) -> None:
+    """Asset-id mapped profiles should not be blocked by legacy energy_only flags."""
+    asset_id = "c0000000-0000-0000-0000-000000000001"
+    adapter = GenericRestAdapter(
+        api_url="https://api.example.com",
+        api_key="secret-token",
+        auth_type="none",
+        settings_service=_StubSettingsService(
+            mappings={
+                "energy_per_unit": {
+                    "endpoint": "/kpi/{asset_id}",
+                    "json_path": "$.kpis.sec.value",
+                    "unit": "kWh/unit",
+                },
+            },
+            asset_mappings={
+                asset_id: {
+                    "display_name": "Compressor-1",
+                    "asset_type": "machine",
+                    "capability_mode": "energy_only",
+                    "native_metric_bindings": {
+                        "energy_total": {"strategy": "asset_consumption_total"},
+                    },
+                },
+            },
+        ),
+        profile_name="custom",
+    )
+    adapter._session = object()
+    adapter._retry_fetch = AsyncMock(return_value={"kpis": {"sec": {"value": 0.33}}})
+
+    result = await adapter.get_kpi(
+        metric=CanonicalMetric.ENERGY_PER_UNIT,
+        asset_id=asset_id,
+        period=period,
+    )
+
+    assert result.metric == CanonicalMetric.ENERGY_PER_UNIT
+    assert result.value == pytest.approx(0.33)
+    assert result.unit == "kWh/unit"
 
 
 @pytest.mark.asyncio
@@ -463,9 +568,58 @@ def test_supports_capability_true_for_native_energy_only_metric() -> None:
 
 
 def test_supports_asset_discovery_returns_true_with_api_url() -> None:
-    """Generic REST adapter exposes best-effort discovery when URL exists."""
+    """Generic REST adapter should expose auto discovery when URL exists."""
     adapter = _build_adapter({})
     assert adapter.supports_asset_discovery() is True
+
+
+def test_supports_asset_discovery_returns_true_with_discovery_config() -> None:
+    """Discovery is enabled when asset_discovery config is present."""
+    adapter = _build_asset_adapter(
+        {},
+        extra_settings={
+            "asset_discovery": {
+                "endpoint": "/api/assets",
+            },
+        },
+    )
+    assert adapter.supports_asset_discovery() is True
+
+
+@pytest.mark.asyncio
+async def test_list_assets_auto_probe_discovers_generic_assets_without_config() -> None:
+    """Auto probe should discover assets even when explicit config is missing."""
+    adapter = _build_asset_adapter({})
+
+    with aioresponses() as mocked:
+        mocked.head("https://api.example.com", status=200)
+        mocked.get(
+            "https://api.example.com/api/v1/assets",
+            status=200,
+            payload={
+                "assets": [
+                    {
+                        "assetId": "c0000000-0000-0000-0000-000000000001",
+                        "displayName": "Compressor-1",
+                        "type": "machine",
+                    },
+                    {
+                        "assetId": "c0000000-0000-0000-0000-000000000008",
+                        "displayName": "Boiler-1",
+                        "type": "machine",
+                    },
+                ],
+            },
+        )
+        await adapter.initialize()
+        assets = await adapter.list_assets()
+        await adapter.shutdown()
+
+    assert [asset.asset_id for asset in assets] == [
+        "c0000000-0000-0000-0000-000000000001",
+        "c0000000-0000-0000-0000-000000000008",
+    ]
+    assert assets[0].display_name == "Compressor-1"
 
 
 @pytest.mark.asyncio
@@ -496,12 +650,23 @@ async def test_list_assets_returns_empty_without_saved_mappings() -> None:
 @pytest.mark.asyncio
 async def test_list_assets_discovers_from_api_when_no_saved_mappings() -> None:
     """Live discovery should hydrate wizard suggestions on first run."""
-    adapter = _build_asset_adapter({})
+    adapter = _build_asset_adapter(
+        {},
+        extra_settings={
+            "asset_discovery": {
+                "endpoint": "/api/assets",
+                "records_path": "records",
+                "id_field": "id",
+                "name_field": "name",
+                "energy_resource_field": "energyResource",
+            },
+        },
+    )
 
     with aioresponses() as mocked:
         mocked.head("https://api.example.com", status=200)
         mocked.get(
-            "https://api.example.com/api/u/measurement/seu/names?count=100",
+            "https://api.example.com/api/assets",
             status=200,
             payload={
                 "records": [
@@ -524,12 +689,23 @@ async def test_list_assets_discovers_from_api_when_no_saved_mappings() -> None:
 @pytest.mark.asyncio
 async def test_list_assets_prefers_seu_item_discovery_with_uuid_ids() -> None:
     """SEU item discovery should preserve real UUID-based asset IDs."""
-    adapter = _build_asset_adapter({})
+    adapter = _build_asset_adapter(
+        {},
+        extra_settings={
+            "asset_discovery": {
+                "endpoint": "/api/assets",
+                "records_path": "records",
+                "id_field": "id",
+                "name_field": "name",
+                "energy_resource_field": "energyResource",
+            },
+        },
+    )
 
     with aioresponses() as mocked:
         mocked.head("https://api.example.com", status=200)
         mocked.get(
-            "https://api.example.com/api/u/measurement/seu/item?datetimeMin=2021-02-01T00:00:00.000Z&datetimeMax=2027-02-01T00:00:00.000Z",
+            "https://api.example.com/api/assets",
             status=200,
             payload={
                 "records": [
@@ -561,22 +737,22 @@ async def test_list_assets_prefers_seu_item_discovery_with_uuid_ids() -> None:
 @pytest.mark.asyncio
 async def test_list_assets_ignores_plain_name_discovery_records() -> None:
     """Plain-string discovery responses should not be converted to fake assets."""
-    adapter = _build_asset_adapter({})
+    adapter = _build_asset_adapter(
+        {},
+        extra_settings={
+            "asset_discovery": {
+                "endpoint": "/api/assets",
+                "records_path": "records",
+                "id_field": "id",
+                "name_field": "name",
+            },
+        },
+    )
 
     with aioresponses() as mocked:
         mocked.head("https://api.example.com", status=200)
         mocked.get(
-            "https://api.example.com/api/u/measurement/seu/item?datetimeMin=2021-02-01T00:00:00.000Z&datetimeMax=2027-02-01T00:00:00.000Z",
-            status=404,
-            payload={"detail": "not found"},
-        )
-        mocked.get(
-            "https://api.example.com/u/measurement/seu/item?datetimeMin=2021-02-01T00:00:00.000Z&datetimeMax=2027-02-01T00:00:00.000Z",
-            status=404,
-            payload={"detail": "not found"},
-        )
-        mocked.get(
-            "https://api.example.com/api/u/measurement/seu/names?count=100",
+            "https://api.example.com/api/assets",
             status=200,
             payload={"records": ["Line-1", "Line-2", "seu"]},
         )

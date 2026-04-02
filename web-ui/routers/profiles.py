@@ -181,6 +181,7 @@ def _normalize_legacy_mock_profile(
 
     normalized_extra = sanitize_extra_settings(config.extra_settings)
     normalized_extra["auth_type"] = "none"
+    normalized_extra["integration_preset"] = "mock"
     svc.update_profile(
         name,
         PlatformConfig(

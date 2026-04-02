@@ -27,6 +27,7 @@ services:
       - AVAROS_LOG_LEVEL=${AVAROS_LOG_LEVEL:-INFO}
       - AVAROS_DATA_PATH=/data
       - AVAROS_DATABASE_URL=sqlite:////data/avaros.db
+      - AVAROS_ENABLE_PLATFORM_COMPAT_LAYER=${AVAROS_ENABLE_PLATFORM_COMPAT_LAYER:-1}
       - MESSAGEBUS_HOST=ovos_messagebus
       - MESSAGEBUS_PORT=8181
       # Platform config comes from Web UI, NOT here
@@ -109,11 +110,13 @@ services:
     environment:
       - AVAROS_WEB_API_KEY=${AVAROS_WEB_API_KEY:-}
       - AVAROS_DATABASE_URL=sqlite:////data/avaros.db
+      - AVAROS_ENABLE_PLATFORM_COMPAT_LAYER=${AVAROS_ENABLE_PLATFORM_COMPAT_LAYER:-1}
       - HIVEMIND_WS_URL=${HIVEMIND_WS_URL:-ws://localhost:5678}
       - HIVEMIND_CLIENT_NAME=${HIVEMIND_CLIENT_NAME:-avaros-web-client}
       - HIVEMIND_CLIENT_KEY=${HIVEMIND_CLIENT_KEY:-}
       - HIVEMIND_CLIENT_SECRET=${HIVEMIND_CLIENT_SECRET:-}
       - AVAROS_GENERATOR_MAPPING_FILE=/opt/avaros/tools/reneryo-data-generator/mapping_output.json
+      - AVAROS_SKIP_ENTITY_REGEN=1
     volumes:
       - avaros-data:/data
       - ./skill:/opt/avaros/skill:ro
@@ -124,6 +127,41 @@ services:
       - avaros-network
     depends_on:
       - avaros
+
+  # =========================================================================
+  # Wake Word Backend (openWakeWord WebSocket service)
+  # =========================================================================
+  avaros-wakeword:
+    build:
+      context: ./services/wakeword
+      dockerfile: Dockerfile
+    container_name: avaros-wakeword
+    restart: unless-stopped
+    environment:
+      - WAKEWORD_MODEL=${WAKEWORD_MODEL:-hey_avaros}
+      - WAKEWORD_MODEL_PATH=${WAKEWORD_MODEL_PATH:-/app/models/hey_avaros.onnx}
+      - WAKEWORD_MODEL_LABEL=${WAKEWORD_MODEL_LABEL:-hey_avaros}
+      - WAKEWORD_PRELOAD_MODELS=${WAKEWORD_PRELOAD_MODELS:-1}
+      - WAKEWORD_THRESHOLD=${WAKEWORD_THRESHOLD:-0.5}
+      - WAKEWORD_CONFIRMATION_FRAMES=${WAKEWORD_CONFIRMATION_FRAMES:-3}
+    volumes:
+      - ./services/wakeword/models:/app/models
+    ports:
+      - "${WAKEWORD_PORT:-9999}:9999"
+    networks:
+      - avaros-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:9999/health')",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
 
   reneryo-data-generator-api:
     build:

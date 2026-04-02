@@ -19,9 +19,8 @@ def get_voice_config(
     """Return HiveMind connection config for the browser client.
 
     The frontend uses these values to establish a WebSocket
-    connection to HiveMind-core.  When no client key is configured,
-    ``voice_enabled`` is ``False`` and the UI hides
-    voice features.
+    connection to HiveMind-core. Voice features are considered
+    available whenever a HiveMind URL is configured.
     """
     config = settings_service.get_voice_config()
     return VoiceConfigResponse(
@@ -29,5 +28,5 @@ def get_voice_config(
         hivemind_name=config.hivemind_name,
         hivemind_key=config.hivemind_key,
         hivemind_secret=config.hivemind_secret,
-        voice_enabled=bool(config.hivemind_key),
+        voice_enabled=bool(str(config.hivemind_url).strip()),
     )

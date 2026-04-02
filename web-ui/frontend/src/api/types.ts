@@ -422,7 +422,7 @@ export type AssetLinkingSummaryResponse = {
     asset_type: string;
     aliases: string[];
     source: "imported" | "registered" | "discovered";
-    mapping_mode: "full_kpi" | "energy_only" | "registration_only";
+    mapping_mode: "full_kpi" | "partial" | "registration_only";
     mapping_source: "manual" | "generator" | "live_discovery";
     linked_metrics: string[];
     native_metrics: string[];
@@ -437,7 +437,7 @@ export type AssetLinkingSummaryResponse = {
     asset_type: string;
     aliases: string[];
     source: "imported" | "registered" | "discovered";
-    mapping_mode: "full_kpi" | "energy_only" | "registration_only";
+    mapping_mode: "full_kpi" | "partial" | "registration_only";
     mapping_source: "manual" | "generator" | "live_discovery";
     linked_metrics: string[];
     native_metrics: string[];
@@ -452,7 +452,7 @@ export type AssetLinkingSummaryResponse = {
     asset_type: string;
     aliases: string[];
     source: "imported" | "registered" | "discovered";
-    mapping_mode: "full_kpi" | "energy_only" | "registration_only";
+    mapping_mode: "full_kpi" | "partial" | "registration_only";
     mapping_source: "manual" | "generator" | "live_discovery";
     linked_metrics: string[];
     native_metrics: string[];

@@ -163,8 +163,8 @@ export default function ProfileSelector({
         api_key: "",
         extra_settings:
           newProfileMode === "mock"
-            ? { auth_type: "none" }
-            : {},
+            ? { auth_type: "none", integration_preset: "mock" }
+            : { integration_preset: "api" },
       };
       await apiCreateProfile(payload);
       setNewName("");

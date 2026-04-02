@@ -75,19 +75,19 @@ class TestGetVoiceConfigDefaults:
         data = response.json()
         assert data["hivemind_key"] == ""
 
-    def test_voice_disabled_without_key(
+    def test_voice_enabled_when_url_is_available(
         self,
         client: TestClient,
         settings_service: SettingsService,
     ) -> None:
-        """voice_enabled is False when no key is configured."""
+        """voice_enabled is True when a HiveMind URL exists."""
         settings_service.delete_setting(SettingsService.VOICE_CLIENT_KEY)
 
         response = client.get("/api/v1/voice/config")
 
         assert response.status_code == 200
         data = response.json()
-        assert data["voice_enabled"] is False
+        assert data["voice_enabled"] is True
 
     def test_returns_empty_secret_when_not_set(
         self,
@@ -185,13 +185,18 @@ class TestGetVoiceConfigFromSettings:
         data = response.json()
         assert data["hivemind_secret"] == "super-secret-456"
 
-    def test_voice_enabled_when_key_set(
+    def test_voice_enabled_when_url_set_even_without_key(
         self,
         client: TestClient,
         settings_service: SettingsService,
     ) -> None:
-        """voice_enabled is True when key has a value."""
-        settings_service.update_voice_config(VoiceConfig(hivemind_key="any-key"))
+        """voice_enabled is True when a URL is configured even with empty key."""
+        settings_service.update_voice_config(
+            VoiceConfig(
+                hivemind_url="ws://hivemind:5678",
+                hivemind_key="",
+            ),
+        )
         response = client.get("/api/v1/voice/config")
 
         assert response.status_code == 200

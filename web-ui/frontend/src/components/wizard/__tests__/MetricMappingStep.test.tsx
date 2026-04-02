@@ -136,25 +136,19 @@ describe("MetricMappingStep", () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
 
-  it("renders RENERYO helper coverage while keeping manual mapping editable", async () => {
-    render(
-      <MetricMappingStep
-        integrationPreset="reneryo"
-        onComplete={vi.fn()}
-        onSkip={vi.fn()}
-      />,
-    );
+  it("renders mapping helper coverage while keeping manual mapping editable", async () => {
+    render(<MetricMappingStep onComplete={vi.fn()} onSkip={vi.fn()} />);
 
     await waitFor(() => {
       expect(mockApi.getAssetLinkingSummary).toHaveBeenCalledTimes(1);
     });
 
-    expect(screen.getByText("RENERYO Helper")).toBeTruthy();
+    expect(screen.getByText("Mapping Helper")).toBeTruthy();
     expect(screen.getByText("changeover_time")).toBeTruthy();
     expect(screen.getByText("Linked assets: 1/1")).toBeTruthy();
     expect(screen.getByText("KPI-ready Assets (Full KPI)")).toBeTruthy();
     expect(screen.getByText("Line 1")).toBeTruthy();
-    expect(screen.getByText("Live RENERYO Resources (Discovered)")).toBeTruthy();
+    expect(screen.getByText("Live API Resources (Discovered)")).toBeTruthy();
     expect(screen.getByText("620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4 · machine")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Add Mapping" })).toBeTruthy();
   });

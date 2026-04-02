@@ -38,7 +38,14 @@ function isMockPresetConfig(config: {
   platformType: PlatformType;
   authType: AuthType;
   apiUrl: string;
+  extraSettings?: Record<string, unknown>;
 }): boolean {
+  const preset = String(config.extraSettings?.integration_preset ?? "")
+    .trim()
+    .toLowerCase();
+  if (preset === "mock") {
+    return true;
+  }
   return (
     config.platformType === "custom_rest" &&
     config.authType === "none" &&
@@ -88,6 +95,7 @@ function createPayload(config: {
     api_key: shouldBlankApiKey ? "" : config.apiKey.trim(),
     extra_settings: {
       auth_type: config.isMockPreset ? "none" : toBackendAuthType(config.authType),
+      integration_preset: config.isMockPreset ? "mock" : "api",
     },
   };
 }
@@ -165,6 +173,7 @@ export default function PlatformConfigSection({
         platformType: nextPlatformType,
         authType: nextAuthType,
         apiUrl: nextApiUrl,
+        extraSettings: profile.extra_settings,
       }),
     );
     setConfig({
@@ -195,6 +204,7 @@ export default function PlatformConfigSection({
           platformType: data.platform_type as PlatformType,
           authType: nextAuthType,
           apiUrl: data.api_url,
+          extraSettings: data.extra_settings as Record<string, unknown>,
         }),
       );
       setIsBuiltinProfile(data.platform_type === "unconfigured");
@@ -244,6 +254,7 @@ export default function PlatformConfigSection({
           platformType: saved.platform_type as PlatformType,
           authType: savedAuthType,
           apiUrl: saved.api_url,
+          extraSettings: saved.extra_settings as Record<string, unknown>,
         }),
       );
       setProfileRefreshKey((k) => k + 1);

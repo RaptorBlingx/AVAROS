@@ -63,6 +63,7 @@ function buildPayload(
           : state.authType === "none"
           ? "none"
           : "bearer",
+      integration_preset: "api",
     },
   };
 }

@@ -266,17 +266,25 @@ class GenericRestHttpMixin:
 
     def _build_auth_headers(self) -> dict[str, str]:
         """Build auth headers for bearer or cookie auth."""
+        headers: dict[str, str] = {
+            "Accept": "application/json",
+            "User-Agent": "AVAROS/1.0 (+generic-rest-adapter)",
+        }
         if self._auth_type == "none":
-            return {}
+            return headers
         if self._auth_type == "cookie":
-            return {
+            headers.update(
+                {
                 "Cookie": normalize_cookie_header_value(
                     self._api_key or "",
                     decode=True,
                 ),
-            }
+                },
+            )
+            return headers
 
-        return {"Authorization": f"Bearer {self._api_key}"}
+        headers["Authorization"] = f"Bearer {self._api_key}"
+        return headers
 
     def _ensure_initialized(self) -> None:
         """Raise when adapter session has not been initialized."""

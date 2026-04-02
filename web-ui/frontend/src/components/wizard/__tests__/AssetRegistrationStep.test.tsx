@@ -54,7 +54,7 @@ describe("AssetRegistrationStep", () => {
     });
   });
 
-  it("loads configured rows for manual asset registration without live discovery", async () => {
+  it("loads configured rows and attempts discovery in API mode", async () => {
     render(
       <AssetRegistrationStep
         platformType="custom_rest"
@@ -66,7 +66,8 @@ describe("AssetRegistrationStep", () => {
     await waitFor(() => {
       expect(mockApi.getConfiguredAssets).toHaveBeenCalledTimes(1);
     });
-    expect(mockApi.getAssetDiscovery).toHaveBeenCalledTimes(0);
+    expect(mockApi.getAssetDiscovery).toHaveBeenCalledTimes(1);
+    expect(mockApi.getGeneratorAssetPreview).toHaveBeenCalledTimes(1);
 
     expect(screen.getByDisplayValue("line-1")).toBeTruthy();
     expect(screen.getByDisplayValue("Line 1")).toBeTruthy();
@@ -95,7 +96,7 @@ describe("AssetRegistrationStep", () => {
     expect(screen.queryByText("Live Asset Suggestions")).toBeNull();
   });
 
-  it("renders generator and live sections for reneryo preset", async () => {
+  it("renders generator and live sections for API mode", async () => {
     mockApi.getConfiguredAssets.mockResolvedValueOnce({ asset_mappings: {} });
     mockApi.getGeneratorAssetPreview.mockResolvedValueOnce({
       available: true,
@@ -122,6 +123,9 @@ describe("AssetRegistrationStep", () => {
           display_name: "Seu 4 for reporting",
           asset_type: "machine",
           aliases: [],
+          metadata: {
+            energy_resource: "ELECTRIC",
+          },
         },
       ],
       existing_mappings: {},
@@ -130,19 +134,18 @@ describe("AssetRegistrationStep", () => {
     render(
       <AssetRegistrationStep
         platformType="custom_rest"
-        integrationPreset="reneryo"
         onComplete={vi.fn()}
         onSkip={vi.fn()}
       />,
     );
 
     await waitFor(() => {
-      expect(mockApi.getGeneratorAssetPreview).toHaveBeenCalledTimes(1);
+    expect(mockApi.getGeneratorAssetPreview).toHaveBeenCalledTimes(1);
       expect(mockApi.getAssetDiscovery).toHaveBeenCalledTimes(1);
     });
 
     expect(screen.getByText("KPI-ready Generator Assets")).toBeTruthy();
-    expect(screen.getByText("Live RENERYO Resources")).toBeTruthy();
+    expect(screen.getByText("Live API Resources")).toBeTruthy();
     expect(screen.getByText("Line 1")).toBeTruthy();
     expect(screen.getByText("Seu 4 for reporting")).toBeTruthy();
   });
@@ -201,6 +204,9 @@ describe("AssetRegistrationStep", () => {
           display_name: "Seu 4 for reporting",
           asset_type: "machine",
           aliases: [],
+          metadata: {
+            energy_resource: "ELECTRIC",
+          },
         },
       ],
       existing_mappings: {},
@@ -230,7 +236,6 @@ describe("AssetRegistrationStep", () => {
     render(
       <AssetRegistrationStep
         platformType="custom_rest"
-        integrationPreset="reneryo"
         onComplete={vi.fn()}
         onSkip={vi.fn()}
       />,
@@ -241,7 +246,7 @@ describe("AssetRegistrationStep", () => {
     });
     await waitFor(() => {
       expect(
-        screen.getByText("Mode: Energy only (compatibility)"),
+        screen.getByText("Mode: Partial (compatibility)"),
       ).toBeTruthy();
     });
 
