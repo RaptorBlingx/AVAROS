@@ -22,8 +22,10 @@ from skill.clients.docubot import (
     MockDocuBotClient,
 )
 from skill.clients.prevention import (
-    MockPreventionClient,
     PreventionClient,
+)
+from skill.clients.prevention_statistical import (
+    StatisticalPreventionClient,
 )
 
 __all__ = [
@@ -31,5 +33,5 @@ __all__ = [
     "DocuBotClient",
     "MockDocuBotClient",
     "PreventionClient",
-    "MockPreventionClient",
+    "StatisticalPreventionClient",
 ]

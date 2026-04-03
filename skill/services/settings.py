@@ -788,6 +788,74 @@ class SettingsService(ProfileMixin):
                 value=energy_source,
             )
 
+    # ── Alert Config CRUD ───────────────────────────────
+
+    ALERT_CONFIG_KEY = "alert_config"
+
+    def get_alert_config(self) -> AlertConfig:
+        """Load proactive alert configuration.
+
+        Returns:
+            AlertConfig from database, or defaults if not yet saved.
+        """
+        from skill.domain.alert_models import AlertConfig, MonitoredPair
+        from skill.domain.models import CanonicalMetric
+
+        raw = self.get_setting(self.ALERT_CONFIG_KEY, default=None)
+        if raw is None or not isinstance(raw, dict):
+            return AlertConfig()
+
+        pairs: list[MonitoredPair] = []
+        for item in raw.get("monitored_pairs", []):
+            try:
+                metric = CanonicalMetric(item["metric"])
+                pairs.append(MonitoredPair(
+                    metric=metric, asset_id=item["asset_id"],
+                ))
+            except (KeyError, ValueError):
+                continue
+
+        return AlertConfig(
+            enabled=bool(raw.get("enabled", True)),
+            interval_seconds=int(raw.get("interval_seconds", 14400)),
+            severity_threshold=raw.get("severity_threshold", "medium"),
+            cooldown_minutes=int(raw.get("cooldown_minutes", 60)),
+            monitored_pairs=tuple(pairs),
+            z_score_threshold=float(raw.get("z_score_threshold", 2.0)),
+        )
+
+    def save_alert_config(self, config: AlertConfig) -> None:
+        """Persist proactive alert configuration.
+
+        Args:
+            config: AlertConfig to store.
+        """
+        from skill.domain.alert_models import AlertConfig
+
+        payload: dict = {
+            "enabled": config.enabled,
+            "interval_seconds": config.interval_seconds,
+            "severity_threshold": config.severity_threshold,
+            "cooldown_minutes": config.cooldown_minutes,
+            "monitored_pairs": [
+                {"metric": p.metric.value, "asset_id": p.asset_id}
+                for p in config.monitored_pairs
+            ],
+            "z_score_threshold": config.z_score_threshold,
+        }
+        self.set_setting(self.ALERT_CONFIG_KEY, payload)
+
+    def get_anomaly_threshold(self) -> float:
+        """Return the configured z-score anomaly sensitivity threshold.
+
+        Convenience accessor used by QueryDispatcher so detection
+        sensitivity is always driven by user settings (DEC-006).
+
+        Returns:
+            Configured threshold (default 2.0 if not yet saved).
+        """
+        return self.get_alert_config().z_score_threshold
+
     # ── Metric Mapping CRUD ─────────────────────────────
 
     METRIC_MAPPING_PREFIX = "metric_mapping:"

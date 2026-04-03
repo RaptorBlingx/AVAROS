@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import sys
 from concurrent.futures import TimeoutError as FutureTimeoutError
@@ -37,6 +38,7 @@ from skill._metric_handlers import (
     handle_anomaly_check as _handle_anomaly_check_impl,
     handle_compare_energy as _handle_compare_energy_impl,
     handle_compare_metric as _handle_compare_metric_impl,
+    handle_drift_check as _handle_drift_check_impl,
     handle_trend_energy as _handle_trend_energy_impl,
     handle_trend_metric as _handle_trend_metric_impl,
     handle_trend_scrap as _handle_trend_scrap_impl,
@@ -50,6 +52,7 @@ from skill._helpers import (
     get_intent_binding as _get_intent_binding_impl,
     get_power_state as _get_power_state_impl,
     is_anomaly_query as _is_anomaly_query_impl,
+    is_drift_query as _is_drift_query_impl,
     has_configured_profile as _has_configured_profile_impl,
     parse_numeric_amount as _parse_numeric_amount_impl,
     parse_period as _parse_period_impl,
@@ -63,7 +66,10 @@ from skill._helpers import (
 )
 from skill._intent_maps import INTENT_METRIC_MAP, NON_KPI_INTENT_MAP
 from skill.adapters.factory import AdapterFactory
+from skill.clients.prevention import PreventionClient
+from skill.clients.prevention_statistical import StatisticalPreventionClient
 from skill.domain.exceptions import AVAROSError
+from skill.services.alert_monitor import AlertMonitor
 from skill.services.response_builder import ResponseBuilder
 from skill.use_cases.query_dispatcher import QueryDispatcher
 
@@ -90,6 +96,7 @@ class AVAROSSkill(FallbackSkill):
     _resolve_asset_id = _resolve_asset_id_impl
     _resolve_compare_assets = _resolve_compare_assets_impl
     _is_anomaly_query = _is_anomaly_query_impl
+    _is_drift_query = _is_drift_query_impl
     _extract_intent_name = _extract_intent_name_impl
 
     handle_greeting = _handle_greeting_impl
@@ -100,6 +107,7 @@ class AVAROSSkill(FallbackSkill):
     handle_trend_scrap = _handle_trend_scrap_impl
     handle_trend_energy = _handle_trend_energy_impl
     handle_anomaly_check = _handle_anomaly_check_impl
+    handle_drift_check = _handle_drift_check_impl
     handle_whatif_temperature = _handle_whatif_temperature_impl
     handle_control_turn_on = _handle_control_turn_on_impl
     handle_control_turn_off = _handle_control_turn_off_impl
@@ -126,6 +134,8 @@ class AVAROSSkill(FallbackSkill):
         self._registered_intent_files: set[str] = set()
         self._registered_entity_files: set[str] = set()
         self._bus_event_handlers_registered: bool = False
+        self._alert_monitor: AlertMonitor = AlertMonitor()
+        self._alert_scheduler_active: bool = False
 
         super().__init__(*args, **kwargs)
 
@@ -160,9 +170,11 @@ class AVAROSSkill(FallbackSkill):
         self.settings_service = settings_service
         self.adapter_factory = AdapterFactory(settings_service=self.settings_service)
         adapter = self.adapter_factory.create()
+        prevention_client = self._create_prevention_client()
         self.dispatcher = QueryDispatcher(
             adapter=adapter,
             settings_service=self.settings_service,
+            prevention_client=prevention_client,
         )
         try:
             self.dispatcher._run_async(adapter.initialize())
@@ -188,6 +200,7 @@ class AVAROSSkill(FallbackSkill):
             self._loaded_profile,
         )
         self._is_initialized = True
+        self._start_alert_scheduler()
 
     def _register_intent_handlers(self, *, force: bool = False) -> int:
         """Register intent files at runtime using data-driven mappings.
@@ -275,6 +288,49 @@ class AVAROSSkill(FallbackSkill):
             return self.settings_service.get_active_profile_name()
         except Exception:
             return "unconfigured"
+
+    def _create_prevention_client(self) -> PreventionClient:
+        """Create the best available prevention client (DEC-005).
+
+        Resolution order:
+            1. ``PREVENTION_URL`` env var → HttpPreventionClient
+            2. SettingsService ``prevention_url`` key → HttpPreventionClient
+            3. Fallback → StatisticalPreventionClient (zero-config)
+        """
+        url = os.environ.get("PREVENTION_URL", "").strip()
+        if not url and self.settings_service is not None:
+            try:
+                url = str(
+                    self.settings_service.get_setting("prevention_url", ""),
+                ).strip()
+            except Exception:
+                url = ""
+
+        if not url:
+            self.log.info(
+                "PREVENTION_URL not configured — "
+                "using StatisticalPreventionClient (zero-config fallback)",
+            )
+            return StatisticalPreventionClient()
+
+        from skill.clients.prevention_http import HttpPreventionClient
+
+        auth_token = os.environ.get("PREVENTION_AUTH_TOKEN", "").strip()
+        if not auth_token and self.settings_service is not None:
+            try:
+                auth_token = str(
+                    self.settings_service.get_setting(
+                        "prevention_auth_token", "",
+                    ),
+                ).strip()
+            except Exception:
+                auth_token = ""
+
+        self.log.info("Connecting to PREVENTION at %s", url)
+        return HttpPreventionClient(
+            url=url,
+            auth_token=auth_token,
+        )
 
     @staticmethod
     def _normalize_asset_lookup_key(value: str) -> str:
@@ -412,15 +468,19 @@ class AVAROSSkill(FallbackSkill):
 
     def _reload_adapter(self, profile_name: str) -> None:
         """Reload adapter and rebuild QueryDispatcher for active profile."""
+        self._stop_alert_scheduler()
+
         if self.adapter_factory is None:
             self.log.warning("No adapter factory — cannot reload")
             return
 
         new_adapter = self._run_adapter_reload(profile_name)
 
+        prevention_client = self._create_prevention_client()
         self.dispatcher = QueryDispatcher(
             adapter=new_adapter,
             settings_service=self.settings_service,
+            prevention_client=prevention_client,
         )
         if self.response_builder is None:
             self.response_builder = ResponseBuilder(
@@ -437,6 +497,7 @@ class AVAROSSkill(FallbackSkill):
             self._loaded_profile,
             self._loaded_platform,
         )
+        self._start_alert_scheduler()
 
     def _run_adapter_reload(self, profile_name: str) -> Any:
         """Execute adapter reload coroutine using reusable runtime loop."""
@@ -471,9 +532,11 @@ class AVAROSSkill(FallbackSkill):
         from skill.adapters.unconfigured import UnconfiguredAdapter
 
         fallback = UnconfiguredAdapter()
+        prevention_client = StatisticalPreventionClient()
         self.dispatcher = QueryDispatcher(
             adapter=fallback,
             settings_service=self.settings_service,
+            prevention_client=prevention_client,
         )
         if self.response_builder is None:
             self.response_builder = ResponseBuilder(
@@ -596,8 +659,149 @@ class AVAROSSkill(FallbackSkill):
             self.speak("Sorry, I encountered an error. Please try again.")
             return None
 
+    # =================================================================
+    # Proactive alert scheduler
+    # =================================================================
+
+    _ALERT_SCHEDULER_NAME = "avaros_prevention_alert"
+
+    def _start_alert_scheduler(self) -> None:
+        """Register the repeating background alert check."""
+        from skill.adapters.unconfigured import UnconfiguredAdapter
+
+        if self.dispatcher is None:
+            return
+        if isinstance(self.dispatcher.adapter, UnconfiguredAdapter):
+            self.log.info("Skipping alert scheduler — UnconfiguredAdapter")
+            return
+
+        try:
+            from skill.domain.alert_models import AlertConfig
+
+            config = AlertConfig()
+            if self.settings_service is not None:
+                config = self.settings_service.get_alert_config()
+
+            if not config.enabled:
+                self.log.info("Proactive alerts disabled in config")
+                return
+
+            self.schedule_repeating_event(
+                handler=self._run_background_check,
+                when=None,
+                frequency=config.interval_seconds,
+                name=self._ALERT_SCHEDULER_NAME,
+            )
+            self._alert_scheduler_active = True
+            self.log.info(
+                "Alert scheduler started (interval=%ds)",
+                config.interval_seconds,
+            )
+        except Exception as exc:
+            self.log.warning("Failed to start alert scheduler: %s", exc)
+
+    def _stop_alert_scheduler(self) -> None:
+        """Cancel the repeating background alert check."""
+        if not self._alert_scheduler_active:
+            return
+        try:
+            self.cancel_scheduled_event(self._ALERT_SCHEDULER_NAME)
+        except Exception as exc:
+            self.log.warning("Failed to cancel alert scheduler: %s", exc)
+        self._alert_scheduler_active = False
+        self.log.info("Alert scheduler stopped")
+
+    def _run_background_check(self, message: Message) -> None:
+        """Scheduled handler: run checks and speak unsuppressed alerts."""
+        from skill.domain.alert_models import AlertConfig, MonitoredPair
+
+        if self.dispatcher is None:
+            return
+
+        config = AlertConfig()
+        if self.settings_service is not None:
+            config = self.settings_service.get_alert_config()
+
+        if not config.enabled:
+            self.log.debug("Background check skipped — disabled")
+            return
+
+        pairs = self._resolve_monitored_pairs(config)
+        if not pairs:
+            self.log.debug("Background check skipped — no pairs")
+            return
+
+        try:
+            events = self._alert_monitor.run_check(
+                self.dispatcher, config, pairs,
+            )
+        except Exception as exc:
+            self.log.error("Background check failed: %s", exc)
+            return
+
+        voiced = 0
+        for event in events:
+            if not event.suppressed:
+                self.speak(event.message)
+                voiced += 1
+            self.log.info(
+                "Alert [%s] %s/%s severity=%s suppressed=%s",
+                event.alert_type,
+                event.metric.value,
+                event.asset_id,
+                event.severity,
+                event.suppressed,
+            )
+
+        self.log.info(
+            "Background check complete: %d events, %d voiced",
+            len(events), voiced,
+        )
+
+    def _resolve_monitored_pairs(
+        self, config: AlertConfig,
+    ) -> list[MonitoredPair]:
+        """Determine which metric-asset pairs to check.
+
+        If the user configured specific pairs, use those.
+        Otherwise, discover from adapter capabilities.
+        """
+        from skill.domain.alert_models import MonitoredPair
+
+        if config.monitored_pairs:
+            return list(config.monitored_pairs)
+
+        if self.dispatcher is None:
+            return []
+
+        adapter = self.dispatcher.adapter
+        try:
+            metrics = adapter.get_supported_metrics()
+        except Exception:
+            metrics = []
+        if not isinstance(metrics, list) or not metrics:
+            return []
+
+        try:
+            assets = self.dispatcher._run_async(adapter.list_assets())
+        except Exception:
+            assets = []
+        if not assets:
+            return []
+
+        asset_ids = [
+            getattr(a, "asset_id", str(a)) for a in assets[:5]
+        ]
+        pairs: list[MonitoredPair] = []
+        for m in metrics[:5]:
+            for aid in asset_ids:
+                pairs.append(MonitoredPair(metric=m, asset_id=aid))
+
+        return pairs
+
     def stop(self):
         """Cleanup runtime resources when skill is stopped."""
+        self._stop_alert_scheduler()
         try:
             if self.dispatcher is not None:
                 shutdown_coro = self.dispatcher.adapter.shutdown()

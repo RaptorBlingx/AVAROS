@@ -226,6 +226,27 @@ def is_anomaly_query(self, utterance: str) -> bool:
     return any(pattern in normalized for pattern in anomaly_patterns)
 
 
+def is_drift_query(self, utterance: str) -> bool:
+    """Return True when utterance asks for drift or trend analysis."""
+    if not utterance:
+        return False
+
+    normalized = re.sub(r"[^a-z0-9\s]", " ", utterance.lower())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    drift_patterns = (
+        "drift",
+        "trending",
+        "gradual changes",
+        "gradual degradation",
+        "drift check",
+        "drift analysis",
+        "drift report",
+        "any trends",
+        "check for gradual",
+    )
+    return any(pattern in normalized for pattern in drift_patterns)
+
+
 def extract_intent_name(self, message: Message) -> str:
     """Extract normalized KPI intent name from bus message payload."""
     return _resolve_intent_name(message)

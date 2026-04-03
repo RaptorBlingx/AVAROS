@@ -1,0 +1,107 @@
+# PREVENTION Analytics Platform — Docker Compose
+#
+# Deploys the PREVENTION GraphQL analytics engine and MongoDB.
+# Used alongside docker-compose.avaros.yml for full AVAROS + PREVENTION stack.
+#
+# Prerequisites:
+#   - PREVENTION repo cloned at ~/prevention_upd (or set PREVENTION_BUILD_CONTEXT)
+#   - AVAROS addon data files in tools/prevention-addon/data/
+#
+# Usage:
+#   # Start PREVENTION alongside AVAROS
+#   docker compose -f docker/docker-compose.avaros.yml \
+#                  -f docker/docker-compose.prevention.yml up -d
+#
+#   # Start PREVENTION standalone (for development)
+#   docker compose -f docker/docker-compose.prevention.yml up -d
+#
+#   # Verify GraphQL endpoint
+#   curl -s http://localhost:8082/graphql \
+#     -H "Content-Type: application/json" \
+#     -d '{"query":"{ allAnalysis { name analyticsGoal } }"}' | python3 -m json.tool
+
+services:
+  prevention-mongo:
+    container_name: prevention-mongo
+    hostname: prevention-mongo
+    image: mongo:4.2.3
+    restart: unless-stopped
+
+    networks:
+      - ovos
+
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${PREVENTION_MONGO_USER:-prevention}
+      MONGO_INITDB_ROOT_PASSWORD: ${PREVENTION_MONGO_PASS:-prevention}
+
+    volumes:
+      - prevention_mongodata:/data/db
+
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  prevention:
+    container_name: prevention
+    hostname: prevention
+    build:
+      context: ${PREVENTION_BUILD_CONTEXT:-../../prevention_upd}
+      dockerfile: Dockerfile
+    restart: unless-stopped
+
+    depends_on:
+      prevention-mongo:
+        condition: service_healthy
+
+    networks:
+      - ovos
+
+    ports:
+      - "${PREVENTION_PORT:-8082}:8081"
+
+    environment:
+      MONGO_USER: ${PREVENTION_MONGO_USER:-prevention}
+      MONGO_PASS: ${PREVENTION_MONGO_PASS:-prevention}
+      MONGO_HOST: prevention-mongo
+      MONGO_PORT: "27017"
+      ADDONS: avaros
+
+    volumes:
+      # Mount AVAROS addon into PREVENTION's addon directory
+      - ../tools/prevention-addon:/addons/avaros:ro
+      # Override core/__init__.py to bypass Keycloak auth
+      - ./prevention_init_noauth.py:/core/__init__.py:ro
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://localhost:8081/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{ allAnalysis { name } }\"}' | grep -q allAnalysis",
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+networks:
+  ovos:
+    external: true
+
+volumes:
+  prevention_mongodata:
+    driver: local

@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from config import APP_VERSION, CORS_ORIGINS, DATABASE_URL, WEB_API_KEY
 from dependencies import get_kpi_scheduler, get_settings_service
+from routers.alerts import router as alerts_router
 from routers.assets import router as assets_router
 from routers.config import router as config_router
 from routers.emission_factors import router as emission_factors_router
@@ -141,6 +142,7 @@ app.include_router(metrics_router)
 app.include_router(production_data_router)
 app.include_router(kpi_progress_router)
 app.include_router(voice_router)
+app.include_router(alerts_router)
 
 
 @app.get("/{full_path:path}", include_in_schema=False)

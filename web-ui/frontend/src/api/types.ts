@@ -470,3 +470,23 @@ export type ProfileConfig = {
   api_key: string;
   extra_settings: Record<string, any>;
 };
+
+// ── Proactive Alert Config ─────────────────────────
+
+export type SeverityLevel = "none" | "low" | "medium" | "high" | "critical";
+
+export type MonitoredPair = {
+  metric: CanonicalMetricName;
+  asset_id: string;
+};
+
+export type AlertConfigResponse = {
+  enabled: boolean;
+  interval_seconds: number;
+  severity_threshold: SeverityLevel;
+  cooldown_minutes: number;
+  monitored_pairs: MonitoredPair[];
+  z_score_threshold: number;
+};
+
+export type AlertConfigRequest = AlertConfigResponse;

@@ -1,0 +1,3 @@
+{metric} shows a {direction} trend, changing at {rate} per day over {periods} days. {description}
+I detected a {direction} drift in {metric}. The rate of change is {rate} per day over {periods} days.
+{metric} is {direction}. Rate: {rate} per day across {periods} days. {description}

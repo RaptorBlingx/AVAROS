@@ -38,9 +38,10 @@ export type { VoiceState } from "./voice-types";
 const VoiceContext = createContext<VoiceContextValue | null>(null);
 
 const WAKE_WORD_ARM_MS = 10000;
-const WAKE_WORD_PROMPT = "How can I help you?";
 const WAKE_WORD_POST_SESSION_COOLDOWN_MS = 2000;
 const WAKE_WORD_CAPTURE_TIMEOUT_MS = 10000;
+const WAKE_WORD_CAPTURE_START_RETRY_MS = 220;
+const WAKE_WORD_CAPTURE_MAX_START_RETRIES = 2;
 const SPEAK_EVENT_DEDUP_MS = 1200;
 
 type WakeInteractionPhase =
@@ -81,6 +82,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const wakeWordSessionPhaseRef = useRef<WakeInteractionPhase>("idle");
   const wakeWordSessionCooldownUntilRef = useRef(0);
   const wakeWordCaptureTimeoutRef = useRef<number | null>(null);
+  const wakeWordCaptureStartRetryRef = useRef(0);
+  const wakeWordCaptureStartInFlightRef = useRef(false);
   const lastBusSpeakRef = useRef<{ text: string; at: number }>({
     text: "",
     at: 0,
@@ -133,6 +136,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     (cooldownMs = WAKE_WORD_POST_SESSION_COOLDOWN_MS) => {
       clearWakeWordCaptureTimeout();
       clearWakeWordCommandWindow();
+      wakeWordCaptureStartRetryRef.current = 0;
+      wakeWordCaptureStartInFlightRef.current = false;
       wakeWordSessionCooldownUntilRef.current = Date.now() + cooldownMs;
       setWakeWordSessionPhase("cooldown");
       sttRef.current?.stop();
@@ -153,62 +158,71 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       setWakeWordSessionPhase,
     ],
   );
+
   const startWakeWordCommandCapture = useCallback(async () => {
-    if (wakeWordSessionPhaseRef.current !== "prompting") return;
+    const phase = wakeWordSessionPhaseRef.current;
+    if (phase !== "prompting" && phase !== "capturing") return;
     const stt = sttRef.current;
     if (!stt) {
       finishWakeWordSession();
       return;
     }
 
-    armWakeWordCommandWindow();
-    setWakeWordSessionPhase("capturing");
-    clearWakeWordCaptureTimeout();
-    wakeWordCaptureTimeoutRef.current = window.setTimeout(() => {
-      if (wakeWordSessionPhaseRef.current === "capturing") {
-        finishWakeWordSession();
-      }
-    }, WAKE_WORD_CAPTURE_TIMEOUT_MS);
+    if (phase === "prompting") {
+      armWakeWordCommandWindow();
+      setWakeWordSessionPhase("capturing");
+      clearWakeWordCaptureTimeout();
+      wakeWordCaptureTimeoutRef.current = window.setTimeout(() => {
+        if (wakeWordSessionPhaseRef.current === "capturing") {
+          finishWakeWordSession();
+        }
+      }, WAKE_WORD_CAPTURE_TIMEOUT_MS);
+      wakeWordCaptureStartRetryRef.current = 0;
+    }
+
+    if (!isWakeWordCommandWindowOpen()) {
+      finishWakeWordSession();
+      return;
+    }
 
     // Avoid InvalidStateError when recognition is already active.
     if (stt.getState() === "listening") {
+      wakeWordCaptureStartRetryRef.current = 0;
       setVoiceState("listening");
       return;
     }
 
+    if (wakeWordCaptureStartInFlightRef.current) {
+      return;
+    }
+    wakeWordCaptureStartInFlightRef.current = true;
+
     try {
       await stt.start();
+      wakeWordCaptureStartRetryRef.current = 0;
       setVoiceState("listening");
     } catch {
-      // Web Speech start can race after stop/speak; retry once shortly.
+      // Web Speech start can race after stop; retry shortly before giving up.
+      wakeWordCaptureStartRetryRef.current += 1;
+      if (wakeWordCaptureStartRetryRef.current > WAKE_WORD_CAPTURE_MAX_START_RETRIES) {
+        finishWakeWordSession();
+        return;
+      }
       window.setTimeout(() => {
         if (wakeWordSessionPhaseRef.current !== "capturing") return;
-        void stt.start().catch(() => {
-          finishWakeWordSession();
-        });
-        setVoiceState("listening");
-      }, 220);
+        void startWakeWordCommandCapture();
+      }, WAKE_WORD_CAPTURE_START_RETRY_MS);
+    } finally {
+      wakeWordCaptureStartInFlightRef.current = false;
     }
   }, [
     armWakeWordCommandWindow,
     clearWakeWordCaptureTimeout,
     finishWakeWordSession,
+    isWakeWordCommandWindowOpen,
     setWakeWordSessionPhase,
   ]);
-  const promptWakeWordReady = useCallback(async () => {
-    if (!ttsRef.current) return;
-    lastTtsUtteranceRef.current = WAKE_WORD_PROMPT;
-    try {
-      await ttsRef.current.speak(WAKE_WORD_PROMPT);
-    } catch {
-      // Some browsers intermittently drop the first utterance; retry once.
-      ttsRef.current.stop();
-      await new Promise<void>((resolve) => {
-        window.setTimeout(() => resolve(), 120);
-      });
-      await ttsRef.current.speak(WAKE_WORD_PROMPT);
-    }
-  }, []);
+
   // ── Wake word detection ────────────────────────────
   const onWakeWordDetected = useCallback(() => {
     if (isSpeakingRef.current) {
@@ -233,18 +247,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       pauseDetectionRef.current?.();
       wakeWordDetectionPausedRef.current = true;
     }
-    void promptWakeWordReady()
-      .catch(() => {
-        finishWakeWordSession();
-      })
-      .finally(() => {
-        if (wakeWordSessionPhaseRef.current === "prompting") {
-          void startWakeWordCommandCapture();
-        }
-      });
+    void startWakeWordCommandCapture();
   }, [
-    finishWakeWordSession,
-    promptWakeWordReady,
     setWakeWordSessionPhase,
     startWakeWordCommandCapture,
   ]);
@@ -424,6 +428,14 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
           setVoiceState("error");
           break;
         case "idle":
+          if (
+            voiceMode === "wake-word" &&
+            wakeWordSessionPhaseRef.current === "capturing" &&
+            isWakeWordCommandWindowOpen()
+          ) {
+            void startWakeWordCommandCapture();
+            return;
+          }
           setVoiceState((prev) => (prev === "listening" ? "idle" : prev));
           break;
       }
@@ -489,6 +501,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     clearWakeWordCommandWindow,
     clearWakeWordCaptureTimeout,
     finishWakeWordSession,
+    startWakeWordCommandCapture,
     setWakeWordSessionPhase,
   ]);
 

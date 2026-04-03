@@ -20,17 +20,19 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import logging
-from datetime import datetime
-from typing import TYPE_CHECKING, NoReturn
+from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
 import uuid
 
 from skill.domain.exceptions import AVAROSError, MetricNotSupportedError
-from skill.domain.models import CanonicalMetric, TimePeriod
-from skill.domain.results import KPIResult
+from skill.domain.models import Anomaly, CanonicalMetric, DataPoint, TimePeriod
+from skill.domain.results import AnomalyResult, KPIResult
 from skill.services.audit import AuditLogger
 
 if TYPE_CHECKING:
     from skill.adapters.base import ManufacturingAdapter
+    from skill.clients.prevention import PreventionClient
+    from skill.domain.anomaly_models import DriftReport
     from skill.domain.models import TimePeriod, WhatIfScenario
     from skill.domain.production import ProductionSummary
     from skill.domain.results import (
@@ -91,6 +93,7 @@ class QueryDispatcher:
         co2_service: CO2DerivationService | None = None,
         production_data_service: ProductionDataService | None = None,
         settings_service: SettingsService | None = None,
+        prevention_client: PreventionClient | None = None,
     ) -> None:
         """
         Initialize dispatcher with an adapter.
@@ -103,12 +106,15 @@ class QueryDispatcher:
                 supplementary data (production counts, material usage)
             settings_service: Optional SettingsService for profile-driven
                 energy source resolution in CO₂ derivation
+            prevention_client: Optional PreventionClient for anomaly
+                detection and drift monitoring
         """
         self._adapter = adapter
         self._audit_logger = audit_logger or AuditLogger()
         self._co2_service = co2_service
         self._production_service = production_data_service
         self._settings_service = settings_service
+        self._prevention_client = prevention_client
         self._loop: asyncio.AbstractEventLoop | None = None
         self._executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=1,
@@ -282,7 +288,7 @@ class QueryDispatcher:
         return result
     
     # =========================================================================
-    # Query Type 4: Anomaly Detection (INTELLIGENCE - Phase 3)
+    # Query Type 4: Anomaly Detection (PREVENTION Integration)
     # =========================================================================
     
     def check_anomaly(
@@ -290,17 +296,24 @@ class QueryDispatcher:
         metric: CanonicalMetric,
         asset_id: str,
         threshold: float | None = None,
-    ) -> NoReturn:
+    ) -> AnomalyResult:
         """
-        Admit that anomaly detection is not yet available.
+        Check a metric for anomalies using statistical analysis.
+        
+        Fetches raw data from the adapter, runs z-score anomaly
+        detection via the prevention client, and returns structured
+        results. DEC-007: adapter provides data, intelligence here.
         
         Args:
             metric: Canonical metric to check
             asset_id: Target asset identifier
-            threshold: Optional sensitivity threshold
+            threshold: Sensitivity in std deviations (default 2.0)
+            
+        Returns:
+            AnomalyResult with detection findings
             
         Raises:
-            AVAROSError: Always, until PREVENTION integration is available.
+            AVAROSError: If prevention client is not configured.
         """
         query_id = self._generate_query_id()
         
@@ -309,17 +322,167 @@ class QueryDispatcher:
             query_id, metric.value, asset_id, threshold,
         )
 
-        message = (
-            "Anomaly detection is not yet available. This feature requires "
-            "the PREVENTION service which is pending."
+        if self._prevention_client is None:
+            raise AVAROSError(
+                message="Anomaly detection requires a prevention client",
+                code="ANOMALY_NOT_CONFIGURED",
+                user_message=(
+                    "Anomaly detection is not configured. "
+                    "Please check the skill setup."
+                ),
+            )
+
+        period = TimePeriod.last_week()
+        data_points = self._collect_daily_series(
+            metric, asset_id, days=7,
         )
-        error = AVAROSError(
-            message=message,
-            code="ANOMALY_NOT_AVAILABLE",
-            user_message=message,
+        effective_threshold = (
+            threshold
+            if threshold is not None
+            else self._get_anomaly_threshold()
         )
-        self._log_audit("check_anomaly", query_id, metric.value, asset_id, error)
-        raise error
+        detection = self._run_async(
+            self._prevention_client.detect_anomaly(
+                metric, data_points, effective_threshold,
+            ),
+        )
+        result = self._build_anomaly_result(
+            detection, metric, asset_id, query_id,
+        )
+        self._log_audit(
+            "check_anomaly", query_id, metric.value, asset_id, result,
+        )
+        return result
+
+    def _collect_daily_series(
+        self,
+        metric: CanonicalMetric,
+        asset_id: str,
+        days: int = 7,
+    ) -> list[DataPoint]:
+        """Build time-series by collecting daily KPI snapshots.
+
+        Many APIs return single aggregate values per period rather
+        than native time-series. This method constructs a time series
+        by querying each day individually.
+
+        Args:
+            metric: Canonical metric to collect.
+            asset_id: Target asset identifier.
+            days: Number of past days to query.
+
+        Returns:
+            List of DataPoint sorted oldest-first.
+        """
+        now = datetime.now(timezone.utc)
+        points: list[DataPoint] = []
+        for i in range(days, 0, -1):
+            day_start = (now - timedelta(days=i)).replace(
+                hour=0, minute=0, second=0, microsecond=0,
+            )
+            day_end = day_start.replace(
+                hour=23, minute=59, second=59,
+            )
+            period = TimePeriod(
+                start=day_start, end=day_end, display_name="",
+            )
+            try:
+                result = self._run_async(
+                    self._adapter.get_kpi(metric, asset_id, period),
+                )
+                points.append(DataPoint(
+                    timestamp=day_start,
+                    value=result.value,
+                    unit=result.unit,
+                ))
+            except Exception as exc:
+                logger.debug(
+                    "Skipping day %s for %s: %s",
+                    day_start.date(), metric.value, exc,
+                )
+        return points
+
+    def _build_anomaly_result(
+        self,
+        detection: AnomalyDetectionResult,
+        metric: CanonicalMetric,
+        asset_id: str,
+        query_id: str,
+    ) -> AnomalyResult:
+        """Convert AnomalyDetectionResult to AnomalyResult."""
+        from skill.domain.anomaly_models import AnomalyDetectionResult
+        anomalies: list[Anomaly] = []
+        if detection.is_anomalous:
+            anomalies.append(Anomaly(
+                timestamp=datetime.fromisoformat(detection.detected_at),
+                metric=metric,
+                expected_value=0.0,
+                actual_value=0.0,
+                deviation=detection.confidence,
+                description=detection.description,
+            ))
+        return AnomalyResult(
+            is_anomalous=detection.is_anomalous,
+            anomalies=anomalies,
+            severity=detection.severity,
+            asset_id=asset_id,
+            metric=metric,
+            recommendation_id=query_id,
+        )
+
+    def check_drift(
+        self,
+        metric: CanonicalMetric,
+        asset_id: str,
+        periods: int = 7,
+    ) -> DriftReport:
+        """
+        Check a metric for gradual drift using linear regression.
+        
+        Fetches raw data from the adapter, runs drift analysis
+        via the prevention client, and returns a DriftReport.
+        
+        Args:
+            metric: Canonical metric to monitor
+            asset_id: Target asset identifier
+            periods: Number of periods to analyze
+            
+        Returns:
+            DriftReport with drift analysis findings
+            
+        Raises:
+            AVAROSError: If prevention client is not configured.
+        """
+        query_id = self._generate_query_id()
+        
+        logger.info(
+            "[%s] check_drift: metric=%s, asset=%s, periods=%d",
+            query_id, metric.value, asset_id, periods,
+        )
+
+        if self._prevention_client is None:
+            raise AVAROSError(
+                message="Drift monitoring requires a prevention client",
+                code="DRIFT_NOT_CONFIGURED",
+                user_message=(
+                    "Drift monitoring is not configured. "
+                    "Please check the skill setup."
+                ),
+            )
+
+        period = TimePeriod.last_week()
+        data_points = self._collect_daily_series(
+            metric, asset_id, days=14,
+        )
+        result = self._run_async(
+            self._prevention_client.check_drift(
+                metric, data_points, periods,
+            ),
+        )
+        self._log_audit(
+            "check_drift", query_id, metric.value, asset_id, result,
+        )
+        return result
     
     # =========================================================================
     # Query Type 5: What-If Simulation (INTELLIGENCE - Phase 3)
@@ -546,6 +709,22 @@ class QueryDispatcher:
             logger.debug("Energy source lookup failed; using electricity", exc_info=True)
             return "electricity"
 
+    def _get_anomaly_threshold(self) -> float:
+        """Return the configured z-score threshold (DEC-006).
+
+        Falls back to 2.0 when no SettingsService is available.
+
+        Returns:
+            Configured threshold or 2.0 default.
+        """
+        if self._settings_service is None:
+            return 2.0
+        try:
+            return self._settings_service.get_anomaly_threshold()
+        except Exception:
+            logger.debug("Anomaly threshold lookup failed; using 2.0", exc_info=True)
+            return 2.0
+
     def _derive_supplementary_kpi(
         self, metric: CanonicalMetric,
         asset_id: str, period: TimePeriod,
@@ -717,6 +896,7 @@ class QueryDispatcher:
     
     def _generate_response_summary(self, result) -> str:
         """Generate brief summary of result for audit log."""
+        from skill.domain.anomaly_models import DriftReport
         from skill.domain.results import (
             KPIResult, ComparisonResult, TrendResult,
             AnomalyResult, WhatIfResult
@@ -730,6 +910,8 @@ class QueryDispatcher:
             return f"Direction: {result.direction}, change: {result.change_percent:.1f}%"
         elif isinstance(result, AnomalyResult):
             return f"Anomalous: {result.is_anomalous}, count: {len(result.anomalies)}"
+        elif isinstance(result, DriftReport):
+            return f"Drift: {result.has_drift}, direction: {result.drift_direction}"
         elif isinstance(result, AVAROSError):
             return result.user_message
         elif isinstance(result, WhatIfResult):

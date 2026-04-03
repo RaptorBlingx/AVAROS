@@ -43,7 +43,7 @@ export interface BackendWakeWordConfig {
   /** WebSocket URL for the wake word backend. */
   wsUrl: string;
   /**
-   * Detection sensitivity sent to the backend (0–1, default 0.15).
+  * Detection sensitivity sent to the backend (0–1, default 0.75).
    *
    * Mapped by the backend to a confidence threshold via
    * `threshold = 1.0 - sensitivity`.  Higher sensitivity means
@@ -82,7 +82,7 @@ const DEFAULT_WS_URL = resolveDefaultWsUrl();
 
 const DEFAULT_CONFIG: BackendWakeWordConfig = {
   wsUrl: DEFAULT_WS_URL,
-  sensitivity: 0.15,
+  sensitivity: 0.75,
 };
 
 /** Exponential backoff parameters. */
@@ -182,6 +182,7 @@ export class BackendWakeWordService {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = BACKOFF_INITIAL_MS;
   private shouldReconnect = false;
+  private connectPromise: Promise<void> | null = null;
 
   // Audio pipeline
   private audioContext: AudioContext | null = null;
@@ -232,7 +233,17 @@ export class BackendWakeWordService {
     if (this.ws?.readyState === WebSocket.OPEN) return;
 
     this.shouldReconnect = true;
-    await this.connect();
+    this.clearReconnectTimer();
+
+    if (this.connectPromise) {
+      await this.connectPromise;
+      return;
+    }
+
+    this.connectPromise = this.connect().finally(() => {
+      this.connectPromise = null;
+    });
+    await this.connectPromise;
   }
 
   /**
@@ -380,6 +391,12 @@ export class BackendWakeWordService {
 
       this.ws.onopen = () => {
         this.reconnectDelay = BACKOFF_INITIAL_MS;
+        this.sendSensitivity();
+        if (this.mediaStream || this.workletNode || this.scriptProcessor) {
+          this.setState("listening");
+        } else {
+          this.setState("idle");
+        }
         resolve();
       };
 
@@ -394,6 +411,7 @@ export class BackendWakeWordService {
       this.ws.onclose = () => {
         const wasConnecting = this._state === "connecting";
         this.setState("error");
+        this.connectPromise = null;
 
         if (wasConnecting) {
           reject(new Error("WebSocket connection failed"));
@@ -443,6 +461,7 @@ export class BackendWakeWordService {
 
   /** Close the WebSocket connection. */
   private closeWebSocket(): void {
+    this.connectPromise = null;
     if (this.ws) {
       // Remove handlers to prevent reconnect from onclose
       this.ws.onopen = null;
@@ -471,9 +490,17 @@ export class BackendWakeWordService {
     this.reconnectTimer = setTimeout(() => {
       if (!this.shouldReconnect) return;
 
-      this.connect().catch(() => {
-        // Connection failed — next scheduleReconnect handles backoff
-      });
+      if (this.ws?.readyState === WebSocket.OPEN || this.connectPromise) {
+        return;
+      }
+
+      this.connectPromise = this.connect()
+        .catch(() => {
+          // Connection failed — next scheduleReconnect handles backoff
+        })
+        .finally(() => {
+          this.connectPromise = null;
+        });
     }, this.reconnectDelay);
 
     // Increase delay for next attempt

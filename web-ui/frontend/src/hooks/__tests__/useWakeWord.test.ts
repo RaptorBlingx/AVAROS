@@ -99,6 +99,7 @@ describe("useWakeWord", () => {
 
     expect(mockState.backendWakeWordCtor).toHaveBeenCalledWith({
       wsUrl: "ws://wakeword.internal:9999/ws/detect",
+      sensitivity: 0.75,
     });
   });
 

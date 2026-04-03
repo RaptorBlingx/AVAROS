@@ -1,7 +1,8 @@
 """
-Tests for PreventionClient interface and MockPreventionClient.
+Tests for MockPreventionClient (archived to test helpers).
 
 Model immutability, drift, and helper tests in test_prevention_models.py.
+StatisticalPreventionClient tests in test_prevention_statistical.py.
 """
 
 from __future__ import annotations
@@ -11,12 +12,10 @@ from datetime import datetime
 import pytest
 
 from skill.clients.base import ExternalServiceClient
-from skill.clients.prevention import (
-    MockPreventionClient,
-    PreventionClient,
-)
+from skill.clients.prevention import PreventionClient
 from skill.domain.anomaly_models import AnomalyDetectionResult
 from skill.domain.models import CanonicalMetric, DataPoint
+from tests.helpers.mock_prevention import MockPreventionClient
 
 
 @pytest.fixture

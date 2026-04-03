@@ -94,7 +94,11 @@ services:
       # Logging configuration
       - LOG_LEVEL=INFO
       - AVAROS_LOG_LEVEL=INFO
-      
+
+      # PREVENTION analytics (optional — falls back to statistical client)
+      - PREVENTION_URL=${PREVENTION_URL:-}
+      - PREVENTION_AUTH_TOKEN=${PREVENTION_AUTH_TOKEN:-}
+
       # OVOS configuration
       - OVOS_CONFIG_BASE_FOLDER=mycroft
       - OVOS_CONFIG_FILENAME=mycroft.conf
@@ -191,12 +195,13 @@ services:
       # Optional: mount custom model directory for trained wake-word models
       - ${WAKEWORD_MODELS_DIR:-../services/wakeword/models}:/app/models
     environment:
-      - WAKEWORD_MODEL=${WAKEWORD_MODEL:-hey_avaros}
-      - WAKEWORD_MODEL_PATH=${WAKEWORD_MODEL_PATH:-/app/models/hey_avaros.onnx}
-      - WAKEWORD_MODEL_LABEL=${WAKEWORD_MODEL_LABEL:-hey_avaros}
+      - WAKEWORD_MODEL=${WAKEWORD_MODEL:-hey_jarvis}
+      - WAKEWORD_MODEL_PATH=${WAKEWORD_MODEL_PATH:-}
+      - WAKEWORD_MODEL_LABEL=${WAKEWORD_MODEL_LABEL:-hey_jarvis}
       - WAKEWORD_PRELOAD_MODELS=${WAKEWORD_PRELOAD_MODELS:-1}
-      - WAKEWORD_THRESHOLD=${WAKEWORD_THRESHOLD:-0.5}
-      - WAKEWORD_CONFIRMATION_FRAMES=${WAKEWORD_CONFIRMATION_FRAMES:-3}
+      # Lower threshold and 2-frame confirmation reduce missed wake detections.
+      - WAKEWORD_THRESHOLD=${WAKEWORD_THRESHOLD:-0.4}
+      - WAKEWORD_CONFIRMATION_FRAMES=${WAKEWORD_CONFIRMATION_FRAMES:-2}
     networks:
       - ovos
     healthcheck:

@@ -633,8 +633,8 @@ class GenericRestAdapter(
 
     async def _query_seu_energy_total(self, *, asset_id: str, period: TimePeriod) -> KPIResult:
         """Fetch aggregate energy consumption from item endpoint."""
-        start_iso = self._to_reneryo_iso(period.start)
-        end_iso = self._to_reneryo_iso(period.end)
+        start_iso = self._to_iso8601(period.start)
+        end_iso = self._to_iso8601(period.end)
         params = {"datetimeMin": start_iso, "datetimeMax": end_iso}
 
         payload: dict | list | None = None
@@ -705,8 +705,8 @@ class GenericRestAdapter(
         )
 
     @staticmethod
-    def _to_reneryo_iso(value: datetime) -> str:
-        """Format datetime for upstream query parameters."""
+    def _to_iso8601(value: datetime) -> str:
+        """Format datetime as ISO 8601 for upstream query parameters."""
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")

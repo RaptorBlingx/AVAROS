@@ -1,5 +1,7 @@
 import type {
   ActivateProfileResponse,
+  AlertConfigRequest,
+  AlertConfigResponse,
   AssetDiscoveryResponse,
   AssetLinkingSummaryResponse,
   AssetMappingsResponse,
@@ -533,3 +535,18 @@ export function importDefaultGeneratorMapping(): Promise<GeneratorMappingRespons
 // Backward-compatible aliases for existing callers.
 export const getAssetMappings = getConfiguredAssets;
 export const setAssetMappings = saveConfiguredAssets;
+
+// ── Proactive Alert Config ─────────────────────────
+
+export function getAlertConfig(): Promise<AlertConfigResponse> {
+  return request<AlertConfigResponse>("/api/v1/config/alert-config");
+}
+
+export function saveAlertConfig(
+  payload: AlertConfigRequest,
+): Promise<AlertConfigResponse> {
+  return request<AlertConfigResponse>("/api/v1/config/alert-config", {
+    method: "PUT",
+    body: payload,
+  });
+}

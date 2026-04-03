@@ -10,14 +10,16 @@ from datetime import datetime
 import pytest
 
 from skill.clients.prevention import (
-    MockPreventionClient,
     _build_anomaly_description,
     _get_category_for_metric,
     _get_recommended_action,
-    _is_metric_anomalous,
 )
 from skill.domain.anomaly_models import AnomalyDetectionResult, DriftReport
 from skill.domain.models import CanonicalMetric, DataPoint
+from tests.helpers.mock_prevention import (
+    MockPreventionClient,
+    _is_metric_anomalous,
+)
 
 
 @pytest.fixture

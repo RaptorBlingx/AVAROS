@@ -16,6 +16,11 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+_ENERGY_PREFERENCE = (
+    CanonicalMetric.ENERGY_PER_UNIT,
+    CanonicalMetric.ENERGY_TOTAL,
+)
 _ENERGY_TOTAL_NATIVE_STRATEGY = "asset_consumption_total"
 _AGGREGATE_TOTAL_PERIOD_MODE = "aggregate_total"
 _AGGREGATE_TOTAL_LABEL = "in total"
@@ -470,14 +475,44 @@ def handle_trend_energy(skill: "AVAROSSkill", message) -> None:
     skill._safe_dispatch("handle_trend_energy", _execute)
 
 
+def _resolve_default_metric(skill: "AVAROSSkill", utterance: str) -> CanonicalMetric:
+    """Pick the best metric from utterance text or adapter capabilities."""
+    from_text = skill._resolve_metric_from_utterance(utterance)
+    if from_text is not None:
+        return from_text
+    supported = _get_adapter_metrics(skill)
+    for preferred in _ENERGY_PREFERENCE:
+        if preferred in supported:
+            return preferred
+    if supported:
+        return supported[0]
+    return CanonicalMetric.ENERGY_PER_UNIT
+
+
+def _get_adapter_metrics(skill: "AVAROSSkill") -> list[CanonicalMetric]:
+    """Safely read supported metrics from the adapter."""
+    adapter = getattr(skill.dispatcher, "adapter", None)
+    if adapter is None:
+        return []
+    try:
+        result = adapter.get_supported_metrics()
+        if not isinstance(result, list):
+            return []
+        return result
+    except Exception:
+        return []
+
+
 def handle_anomaly_check(skill: "AVAROSSkill", message) -> None:
     """Handle: 'Any unusual patterns in production?'."""
 
     def _execute() -> None:
         asset_id = skill._resolve_asset_id(message)
+        text = skill._extract_utterance_text(message)
+        metric = _resolve_default_metric(skill, text)
 
         result: AnomalyResult = skill.dispatcher.check_anomaly(
-            metric=CanonicalMetric.OEE,
+            metric=metric,
             asset_id=asset_id,
         )
 
@@ -485,6 +520,25 @@ def handle_anomaly_check(skill: "AVAROSSkill", message) -> None:
         skill.speak(response)
 
     skill._safe_dispatch("handle_anomaly_check", _execute)
+
+
+def handle_drift_check(skill: "AVAROSSkill", message) -> None:
+    """Handle: 'How has energy been trending?' / 'Check for drift'."""
+
+    def _execute() -> None:
+        asset_id = skill._resolve_asset_id(message)
+        text = skill._extract_utterance_text(message)
+        metric = _resolve_default_metric(skill, text)
+
+        result = skill.dispatcher.check_drift(
+            metric=metric,
+            asset_id=asset_id,
+        )
+
+        response = skill.response_builder.format_drift_result(result)
+        skill.speak(response)
+
+    skill._safe_dispatch("handle_drift_check", _execute)
 
 
 def handle_whatif_temperature(skill: "AVAROSSkill", message) -> None:

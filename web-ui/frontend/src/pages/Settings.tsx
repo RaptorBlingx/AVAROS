@@ -9,6 +9,7 @@ import Tooltip from "../components/common/Tooltip";
 import IntentActivationSection from "../components/settings/IntentActivationSection";
 import IntentBindingsSection from "../components/settings/IntentBindingsSection";
 import EmissionFactorsSection from "../components/settings/EmissionFactorsSection";
+import AlertSettingsSection from "../components/settings/AlertSettingsSection";
 import AssetManagementSection from "../components/settings/AssetManagementSection";
 import MetricMappingsSection from "../components/settings/MetricMappingsSection";
 import PlatformConfigSection from "../components/settings/PlatformConfigSection";
@@ -279,6 +280,14 @@ export default function Settings() {
           refreshKey={profileRefreshKey}
           activeProfile={activeProfileName}
         />
+      </Section>
+
+      <Section
+        title="🔔 Proactive Monitoring"
+        helpText="Configure background anomaly and drift detection checks with voice alerts."
+        targetId="settings-proactive-monitoring"
+      >
+        <AlertSettingsSection onNotify={notify} />
       </Section>
 
       <Section

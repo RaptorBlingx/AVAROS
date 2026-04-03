@@ -167,7 +167,7 @@ describe("BackendWakeWordService", () => {
     });
 
     it("test_default_sensitivity", () => {
-      expect(service.getSensitivity()).toBe(0.15);
+      expect(service.getSensitivity()).toBe(0.75);
     });
 
     it("test_model_not_loaded_initially", () => {

@@ -125,6 +125,44 @@ services:
     depends_on:
       - avaros
 
+  # =========================================================================
+  # Wake-word Detection Service (Web UI voice wake trigger)
+  # =========================================================================
+  avaros-wakeword:
+    build:
+      context: ./services/wakeword
+    container_name: avaros-wakeword
+    restart: unless-stopped
+    environment:
+      # Default phrase support for browser voice testing.
+      - WAKEWORD_MODEL=${WAKEWORD_MODEL:-hey_jarvis}
+      # Optional custom model path; leave empty to use registry model.
+      - WAKEWORD_MODEL_PATH=${WAKEWORD_MODEL_PATH:-}
+      - WAKEWORD_MODEL_LABEL=${WAKEWORD_MODEL_LABEL:-hey_jarvis}
+      - WAKEWORD_PRELOAD_MODELS=${WAKEWORD_PRELOAD_MODELS:-1}
+      # Lower threshold and 2-frame confirmation reduce missed wake detections.
+      - WAKEWORD_THRESHOLD=${WAKEWORD_THRESHOLD:-0.4}
+      - WAKEWORD_CONFIRMATION_FRAMES=${WAKEWORD_CONFIRMATION_FRAMES:-2}
+    ports:
+      - "${WAKEWORD_PORT:-9999}:9999"
+    volumes:
+      # Optional mount point for custom trained wake-word models.
+      - ${WAKEWORD_MODELS_DIR:-./services/wakeword/models}:/app/models
+    networks:
+      - avaros-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:9999/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
   reneryo-data-generator-api:
     build:
       context: ./tools/reneryo-data-generator

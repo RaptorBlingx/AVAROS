@@ -26,16 +26,30 @@ import type {
 import { VoiceModeService, type VoiceMode } from "../services/voice-mode";
 import type { STTService } from "../services/stt";
 
-const VOICE_MODE_STORAGE_KEY = "avaros-voice-mode";
+const VOICE_MODE_STORAGE_KEY = "avaros_voice_mode";
+const LEGACY_VOICE_MODE_STORAGE_KEY = "avaros-voice-mode";
 const WAKE_WORD_URL_STORAGE_KEY = "avaros_wake_word_url";
+const WAKE_WORD_SENSITIVITY_STORAGE_KEY = "avaros_wake_word_sensitivity";
+const DEFAULT_WAKE_WORD_SENSITIVITY = 0.75;
 
 function getInitialVoiceMode(): VoiceMode {
   if (typeof window === "undefined") return "text";
-  const raw = window.localStorage.getItem(VOICE_MODE_STORAGE_KEY);
+  const raw =
+    window.localStorage.getItem(VOICE_MODE_STORAGE_KEY)
+    ?? window.localStorage.getItem(LEGACY_VOICE_MODE_STORAGE_KEY);
   if (raw === "wake-word" || raw === "push-to-talk" || raw === "text") {
     return raw;
   }
   return "text";
+}
+
+function getInitialWakeWordSensitivity(): number {
+  if (typeof window === "undefined") return DEFAULT_WAKE_WORD_SENSITIVITY;
+  const raw = window.localStorage.getItem(WAKE_WORD_SENSITIVITY_STORAGE_KEY);
+  if (!raw) return DEFAULT_WAKE_WORD_SENSITIVITY;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return DEFAULT_WAKE_WORD_SENSITIVITY;
+  return Math.max(0, Math.min(1, parsed));
 }
 
 function getConfiguredWakeWordUrl(): string | undefined {
@@ -96,12 +110,15 @@ interface UseWakeWordOptions {
  */
 export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
   const { sttRef, onDetected } = options;
+  const initialWakeWordSensitivity = getInitialWakeWordSensitivity();
 
   const backendWakeWordRef = useRef<BackendWakeWordService | null>(null);
   const voiceModeRef = useRef<VoiceModeService | null>(null);
 
   const [wakeWordState, setWakeWordState] = useState<WakeWordState>("idle");
-  const [wakeWordSensitivity, setWakeWordSensitivityState] = useState(0.15);
+  const [wakeWordSensitivity, setWakeWordSensitivityState] = useState(
+    initialWakeWordSensitivity,
+  );
   const [isModelLoading, setIsModelLoading] = useState(false);
   const [wakeWordLabel, setWakeWordLabel] = useState("Hey Avaros");
   const [voiceMode, setVoiceModeState] = useState<VoiceMode>(getInitialVoiceMode);
@@ -131,8 +148,13 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
     if (!backendWakeWordRef.current) {
       const configuredUrl = getConfiguredWakeWordUrl();
       backendWakeWordRef.current = configuredUrl
-        ? new BackendWakeWordService({ wsUrl: configuredUrl })
-        : new BackendWakeWordService();
+        ? new BackendWakeWordService({
+          wsUrl: configuredUrl,
+          sensitivity: initialWakeWordSensitivity,
+        })
+        : new BackendWakeWordService({
+          sensitivity: initialWakeWordSensitivity,
+        });
     }
     void backendWakeWordRef.current
       .refreshWakeWordLabel()
@@ -143,7 +165,7 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
     return () => {
       backendWakeWordRef.current?.dispose();
     };
-  }, [ensureVoiceModeService]);
+  }, [ensureVoiceModeService, initialWakeWordSensitivity]);
 
   // Wire backend wake word events
   useEffect(() => {
@@ -194,14 +216,22 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
       setVoiceModeState(effectiveMode);
       if (typeof window !== "undefined") {
         window.localStorage.setItem(VOICE_MODE_STORAGE_KEY, effectiveMode);
+        window.localStorage.setItem(LEGACY_VOICE_MODE_STORAGE_KEY, effectiveMode);
       }
     },
     [ensureVoiceModeService, sttRef],
   );
 
   const setWakeWordSensitivity = useCallback((value: number) => {
-    setWakeWordSensitivityState(value);
-    backendWakeWordRef.current?.setSensitivity(value);
+    const normalized = Math.max(0, Math.min(1, value));
+    setWakeWordSensitivityState(normalized);
+    backendWakeWordRef.current?.setSensitivity(normalized);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(
+        WAKE_WORD_SENSITIVITY_STORAGE_KEY,
+        String(normalized),
+      );
+    }
   }, []);
 
   const pauseDetection = useCallback(() => {
@@ -209,7 +239,15 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
   }, []);
 
   const resumeDetection = useCallback(() => {
-    void backendWakeWordRef.current?.startListening();
+    const backend = backendWakeWordRef.current;
+    if (!backend) return;
+
+    void backend.startListening().catch(() => {
+      void backend
+        .initialize()
+        .then(() => backend.startListening())
+        .catch(() => undefined);
+    });
   }, []);
 
   return {

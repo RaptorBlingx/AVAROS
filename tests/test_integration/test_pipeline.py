@@ -11,7 +11,8 @@ Pipelines tested:
     - KPI: dispatcher.get_kpi() → builder.format_kpi_result()
     - Comparison: dispatcher.compare() → builder.format_comparison_result()
     - Trend: dispatcher.get_trend() → builder.format_trend_result()
-    - Anomaly: dispatcher.check_anomaly() → honest AVAROSError
+    - Anomaly: dispatcher.check_anomaly() → AnomalyResult → formatted response
+    - Drift: dispatcher.check_drift() → DriftReport → formatted response
     - WhatIf: dispatcher.simulate_whatif() → builder.format_whatif_result()
     - Adapter hot-swap
     - Audit trail round-trip
@@ -22,6 +23,7 @@ from __future__ import annotations
 import pytest
 
 from tests.helpers.stub_adapter import StubAdapter
+from skill.clients.prevention_statistical import StatisticalPreventionClient
 from skill.domain.exceptions import AVAROSError
 from skill.domain.models import (
     CanonicalMetric,
@@ -30,6 +32,7 @@ from skill.domain.models import (
     WhatIfScenario,
 )
 from skill.domain.results import (
+    AnomalyResult,
     ComparisonResult,
     KPIResult,
     TrendResult,
@@ -54,8 +57,12 @@ def audit_logger() -> AuditLogger:
 
 @pytest.fixture
 def dispatcher(audit_logger: AuditLogger) -> QueryDispatcher:
-    """QueryDispatcher with StubAdapter and in-memory audit."""
-    return QueryDispatcher(adapter=StubAdapter(), audit_logger=audit_logger)
+    """QueryDispatcher with StubAdapter, prevention client, and audit."""
+    return QueryDispatcher(
+        adapter=StubAdapter(),
+        audit_logger=audit_logger,
+        prevention_client=StatisticalPreventionClient(),
+    )
 
 
 @pytest.fixture
@@ -213,17 +220,81 @@ class TestTrendPipeline:
 
 
 class TestAnomalyPipeline:
-    """End-to-end: anomaly requests fail honestly until implemented."""
+    """End-to-end: anomaly detection with StatisticalPreventionClient."""
 
-    def test_anomaly_pipeline_reports_pending_feature(
+    def test_anomaly_pipeline_returns_result(
+        self,
+        dispatcher: QueryDispatcher,
+        builder: ResponseBuilder,
+    ) -> None:
+        """check_anomaly() returns AnomalyResult (not raises)."""
+        result = dispatcher.check_anomaly(CanonicalMetric.OEE, "Line-1")
+        assert isinstance(result, AnomalyResult)
+        assert result.metric is CanonicalMetric.OEE
+
+    def test_anomaly_pipeline_produces_response(
+        self,
+        dispatcher: QueryDispatcher,
+        builder: ResponseBuilder,
+    ) -> None:
+        """Full pipeline: check → format → non-empty voice response."""
+        result = dispatcher.check_anomaly(CanonicalMetric.ENERGY_PER_UNIT, "Line-1")
+        response = builder.format_anomaly_result(result)
+        assert isinstance(response, str)
+        assert len(response) > 0
+
+    def test_anomaly_without_prevention_client_raises(
+        self, audit_logger: AuditLogger,
+    ) -> None:
+        """Dispatcher without prevention client raises AVAROSError."""
+        dispatcher = QueryDispatcher(
+            adapter=StubAdapter(),
+            audit_logger=audit_logger,
+        )
+        with pytest.raises(AVAROSError) as exc_info:
+            dispatcher.check_anomaly(CanonicalMetric.OEE, "Line-1")
+        assert "not configured" in exc_info.value.user_message.lower()
+
+
+# ══════════════════════════════════════════════════════════
+# 4b. Full Drift Pipeline
+# ══════════════════════════════════════════════════════════
+
+
+class TestDriftPipeline:
+    """End-to-end: drift monitoring with StatisticalPreventionClient."""
+
+    def test_drift_pipeline_returns_result(
         self,
         dispatcher: QueryDispatcher,
     ) -> None:
-        """The dispatcher should admit PREVENTION is still pending."""
-        with pytest.raises(AVAROSError) as exc_info:
-            dispatcher.check_anomaly(CanonicalMetric.OEE, "Line-1")
+        """check_drift() returns a DriftReport."""
+        from skill.domain.anomaly_models import DriftReport
+        result = dispatcher.check_drift(CanonicalMetric.OEE, "Line-1")
+        assert isinstance(result, DriftReport)
 
-        assert "not yet available" in exc_info.value.user_message.lower()
+    def test_drift_pipeline_produces_response(
+        self,
+        dispatcher: QueryDispatcher,
+        builder: ResponseBuilder,
+    ) -> None:
+        """Full pipeline: check_drift → format_drift_result → voice."""
+        result = dispatcher.check_drift(CanonicalMetric.ENERGY_PER_UNIT, "Line-1")
+        response = builder.format_drift_result(result)
+        assert isinstance(response, str)
+        assert len(response) > 0
+
+    def test_drift_without_prevention_client_raises(
+        self, audit_logger: AuditLogger,
+    ) -> None:
+        """Dispatcher without prevention client raises AVAROSError."""
+        dispatcher = QueryDispatcher(
+            adapter=StubAdapter(),
+            audit_logger=audit_logger,
+        )
+        with pytest.raises(AVAROSError) as exc_info:
+            dispatcher.check_drift(CanonicalMetric.OEE, "Line-1")
+        assert "not configured" in exc_info.value.user_message.lower()
 
 
 # ══════════════════════════════════════════════════════════

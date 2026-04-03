@@ -459,6 +459,25 @@ class TestReloadAdapterEdgeCases:
             "No current asyncio event loop; creating a fallback loop for reload",
         )
 
+    def test_reload_adapter_uses_create_prevention_client(self):
+        """Reload preserves PREVENTION configuration via _create_prevention_client."""
+        skill = _initialized_skill()
+        skill.settings_service = Mock()
+        skill.settings_service.get_active_profile_name.return_value = "demo"
+        profile = Mock()
+        profile.platform_type = "custom_rest"
+        skill.settings_service.get_profile.return_value = profile
+        new_adapter = UnconfiguredAdapter()
+        skill.adapter_factory.reload = AsyncMock(return_value=new_adapter)
+
+        with patch.object(
+            type(skill), "_create_prevention_client",
+        ) as mock_create:
+            mock_create.return_value = Mock()
+            skill._reload_adapter("demo")
+
+        mock_create.assert_called_once()
+
 
 # ══════════════════════════════════════════════════════════
 # Asset Resolution from ASR Variants

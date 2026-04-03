@@ -4,149 +4,25 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from skill._metric_handlers import _resolve_default_metric
 from skill._metric_handlers import _resolve_kpi_period as _resolve_kpi_period_impl
 from skill.domain.models import CanonicalMetric
-from skill.domain.results import ComparisonResult, KPIResult, TrendResult
+from skill.domain.results import KPIResult
 
 if TYPE_CHECKING:
     from ovos_bus_client.message import Message
     from skill import AVAROSSkill
 
 
-def dispatch_kpi_for_metric(
-    skill: "AVAROSSkill",
-    *,
-    metric: CanonicalMetric,
-    message: Message,
-    handler_name: str,
-) -> None:
-    """Dispatch KPI request for a canonical metric and speak formatted output.
-
-    Args:
-        skill: Bound AVAROS skill instance.
-        metric: Canonical metric to query.
-        message: Incoming bus message with slots and context.
-        handler_name: Handler name for structured error logging.
-
-    Returns:
-        ``None``. Side effect is speaking the formatted response.
-    """
-
-    def _execute() -> None:
-        asset_id = skill._resolve_asset_id(message)
-        period = _resolve_kpi_period_impl(
-            skill,
-            metric=metric,
-            asset_id=asset_id,
-            message=message,
-        )
-
-        result: KPIResult = skill.dispatcher.get_kpi(
-            metric=metric,
-            asset_id=asset_id,
-            period=period,
-        )
-
-        response = skill.response_builder.format_kpi_result(result)
-        skill.speak(response)
-
-    skill._safe_dispatch(handler_name, _execute)
-
-
-def handle_compare_energy(skill: "AVAROSSkill", message: Message) -> None:
-    """Handle: 'Compare energy between {asset_a} and {asset_b}'."""
-
-    def _execute() -> None:
-        asset_a, asset_b = skill._resolve_compare_assets(message)
-        period = skill._parse_period(message.data.get("period", "today"))
-
-        result: ComparisonResult = skill.dispatcher.compare(
-            metric=CanonicalMetric.ENERGY_PER_UNIT,
-            asset_ids=[asset_a, asset_b],
-            period=period,
-        )
-
-        response = skill.response_builder.format_comparison_result(result)
-        skill.speak(response)
-
-    skill._safe_dispatch("handle_compare_energy", _execute)
-
-
-def handle_trend_scrap(skill: "AVAROSSkill", message: Message) -> None:
-    """Handle: 'Show scrap rate trend for {period}'."""
-
-    def _execute() -> None:
-        asset_id = skill._resolve_asset_id(message)
-        period = skill._parse_period(message.data.get("period", "last week"))
-        granularity = message.data.get("granularity", "daily")
-
-        result: TrendResult = skill.dispatcher.get_trend(
-            metric=CanonicalMetric.SCRAP_RATE,
-            asset_id=asset_id,
-            period=period,
-            granularity=granularity,
-        )
-
-        response = skill.response_builder.format_trend_result(result)
-        skill.speak(response)
-
-    skill._safe_dispatch("handle_trend_scrap", _execute)
-
-
-def handle_trend_energy(skill: "AVAROSSkill", message: Message) -> None:
-    """Handle: 'Show energy trend for {period}'."""
-
-    def _execute() -> None:
-        asset_id = skill._resolve_asset_id(message)
-        period = skill._parse_period(message.data.get("period", "last week"))
-        granularity = message.data.get("granularity", "daily")
-        if period.duration_days < 2 and granularity == "daily":
-            granularity = "hourly"
-
-        result: TrendResult = skill.dispatcher.get_trend(
-            metric=CanonicalMetric.ENERGY_PER_UNIT,
-            asset_id=asset_id,
-            period=period,
-            granularity=granularity,
-        )
-
-        response = skill.response_builder.format_trend_result(result)
-        skill.speak(response)
-
-    skill._safe_dispatch("handle_trend_energy", _execute)
-
-
-def handle_anomaly_check(skill: "AVAROSSkill", message: Message) -> None:
-    """Handle: 'Any unusual patterns in production?'."""
-
-    def _execute() -> None:
-        asset_id = skill._resolve_asset_id(message)
-        skill.dispatcher.check_anomaly(
-            metric=CanonicalMetric.OEE,
-            asset_id=asset_id,
-        )
-
-    skill._safe_dispatch("handle_anomaly_check", _execute)
-
-
 def handle_metric_query_fallback(skill: "AVAROSSkill", message: Message) -> bool:
     """Fallback: resolve metric KPI queries missed by strict intent parsing."""
     utterance = skill._extract_utterance_text(message).lower()
+
     if skill._is_anomaly_query(utterance):
+        return _fallback_anomaly(skill, message, utterance)
 
-        def _execute_anomaly() -> bool:
-            asset_id = skill._resolve_asset_id(message)
-            skill.dispatcher.check_anomaly(
-                metric=CanonicalMetric.OEE,
-                asset_id=asset_id,
-            )
-            return True
-
-        handled = skill._safe_dispatch(
-            "handle_metric_query_fallback_anomaly",
-            _execute_anomaly,
-        )
-        return bool(handled)
+    if skill._is_drift_query(utterance):
+        return _fallback_drift(skill, message, utterance)
 
     metric = skill._resolve_metric_from_utterance(utterance)
     if metric is None:
@@ -173,19 +49,54 @@ def handle_metric_query_fallback(skill: "AVAROSSkill", message: Message) -> bool
     return bool(handled)
 
 
+def _fallback_anomaly(
+    skill: "AVAROSSkill",
+    message: "Message",
+    utterance: str,
+) -> bool:
+    """Execute anomaly check via fallback path."""
+
+    def _execute() -> bool:
+        asset_id = skill._resolve_asset_id(message)
+        metric = _resolve_default_metric(skill, utterance)
+        result = skill.dispatcher.check_anomaly(metric=metric, asset_id=asset_id)
+        response = skill.response_builder.format_anomaly_result(result)
+        skill.speak(response)
+        return True
+
+    handled = skill._safe_dispatch("fallback_anomaly", _execute)
+    return bool(handled)
+
+
+def _fallback_drift(
+    skill: "AVAROSSkill",
+    message: "Message",
+    utterance: str,
+) -> bool:
+    """Execute drift check via fallback path."""
+
+    def _execute() -> bool:
+        asset_id = skill._resolve_asset_id(message)
+        metric = _resolve_default_metric(skill, utterance)
+        result = skill.dispatcher.check_drift(metric=metric, asset_id=asset_id)
+        response = skill.response_builder.format_drift_result(result)
+        skill.speak(response)
+        return True
+
+    handled = skill._safe_dispatch("fallback_drift", _execute)
+    return bool(handled)
+
+
 def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
     """Recover KPI queries from global intent-failure events."""
     utterance = skill._extract_utterance_text(message).lower()
+
     if skill._is_anomaly_query(utterance):
+        _fallback_anomaly(skill, message, utterance)
+        return
 
-        def _execute_anomaly() -> None:
-            asset_id = skill._resolve_asset_id(message)
-            skill.dispatcher.check_anomaly(
-                metric=CanonicalMetric.OEE,
-                asset_id=asset_id,
-            )
-
-        skill._safe_dispatch("_handle_intent_failure_anomaly", _execute_anomaly)
+    if skill._is_drift_query(utterance):
+        _fallback_drift(skill, message, utterance)
         return
 
     metric = skill._resolve_metric_from_utterance(utterance)
@@ -226,4 +137,5 @@ def can_answer(skill: "AVAROSSkill", message: Message) -> bool:
     return (
         skill._resolve_metric_from_utterance(text) is not None
         or skill._is_anomaly_query(text)
+        or skill._is_drift_query(text)
     )

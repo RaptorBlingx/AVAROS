@@ -283,29 +283,27 @@ class TestGetTrend:
 
 
 class TestCheckAnomaly:
-    """Tests for honest anomaly availability behavior."""
+    """Tests for anomaly detection when prevention client is absent."""
 
-    def test_check_anomaly_raises_honest_error(
+    def test_check_anomaly_raises_when_no_client(
         self, dispatcher: QueryDispatcher
     ) -> None:
-        """check_anomaly() should admit the feature is unavailable."""
+        """check_anomaly() raises ANOMALY_NOT_CONFIGURED without a client."""
         with pytest.raises(AVAROSError) as exc_info:
             dispatcher.check_anomaly(CanonicalMetric.OEE, "Line-1")
 
-        assert exc_info.value.code == "ANOMALY_NOT_AVAILABLE"
-        assert "PREVENTION service" in exc_info.value.user_message
+        assert exc_info.value.code == "ANOMALY_NOT_CONFIGURED"
+        assert "not configured" in exc_info.value.user_message
 
-    def test_check_anomaly_creates_audit_record(
+    def test_check_anomaly_without_client_does_not_audit(
         self, dispatcher: QueryDispatcher, audit_logger: AuditLogger
     ) -> None:
-        """check_anomaly() still logs an audit entry before failing."""
+        """check_anomaly() fails fast without auditing when client is absent."""
         with pytest.raises(AVAROSError):
             dispatcher.check_anomaly(CanonicalMetric.OEE, "Line-1")
 
         logs = audit_logger.get_recent_logs(limit=1)
-        assert len(logs) == 1
-        assert logs[0].query_type == "check_anomaly"
-        assert "not yet available" in logs[0].response_summary.lower()
+        assert len(logs) == 0
 
 
 # ══════════════════════════════════════════════════════════

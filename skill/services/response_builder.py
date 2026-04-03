@@ -27,6 +27,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
+    from skill.domain.anomaly_models import DriftReport
     from skill.domain.results import (
         KPIResult,
         ComparisonResult,
@@ -206,6 +207,41 @@ class ResponseBuilder:
             first_anomaly = result.anomalies[0] if result.anomalies else None
             description = first_anomaly.description if first_anomaly else ""
             return f"I found {count} {plural} with {severity} severity. {description}"
+
+    # =========================================================================
+    # Drift Results
+    # =========================================================================
+
+    def format_drift_result(self, result: DriftReport) -> str:
+        """
+        Format a drift monitoring result.
+
+        Args:
+            result: DriftReport to format
+
+        Returns:
+            Natural language drift description
+        """
+        metric_name = result.metric.display_name
+
+        if not result.has_drift:
+            return (
+                f"No significant drift detected. "
+                f"{metric_name} is stable."
+            )
+
+        direction = result.drift_direction
+        rate = f"{abs(result.drift_rate):.3f}"
+        periods = result.periods_analyzed
+
+        if self.verbosity == "brief":
+            return f"{metric_name} {direction}, {rate}/day"
+
+        return (
+            f"{metric_name} shows a {direction} trend, "
+            f"changing at {rate} per day over {periods} days. "
+            f"{result.description}"
+        )
     
     # =========================================================================
     # What-If Results
