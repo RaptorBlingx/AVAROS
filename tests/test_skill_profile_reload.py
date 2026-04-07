@@ -913,7 +913,7 @@ class TestIntentFailureRecovery:
         skill = _initialized_skill()
         skill._check_profile_mismatch = Mock()
         skill.dispatcher = Mock()
-        skill.dispatcher.check_anomaly.side_effect = AVAROSError(
+        skill.dispatcher.scan_anomalies.side_effect = AVAROSError(
             message="Anomaly detection is not yet available.",
             code="ANOMALY_NOT_AVAILABLE",
             user_message=(
@@ -929,8 +929,8 @@ class TestIntentFailureRecovery:
 
         skill._handle_intent_failure(msg)
 
-        skill.dispatcher.check_anomaly.assert_called_once()
-        skill.response_builder.format_anomaly_result.assert_not_called()
+        skill.dispatcher.scan_anomalies.assert_called_once()
+        skill.response_builder.format_anomaly_scan_result.assert_not_called()
         skill.speak.assert_called_once_with(
             "Anomaly detection is not yet available. This feature requires "
             "the PREVENTION service which is pending."
@@ -972,13 +972,13 @@ class TestFallbackEligibility:
 
         assert skill.can_answer(msg) is False
 
-    def test_can_answer_true_when_ping_lacks_utterances(self):
-        """Fallback ping without utterances should remain eligible."""
+    def test_can_answer_false_when_ping_lacks_utterances(self):
+        """Fallback ping without utterances should decline (empty = noise)."""
         skill = _make_skill()
         msg = Mock()
         msg.data = {}
 
-        assert skill.can_answer(msg) is True
+        assert skill.can_answer(msg) is False
 
     def test_can_answer_true_for_check_anomalies_utterance(self):
         """Fallback ping should report True for anomaly phrases."""
@@ -987,6 +987,40 @@ class TestFallbackEligibility:
         msg.data = {"utterances": ["check anomalies"]}
 
         assert skill.can_answer(msg) is True
+
+    def test_can_answer_false_for_whitespace_only_utterance(self):
+        """Whitespace-only utterance should not claim eligibility."""
+        skill = _make_skill()
+        msg = Mock()
+        msg.data = {"utterances": ["   "]}
+
+        assert skill.can_answer(msg) is False
+
+    def test_can_answer_false_for_empty_string_utterance(self):
+        """Empty string utterance should not claim eligibility."""
+        skill = _make_skill()
+        msg = Mock()
+        msg.data = {"utterances": [""]}
+
+        assert skill.can_answer(msg) is False
+
+
+class TestConverseDecline:
+    """Tests that converse() always returns False to preserve wake-word gating."""
+
+    def test_converse_returns_false(self):
+        """converse() must return False so OVOS does not bypass wake-word."""
+        skill = _make_skill()
+        msg = Mock()
+        msg.data = {"utterances": ["show me energy per unit"]}
+
+        assert skill.converse(msg) is False
+
+    def test_converse_returns_false_with_no_message(self):
+        """converse() with no argument still returns False."""
+        skill = _make_skill()
+
+        assert skill.converse() is False
 
 
 class TestMetricResolutionRobustness:

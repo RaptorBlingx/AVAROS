@@ -16,6 +16,8 @@ Uses real StubAdapter (verified in P2-L01) and in-memory AuditLogger.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -35,6 +37,7 @@ from skill.domain.results import (
     WhatIfResult,
 )
 from skill.domain.exceptions import AVAROSError, MetricNotSupportedError
+from skill.domain.anomaly_models import AnomalyDetectionResult
 from skill.services.audit import AuditLogger
 from skill.services.co2_service import CO2DerivationService
 from skill.services.models import PlatformConfig
@@ -306,6 +309,132 @@ class TestCheckAnomaly:
         assert len(logs) == 0
 
 
+class _SyntheticPreventionClient:
+    """Minimal deterministic prevention client for dispatcher tests."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[CanonicalMetric, str | None, float]] = []
+
+    async def detect_anomaly(
+        self,
+        metric: CanonicalMetric,
+        data_points,
+        threshold: float = 2.0,
+        asset_id: str | None = None,
+    ) -> AnomalyDetectionResult:
+        self.calls.append((metric, asset_id, threshold))
+        is_anomalous = metric == CanonicalMetric.OEE and asset_id == "Line-1"
+        severity = "high" if is_anomalous else "none"
+        return AnomalyDetectionResult(
+            metric=metric,
+            is_anomalous=is_anomalous,
+            severity=severity,
+            confidence=0.9,
+            anomaly_type="spike" if is_anomalous else None,
+            description="synthetic",
+            detected_at=datetime.now(timezone.utc).isoformat(),
+            recommended_action="check" if is_anomalous else None,
+            expected_value=100.0,
+            actual_value=130.0 if is_anomalous else 99.5,
+            deviation=3.1 if is_anomalous else 0.4,
+        )
+
+
+class TestScanAnomalies:
+    """Tests for aggregate anomaly scan behavior."""
+
+    def test_check_anomaly_passes_asset_id_to_client(self) -> None:
+        """Pair checks forward asset scope into prevention client call."""
+        adapter = StubAdapter()
+        prevention = _SyntheticPreventionClient()
+        dispatcher = QueryDispatcher(
+            adapter=adapter,
+            prevention_client=prevention,
+        )
+        dispatcher._collect_daily_series = MagicMock(return_value=[])
+
+        dispatcher.check_anomaly(
+            CanonicalMetric.OEE,
+            "Line-2",
+            threshold=2.7,
+        )
+
+        metric, asset_id, threshold = prevention.calls[-1]
+        assert metric == CanonicalMetric.OEE
+        assert asset_id == "Line-2"
+        assert threshold == pytest.approx(2.7)
+
+    def test_check_anomaly_passes_anomaly_type_through(self) -> None:
+        """anomaly_type from detection result propagates to Anomaly model."""
+        adapter = StubAdapter()
+        prevention = _SyntheticPreventionClient()
+        dispatcher = QueryDispatcher(
+            adapter=adapter,
+            prevention_client=prevention,
+        )
+        dispatcher._collect_daily_series = MagicMock(return_value=[])
+
+        result = dispatcher.check_anomaly(
+            CanonicalMetric.OEE,
+            "Line-1",
+        )
+
+        assert result.is_anomalous
+        assert result.anomalies[0].anomaly_type == "spike"
+
+    def test_scan_anomalies_metric_filter_limits_scope(self) -> None:
+        """Metric filter scans all assets but only one metric."""
+        adapter = StubAdapter()
+        adapter.get_supported_metrics = MagicMock(
+            return_value=[
+                CanonicalMetric.OEE,
+                CanonicalMetric.ENERGY_PER_UNIT,
+            ]
+        )
+        adapter.list_assets = AsyncMock(
+            return_value=[
+                SimpleNamespace(asset_id="Line-1"),
+                SimpleNamespace(asset_id="Line-2"),
+            ]
+        )
+        prevention = _SyntheticPreventionClient()
+        dispatcher = QueryDispatcher(
+            adapter=adapter,
+            prevention_client=prevention,
+        )
+
+        result = dispatcher.scan_anomalies(metric=CanonicalMetric.OEE)
+
+        assert result.checked_pairs == 2
+        assert all(call[0] == CanonicalMetric.OEE for call in prevention.calls)
+
+    def test_scan_anomalies_asset_filter_limits_scope(self) -> None:
+        """Asset filter scans all metrics but only one asset."""
+        adapter = StubAdapter()
+        adapter.get_supported_metrics = MagicMock(
+            return_value=[
+                CanonicalMetric.OEE,
+                CanonicalMetric.ENERGY_PER_UNIT,
+            ]
+        )
+        adapter.list_assets = AsyncMock(
+            return_value=[
+                SimpleNamespace(asset_id="Line-1"),
+                SimpleNamespace(asset_id="Line-2"),
+            ]
+        )
+        prevention = _SyntheticPreventionClient()
+        dispatcher = QueryDispatcher(
+            adapter=adapter,
+            prevention_client=prevention,
+        )
+
+        result = dispatcher.scan_anomalies(asset_id="Line-2")
+
+        assert result.checked_pairs == 2
+        assert all(call[1] == "Line-2" for call in prevention.calls)
+
+
 # ══════════════════════════════════════════════════════════
 # 7. simulate_whatif (Phase 1 stub)
 # ══════════════════════════════════════════════════════════
@@ -438,7 +567,7 @@ class TestRunAsync:
 
         assert result == "from_running_loop"
         dispatcher._executor.submit.assert_called_once()
-        mock_future.result.assert_called_once_with(timeout=30)
+        mock_future.result.assert_called_once_with(timeout=60)
 
 
 # ══════════════════════════════════════════════════════════

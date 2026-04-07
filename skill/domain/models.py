@@ -223,6 +223,13 @@ class TimePeriod:
         now = datetime.now(tz=timezone.utc)
         start = now - timedelta(days=30)
         return cls(start=start, end=now, display_name="last month")
+
+    @classmethod
+    def wide_default(cls) -> TimePeriod:
+        """Create a wide default period (2021-02-01 → now) for implicit queries."""
+        start = datetime(2021, 2, 1, tzinfo=timezone.utc)
+        end = datetime.now(tz=timezone.utc)
+        return cls(start=start, end=end, display_name="")
     
     @classmethod
     def from_natural_language(cls, text: str) -> TimePeriod:
@@ -351,6 +358,7 @@ class Anomaly:
         expected_value: What was expected
         actual_value: What was observed
         deviation: Standard deviations from expected
+        anomaly_type: Direction of anomaly ("spike", "dip", or "")
         description: Human-readable description
     """
     
@@ -359,6 +367,7 @@ class Anomaly:
     expected_value: float
     actual_value: float
     deviation: float
+    anomaly_type: str = ""
     description: str = ""
     
     @property

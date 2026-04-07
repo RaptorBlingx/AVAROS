@@ -143,12 +143,73 @@ class TestTrendPipeline:
 # 4. Anomaly Voice Pipeline
 # ══════════════════════════════════════════════════════════
 
+# Valid severity words used in anomaly responses.
+_SEVERITY_WORDS = ("low", "medium", "high", "critical")
+
+
+def _assert_anomaly_response_structure(utterance: str) -> None:
+    """Verify structural expectations common to all anomaly responses.
+
+    Anomaly responses follow one of two patterns:
+    1. **Anomalous:** must mention a severity word and NOT say "no unusual".
+    2. **Clean:** must say "no unusual" and NOT mention a severity >= low.
+    """
+    lower = utterance.lower()
+    has_anomaly = any(sev in lower for sev in _SEVERITY_WORDS)
+    has_clean = "no unusual" in lower
+
+    assert has_anomaly or has_clean, (
+        f"Anomaly response lacks both severity AND 'no unusual': {utterance!r}"
+    )
+    # Mutually exclusive: never both "no unusual" and a severity word
+    if has_clean:
+        assert not has_anomaly, (
+            f"Response says 'no unusual' but also contains severity: {utterance!r}"
+        )
+
 
 class TestAnomalyPipeline:
     """Anomaly detection through the full voice pipeline."""
 
-    def test_anomaly_check_intent(self, bus_client) -> None:
-        """anomaly.production.check intent returns spoken anomaly status."""
+    def test_targeted_anomaly_check(self, bus_client) -> None:
+        """Targeted check (asset provided) returns scoped anomaly status."""
+        response = send_intent_and_wait(
+            bus_client,
+            "anomaly.production.check.intent",
+            {"asset": "Line-1"},
+        )
+
+        assert response is not None, "No speak response received (timeout)"
+        utterance = response["utterance"]
+        _assert_anomaly_response_structure(utterance)
+
+        lower = utterance.lower()
+        # Targeted response must reference the asset or say "no unusual"
+        if "no unusual" not in lower:
+            assert "line" in lower or "sigma" in lower, (
+                f"Targeted anomaly response lacks asset/deviation: {utterance!r}"
+            )
+
+    def test_broad_anomaly_scan(self, bus_client) -> None:
+        """Broad check (no asset) triggers full scan with scope phrase."""
+        response = send_intent_and_wait(
+            bus_client,
+            "anomaly.production.check.intent",
+            {},  # no asset → broad scan
+        )
+
+        assert response is not None, "No speak response received (timeout)"
+        utterance = response["utterance"]
+        _assert_anomaly_response_structure(utterance)
+
+        lower = utterance.lower()
+        # Full-scan response must include scope indicator (P9.1 Phase 3)
+        assert "check" in lower or "across" in lower, (
+            f"Broad scan response missing scope phrase ('checks'/'across'): {utterance!r}"
+        )
+
+    def test_anomaly_severity_invariant(self, bus_client) -> None:
+        """Anomaly response never pairs 'anomalous' content with severity=none."""
         response = send_intent_and_wait(
             bus_client,
             "anomaly.production.check.intent",
@@ -157,11 +218,11 @@ class TestAnomalyPipeline:
 
         assert response is not None, "No speak response received (timeout)"
         utterance = response["utterance"].lower()
-        # MockAdapter returns either anomalies or "no unusual patterns"
-        assert any(
-            word in utterance
-            for word in ("anomal", "unusual", "normal", "pattern", "severity")
-        )
+        # If the response reports anomalies, "none" must not appear as severity
+        if any(sev in utterance for sev in _SEVERITY_WORDS):
+            assert "none severity" not in utterance and "severity none" not in utterance, (
+                f"Anomaly response has forbidden severity=none: {utterance!r}"
+            )
 
 
 # ══════════════════════════════════════════════════════════

@@ -57,6 +57,9 @@ class AnomalyDetectionResult:
     description: str
     detected_at: str
     recommended_action: str | None
+    expected_value: float | None = None
+    actual_value: float | None = None
+    deviation: float = 0.0
 
 
 @dataclass(frozen=True)

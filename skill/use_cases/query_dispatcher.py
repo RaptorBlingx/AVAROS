@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+from collections import Counter
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
@@ -26,7 +27,7 @@ import uuid
 
 from skill.domain.exceptions import AVAROSError, MetricNotSupportedError
 from skill.domain.models import Anomaly, CanonicalMetric, DataPoint, TimePeriod
-from skill.domain.results import AnomalyResult, KPIResult
+from skill.domain.results import AnomalyResult, AnomalyScanResult, KPIResult
 from skill.services.audit import AuditLogger
 
 if TYPE_CHECKING:
@@ -35,11 +36,7 @@ if TYPE_CHECKING:
     from skill.domain.anomaly_models import DriftReport
     from skill.domain.models import TimePeriod, WhatIfScenario
     from skill.domain.production import ProductionSummary
-    from skill.domain.results import (
-        ComparisonResult,
-        TrendResult,
-        WhatIfResult,
-    )
+    from skill.domain.results import ComparisonResult, TrendResult, WhatIfResult
     from skill.services.co2_service import CO2DerivationService
     from skill.services.production_data import ProductionDataService
     from skill.services.settings import SettingsService
@@ -332,27 +329,296 @@ class QueryDispatcher:
                 ),
             )
 
-        period = TimePeriod.last_week()
-        data_points = self._collect_daily_series(
-            metric, asset_id, days=7,
-        )
         effective_threshold = (
             threshold
             if threshold is not None
             else self._get_anomaly_threshold()
         )
-        detection = self._run_async(
-            self._prevention_client.detect_anomaly(
-                metric, data_points, effective_threshold,
-            ),
-        )
-        result = self._build_anomaly_result(
-            detection, metric, asset_id, query_id,
+        result = self._run_pair_anomaly_check(
+            metric=metric,
+            asset_id=asset_id,
+            threshold=effective_threshold,
+            recommendation_id=query_id,
         )
         self._log_audit(
             "check_anomaly", query_id, metric.value, asset_id, result,
         )
         return result
+
+    # Maximum number of concurrent HTTP requests during anomaly scans.
+    _SCAN_CONCURRENCY = 10
+
+    def scan_anomalies(
+        self,
+        metric: CanonicalMetric | None = None,
+        asset_id: str | None = None,
+        threshold: float | None = None,
+    ) -> AnomalyScanResult:
+        """Scan metric-asset pairs for anomalies using concurrent I/O.
+
+        Only pairs with a configured ``metric_resource`` are checked,
+        avoiding wasted calls on empty combinations.  All HTTP fetches
+        run concurrently (capped by ``_SCAN_CONCURRENCY``) so a full
+        scan completes in seconds rather than minutes.
+
+        Args:
+            metric: Optional metric filter. None scans all configured pairs.
+            asset_id: Optional asset filter. None scans all discovered assets.
+            threshold: Optional z-score threshold override.
+
+        Returns:
+            Aggregate anomaly scan result with counts and findings.
+        """
+        query_id = self._generate_query_id()
+        effective_threshold = (
+            threshold
+            if threshold is not None
+            else self._get_anomaly_threshold()
+        )
+        pairs = self._resolve_scan_pairs(metric=metric, asset_id=asset_id)
+
+        logger.info(
+            "[%s] scan_anomalies: %d pairs, threshold=%.2f",
+            query_id, len(pairs), effective_threshold,
+        )
+
+        findings = self._run_async(
+            self._scan_all_pairs_async(
+                pairs, effective_threshold, query_id,
+            ),
+        )
+
+        ordered = self._sort_scan_findings(findings)
+        scan_result = AnomalyScanResult(
+            checked_pairs=len(pairs),
+            anomalous_pairs=len(ordered),
+            findings=ordered,
+            severity_counts=self._build_severity_counts(ordered),
+            threshold=effective_threshold,
+            recommendation_id=query_id,
+        )
+        self._log_audit(
+            "scan_anomalies",
+            query_id,
+            "multiple",
+            "multiple",
+            scan_result,
+        )
+        return scan_result
+
+    # ------------------------------------------------------------------
+    # Concurrent scan internals
+    # ------------------------------------------------------------------
+
+    def _resolve_scan_pairs(
+        self,
+        metric: CanonicalMetric | None,
+        asset_id: str | None,
+    ) -> list[tuple[CanonicalMetric, str]]:
+        """Build the list of (metric, asset_id) tuples to scan."""
+        pairs = self._adapter.get_scannable_pairs()
+        if not pairs:
+            # Fallback: cross-product (legacy adapters without override)
+            metrics = self._get_scan_metrics(metric=metric)
+            asset_ids = self._get_scan_asset_ids(asset_id=asset_id)
+            return [(m, a) for m in metrics for a in asset_ids]
+
+        if metric is not None:
+            pairs = [(m, a) for m, a in pairs if m == metric]
+        if asset_id is not None:
+            pairs = [(m, a) for m, a in pairs if a == asset_id]
+        return pairs
+
+    async def _scan_all_pairs_async(
+        self,
+        pairs: list[tuple[CanonicalMetric, str]],
+        threshold: float,
+        query_id: str,
+    ) -> list[AnomalyResult]:
+        """Check all pairs concurrently, return anomalous results."""
+        semaphore = asyncio.Semaphore(self._SCAN_CONCURRENCY)
+
+        async def _guarded(m: CanonicalMetric, a: str) -> AnomalyResult | None:
+            async with semaphore:
+                return await self._check_pair_async(
+                    m, a, threshold, f"{query_id}:{m.value}:{a}",
+                )
+
+        results = await asyncio.gather(
+            *(_guarded(m, a) for m, a in pairs),
+            return_exceptions=True,
+        )
+        findings: list[AnomalyResult] = []
+        for result in results:
+            if isinstance(result, BaseException):
+                logger.debug("Pair scan error: %s", result)
+                continue
+            if result is not None and result.is_anomalous:
+                findings.append(result)
+        return findings
+
+    # Days of historical data to collect for anomaly / drift analysis.
+    # 30 days ensures enough data points even when APIs have gaps
+    # (e.g. RENERYO only records weekdays).
+    _ANOMALY_LOOKBACK_DAYS = 30
+    _DRIFT_LOOKBACK_DAYS = 30
+
+    async def _check_pair_async(
+        self,
+        metric: CanonicalMetric,
+        asset_id: str,
+        threshold: float,
+        recommendation_id: str,
+    ) -> AnomalyResult | None:
+        """Fully-async single-pair anomaly check."""
+        if self._prevention_client is None:
+            return None
+        try:
+            data_points = await self._collect_daily_series_async(
+                metric, asset_id, days=self._ANOMALY_LOOKBACK_DAYS,
+            )
+            detection = await self._prevention_client.detect_anomaly(
+                metric, data_points, threshold, asset_id,
+            )
+            return self._build_anomaly_result(
+                detection, metric, asset_id, recommendation_id,
+            )
+        except Exception as exc:
+            logger.debug(
+                "Anomaly check failed for %s/%s: %s",
+                metric.value, asset_id, exc,
+            )
+            return None
+
+    async def _collect_daily_series_async(
+        self,
+        metric: CanonicalMetric,
+        asset_id: str,
+        days: int = 7,
+    ) -> list[DataPoint]:
+        """Fetch daily KPI snapshots concurrently."""
+        now = datetime.now(timezone.utc)
+
+        async def _fetch_day(i: int) -> DataPoint | None:
+            day_start = (now - timedelta(days=i)).replace(
+                hour=0, minute=0, second=0, microsecond=0,
+            )
+            day_end = day_start.replace(hour=23, minute=59, second=59)
+            period = TimePeriod(
+                start=day_start, end=day_end, display_name="",
+            )
+            try:
+                result = await self._adapter.get_kpi(
+                    metric, asset_id, period,
+                )
+                return DataPoint(
+                    timestamp=day_start, value=result.value, unit=result.unit,
+                )
+            except Exception as exc:
+                logger.debug(
+                    "Skipping day %s for %s: %s",
+                    day_start.date(), metric.value, exc,
+                )
+                return None
+
+        results = await asyncio.gather(
+            *(_fetch_day(i) for i in range(days, 0, -1)),
+        )
+        return [pt for pt in results if pt is not None]
+
+    def _run_pair_anomaly_check(
+        self,
+        metric: CanonicalMetric,
+        asset_id: str,
+        threshold: float,
+        recommendation_id: str,
+    ) -> AnomalyResult:
+        """Run anomaly detection for one metric-asset pair."""
+        if self._prevention_client is None:
+            raise AVAROSError(
+                message="Anomaly detection requires a prevention client",
+                code="ANOMALY_NOT_CONFIGURED",
+                user_message=(
+                    "Anomaly detection is not configured. "
+                    "Please check the skill setup."
+                ),
+            )
+
+        data_points = self._collect_daily_series(
+            metric, asset_id, days=self._ANOMALY_LOOKBACK_DAYS,
+        )
+        detection = self._run_async(
+            self._prevention_client.detect_anomaly(
+                metric,
+                data_points,
+                threshold,
+                asset_id,
+            ),
+        )
+        return self._build_anomaly_result(
+            detection,
+            metric,
+            asset_id,
+            recommendation_id,
+        )
+
+    def _get_scan_metrics(
+        self,
+        metric: CanonicalMetric | None = None,
+    ) -> list[CanonicalMetric]:
+        """Return supported metrics for anomaly scanning."""
+        if metric is not None:
+            return [metric]
+
+        try:
+            metrics = self._adapter.get_supported_metrics()
+        except Exception as exc:
+            logger.warning("Could not load supported metrics: %s", exc)
+            return []
+        return metrics if isinstance(metrics, list) else []
+
+    def _get_scan_asset_ids(self, asset_id: str | None = None) -> list[str]:
+        """Return discovered asset IDs for anomaly scanning."""
+        if asset_id:
+            return [asset_id]
+
+        try:
+            assets = self._run_async(self._adapter.list_assets())
+        except Exception as exc:
+            logger.warning("Could not list assets for scan: %s", exc)
+            return []
+        return [
+            getattr(asset, "asset_id", "")
+            for asset in assets
+            if str(getattr(asset, "asset_id", "")).strip()
+        ]
+
+    @staticmethod
+    def _sort_scan_findings(
+        findings: list[AnomalyResult],
+    ) -> list[AnomalyResult]:
+        """Sort findings by severity, then by absolute deviation."""
+        severity_order = {
+            "critical": 4,
+            "high": 3,
+            "medium": 2,
+            "low": 1,
+            "none": 0,
+        }
+
+        def _key(result: AnomalyResult) -> tuple[int, float]:
+            deviation = abs(result.anomalies[0].deviation) if result.anomalies else 0.0
+            return severity_order.get(result.severity, 0), deviation
+
+        return sorted(findings, key=_key, reverse=True)
+
+    @staticmethod
+    def _build_severity_counts(
+        findings: list[AnomalyResult],
+    ) -> dict[str, int]:
+        """Build severity distribution from anomaly findings."""
+        counts = Counter(result.severity for result in findings)
+        return dict(sorted(counts.items()))
 
     def _collect_daily_series(
         self,
@@ -410,15 +676,15 @@ class QueryDispatcher:
         query_id: str,
     ) -> AnomalyResult:
         """Convert AnomalyDetectionResult to AnomalyResult."""
-        from skill.domain.anomaly_models import AnomalyDetectionResult
         anomalies: list[Anomaly] = []
         if detection.is_anomalous:
             anomalies.append(Anomaly(
                 timestamp=datetime.fromisoformat(detection.detected_at),
                 metric=metric,
-                expected_value=0.0,
-                actual_value=0.0,
-                deviation=detection.confidence,
+                expected_value=detection.expected_value or 0.0,
+                actual_value=detection.actual_value or 0.0,
+                deviation=detection.deviation,
+                anomaly_type=detection.anomaly_type or "",
                 description=detection.description,
             ))
         return AnomalyResult(
@@ -428,13 +694,14 @@ class QueryDispatcher:
             asset_id=asset_id,
             metric=metric,
             recommendation_id=query_id,
+            recommended_action=detection.recommended_action,
         )
 
     def check_drift(
         self,
         metric: CanonicalMetric,
         asset_id: str,
-        periods: int = 7,
+        periods: int = 30,
     ) -> DriftReport:
         """
         Check a metric for gradual drift using linear regression.
@@ -472,7 +739,7 @@ class QueryDispatcher:
 
         period = TimePeriod.last_week()
         data_points = self._collect_daily_series(
-            metric, asset_id, days=14,
+            metric, asset_id, days=self._DRIFT_LOOKBACK_DAYS,
         )
         result = self._run_async(
             self._prevention_client.check_drift(
@@ -515,7 +782,7 @@ class QueryDispatcher:
             self._adapter.get_kpi(
                 scenario.target_metric,
                 scenario.asset_id,
-                TimePeriod.today(),
+                TimePeriod.wide_default(),
             ),
         )
         baseline = baseline_result.value
@@ -710,7 +977,7 @@ class QueryDispatcher:
             return "electricity"
 
     def _get_anomaly_threshold(self) -> float:
-        """Return the configured z-score threshold (DEC-006).
+        """Return conversational anomaly threshold (DEC-006).
 
         Falls back to 2.0 when no SettingsService is available.
 
@@ -720,7 +987,7 @@ class QueryDispatcher:
         if self._settings_service is None:
             return 2.0
         try:
-            return self._settings_service.get_anomaly_threshold()
+            return self._settings_service.get_query_anomaly_threshold()
         except Exception:
             logger.debug("Anomaly threshold lookup failed; using 2.0", exc_info=True)
             return 2.0
@@ -824,7 +1091,7 @@ class QueryDispatcher:
             return self._loop.run_until_complete(coro)
 
         future = self._executor.submit(_runner)
-        return future.result(timeout=30)
+        return future.result(timeout=60)
 
     def shutdown(self) -> None:
         """Shutdown adapter and dispatcher async resources cleanly."""
@@ -899,7 +1166,7 @@ class QueryDispatcher:
         from skill.domain.anomaly_models import DriftReport
         from skill.domain.results import (
             KPIResult, ComparisonResult, TrendResult,
-            AnomalyResult, WhatIfResult
+            AnomalyResult, AnomalyScanResult, WhatIfResult
         )
         
         if isinstance(result, KPIResult):
@@ -910,6 +1177,11 @@ class QueryDispatcher:
             return f"Direction: {result.direction}, change: {result.change_percent:.1f}%"
         elif isinstance(result, AnomalyResult):
             return f"Anomalous: {result.is_anomalous}, count: {len(result.anomalies)}"
+        elif isinstance(result, AnomalyScanResult):
+            return (
+                f"Scan anomalies: {result.anomalous_pairs}/"
+                f"{result.checked_pairs}"
+            )
         elif isinstance(result, DriftReport):
             return f"Drift: {result.has_drift}, direction: {result.drift_direction}"
         elif isinstance(result, AVAROSError):

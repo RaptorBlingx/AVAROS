@@ -43,6 +43,12 @@ const WAKE_WORD_CAPTURE_TIMEOUT_MS = 10000;
 const WAKE_WORD_CAPTURE_START_RETRY_MS = 220;
 const WAKE_WORD_CAPTURE_MAX_START_RETRIES = 2;
 const SPEAK_EVENT_DEDUP_MS = 1200;
+const VOICE_DEBUG_BUILD_TAG = "voice-debug-2026-04-07-r4";
+const WAKE_WORD_POST_RESUME_DETECTION_SUPPRESSION_MS = 1500;
+/** Safety net: force-finish any wake-word session stuck longer than this. */
+const WAKE_WORD_SESSION_SAFETY_TIMEOUT_MS = 30000;
+/** If no speak event arrives within this time after entering awaiting_response, finish the session. */
+const WAKE_WORD_RESPONSE_TIMEOUT_MS = 10000;
 
 type WakeInteractionPhase =
   | "idle"
@@ -81,9 +87,13 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   const wakeWordDetectionPausedRef = useRef(false);
   const wakeWordSessionPhaseRef = useRef<WakeInteractionPhase>("idle");
   const wakeWordSessionCooldownUntilRef = useRef(0);
+  const wakeWordResumeAtRef = useRef(0);
+  const wakeWordSuppressDetectionsUntilRef = useRef(0);
   const wakeWordCaptureTimeoutRef = useRef<number | null>(null);
   const wakeWordCaptureStartRetryRef = useRef(0);
   const wakeWordCaptureStartInFlightRef = useRef(false);
+  const wakeWordSessionSafetyTimerRef = useRef<number | null>(null);
+  const wakeWordResponseTimerRef = useRef<number | null>(null);
   const lastBusSpeakRef = useRef<{ text: string; at: number }>({
     text: "",
     at: 0,
@@ -107,6 +117,10 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     });
   }
 
+  useEffect(() => {
+    console.info(`[AVAROS-DEBUG] VoiceContext build: ${VOICE_DEBUG_BUILD_TAG}`);
+  }, []);
+
   const armWakeWordCommandWindow = useCallback(() => {
     wakeWordArmedUntilRef.current = Date.now() + WAKE_WORD_ARM_MS;
     setIsWakeWordArmed(true);
@@ -119,7 +133,9 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     return Date.now() < wakeWordArmedUntilRef.current;
   }, []);
   const setWakeWordSessionPhase = useCallback((phase: WakeInteractionPhase) => {
+    const prev = wakeWordSessionPhaseRef.current;
     wakeWordSessionPhaseRef.current = phase;
+    console.log(`[AVAROS-DEBUG] phase: ${prev} → ${phase}`);
   }, []);
   const clearWakeWordCaptureTimeout = useCallback(() => {
     if (wakeWordCaptureTimeoutRef.current !== null) {
@@ -128,14 +144,37 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     }
   }, []);
   const resumeWakeWordDetection = useCallback(() => {
+    const now = Date.now();
+    wakeWordResumeAtRef.current = now;
+    wakeWordSuppressDetectionsUntilRef.current =
+      now + WAKE_WORD_POST_RESUME_DETECTION_SUPPRESSION_MS;
+    console.log(
+      `[AVAROS-DEBUG] resumeWakeWordDetection called, paused=${wakeWordDetectionPausedRef.current}, hasResumeFn=${!!resumeDetectionRef.current}, suppressMs=${WAKE_WORD_POST_RESUME_DETECTION_SUPPRESSION_MS}`,
+    );
     if (!wakeWordDetectionPausedRef.current) return;
     wakeWordDetectionPausedRef.current = false;
     resumeDetectionRef.current?.();
+    console.log(`[AVAROS-DEBUG] resumeDetection invoked`);
+  }, []);
+  const clearWakeWordSessionSafetyTimer = useCallback(() => {
+    if (wakeWordSessionSafetyTimerRef.current !== null) {
+      window.clearTimeout(wakeWordSessionSafetyTimerRef.current);
+      wakeWordSessionSafetyTimerRef.current = null;
+    }
+  }, []);
+  const clearWakeWordResponseTimer = useCallback(() => {
+    if (wakeWordResponseTimerRef.current !== null) {
+      window.clearTimeout(wakeWordResponseTimerRef.current);
+      wakeWordResponseTimerRef.current = null;
+    }
   }, []);
   const finishWakeWordSession = useCallback(
     (cooldownMs = WAKE_WORD_POST_SESSION_COOLDOWN_MS) => {
+      console.log(`[AVAROS-DEBUG] finishWakeWordSession called, cooldown=${cooldownMs}ms, currentPhase=${wakeWordSessionPhaseRef.current}`);
       clearWakeWordCaptureTimeout();
       clearWakeWordCommandWindow();
+      clearWakeWordSessionSafetyTimer();
+      clearWakeWordResponseTimer();
       wakeWordCaptureStartRetryRef.current = 0;
       wakeWordCaptureStartInFlightRef.current = false;
       wakeWordSessionCooldownUntilRef.current = Date.now() + cooldownMs;
@@ -145,6 +184,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       setFinalTranscript("");
       setVoiceState("idle");
       window.setTimeout(() => {
+        console.log(`[AVAROS-DEBUG] cooldown timer fired, phase=${wakeWordSessionPhaseRef.current}, pastCooldown=${Date.now() >= wakeWordSessionCooldownUntilRef.current}`);
         if (wakeWordSessionPhaseRef.current !== "cooldown") return;
         if (Date.now() < wakeWordSessionCooldownUntilRef.current) return;
         setWakeWordSessionPhase("idle");
@@ -154,10 +194,38 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     [
       clearWakeWordCaptureTimeout,
       clearWakeWordCommandWindow,
+      clearWakeWordResponseTimer,
+      clearWakeWordSessionSafetyTimer,
       resumeWakeWordDetection,
       setWakeWordSessionPhase,
     ],
   );
+
+  const startWakeWordSessionSafetyTimer = useCallback(() => {
+    clearWakeWordSessionSafetyTimer();
+    wakeWordSessionSafetyTimerRef.current = window.setTimeout(() => {
+      const phase = wakeWordSessionPhaseRef.current;
+      if (phase !== "idle" && phase !== "cooldown") {
+        console.warn(
+          "[AVAROS] Wake-word session safety timeout — phase was stuck at:",
+          phase,
+        );
+        finishWakeWordSession();
+      }
+    }, WAKE_WORD_SESSION_SAFETY_TIMEOUT_MS);
+  }, [clearWakeWordSessionSafetyTimer, finishWakeWordSession]);
+
+  const startWakeWordResponseTimer = useCallback(() => {
+    clearWakeWordResponseTimer();
+    wakeWordResponseTimerRef.current = window.setTimeout(() => {
+      if (wakeWordSessionPhaseRef.current === "awaiting_response") {
+        console.warn(
+          "[AVAROS-DEBUG] No response received within timeout — finishing session",
+        );
+        finishWakeWordSession();
+      }
+    }, WAKE_WORD_RESPONSE_TIMEOUT_MS);
+  }, [clearWakeWordResponseTimer, finishWakeWordSession]);
 
   const startWakeWordCommandCapture = useCallback(async () => {
     const phase = wakeWordSessionPhaseRef.current;
@@ -224,14 +292,33 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   ]);
 
   // ── Wake word detection ────────────────────────────
-  const onWakeWordDetected = useCallback(() => {
+  const onWakeWordDetected = useCallback((payload?: {
+    model: string;
+    score: number;
+  }) => {
+    const now = Date.now();
+    const sinceResume = wakeWordResumeAtRef.current
+      ? now - wakeWordResumeAtRef.current
+      : null;
+    console.log(
+      `[AVAROS-DEBUG] onWakeWordDetected: speaking=${isSpeakingRef.current}, phase=${wakeWordSessionPhaseRef.current}, inCooldown=${now < wakeWordSessionCooldownUntilRef.current}, sinceResumeMs=${sinceResume ?? "n/a"}, score=${payload?.score?.toFixed?.(4) ?? "n/a"}, model=${payload?.model ?? "n/a"}`,
+    );
+    if (now < wakeWordSuppressDetectionsUntilRef.current) {
+      console.log(
+        `[AVAROS-DEBUG] onWakeWordDetected REJECTED: within post-resume suppression window (remainingMs=${wakeWordSuppressDetectionsUntilRef.current - now})`,
+      );
+      return;
+    }
     if (isSpeakingRef.current) {
+      console.log(`[AVAROS-DEBUG] onWakeWordDetected REJECTED: still speaking`);
       return;
     }
     if (wakeWordSessionPhaseRef.current !== "idle") {
+      console.log(`[AVAROS-DEBUG] onWakeWordDetected REJECTED: phase not idle`);
       return;
     }
-    if (Date.now() < wakeWordSessionCooldownUntilRef.current) {
+    if (now < wakeWordSessionCooldownUntilRef.current) {
+      console.log(`[AVAROS-DEBUG] onWakeWordDetected REJECTED: in cooldown`);
       return;
     }
     metricsRef.current.reset();
@@ -247,10 +334,15 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       pauseDetectionRef.current?.();
       wakeWordDetectionPausedRef.current = true;
     }
+    console.log(
+      `[AVAROS-DEBUG] onWakeWordDetected ACCEPTED: starting capture cycle`,
+    );
+    startWakeWordSessionSafetyTimer();
     void startWakeWordCommandCapture();
   }, [
     setWakeWordSessionPhase,
     startWakeWordCommandCapture,
+    startWakeWordSessionSafetyTimer,
   ]);
 
   const {
@@ -292,21 +384,29 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     if (voiceMode === "wake-word") return;
     clearWakeWordCaptureTimeout();
     clearWakeWordCommandWindow();
+    clearWakeWordSessionSafetyTimer();
+    clearWakeWordResponseTimer();
     wakeWordSessionCooldownUntilRef.current = 0;
+    wakeWordResumeAtRef.current = 0;
+    wakeWordSuppressDetectionsUntilRef.current = 0;
     setWakeWordSessionPhase("idle");
     wakeWordDetectionPausedRef.current = false;
   }, [
     voiceMode,
     clearWakeWordCaptureTimeout,
     clearWakeWordCommandWindow,
+    clearWakeWordResponseTimer,
+    clearWakeWordSessionSafetyTimer,
     setWakeWordSessionPhase,
   ]);
 
   useEffect(() => {
     return () => {
       clearWakeWordCaptureTimeout();
+      clearWakeWordSessionSafetyTimer();
+      clearWakeWordResponseTimer();
     };
-  }, [clearWakeWordCaptureTimeout]);
+  }, [clearWakeWordCaptureTimeout, clearWakeWordResponseTimer, clearWakeWordSessionSafetyTimer]);
 
   // ── Initialize STT / TTS ───────────────────────────
   useEffect(() => {
@@ -376,6 +476,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         if (isSpeakingRef.current) return;
         metricsRef.current.mark("stt_completed");
         let transcript = result.transcript;
+        console.log(`[AVAROS-DEBUG] STT final: "${transcript.slice(0, 60)}", confidence=${result.confidence.toFixed(3)}, phase=${wakeWordSessionPhaseRef.current}`);
         if (voiceMode === "wake-word") {
           if (isOwnPromptEcho(transcript, lastTtsUtteranceRef.current)) return;
           if (wakeWordSessionPhaseRef.current !== "capturing") {
@@ -392,6 +493,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
             clearWakeWordCommandWindow();
             clearWakeWordCaptureTimeout();
             setWakeWordSessionPhase("awaiting_response");
+            startWakeWordResponseTimer();
           } else {
             // STT fired outside the command window — discard.
             finishWakeWordSession();
@@ -408,6 +510,9 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
           setVoiceState("idle");
           return;
         }
+        console.log(
+          `[AVAROS-DEBUG] STT accepted final transcript for send: "${transcript.slice(0, 80)}"`,
+        );
         setFinalTranscript(transcript);
         setInterimTranscript("");
       } else {
@@ -428,11 +533,13 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
           setVoiceState("error");
           break;
         case "idle":
+          console.log(`[AVAROS-DEBUG] STT went idle, phase=${wakeWordSessionPhaseRef.current}, commandWindowOpen=${voiceMode === "wake-word" ? isWakeWordCommandWindowOpen() : 'n/a'}`);
           if (
             voiceMode === "wake-word" &&
             wakeWordSessionPhaseRef.current === "capturing" &&
             isWakeWordCommandWindowOpen()
           ) {
+            console.log(`[AVAROS-DEBUG] STT idle → re-starting capture`);
             void startWakeWordCommandCapture();
             return;
           }
@@ -465,9 +572,13 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       // the utterance can still be sent to HiveMind.
       if (!final && interim) {
         if (voiceMode === "wake-word") {
-          clearWakeWordCommandWindow();
-          clearWakeWordCaptureTimeout();
-          setWakeWordSessionPhase("awaiting_response");
+          // In wake-word mode we require a true final transcript to avoid
+          // accidental commands from ambient audio.
+          console.warn(
+            `[AVAROS-DEBUG] Wake-word silence with interim-only transcript dropped: "${interim.slice(0, 80)}"`,
+          );
+          finishWakeWordSession();
+          return;
         }
         setFinalTranscript(interim);
         setInterimTranscript("");
@@ -502,6 +613,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     clearWakeWordCaptureTimeout,
     finishWakeWordSession,
     startWakeWordCommandCapture,
+    startWakeWordResponseTimer,
     setWakeWordSessionPhase,
   ]);
 
@@ -515,16 +627,24 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
     if (!tts) return;
 
     return tts.onStateChange((state) => {
+      console.log(`[AVAROS-DEBUG] TTS state: ${state}, sessionPhase=${wakeWordSessionPhaseRef.current}`);
       if (state === "speaking") {
         setIsSpeaking(true);
         setVoiceState("speaking");
       } else {
         setIsSpeaking(false);
-        if (state === "idle") {
-          metricsRef.current.mark("tts_completed");
-          metricsRef.current.toConsoleLog();
+        if (state === "idle" || state === "error") {
+          if (state === "idle") {
+            metricsRef.current.mark("tts_completed");
+            metricsRef.current.toConsoleLog();
+          }
           setVoiceState("idle");
-          if (wakeWordSessionPhaseRef.current === "speaking_response") {
+          const sessionPhase = wakeWordSessionPhaseRef.current;
+          if (
+            sessionPhase !== "idle" &&
+            sessionPhase !== "cooldown"
+          ) {
+            console.log(`[AVAROS-DEBUG] TTS ${state} + phase '${sessionPhase}' → calling finishWakeWordSession`);
             finishWakeWordSession();
           }
         }
@@ -556,6 +676,9 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
     let cancelled = false;
     metricsRef.current.mark("utterance_sent");
+    console.log(
+      `[AVAROS-DEBUG] sendUtterance: "${normalizedTranscript.slice(0, 80)}", voiceMode=${voiceMode}, phase=${wakeWordSessionPhaseRef.current}`,
+    );
 
     void sendUtterance(normalizedTranscript)
       .then(() => {
@@ -588,27 +711,39 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       metricsRef.current.mark("response_received");
       const text = (msg.data.utterance as string | undefined) ?? "";
       const normalized = text.trim();
+      console.log(`[AVAROS-DEBUG] speak event: "${normalized.slice(0, 60)}…", phase=${wakeWordSessionPhaseRef.current}, voiceMode=${voiceMode}`);
       if (normalized && ttsRef.current) {
-        if (
-          voiceMode === "wake-word" &&
-          wakeWordSessionPhaseRef.current === "awaiting_response"
-        ) {
-          setWakeWordSessionPhase("speaking_response");
-        }
         const now = Date.now();
         if (
           lastBusSpeakRef.current.text === normalized &&
           now - lastBusSpeakRef.current.at < SPEAK_EVENT_DEDUP_MS
         ) {
+          console.log(`[AVAROS-DEBUG] speak event DEDUPED (same text within ${SPEAK_EVENT_DEDUP_MS}ms)`);
           return;
+        }
+        // Transition phase AFTER dedup — otherwise a deduped event sets
+        // phase to "speaking_response" without starting TTS, and the
+        // session never finishes.
+        if (voiceMode === "wake-word") {
+          const phase = wakeWordSessionPhaseRef.current;
+          if (
+            phase === "awaiting_response" ||
+            phase === "capturing" ||
+            phase === "prompting"
+          ) {
+            clearWakeWordResponseTimer();
+            setWakeWordSessionPhase("speaking_response");
+          } else {
+            console.warn(`[AVAROS-DEBUG] speak event: phase '${phase}' not transitioned to speaking_response`);
+          }
         }
         lastBusSpeakRef.current = { text: normalized, at: now };
         lastTtsUtteranceRef.current = normalized;
         metricsRef.current.mark("tts_started");
-        void ttsRef.current.speak(normalized);
+        void ttsRef.current.speak(normalized).catch(() => undefined);
       }
     });
-  }, [on, setWakeWordSessionPhase, voiceMode]);
+  }, [clearWakeWordResponseTimer, on, setWakeWordSessionPhase, voiceMode]);
 
   // ── Actions ────────────────────────────────────────
 

@@ -17,7 +17,10 @@ router = APIRouter(prefix="/api/v1/config", tags=["config"])
 logger = logging.getLogger(__name__)
 
 
-def _domain_to_schema(config: AlertConfig) -> AlertConfigSchema:
+def _domain_to_schema(
+    config: AlertConfig,
+    query_threshold: float,
+) -> AlertConfigSchema:
     """Convert domain AlertConfig to API response schema."""
     return AlertConfigSchema(
         enabled=config.enabled,
@@ -29,6 +32,7 @@ def _domain_to_schema(config: AlertConfig) -> AlertConfigSchema:
             for p in config.monitored_pairs
         ],
         z_score_threshold=config.z_score_threshold,
+        query_z_score_threshold=query_threshold,
     )
 
 
@@ -58,7 +62,8 @@ def get_alert_config(
 ) -> AlertConfigSchema:
     """Return current proactive alert configuration."""
     config = settings_service.get_alert_config()
-    return _domain_to_schema(config)
+    query_threshold = settings_service.get_query_anomaly_threshold()
+    return _domain_to_schema(config, query_threshold)
 
 
 @router.put("/alert-config", response_model=AlertConfigSchema)
@@ -69,8 +74,11 @@ def save_alert_config(
     """Update proactive alert configuration."""
     config = _schema_to_domain(payload)
     settings_service.save_alert_config(config)
+    settings_service.set_query_anomaly_threshold(
+        payload.query_z_score_threshold,
+    )
     logger.info(
         "Alert config updated: enabled=%s interval=%ds threshold=%s",
         config.enabled, config.interval_seconds, config.severity_threshold,
     )
-    return _domain_to_schema(config)
+    return _domain_to_schema(config, payload.query_z_score_threshold)

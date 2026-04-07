@@ -153,6 +153,7 @@ class HttpPreventionClient(PreventionClient):
         metric: CanonicalMetric,
         data_points: list[DataPoint],
         threshold: float = 2.0,
+        asset_id: str | None = None,
     ) -> AnomalyDetectionResult:
         """Retrieve pre-computed anomaly results from PREVENTION.
 
@@ -183,7 +184,12 @@ class HttpPreventionClient(PreventionClient):
             ) from exc
 
         return _parse_anomaly_results(
-            results, metric, category, data_points, threshold,
+            results,
+            metric,
+            category,
+            data_points,
+            threshold,
+            asset_id=asset_id,
         )
 
     # =====================================================================
@@ -332,6 +338,7 @@ def _parse_anomaly_results(
     category: str,
     data_points: list[DataPoint],
     threshold: float,
+    asset_id: str | None = None,
 ) -> AnomalyDetectionResult:
     """Parse PREVENTION anomaly results into domain model.
 
@@ -344,6 +351,7 @@ def _parse_anomaly_results(
     relevant = [
         r for r in results
         if r.get("metric_name") == metric_name
+        and (asset_id is None or r.get("asset_id") == asset_id)
         and float(r.get("z_score", 0)) >= threshold
     ]
 
@@ -362,15 +370,25 @@ def _parse_anomaly_results(
     worst = max(relevant, key=lambda r: r.get("z_score", 0))
     z_score = float(worst.get("z_score", 0))
     severity = str(worst.get("severity", "low"))
+    # Enforce invariant: anomalous results must never have severity "none".
+    if severity == "none":
+        severity = "low"
     anomaly_type = str(worst.get("anomaly_type", "spike"))
     detected_at = str(worst.get("timestamp", ""))
     if not detected_at:
         detected_at = _get_detection_timestamp(data_points)
 
     description = _build_anomaly_description(category, True, z_score)
+    if len(relevant) > 1:
+        description += (
+            f" ({len(relevant)} anomalous readings detected; "
+            f"showing worst at {z_score:.1f}σ.)"
+        )
     action = _get_recommended_action(category, True)
 
     confidence = min(0.99, 0.7 + (len(results) / 500.0))
+
+    actual_value = float(worst.get("value", 0.0))
 
     return AnomalyDetectionResult(
         metric=metric,
@@ -381,6 +399,9 @@ def _parse_anomaly_results(
         description=description,
         detected_at=detected_at,
         recommended_action=action,
+        expected_value=None,
+        actual_value=actual_value,
+        deviation=round(z_score, 2),
     )
 
 

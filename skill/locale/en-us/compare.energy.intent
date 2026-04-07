@@ -28,4 +28,13 @@ compare power between {asset_a} and {asset_b}
 energy comparison
 compare energy usage
 compare energy between compressor 1 and compressor 2
+compare energy between compressor 1 and hvac main
+compare energy between hvac main and boiler 1
+compare energy compressor 1 versus hvac main
+which uses more energy compressor 1 or hvac main
+compare energy between conveyor a and hydraulic pump 1
+compare energy for injection molding 1 and compressor 1
+which is more efficient boiler 1 or compressor 1
+compare energy between electric main meter and gas main meter
+compare energy meter 1 versus meter 2
 compare energy between compressor-1 and compressor-2

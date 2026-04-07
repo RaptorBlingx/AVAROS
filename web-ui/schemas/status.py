@@ -49,3 +49,13 @@ class SystemStatusResponse(BaseModel):
         default=None,
         description="ISO timestamp of the latest live connection verification.",
     )
+    prevention_mode: str = Field(
+        default="unknown",
+        description=(
+            "Active prevention runtime mode: http, fallback, or unknown."
+        ),
+    )
+    prevention_mode_reason: str = Field(
+        default="",
+        description="Reason/source for selected prevention mode.",
+    )

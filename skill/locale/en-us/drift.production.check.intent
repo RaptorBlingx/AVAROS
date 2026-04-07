@@ -1,4 +1,5 @@
 (how has|how is) (energy|production|scrap|carbon) (been|) trending
+check for drift (in|on) (energy|production|scrap|carbon|quality)
 check for drift (in|on) {asset}
 any drift in (energy|production|quality|carbon)
 is there any drift

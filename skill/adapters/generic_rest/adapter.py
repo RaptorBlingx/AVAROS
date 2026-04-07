@@ -116,6 +116,14 @@ class GenericRestAdapter(
                 supported_metrics=(CanonicalMetric.ENERGY_TOTAL,),
             )
 
+        natively_bound = self._get_natively_bound_metrics(asset_id)
+        if natively_bound:
+            self._raise_asset_metric_unavailable(
+                metric=metric,
+                asset_id=asset_id,
+                supported_metrics=tuple(natively_bound),
+            )
+
         mapping = self._require_metric_mapping(metric)
 
         endpoint, params = resolve_request(
@@ -340,6 +348,29 @@ class GenericRestAdapter(
             supported.append(metric)
             seen.add(metric)
         return supported
+
+    def get_scannable_pairs(
+        self,
+    ) -> list[tuple[CanonicalMetric, str]]:
+        """Return only (metric, asset_id) tuples backed by a metric_resource."""
+        mappings = self._load_asset_mappings()
+        pairs: list[tuple[CanonicalMetric, str]] = []
+        for asset_id, mapping in mappings.items():
+            if not isinstance(mapping, dict):
+                continue
+            resources = mapping.get("metric_resources", {})
+            if not isinstance(resources, dict):
+                continue
+            for metric_name, resource_id in resources.items():
+                if not str(resource_id).strip():
+                    continue
+                try:
+                    pairs.append(
+                        (CanonicalMetric.from_string(metric_name), str(asset_id)),
+                    )
+                except ValueError:
+                    continue
+        return pairs
 
     async def initialize(self) -> None:
         """Create HTTP session and validate configured base URL is reachable."""
@@ -581,6 +612,29 @@ class GenericRestAdapter(
         if not isinstance(raw_binding, dict):
             return None
         return raw_binding
+
+    def _get_natively_bound_metrics(
+        self, asset_id: str,
+    ) -> list[CanonicalMetric]:
+        """Return canonical metrics with native bindings for an asset.
+
+        Returns an empty list when the asset has no native bindings
+        configured, signalling that the generic metric mapping path
+        should be attempted instead.
+        """
+        mapping = self._resolve_asset_mapping(asset_id)
+        if not isinstance(mapping, dict):
+            return []
+        native_bindings = mapping.get("native_metric_bindings")
+        if not isinstance(native_bindings, dict) or not native_bindings:
+            return []
+        bound: list[CanonicalMetric] = []
+        for key in native_bindings:
+            try:
+                bound.append(CanonicalMetric(key))
+            except ValueError:
+                continue
+        return bound
 
     def _asset_display_name(self, asset_id: str) -> str:
         """Resolve human-friendly asset label for user-facing messages."""

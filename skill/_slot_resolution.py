@@ -18,7 +18,11 @@ if TYPE_CHECKING:
 
 # ── Noise detection constants ─────────────────────────
 
-_NOISE_WORDS = frozenset({"to", "too", "for", "on", "line", "trend"})
+_NOISE_WORDS = frozenset(
+    {"to", "too", "for", "on", "line", "trend", "production", "energy",
+     "scrap", "carbon", "quality", "show", "check", "compare", "tell",
+     "give", "how", "what", "which", "please", "me", "the", "a", "an"},
+)
 _NOISE_SLOT_WORDS = frozenset(
     {
         "a",
@@ -249,31 +253,39 @@ def _resolve_default_asset_id(self, *, fallback: str) -> str:
 def _ranked_mapping_asset_ids(mappings: dict[str, object]) -> list[str]:
     """Rank configured mapping keys by KPI readiness then lexical order.
 
-    Assets with non-empty ``metric_resources`` are preferred over plain
-    registration-only rows. This avoids selecting discovery-only UUID rows
-    as implicit defaults for KPI/trend intents.
+    Assets with more ``metric_resources`` are preferred so that the default
+    asset supports the widest range of queries. This avoids selecting
+    energy-only meters as defaults for non-energy KPI/trend intents.
     """
-    with_resources: list[str] = []
+    with_resources: list[tuple[int, str]] = []
     without_resources: list[str] = []
     for raw_key, raw_mapping in mappings.items():
         asset_id = str(raw_key).strip()
         if not asset_id:
             continue
-        if _has_metric_resources(raw_mapping):
-            with_resources.append(asset_id)
+        count = _metric_resource_count(raw_mapping)
+        if count > 0:
+            with_resources.append((count, asset_id))
         else:
             without_resources.append(asset_id)
-    return sorted(with_resources) + sorted(without_resources)
+    # Sort by resource count descending, then alphabetically for ties.
+    with_resources.sort(key=lambda pair: (-pair[0], pair[1]))
+    return [asset_id for _, asset_id in with_resources] + sorted(without_resources)
 
 
 def _has_metric_resources(raw_mapping: object) -> bool:
     """Return True when mapping contains at least one metric resource."""
+    return _metric_resource_count(raw_mapping) > 0
+
+
+def _metric_resource_count(raw_mapping: object) -> int:
+    """Return number of non-empty metric resource bindings."""
     if not isinstance(raw_mapping, dict):
-        return False
+        return 0
     resources = raw_mapping.get("metric_resources")
     if not isinstance(resources, dict):
-        return False
-    return any(str(resource_id).strip() for resource_id in resources.values())
+        return 0
+    return sum(1 for v in resources.values() if str(v).strip())
 
 
 def _is_more_specific_utterance_asset(slot_value: str, utterance_text: str) -> bool:

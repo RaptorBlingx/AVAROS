@@ -94,11 +94,17 @@ def handle_status_system_show(skill: "AVAROSSkill", message: Message) -> None:
             if skill.dispatcher is not None
             else "UnknownAdapter"
         )
+        prevention_mode = str(getattr(skill, "_prevention_mode", "unknown"))
+        prevention_reason = str(
+            getattr(skill, "_prevention_mode_reason", ""),
+        )
         health = "online" if power_state == "on" else "offline"
         skill.speak(
             (
                 f"System is {health}. Active profile is {active_profile} on platform "
-                f"{platform}, and adapter is {adapter_name}."
+                f"{platform}, and adapter is {adapter_name}. "
+                f"Prevention mode is {prevention_mode}"
+                f" ({prevention_reason or 'unspecified'})."
             )
         )
 
@@ -125,12 +131,35 @@ def handle_help_capabilities_list(skill: "AVAROSSkill", message: Message) -> Non
     """Handle capability/help request for generic + KPI intents."""
 
     def _execute() -> None:
+        metric_names = _get_mapped_metric_names(skill)
+        if metric_names:
+            metric_part = ", ".join(metric_names[:5])
+            if len(metric_names) > 5:
+                metric_part += f", and {len(metric_names) - 5} more"
+        else:
+            metric_part = "energy per unit, scrap rate, OEE"
         skill.speak(
-            "I can report KPIs, compare and trend metrics, check anomalies, run what if simulations, "
-            "and handle generic commands like turn on, turn off, and show status."
+            f"I can report KPIs like {metric_part}. "
+            "I can also compare metrics, check anomalies, show trends, "
+            "run what if simulations, and handle commands like turn on, "
+            "turn off, and show status."
         )
 
     skill._safe_dispatch("handle_help_capabilities_list", _execute)
+
+
+def _get_mapped_metric_names(skill: "AVAROSSkill") -> list[str]:
+    """Return display names of metrics mapped in the active profile."""
+    adapter = getattr(getattr(skill, "dispatcher", None), "adapter", None)
+    if adapter is None:
+        return []
+    try:
+        metrics = adapter.get_supported_metrics()
+        if not isinstance(metrics, list):
+            return []
+        return [m.display_name for m in metrics if hasattr(m, "display_name")]
+    except Exception:
+        return []
 
 
 def handle_list_assets(skill: "AVAROSSkill", message: Message) -> None:

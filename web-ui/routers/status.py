@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -54,6 +55,26 @@ def _live_state_from_error_code(
     return "unknown"
 
 
+def _resolve_prevention_mode(
+    settings_service: SettingsService,
+) -> tuple[str, str]:
+    """Resolve active prevention mode from env/settings configuration."""
+    env_url = os.environ.get("PREVENTION_URL", "").strip()
+    if env_url:
+        return "http", "env_prevention_url"
+
+    try:
+        settings_url = str(
+            settings_service.get_setting("prevention_url", ""),
+        ).strip()
+    except Exception:
+        settings_url = ""
+
+    if settings_url:
+        return "http", "settings_prevention_url"
+    return "fallback", "prevention_url_missing"
+
+
 async def _resolve_live_connection_status(
     *,
     adapter_factory: AdapterFactory,
@@ -100,6 +121,7 @@ async def get_system_status(
 ) -> SystemStatusResponse:
     """Return current AVAROS configuration and readiness status."""
     loaded_intents = _intent_count()
+    prevention_mode, prevention_reason = "unknown", ""
 
     defaults = SystemStatusResponse(
         configured=False,
@@ -108,10 +130,15 @@ async def get_system_status(
         loaded_intents=loaded_intents,
         database_connected=False,
         version=APP_VERSION,
+        prevention_mode=prevention_mode,
+        prevention_mode_reason=prevention_reason,
     )
 
     try:
         settings_service.initialize()
+        prevention_mode, prevention_reason = _resolve_prevention_mode(
+            settings_service,
+        )
         platform_config = settings_service.get_platform_config()
         configured = settings_service.is_configured()
         platform_type = platform_config.platform_type or "unconfigured"
@@ -155,6 +182,8 @@ async def get_system_status(
                 if live_status["live_connection_checked_at"] is not None
                 else None
             ),
+            prevention_mode=prevention_mode,
+            prevention_mode_reason=prevention_reason,
         )
     except Exception as exc:
         logger.exception("Failed to load system status: %s", exc)

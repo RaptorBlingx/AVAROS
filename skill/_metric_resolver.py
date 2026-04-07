@@ -138,14 +138,18 @@ def resolve_metric_from_utterance(utterance: str) -> CanonicalMetric | None:
         or re.search(r"\bco\s*two\b", normalized)
         or "carbon dioxide" in normalized
         or "carbon emissions" in normalized
+        or "carbon" in normalized
     )
     total_like = bool(
         "total" in normalized
         or re.search(r"\btot\w*\b", normalized)
         or "emissions" in normalized
     )
+    batch_like = "batch" in normalized
     if co2_like and total_like:
         return CanonicalMetric.CO2_TOTAL
+    if co2_like and batch_like:
+        return CanonicalMetric.CO2_PER_BATCH
 
     for metric, phrases in _UTTERANCE_PHRASE_MAP:
         if any(phrase in normalized for phrase in phrases):
@@ -155,5 +159,13 @@ def resolve_metric_from_utterance(utterance: str) -> CanonicalMetric | None:
         canonical_phrase = metric.value.replace("_", " ")
         if canonical_phrase in normalized:
             return metric
+
+    # Bare "co2" or "carbon" without qualifier → default to co2_per_unit
+    if co2_like:
+        return CanonicalMetric.CO2_PER_UNIT
+
+    # Bare "energy" or "power" without qualifier → default to energy_per_unit
+    if re.search(r"\benergy\b", normalized) or re.search(r"\bpower\b", normalized):
+        return CanonicalMetric.ENERGY_PER_UNIT
 
     return None

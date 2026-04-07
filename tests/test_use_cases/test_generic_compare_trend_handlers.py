@@ -42,7 +42,9 @@ def test_compare_metric_resolves_oee_and_dispatches():
     skill.dispatcher.compare.return_value = result
     skill.response_builder.format_comparison_result.return_value = "ok"
 
-    skill.handle_compare_metric(_message(metric="oee", period="today"))
+    skill.handle_compare_metric(
+        _message(metric="oee", period="today", utterance="compare oee today"),
+    )
 
     skill.dispatcher.compare.assert_called_once_with(
         metric=CanonicalMetric.OEE,
@@ -111,7 +113,9 @@ def test_trend_metric_resolves_throughput_and_dispatches():
     skill.dispatcher.get_trend.return_value = result
     skill.response_builder.format_trend_result.return_value = "ok"
 
-    skill.handle_trend_metric(_message(metric="throughput", period="today"))
+    skill.handle_trend_metric(
+        _message(metric="throughput", period="today", utterance="show throughput trend today"),
+    )
 
     skill.dispatcher.get_trend.assert_called_once_with(
         metric=CanonicalMetric.THROUGHPUT,
@@ -197,7 +201,9 @@ def test_trend_energy_falls_back_to_last_week_when_today_is_empty():
     ]
     skill.response_builder.format_trend_result.return_value = "ok"
 
-    skill.handle_trend_energy(_message(period="today"))
+    skill.handle_trend_energy(
+        _message(period="today", utterance="show energy trend today"),
+    )
 
     assert skill.dispatcher.get_trend.call_count == 2
     first_period = skill.dispatcher.get_trend.call_args_list[0].kwargs["period"]

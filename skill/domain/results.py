@@ -9,6 +9,7 @@ Result Types:
     - ComparisonResult: Multiple assets compared (compare)
     - TrendResult: Time series with trend analysis (get_trend)
     - AnomalyResult: Anomaly detection output (check_anomaly)
+    - AnomalyScanResult: Aggregate anomaly scan output (scan_anomalies)
     - WhatIfResult: Simulation prediction (simulate_whatif)
 """
 
@@ -329,6 +330,7 @@ class AnomalyResult:
     asset_id: str
     metric: CanonicalMetric
     recommendation_id: str = ""
+    recommended_action: str | None = None
     
     def __init__(
         self,
@@ -338,6 +340,7 @@ class AnomalyResult:
         asset_id: str,
         metric: CanonicalMetric,
         recommendation_id: str = "",
+        recommended_action: str | None = None,
     ):
         """Initialize with anomalies converted to tuple."""
         object.__setattr__(self, "is_anomalous", is_anomalous)
@@ -346,11 +349,55 @@ class AnomalyResult:
         object.__setattr__(self, "asset_id", asset_id)
         object.__setattr__(self, "metric", metric)
         object.__setattr__(self, "recommendation_id", recommendation_id)
+        object.__setattr__(self, "recommended_action", recommended_action)
     
     @property
     def anomaly_count(self) -> int:
         """Number of anomalies detected."""
         return len(self.anomalies)
+
+
+@dataclass(frozen=True)
+class AnomalyScanResult:
+    """Aggregate result from a multi-pair anomaly scan.
+
+    Attributes:
+        checked_pairs: Total metric-asset pairs evaluated.
+        anomalous_pairs: Number of pairs flagged anomalous.
+        findings: Per-pair anomaly results for anomalous pairs.
+        severity_counts: Aggregated count by severity.
+        threshold: Effective z-score threshold used.
+        recommendation_id: Audit trace identifier.
+    """
+
+    checked_pairs: int
+    anomalous_pairs: int
+    findings: tuple[AnomalyResult, ...]
+    severity_counts: dict[str, int]
+    threshold: float
+    recommendation_id: str = ""
+
+    def __init__(
+        self,
+        checked_pairs: int,
+        anomalous_pairs: int,
+        findings: list[AnomalyResult] | tuple[AnomalyResult, ...],
+        severity_counts: dict[str, int],
+        threshold: float,
+        recommendation_id: str = "",
+    ) -> None:
+        """Initialize with findings converted to tuple and dict copied."""
+        object.__setattr__(self, "checked_pairs", checked_pairs)
+        object.__setattr__(self, "anomalous_pairs", anomalous_pairs)
+        object.__setattr__(self, "findings", tuple(findings))
+        object.__setattr__(self, "severity_counts", dict(severity_counts))
+        object.__setattr__(self, "threshold", threshold)
+        object.__setattr__(self, "recommendation_id", recommendation_id)
+
+    @property
+    def has_anomalies(self) -> bool:
+        """Whether scan found at least one anomaly."""
+        return self.anomalous_pairs > 0
 
 
 @dataclass(frozen=True)

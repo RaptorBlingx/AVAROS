@@ -260,6 +260,9 @@ export class BackendWakeWordService {
       await this.initialize();
     }
 
+    // Ensure each resumed listening cycle starts with clean detector state.
+    this.sendControlCommand("reset_detector", { reason: "start_listening" });
+
     // Send sensitivity configuration
     this.sendSensitivity();
 
@@ -274,6 +277,7 @@ export class BackendWakeWordService {
    */
   stopListening(): void {
     this.stopAudioCapture();
+    this.sendControlCommand("reset_detector", { reason: "stop_listening" });
     if (this._state === "listening" || this._state === "detected") {
       this.setState("idle");
     }
@@ -429,6 +433,9 @@ export class BackendWakeWordService {
     try {
       const payload = JSON.parse(event.data) as DetectionEvent;
       if (payload.event === "detected") {
+        console.log(
+          `[AVAROS-DEBUG] wake-word backend event: model=${payload.model}, score=${payload.score.toFixed(4)}`,
+        );
         this.wakeWordLabel = toDisplayWakeWordLabel(payload.model);
         this.setState("detected");
         this.fireDetected({
@@ -457,6 +464,26 @@ export class BackendWakeWordService {
         value: this.config.sensitivity,
       }),
     );
+  }
+
+  private sendControlCommand(
+    command: string,
+    payload: Record<string, unknown> = {},
+  ): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    try {
+      this.ws.send(
+        JSON.stringify({
+          command,
+          ...payload,
+        }),
+      );
+    } catch (err) {
+      console.warn(
+        `[AVAROS-DEBUG] wake-word control command failed: ${command}`,
+        err,
+      );
+    }
   }
 
   /** Close the WebSocket connection. */

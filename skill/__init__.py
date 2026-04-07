@@ -16,6 +16,7 @@ if __name__ != "skill":
     sys.modules.setdefault("skill", sys.modules[__name__])
 
 from ovos_workshop.decorators import fallback_handler
+from ovos_workshop.decorators.killable import AbortEvent
 from ovos_workshop.skills import FallbackSkill
 from skill._handlers import (
     can_answer as _can_answer_impl,
@@ -136,6 +137,8 @@ class AVAROSSkill(FallbackSkill):
         self._bus_event_handlers_registered: bool = False
         self._alert_monitor: AlertMonitor = AlertMonitor()
         self._alert_scheduler_active: bool = False
+        self._prevention_mode: str = "unknown"
+        self._prevention_mode_reason: str = ""
 
         super().__init__(*args, **kwargs)
 
@@ -202,6 +205,16 @@ class AVAROSSkill(FallbackSkill):
         self._is_initialized = True
         self._start_alert_scheduler()
 
+    def converse(self, message: Message | None = None) -> bool:
+        """Decline converse-stage interception so wake-word gating is preserved.
+
+        AVAROS is a fallback skill — it should only handle utterances via the
+        registered fallback handler, never by hijacking the converse pipeline
+        stage.  Returning ``False`` tells OVOS to continue normal intent
+        resolution for every utterance.
+        """
+        return False
+
     def _register_intent_handlers(self, *, force: bool = False) -> int:
         """Register intent files at runtime using data-driven mappings.
 
@@ -267,7 +280,32 @@ class AVAROSSkill(FallbackSkill):
             self._registered_entity_files.add(entity_file)
 
     def _handle_generic_kpi(self, message: Message) -> None:
-        """Generic KPI handler that maps intent name to canonical metric."""
+        """Generic KPI handler that maps intent name to canonical metric.
+
+        Includes utterance-based guards to redirect trend/compare/anomaly/drift
+        queries that Padatious mis-routed to a KPI intent.
+        """
+        utterance = self._extract_utterance_text(message).lower()
+
+        if self._is_anomaly_query(utterance):
+            self.handle_anomaly_check(message)
+            return
+
+        if self._is_drift_query(utterance):
+            self.handle_drift_check(message)
+            return
+
+        if "trend" in utterance:
+            self.handle_trend_metric(message)
+            return
+
+        if "compare" in utterance or " vs " in utterance or "versus" in utterance:
+            if "energy" in utterance or "power" in utterance:
+                self.handle_compare_energy(message)
+            else:
+                self.handle_compare_metric(message)
+            return
+
         intent_name = self._extract_intent_name(message)
         metric = INTENT_METRIC_MAP.get(intent_name)
         if metric is None:
@@ -307,6 +345,8 @@ class AVAROSSkill(FallbackSkill):
                 url = ""
 
         if not url:
+            self._prevention_mode = "fallback"
+            self._prevention_mode_reason = "prevention_url_missing"
             self.log.info(
                 "PREVENTION_URL not configured — "
                 "using StatisticalPreventionClient (zero-config fallback)",
@@ -327,6 +367,8 @@ class AVAROSSkill(FallbackSkill):
                 auth_token = ""
 
         self.log.info("Connecting to PREVENTION at %s", url)
+        self._prevention_mode = "http"
+        self._prevention_mode_reason = "prevention_url_configured"
         return HttpPreventionClient(
             url=url,
             auth_token=auth_token,
@@ -533,6 +575,8 @@ class AVAROSSkill(FallbackSkill):
 
         fallback = UnconfiguredAdapter()
         prevention_client = StatisticalPreventionClient()
+        self._prevention_mode = "fallback"
+        self._prevention_mode_reason = "forced_unconfigured_fallback"
         self.dispatcher = QueryDispatcher(
             adapter=fallback,
             settings_service=self.settings_service,
@@ -653,6 +697,9 @@ class AVAROSSkill(FallbackSkill):
                 "The data platform did not respond in time. "
                 "Please check the platform connection and try again.",
             )
+            return None
+        except AbortEvent:
+            self.log.info("%s aborted by new utterance", handler_name)
             return None
         except Exception as exc:
             self.log.error("Error in %s: %s", handler_name, exc, exc_info=True)
@@ -789,11 +836,17 @@ class AVAROSSkill(FallbackSkill):
         if not assets:
             return []
 
-        asset_ids = [
-            getattr(a, "asset_id", str(a)) for a in assets[:5]
-        ]
+        asset_ids: list[str] = []
+        for asset in assets:
+            asset_id = str(getattr(asset, "asset_id", str(asset))).strip()
+            if asset_id and asset_id not in asset_ids:
+                asset_ids.append(asset_id)
+
+        if not asset_ids:
+            return []
+
         pairs: list[MonitoredPair] = []
-        for m in metrics[:5]:
+        for m in metrics:
             for aid in asset_ids:
                 pairs.append(MonitoredPair(metric=m, asset_id=aid))
 

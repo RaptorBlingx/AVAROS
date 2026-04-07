@@ -46,6 +46,7 @@ class PreventionClient(ExternalServiceClient):
         metric: CanonicalMetric,
         data_points: list[DataPoint],
         threshold: float = 2.0,
+        asset_id: str | None = None,
     ) -> AnomalyDetectionResult:
         """
         Analyze data points for anomalous behavior.
@@ -54,6 +55,8 @@ class PreventionClient(ExternalServiceClient):
             metric: The canonical metric to analyze
             data_points: Time-series data points to evaluate
             threshold: Deviation threshold in standard deviations
+            asset_id: Optional asset identifier for clients that can
+                return asset-scoped anomalies.
 
         Returns:
             AnomalyDetectionResult with detection findings

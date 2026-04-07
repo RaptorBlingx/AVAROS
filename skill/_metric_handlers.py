@@ -503,20 +503,69 @@ def _get_adapter_metrics(skill: "AVAROSSkill") -> list[CanonicalMetric]:
         return []
 
 
-def handle_anomaly_check(skill: "AVAROSSkill", message) -> None:
-    """Handle: 'Any unusual patterns in production?'."""
+def _resolve_anomaly_query_scope(
+    skill: "AVAROSSkill",
+    message,
+    utterance: str,
+) -> tuple[CanonicalMetric | None, str | None]:
+    """Resolve optional metric/asset filters for anomaly query scope."""
+    metric = skill._resolve_metric_from_utterance(utterance)
+    data = getattr(message, "data", {}) or {}
 
-    def _execute() -> None:
-        asset_id = skill._resolve_asset_id(message)
-        text = skill._extract_utterance_text(message)
-        metric = _resolve_default_metric(skill, text)
+    raw_slot_asset = str(data.get("asset", "")).strip()
+    if raw_slot_asset:
+        try:
+            return metric, skill._canonicalize_asset_id(
+                raw_slot_asset,
+                raise_on_unknown=True,
+            )
+        except Exception:
+            pass
 
+    utterance_assets = skill._extract_line_assets_from_text(utterance)
+    if utterance_assets:
+        return metric, utterance_assets[0]
+
+    utterance_asset = skill._canonicalize_asset_id(utterance)
+    if utterance_asset and utterance_asset != utterance:
+        return metric, utterance_asset
+
+    return metric, None
+
+
+def _format_anomaly_query_response(
+    skill: "AVAROSSkill",
+    *,
+    metric: CanonicalMetric | None,
+    asset_id: str | None,
+) -> str:
+    """Format anomaly output based on targeted or broad query scope."""
+    if metric is not None and asset_id is not None:
         result: AnomalyResult = skill.dispatcher.check_anomaly(
             metric=metric,
             asset_id=asset_id,
         )
+        return skill.response_builder.format_anomaly_result(result)
 
-        response = skill.response_builder.format_anomaly_result(result)
+    scan_result = skill.dispatcher.scan_anomalies(metric=metric, asset_id=asset_id)
+    return skill.response_builder.format_anomaly_scan_result(scan_result)
+
+
+def handle_anomaly_check(skill: "AVAROSSkill", message) -> None:
+    """Handle: 'Any unusual patterns in production?'."""
+
+    def _execute() -> None:
+        text = skill._extract_utterance_text(message)
+        metric, asset_id = _resolve_anomaly_query_scope(
+            skill,
+            message,
+            text,
+        )
+        response = _format_anomaly_query_response(
+            skill,
+            metric=metric,
+            asset_id=asset_id,
+        )
         skill.speak(response)
 
     skill._safe_dispatch("handle_anomaly_check", _execute)

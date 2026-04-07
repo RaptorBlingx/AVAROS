@@ -27,6 +27,12 @@ class GenericRestSettingsMixin:
         "?period=DAILY&datetimeMin={start_date}&datetimeMax={end_date}&count=31&page=1"
     )
 
+    _GRANULARITY_TO_RENERYO_PERIOD = {
+        "hourly": "HOURLY",
+        "daily": "DAILY",
+    }
+    _RENERYO_TREND_COUNT = "31"
+
     def _resolve_trend_request(
         self,
         *,
@@ -38,9 +44,10 @@ class GenericRestSettingsMixin:
     ) -> tuple[str, dict[str, str]]:
         """Resolve trend endpoint and params for a mapped metric.
 
-        Convention: If no explicit trend endpoint is configured, use the KPI
-        endpoint and append ``period={start}_{end}`` and
-        ``granularity={granularity}`` query params.
+        Convention: If no explicit trend endpoint is configured, derive
+        from the KPI endpoint. For RENERYO-style endpoints that use a
+        ``period`` enum (RAW/DAILY/HOURLY), map granularity to the
+        enum value and increase count.
         """
         if str(mapping.get("trend_endpoint", "") or "").strip():
             return resolve_request(
@@ -57,10 +64,19 @@ class GenericRestSettingsMixin:
             asset_id=asset_id,
             extra_settings=self._runtime_settings_for(metric_name, asset_id),
         )
-        start_iso = period.start.strftime("%Y-%m-%dT%H:%M:%SZ")
-        end_iso = period.end.strftime("%Y-%m-%dT%H:%M:%SZ")
-        params["period"] = f"{start_iso}_{end_iso}"
-        params["granularity"] = granularity
+
+        current_period = params.get("period", "")
+        if current_period.upper() in {"RAW", "HOURLY", "DAILY"}:
+            reneryo_period = self._GRANULARITY_TO_RENERYO_PERIOD.get(
+                granularity, "DAILY",
+            )
+            params["period"] = reneryo_period
+            params["count"] = self._RENERYO_TREND_COUNT
+        else:
+            start_iso = period.start.strftime("%Y-%m-%dT%H:%M:%SZ")
+            end_iso = period.end.strftime("%Y-%m-%dT%H:%M:%SZ")
+            params["period"] = f"{start_iso}_{end_iso}"
+            params["granularity"] = granularity
         return endpoint, params
 
     def _lookup_metric_mapping_by_name(self, metric_name: str) -> MetricMapping | None:

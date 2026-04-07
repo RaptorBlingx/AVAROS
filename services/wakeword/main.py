@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import threading
+import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from typing import Any
@@ -354,6 +355,8 @@ async def ws_detect(websocket: WebSocket) -> None:
         await websocket.close(code=1008, reason=_safe_close_reason(str(exc)))
         return
 
+    last_detection_monotonic: float | None = None
+
     try:
         while True:
             message = await websocket.receive()
@@ -419,6 +422,39 @@ async def ws_detect(websocket: WebSocket) -> None:
                             new_threshold,
                         )
                     continue
+                if command == "reset_detector":
+                    reason = payload.get("reason", "unspecified")
+                    active_threshold = _detector_threshold(detector)
+                    detector.close()
+                    try:
+                        detector = WakeWordDetector(
+                            model_name=model_name,
+                            display_name=model_label,
+                            threshold=active_threshold,
+                            custom_model_path=custom_model_path,
+                            confirmation_frames=_confirmation_frames(),
+                        )
+                    except ValueError as exc:
+                        logger.error(
+                            "Detector reset failed for session=%s reason=%s: %s",
+                            session_id,
+                            reason,
+                            exc,
+                        )
+                        await websocket.close(
+                            code=1011,
+                            reason=_safe_close_reason("detector reset failed"),
+                        )
+                        break
+                    _update_session_threshold(session_id, detector)
+                    last_detection_monotonic = None
+                    logger.info(
+                        "Detector reset: session=%s reason=%s threshold=%.2f",
+                        session_id,
+                        reason,
+                        active_threshold,
+                    )
+                    continue
                 logger.debug("Ignoring unsupported websocket command: %s", payload)
                 continue
 
@@ -428,11 +464,20 @@ async def ws_detect(websocket: WebSocket) -> None:
 
             event = detector.process_audio(pcm_frame)
             if event is not None:
+                now = time.monotonic()
+                since_last = (
+                    "first"
+                    if last_detection_monotonic is None
+                    else f"{now - last_detection_monotonic:.3f}s"
+                )
+                last_detection_monotonic = now
                 logger.warning(
-                    "DETECTION FIRED: model=%s score=%.4f session=%s",
+                    "DETECTION FIRED: model=%s score=%.4f threshold=%.2f session=%s since_last=%s",
                     event.model,
                     event.score,
+                    _detector_threshold(detector),
                     session_id,
+                    since_last,
                 )
                 await websocket.send_json(asdict(event))
     except WebSocketDisconnect:

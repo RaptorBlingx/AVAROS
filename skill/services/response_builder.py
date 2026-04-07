@@ -28,14 +28,15 @@ from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from skill.domain.anomaly_models import DriftReport
+    from skill.domain.models import Anomaly, CanonicalMetric
     from skill.domain.results import (
         KPIResult,
         ComparisonResult,
         TrendResult,
         AnomalyResult,
+        AnomalyScanResult,
         WhatIfResult,
     )
-    from skill.domain.models import CanonicalMetric
 
 
 class ResponseBuilder:
@@ -188,25 +189,107 @@ class ResponseBuilder:
             Natural language anomaly description
             
         Example:
-            "I found 2 anomalies with medium severity"
-            "No unusual patterns detected"
+            "Energy per unit spiked to 3.8, normally 2.2, a 2.5 sigma
+             deviation with low severity on Line-1.
+             I recommend: Check compressor maintenance schedule."
+            "No unusual patterns detected. Everything looks normal."
         """
         if not result.is_anomalous:
-            return "No unusual patterns detected. Everything looks normal."
+            metric_name = result.metric.display_name.capitalize()
+            return (
+                f"No unusual patterns detected. "
+                f"{metric_name} looks normal."
+            )
         
-        count = len(result.anomalies)
         severity = result.severity
+        metric_name = result.metric.display_name
+        first = result.anomalies[0] if result.anomalies else None
         
         if self.verbosity == "brief":
-            return f"{count} anomalies, {severity} severity"
-        elif self.verbosity == "normal":
-            plural = "anomalies" if count > 1 else "anomaly"
-            return f"I found {count} {plural} with {severity} severity"
-        else:  # detailed
-            plural = "anomalies" if count > 1 else "anomaly"
-            first_anomaly = result.anomalies[0] if result.anomalies else None
-            description = first_anomaly.description if first_anomaly else ""
-            return f"I found {count} {plural} with {severity} severity. {description}"
+            deviation = first.deviation if first else 0
+            return (
+                f"{metric_name}: "
+                f"{severity} severity, {deviation:.1f} sigma"
+            )
+
+        direction = self._anomaly_direction_word(first)
+        value_str = self._anomaly_value_clause(first)
+        deviation_str = f"{abs(first.deviation):.1f} sigma" if first else ""
+
+        if self.verbosity == "normal":
+            return (
+                f"{metric_name} {direction}{value_str}, "
+                f"at {deviation_str} "
+                f"with {severity} severity on {result.asset_id}."
+            )
+
+        # detailed
+        description = first.description if first else ""
+        action_str = ""
+        if result.recommended_action:
+            action_str = f" I recommend: {result.recommended_action}"
+        return (
+            f"{metric_name} {direction}{value_str}, "
+            f"at {deviation_str} "
+            f"with {severity} severity on {result.asset_id}. "
+            f"{description}{action_str}"
+        )
+
+    def format_anomaly_scan_result(self, result: AnomalyScanResult) -> str:
+        """Format aggregate anomaly scan findings for broad queries."""
+        checks_word = "check" if result.checked_pairs == 1 else "checks"
+
+        if not result.has_anomalies:
+            return (
+                "No unusual patterns detected across "
+                f"{result.checked_pairs} {checks_word}."
+            )
+
+        if self.verbosity == "brief":
+            return (
+                f"{result.anomalous_pairs} anomalies "
+                f"across {result.checked_pairs} {checks_word}"
+            )
+
+        parts = [
+            f"I found {result.anomalous_pairs} "
+            f"{'anomaly' if result.anomalous_pairs == 1 else 'anomalies'} "
+            f"across {result.checked_pairs} {checks_word}."
+        ]
+
+        # Top findings (up to 3 at normal, all at detailed)
+        top_n = 3 if self.verbosity == "normal" else len(result.findings)
+        if result.findings:
+            top_items = []
+            for finding in result.findings[:top_n]:
+                anomaly = finding.anomalies[0] if finding.anomalies else None
+                deviation = abs(anomaly.deviation) if anomaly else 0.0
+                direction = self._anomaly_direction_word(anomaly)
+                top_items.append(
+                    f"{finding.metric.display_name} {direction} "
+                    f"on {finding.asset_id} at {deviation:.1f} sigma"
+                )
+            label = "Top" if len(result.findings) > top_n else "Findings"
+            parts.append(f"{label}: " + "; ".join(top_items) + ".")
+
+        # Recommended action from top finding
+        if (
+            self.verbosity == "detailed"
+            and result.findings
+            and result.findings[0].recommended_action
+        ):
+            parts.append(
+                f"I recommend: {result.findings[0].recommended_action}"
+            )
+
+        if self.verbosity == "detailed" and result.severity_counts:
+            severity_summary = ", ".join(
+                f"{level} {count}"
+                for level, count in result.severity_counts.items()
+            )
+            parts.append(f"Severity mix: {severity_summary}.")
+
+        return " ".join(parts)
 
     # =========================================================================
     # Drift Results
@@ -227,7 +310,7 @@ class ResponseBuilder:
         if not result.has_drift:
             return (
                 f"No significant drift detected. "
-                f"{metric_name} is stable."
+                f"{metric_name.capitalize()} is stable."
             )
 
         direction = result.drift_direction
@@ -237,9 +320,16 @@ class ResponseBuilder:
         if self.verbosity == "brief":
             return f"{metric_name} {direction}, {rate}/day"
 
+        if self.verbosity == "normal":
+            return (
+                f"{metric_name} is {direction}, "
+                f"changing at {rate} per day over {periods} data points."
+            )
+
+        # detailed — include technical description
         return (
-            f"{metric_name} shows a {direction} trend, "
-            f"changing at {rate} per day over {periods} days. "
+            f"{metric_name} is {direction}, "
+            f"changing at {rate} per day over {periods} data points. "
             f"{result.description}"
         )
     
@@ -285,7 +375,30 @@ class ResponseBuilder:
     # =========================================================================
     # Helper Methods
     # =========================================================================
-    
+
+    @staticmethod
+    def _anomaly_direction_word(anomaly: Anomaly | None) -> str:
+        """Return a natural direction word for an anomaly."""
+        if anomaly is None:
+            return "showed a deviation"
+        atype = getattr(anomaly, "anomaly_type", "")
+        if atype == "spike":
+            return "spiked"
+        if atype == "dip":
+            return "dipped"
+        return "showed a deviation"
+
+    @staticmethod
+    def _anomaly_value_clause(anomaly: Anomaly | None) -> str:
+        """Return ' to {actual}, normally {expected}' when both are nonzero."""
+        if anomaly is None:
+            return ""
+        actual = anomaly.actual_value
+        expected = anomaly.expected_value
+        if actual and expected:
+            return f" to {actual:.1f}, normally {expected:.1f}"
+        return ""
+
     def _format_asset_name(self, asset_id: str) -> str:
         """Format asset ID into natural speech."""
         if self._asset_name_resolver is not None:
@@ -302,23 +415,39 @@ class ResponseBuilder:
     
     def _format_value(self, value: float, unit: str) -> str:
         """Format numeric value with appropriate precision."""
-        # Round to 1 decimal place for most metrics
+        formatted = self._format_number(value)
         if unit == "%":
-            return f"{value:.1f} percent"
+            return f"{formatted} percent"
         elif "kWh" in unit:
-            return f"{value:.1f} kilowatt hours"
+            return f"{formatted} kilowatt hours"
         elif "kg" in unit:
-            return f"{value:.1f} kilograms"
+            return f"{formatted} kilograms"
         elif "°C" in unit:
-            return f"{value:.1f} degrees celsius"
+            return f"{formatted} degrees celsius"
         elif unit in ("sec", "seconds"):
-            return f"{value:.1f} seconds"
+            return f"{formatted} seconds"
         elif unit in ("min", "minutes"):
-            return f"{value:.1f} minutes"
+            return f"{formatted} minutes"
         elif unit in ("days",):
-            return f"{value:.1f} days"
+            return f"{formatted} days"
         else:
-            return f"{value:.1f} {unit.lower()}"
+            return f"{formatted} {unit.lower()}"
+
+    @staticmethod
+    def _format_number(value: float) -> str:
+        """Format a number with adaptive precision for readability.
+
+        Uses 1 decimal for normal values (≥0.1) and up to 4 significant
+        figures for very small values so they don't collapse to '0.0'.
+        """
+        abs_value = abs(value)
+        if abs_value == 0:
+            return "0"
+        if abs_value >= 0.1:
+            return f"{value:.1f}"
+        if abs_value >= 0.001:
+            return f"{value:.4f}"
+        return f"{value:.2e}"
     
     def _is_lower_better(self, metric: CanonicalMetric) -> bool:
         """Determine if lower values are better for this metric."""

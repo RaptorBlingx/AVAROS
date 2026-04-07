@@ -601,6 +601,41 @@ class TestAnomaly:
         assert anomaly.deviation == -3.5
         assert "slowdown" in anomaly.description.lower()
 
+    def test_anomaly_type_spike(self):
+        """Anomaly should store anomaly_type 'spike'."""
+        anomaly = Anomaly(
+            timestamp=datetime.now(),
+            metric=CanonicalMetric.ENERGY_PER_UNIT,
+            expected_value=2.0,
+            actual_value=3.5,
+            deviation=2.5,
+            anomaly_type="spike",
+        )
+        assert anomaly.anomaly_type == "spike"
+
+    def test_anomaly_type_dip(self):
+        """Anomaly should store anomaly_type 'dip'."""
+        anomaly = Anomaly(
+            timestamp=datetime.now(),
+            metric=CanonicalMetric.OEE,
+            expected_value=80.0,
+            actual_value=60.0,
+            deviation=-3.0,
+            anomaly_type="dip",
+        )
+        assert anomaly.anomaly_type == "dip"
+
+    def test_anomaly_type_defaults_to_empty(self):
+        """Anomaly should default anomaly_type to empty string."""
+        anomaly = Anomaly(
+            timestamp=datetime.now(),
+            metric=CanonicalMetric.OEE,
+            expected_value=80.0,
+            actual_value=70.0,
+            deviation=2.0,
+        )
+        assert anomaly.anomaly_type == ""
+
 
 # ══════════════════════════════════════════════════════════
 # EmissionFactor

@@ -269,6 +269,18 @@ class ManufacturingAdapter(ABC):
         """
         from skill.domain.models import CanonicalMetric
         return list(CanonicalMetric)
+
+    def get_scannable_pairs(
+        self,
+    ) -> list[tuple[CanonicalMetric, str]]:
+        """Return (metric, asset_id) tuples that have real data behind them.
+
+        Used by anomaly scanning to avoid wasting calls on pairs that
+        have no configured metric_resource.  Default returns the full
+        cross-product (metrics × assets); adapters with richer config
+        should override with a filtered list.
+        """
+        return []
     
     # =========================================================================
     # Connection Testing

@@ -95,3 +95,30 @@ class TestSaveAlertConfig:
         config = service.get_alert_config()
         assert len(config.monitored_pairs) == 1
         assert config.monitored_pairs[0].asset_id == "A"
+
+
+class TestQueryAnomalyThreshold:
+    def test_defaults_to_alert_threshold_when_unset(
+        self,
+        service: SettingsService,
+    ) -> None:
+        """Query threshold falls back to alert z-score threshold by default."""
+        service.save_alert_config(AlertConfig(z_score_threshold=3.1))
+        service.delete_setting(service.QUERY_ANOMALY_THRESHOLD_KEY)
+
+        threshold = service.get_query_anomaly_threshold()
+
+        assert threshold == pytest.approx(3.1)
+
+    def test_can_persist_query_threshold_independently(
+        self,
+        service: SettingsService,
+    ) -> None:
+        """Explicit query threshold stays independent from alert threshold."""
+        service.save_alert_config(AlertConfig(z_score_threshold=3.0))
+        service.set_query_anomaly_threshold(1.8)
+
+        service.save_alert_config(AlertConfig(z_score_threshold=4.0))
+
+        assert service.get_query_anomaly_threshold() == pytest.approx(1.8)
+        assert service.get_alert_config().z_score_threshold == pytest.approx(4.0)

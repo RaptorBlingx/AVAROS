@@ -791,6 +791,7 @@ class SettingsService(ProfileMixin):
     # ── Alert Config CRUD ───────────────────────────────
 
     ALERT_CONFIG_KEY = "alert_config"
+    QUERY_ANOMALY_THRESHOLD_KEY = "query_anomaly_threshold"
 
     def get_alert_config(self) -> AlertConfig:
         """Load proactive alert configuration.
@@ -845,6 +846,38 @@ class SettingsService(ProfileMixin):
         }
         self.set_setting(self.ALERT_CONFIG_KEY, payload)
 
+        # Migration-safe default: keep conversational threshold aligned with
+        # alert threshold until explicitly overridden by the user.
+        if self.get_setting(self.QUERY_ANOMALY_THRESHOLD_KEY, default=None) is None:
+            self.set_setting(
+                self.QUERY_ANOMALY_THRESHOLD_KEY,
+                float(config.z_score_threshold),
+            )
+
+    def get_query_anomaly_threshold(self) -> float:
+        """Return conversational anomaly threshold.
+
+        Falls back to the alert monitor z-score threshold for backward
+        compatibility when the dedicated query threshold is not set yet.
+        """
+        raw_value = self.get_setting(
+            self.QUERY_ANOMALY_THRESHOLD_KEY,
+            default=None,
+        )
+        try:
+            if raw_value is not None:
+                return float(raw_value)
+        except (TypeError, ValueError):
+            pass
+        return self.get_alert_config().z_score_threshold
+
+    def set_query_anomaly_threshold(self, threshold: float) -> None:
+        """Persist conversational anomaly threshold for voice queries."""
+        self.set_setting(
+            self.QUERY_ANOMALY_THRESHOLD_KEY,
+            float(threshold),
+        )
+
     def get_anomaly_threshold(self) -> float:
         """Return the configured z-score anomaly sensitivity threshold.
 
@@ -854,7 +887,7 @@ class SettingsService(ProfileMixin):
         Returns:
             Configured threshold (default 2.0 if not yet saved).
         """
-        return self.get_alert_config().z_score_threshold
+        return self.get_query_anomaly_threshold()
 
     # ── Metric Mapping CRUD ─────────────────────────────
 

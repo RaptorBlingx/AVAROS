@@ -705,3 +705,62 @@ async def test_test_connection_cookie_auth_accepted_returns_success() -> None:
 
     assert result.success is True
     assert result.error_code == ""
+
+
+@pytest.mark.asyncio
+async def test_get_kpi_rejects_unbound_metric_on_natively_bound_asset(
+    period: TimePeriod,
+) -> None:
+    """Asset with native bindings but no capability_mode tag still rejects unbound metrics."""
+    adapter = _build_asset_adapter(
+        {
+            "electric_main_meter": {
+                "display_name": "Electric Main Meter",
+                "native_metric_bindings": {
+                    "energy_total": {
+                        "strategy": "asset_consumption_total",
+                        "unit": "kWh",
+                    },
+                },
+            },
+        },
+    )
+    adapter._session = object()
+
+    with pytest.raises(AdapterError) as exc_info:
+        await adapter.get_kpi(
+            metric=CanonicalMetric.ENERGY_PER_UNIT,
+            asset_id="electric_main_meter",
+            period=period,
+        )
+
+    assert exc_info.value.code == "ASSET_METRIC_UNAVAILABLE"
+    assert "energy per unit" in exc_info.value.user_message.lower()
+    assert "total energy" in exc_info.value.user_message.lower()
+
+
+def test_get_natively_bound_metrics_empty_when_no_bindings() -> None:
+    """Assets without native_metric_bindings return an empty list."""
+    adapter = _build_asset_adapter(
+        {"line_1": {"display_name": "Line 1"}},
+    )
+
+    assert adapter._get_natively_bound_metrics("line_1") == []
+
+
+def test_get_natively_bound_metrics_returns_bound_metrics() -> None:
+    """Assets with native_metric_bindings return their bound canonical metrics."""
+    adapter = _build_asset_adapter(
+        {
+            "meter": {
+                "display_name": "Meter",
+                "native_metric_bindings": {
+                    "energy_total": {"strategy": "asset_consumption_total"},
+                },
+            },
+        },
+    )
+
+    result = adapter._get_natively_bound_metrics("meter")
+
+    assert result == [CanonicalMetric.ENERGY_TOTAL]

@@ -28,6 +28,7 @@ from skill.domain.models import (
 )
 from skill.domain.results import (
     AnomalyResult,
+    AnomalyScanResult,
     ComparisonItem,
     ComparisonResult,
     KPIResult,
@@ -216,6 +217,7 @@ def anomaly_detected(period: TimePeriod) -> AnomalyResult:
         severity="medium",
         asset_id="Line-1",
         metric=CanonicalMetric.OEE,
+        recommended_action="Analyze OEE breakdown to identify the root cause.",
     )
 
 
@@ -228,6 +230,19 @@ def anomaly_none() -> AnomalyResult:
         severity="none",
         asset_id="Line-1",
         metric=CanonicalMetric.OEE,
+    )
+
+
+@pytest.fixture
+def anomaly_scan_result(anomaly_detected: AnomalyResult) -> AnomalyScanResult:
+    """Aggregate anomaly scan result with one finding."""
+    return AnomalyScanResult(
+        checked_pairs=12,
+        anomalous_pairs=1,
+        findings=[anomaly_detected],
+        severity_counts={"medium": 1},
+        threshold=2.0,
+        recommendation_id="scan-1",
     )
 
 
@@ -397,7 +412,7 @@ class TestFormatKPIResult:
             timestamp=datetime.now(),
         )
         result = builder.format_kpi_result(kpi_zero)
-        assert "0.0 percent" in result
+        assert "0 percent" in result
 
     def test_format_kpi_result_large_value(
         self, builder: ResponseBuilder, period: TimePeriod
@@ -535,13 +550,15 @@ class TestFormatTrendResult:
 class TestFormatAnomalyResult:
     """Tests for format_anomaly_result()."""
 
-    def test_format_anomaly_detected_mentions_count(
+    def test_format_anomaly_detected_shows_metric_and_severity(
         self, builder: ResponseBuilder, anomaly_detected: AnomalyResult
     ) -> None:
-        """Detected anomalies show count and severity."""
+        """Detected anomalies show metric name, deviation, and severity."""
         result = builder.format_anomaly_result(anomaly_detected)
-        assert "2" in result
+        assert "equipment effectiveness" in result.lower()
         assert "medium" in result.lower()
+        assert "3.2" in result
+        assert "Line-1" in result
 
     def test_format_anomaly_none_reassuring(
         self, builder: ResponseBuilder, anomaly_none: AnomalyResult
@@ -555,8 +572,9 @@ class TestFormatAnomalyResult:
     ) -> None:
         """Brief verbosity is compact."""
         result = brief_builder.format_anomaly_result(anomaly_detected)
-        assert "2" in result
+        assert "equipment effectiveness" in result.lower()
         assert "medium" in result.lower()
+        assert "sigma" in result.lower()
 
     def test_format_anomaly_detailed_includes_description(
         self, detailed_builder: ResponseBuilder, anomaly_detected: AnomalyResult
@@ -565,10 +583,10 @@ class TestFormatAnomalyResult:
         result = detailed_builder.format_anomaly_result(anomaly_detected)
         assert "dropped" in result.lower() or "OEE" in result
 
-    def test_format_anomaly_single_uses_singular(
+    def test_format_anomaly_single_includes_metric(
         self, builder: ResponseBuilder
     ) -> None:
-        """Single anomaly uses singular noun."""
+        """Single anomaly shows metric name and deviation."""
         now = datetime.now()
         single = AnomalyResult(
             is_anomalous=True,
@@ -586,16 +604,179 @@ class TestFormatAnomalyResult:
             metric=CanonicalMetric.OEE,
         )
         result = builder.format_anomaly_result(single)
-        assert "1 anomaly" in result
-        assert "anomalies" not in result
+        assert "equipment effectiveness" in result.lower()
+        assert "2.5" in result
 
-    def test_format_anomaly_under_30_words(
+    def test_format_anomaly_includes_action_in_detailed(
+        self, detailed_builder: ResponseBuilder, anomaly_detected: AnomalyResult
+    ) -> None:
+        """Detailed verbosity includes recommended action."""
+        result = detailed_builder.format_anomaly_result(anomaly_detected)
+        assert "root cause" in result.lower()
+
+    def test_format_anomaly_normal_excludes_action(
         self, builder: ResponseBuilder, anomaly_detected: AnomalyResult
     ) -> None:
-        """Response stays under 30 words."""
+        """Normal verbosity omits recommended action."""
+        result = builder.format_anomaly_result(anomaly_detected)
+        assert "I recommend" not in result
+
+    def test_format_anomaly_includes_spike_direction(
+        self, builder: ResponseBuilder
+    ) -> None:
+        """When anomaly_type is 'spike', response says 'spiked'."""
+        now = datetime.now()
+        result_obj = AnomalyResult(
+            is_anomalous=True,
+            anomalies=[
+                Anomaly(
+                    timestamp=now,
+                    metric=CanonicalMetric.ENERGY_PER_UNIT,
+                    expected_value=2.0,
+                    actual_value=3.5,
+                    deviation=2.5,
+                    anomaly_type="spike",
+                ),
+            ],
+            severity="low",
+            asset_id="Line-1",
+            metric=CanonicalMetric.ENERGY_PER_UNIT,
+        )
+        result = builder.format_anomaly_result(result_obj)
+        assert "spiked" in result
+        assert "3.5" in result
+        assert "2.0" in result
+
+    def test_format_anomaly_includes_dip_direction(
+        self, builder: ResponseBuilder
+    ) -> None:
+        """When anomaly_type is 'dip', response says 'dipped'."""
+        now = datetime.now()
+        result_obj = AnomalyResult(
+            is_anomalous=True,
+            anomalies=[
+                Anomaly(
+                    timestamp=now,
+                    metric=CanonicalMetric.OEE,
+                    expected_value=80.0,
+                    actual_value=60.0,
+                    deviation=-3.0,
+                    anomaly_type="dip",
+                ),
+            ],
+            severity="high",
+            asset_id="Line-2",
+            metric=CanonicalMetric.OEE,
+        )
+        result = builder.format_anomaly_result(result_obj)
+        assert "dipped" in result
+
+    def test_format_anomaly_under_40_words(
+        self, builder: ResponseBuilder, anomaly_detected: AnomalyResult
+    ) -> None:
+        """Response stays under 40 words."""
         result = builder.format_anomaly_result(anomaly_detected)
         word_count = len(result.split())
-        assert word_count <= 30, f"Response has {word_count} words: {result}"
+        assert word_count <= 40, f"Response has {word_count} words: {result}"
+
+
+class TestFormatAnomalyScanResult:
+    """Tests for format_anomaly_scan_result()."""
+
+    def test_format_scan_normal_includes_counts(
+        self,
+        builder: ResponseBuilder,
+        anomaly_scan_result: AnomalyScanResult,
+    ) -> None:
+        """Normal verbosity includes scan and anomaly counts."""
+        result = builder.format_anomaly_scan_result(anomaly_scan_result)
+        assert "1 anomaly" in result
+        assert "12 checks" in result
+
+    def test_format_scan_brief_is_compact(
+        self,
+        brief_builder: ResponseBuilder,
+        anomaly_scan_result: AnomalyScanResult,
+    ) -> None:
+        """Brief verbosity keeps a compact count-focused sentence."""
+        result = brief_builder.format_anomaly_scan_result(anomaly_scan_result)
+        assert result == "1 anomalies across 12 checks"
+
+    def test_format_scan_no_findings_reassures(
+        self,
+        builder: ResponseBuilder,
+    ) -> None:
+        """No findings reports clear no-anomaly response."""
+        empty_scan = AnomalyScanResult(
+            checked_pairs=9,
+            anomalous_pairs=0,
+            findings=[],
+            severity_counts={},
+            threshold=2.0,
+            recommendation_id="scan-empty",
+        )
+        result = builder.format_anomaly_scan_result(empty_scan)
+        assert "No unusual patterns" in result
+        assert "9 checks" in result
+
+    def test_format_scan_single_check_grammar(
+        self,
+        builder: ResponseBuilder,
+    ) -> None:
+        """Single check uses singular 'check' not 'checks'."""
+        scan = AnomalyScanResult(
+            checked_pairs=1,
+            anomalous_pairs=0,
+            findings=[],
+            severity_counts={},
+            threshold=2.0,
+            recommendation_id="scan-single",
+        )
+        result = builder.format_anomaly_scan_result(scan)
+        assert "1 check." in result
+        assert "checks" not in result
+
+    def test_format_scan_excludes_action_in_normal(
+        self,
+        builder: ResponseBuilder,
+        anomaly_scan_result: AnomalyScanResult,
+    ) -> None:
+        """Normal scan result omits recommended action."""
+        result = builder.format_anomaly_scan_result(anomaly_scan_result)
+        assert "I recommend:" not in result
+
+    def test_format_scan_includes_direction(
+        self,
+        builder: ResponseBuilder,
+    ) -> None:
+        """Scan findings include spike/dip direction when available."""
+        now = datetime.now()
+        finding = AnomalyResult(
+            is_anomalous=True,
+            anomalies=[
+                Anomaly(
+                    timestamp=now,
+                    metric=CanonicalMetric.ENERGY_PER_UNIT,
+                    expected_value=2.0,
+                    actual_value=3.5,
+                    deviation=2.5,
+                    anomaly_type="spike",
+                ),
+            ],
+            severity="low",
+            asset_id="Line-1",
+            metric=CanonicalMetric.ENERGY_PER_UNIT,
+        )
+        scan = AnomalyScanResult(
+            checked_pairs=5,
+            anomalous_pairs=1,
+            findings=[finding],
+            severity_counts={"low": 1},
+            threshold=2.0,
+            recommendation_id="scan-dir",
+        )
+        result = builder.format_anomaly_scan_result(scan)
+        assert "spiked" in result
 
 
 # ══════════════════════════════════════════════════════════

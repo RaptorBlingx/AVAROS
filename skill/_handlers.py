@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from skill._metric_handlers import _format_anomaly_query_response
+from skill._metric_handlers import _resolve_anomaly_query_scope
 from skill._metric_handlers import _resolve_default_metric
 from skill._metric_handlers import _resolve_kpi_period as _resolve_kpi_period_impl
 from skill.domain.models import CanonicalMetric
@@ -57,10 +59,16 @@ def _fallback_anomaly(
     """Execute anomaly check via fallback path."""
 
     def _execute() -> bool:
-        asset_id = skill._resolve_asset_id(message)
-        metric = _resolve_default_metric(skill, utterance)
-        result = skill.dispatcher.check_anomaly(metric=metric, asset_id=asset_id)
-        response = skill.response_builder.format_anomaly_result(result)
+        metric, asset_id = _resolve_anomaly_query_scope(
+            skill,
+            message,
+            utterance,
+        )
+        response = _format_anomaly_query_response(
+            skill,
+            metric=metric,
+            asset_id=asset_id,
+        )
         skill.speak(response)
         return True
 
@@ -132,7 +140,7 @@ def can_answer(skill: "AVAROSSkill", message: Message) -> bool:
         text = skill._extract_utterance_text(message).lower()
 
     if not text.strip():
-        return True
+        return False
 
     return (
         skill._resolve_metric_from_utterance(text) is not None

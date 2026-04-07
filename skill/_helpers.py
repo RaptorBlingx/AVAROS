@@ -214,6 +214,9 @@ def is_anomaly_query(self, utterance: str) -> bool:
     normalized = re.sub(r"[^a-z0-9\s]", " ", utterance.lower())
     normalized = re.sub(r"\s+", " ", normalized).strip()
     anomaly_patterns = (
+        "anomaly",
+        "anomalies",
+        "anomalous",
         "check anomalies",
         "check anomaly",
         "check for anomalies",
@@ -235,9 +238,13 @@ def is_drift_query(self, utterance: str) -> bool:
     normalized = re.sub(r"\s+", " ", normalized).strip()
     drift_patterns = (
         "drift",
+        "drifting",
         "trending",
         "gradual changes",
         "gradual degradation",
+        "degradation",
+        "declining",
+        "getting worse",
         "drift check",
         "drift analysis",
         "drift report",

@@ -42,3 +42,11 @@ class AlertConfigSchema(BaseModel):
             "Industry SPC standard is 3.0; default 2.0 is more conservative."
         ),
     )
+    query_z_score_threshold: float = Field(
+        2.0, ge=1.0, le=5.0,
+        description=(
+            "Conversational anomaly sensitivity for voice queries. "
+            "Kept separate from alert monitor threshold to avoid noisy voices "
+            "or overly strict proactive alerts."
+        ),
+    )

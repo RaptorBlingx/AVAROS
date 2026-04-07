@@ -83,6 +83,7 @@ class MockPreventionClient(PreventionClient):
         metric: CanonicalMetric,
         data_points: list[DataPoint],
         threshold: float = 2.0,
+        asset_id: str | None = None,
     ) -> AnomalyDetectionResult:
         """Detect anomalies using deterministic demo data."""
         category = _get_category_for_metric(metric)
@@ -105,6 +106,9 @@ class MockPreventionClient(PreventionClient):
             description=description,
             detected_at=detected_at,
             recommended_action=action,
+            expected_value=100.0 if is_anomalous else None,
+            actual_value=120.0 if is_anomalous else None,
+            deviation=deviation,
         )
 
     async def check_drift(

@@ -541,6 +541,8 @@ class TestAnomalyResultParsing:
         assert result.is_anomalous is True
         assert result.severity == "critical"
         assert result.anomaly_type == "spike"
+        assert result.deviation == 4.5
+        assert result.actual_value == 20.0
 
     def test_returns_normal_when_no_match(self) -> None:
         results_for_other_metric = [
@@ -673,3 +675,237 @@ class TestThresholdFiltering:
             CanonicalMetric.ENERGY_PER_UNIT, "energy", [], 2.0,
         )
         assert result.is_anomalous is False
+
+
+# =========================================================================
+# Severity Invariant Tests (P9.1 Phase 7) — HTTP client parse layer
+# =========================================================================
+
+
+class TestHttpSeverityInvariant:
+    """Verify _parse_anomaly_results enforces severity != 'none' for anomalies."""
+
+    def test_server_returns_none_severity_gets_corrected(self) -> None:
+        """Backend returns severity='none' with high z_score → corrected to 'low'."""
+        results = [
+            {
+                "metric_name": "energy_per_unit",
+                "z_score": 3.5,
+                "is_anomalous": True,
+                "severity": "none",
+                "anomaly_type": "spike",
+                "timestamp": "2026-02-10T10:00:00",
+                "value": 25.0,
+                "asset_id": "Line-1",
+            },
+        ]
+        result = _parse_anomaly_results(
+            results, CanonicalMetric.ENERGY_PER_UNIT, "energy", [], 2.0,
+        )
+        assert result.is_anomalous is True
+        assert result.severity != "none"
+        assert result.severity == "low"
+
+    def test_valid_severity_preserved(self) -> None:
+        """Backend returns severity='high' → kept as-is."""
+        results = [
+            {
+                "metric_name": "energy_per_unit",
+                "z_score": 3.5,
+                "is_anomalous": True,
+                "severity": "high",
+                "anomaly_type": "spike",
+                "timestamp": "2026-02-10T10:00:00",
+                "value": 25.0,
+                "asset_id": "Line-1",
+            },
+        ]
+        result = _parse_anomaly_results(
+            results, CanonicalMetric.ENERGY_PER_UNIT, "energy", [], 2.0,
+        )
+        assert result.severity == "high"
+
+    def test_no_anomaly_severity_stays_none(self) -> None:
+        """When no results pass threshold, severity='none' is correct."""
+        results = [
+            {
+                "metric_name": "energy_per_unit",
+                "z_score": 1.0,
+                "is_anomalous": False,
+                "severity": "none",
+                "anomaly_type": "spike",
+                "timestamp": "2026-02-10T10:00:00",
+                "value": 5.0,
+                "asset_id": "Line-1",
+            },
+        ]
+        result = _parse_anomaly_results(
+            results, CanonicalMetric.ENERGY_PER_UNIT, "energy", [], 2.0,
+        )
+        assert result.is_anomalous is False
+        assert result.severity == "none"
+
+    @pytest.mark.parametrize("threshold", [1.0, 1.5, 2.0, 2.5, 3.0])
+    def test_invariant_across_thresholds(self, threshold: float) -> None:
+        """For any threshold: anomalous → severity != 'none'."""
+        results = [
+            {
+                "metric_name": "energy_per_unit",
+                "z_score": 3.2,
+                "is_anomalous": True,
+                "severity": "none",
+                "anomaly_type": "spike",
+                "timestamp": "2026-02-10T12:00:00",
+                "value": 18.0,
+                "asset_id": "Line-1",
+            },
+        ]
+        result = _parse_anomaly_results(
+            results, CanonicalMetric.ENERGY_PER_UNIT, "energy", [], threshold,
+        )
+        if result.is_anomalous:
+            assert result.severity != "none", (
+                f"threshold={threshold}: anomalous but severity='none'"
+            )
+        else:
+            assert result.severity == "none"
+
+
+# =========================================================================
+# Multi-Result Description Tests (P9.1 Phase 4 & 7)
+# =========================================================================
+
+
+class TestHttpMultiResultParsing:
+    """Verify multi-result descriptions include count and worst z-score."""
+
+    def test_single_result_no_count_suffix(self) -> None:
+        """Single anomalous result: no parenthetical count appended."""
+        results = [
+            {
+                "metric_name": "energy_per_unit",
+                "z_score": 3.0,
+                "is_anomalous": True,
+                "severity": "high",
+                "anomaly_type": "spike",
+                "timestamp": "2026-02-10T10:00:00",
+                "value": 20.0,
+                "asset_id": "Line-1",
+            },
+        ]
+        result = _parse_anomaly_results(
+            results, CanonicalMetric.ENERGY_PER_UNIT, "energy", [], 2.0,
+        )
+        assert "anomalous readings detected" not in result.description
+
+    def test_multiple_results_include_count(self) -> None:
+        """Two anomalous results: description includes count."""
+        results = [
+            {
+                "metric_name": "energy_per_unit",
+                "z_score": 2.5,
+                "is_anomalous": True,
+                "severity": "medium",
+                "anomaly_type": "spike",
+                "timestamp": "2026-02-10T08:00:00",
+                "value": 15.0,
+                "asset_id": "Line-1",
+            },
+            {
+                "metric_name": "energy_per_unit",
+                "z_score": 4.0,
+                "is_anomalous": True,
+                "severity": "critical",
+                "anomaly_type": "spike",
+                "timestamp": "2026-02-10T14:00:00",
+                "value": 30.0,
+                "asset_id": "Line-1",
+            },
+        ]
+        result = _parse_anomaly_results(
+            results, CanonicalMetric.ENERGY_PER_UNIT, "energy", [], 2.0,
+        )
+        assert result.is_anomalous is True
+        assert "2 anomalous readings detected" in result.description
+        assert "4.0σ" in result.description
+
+    def test_multi_result_shows_worst_zscore(self) -> None:
+        """Multi-result description shows the z-score of the worst reading."""
+        results = [
+            {
+                "metric_name": "energy_per_unit",
+                "z_score": 2.1,
+                "is_anomalous": True,
+                "severity": "low",
+                "anomaly_type": "dip",
+                "timestamp": "2026-02-10T06:00:00",
+                "value": 8.0,
+                "asset_id": "Line-1",
+            },
+            {
+                "metric_name": "energy_per_unit",
+                "z_score": 2.8,
+                "is_anomalous": True,
+                "severity": "medium",
+                "anomaly_type": "spike",
+                "timestamp": "2026-02-10T12:00:00",
+                "value": 17.0,
+                "asset_id": "Line-1",
+            },
+            {
+                "metric_name": "energy_per_unit",
+                "z_score": 5.1,
+                "is_anomalous": True,
+                "severity": "critical",
+                "anomaly_type": "spike",
+                "timestamp": "2026-02-10T18:00:00",
+                "value": 40.0,
+                "asset_id": "Line-1",
+            },
+        ]
+        result = _parse_anomaly_results(
+            results, CanonicalMetric.ENERGY_PER_UNIT, "energy", [], 2.0,
+        )
+        assert "3 anomalous readings detected" in result.description
+        assert "5.1σ" in result.description
+        assert result.severity == "critical"
+
+    def test_filtered_count_not_total_count(self) -> None:
+        """Count reflects only results above threshold, not total."""
+        results = [
+            {
+                "metric_name": "energy_per_unit",
+                "z_score": 1.5,
+                "is_anomalous": True,
+                "severity": "low",
+                "anomaly_type": "dip",
+                "timestamp": "2026-02-10T06:00:00",
+                "value": 8.0,
+                "asset_id": "Line-1",
+            },
+            {
+                "metric_name": "energy_per_unit",
+                "z_score": 3.0,
+                "is_anomalous": True,
+                "severity": "high",
+                "anomaly_type": "spike",
+                "timestamp": "2026-02-10T12:00:00",
+                "value": 20.0,
+                "asset_id": "Line-1",
+            },
+            {
+                "metric_name": "energy_per_unit",
+                "z_score": 4.5,
+                "is_anomalous": True,
+                "severity": "critical",
+                "anomaly_type": "spike",
+                "timestamp": "2026-02-10T18:00:00",
+                "value": 35.0,
+                "asset_id": "Line-1",
+            },
+        ]
+        # threshold=2.5 filters out z=1.5 → only 2 pass
+        result = _parse_anomaly_results(
+            results, CanonicalMetric.ENERGY_PER_UNIT, "energy", [], 2.5,
+        )
+        assert "2 anomalous readings detected" in result.description

@@ -21,6 +21,17 @@ from services.wakeword.detector import DetectionEvent
 app = wakeword_main.app
 
 
+def _clear_runtime_model_state() -> None:
+    """Clear app lifespan-cached model metadata for env-driven tests."""
+    for attr in (
+        "wakeword_model_name",
+        "wakeword_model_label",
+        "wakeword_custom_model_path",
+    ):
+        if hasattr(app.state, attr):
+            delattr(app.state, attr)
+
+
 # ── Health endpoint ───────────────────────────────────────
 
 
@@ -362,6 +373,7 @@ class TestHealthMetadata:
         """Invalid custom model path is treated as registry mode."""
         # Arrange
         client = TestClient(app)
+        _clear_runtime_model_state()
 
         # Act
         with patch.dict(
@@ -378,6 +390,7 @@ class TestHealthMetadata:
         """Health shows model_mode='registry' when no custom path set."""
         # Arrange
         client = TestClient(app)
+        _clear_runtime_model_state()
 
         # Act
         with patch.dict("os.environ", {}, clear=False):
@@ -485,14 +498,15 @@ class TestWebSocketSensitivity:
         client = TestClient(app)
 
         # Act
-        with patch(
-            "services.wakeword.main.WakeWordDetector",
-            return_value=mock_detector,
-        ):
-            with client.websocket_connect("/ws/detect") as ws:
-                ws.send_text('{"command":"set_sensitivity","value":0.75}')
-                # Send audio to keep loop alive then disconnect
-                ws.send_bytes(b"\x00" * 2560)
+        with patch.dict("os.environ", {"WAKEWORD_THRESHOLD": "0.0"}, clear=False):
+            with patch(
+                "services.wakeword.main.WakeWordDetector",
+                return_value=mock_detector,
+            ):
+                with client.websocket_connect("/ws/detect") as ws:
+                    ws.send_text('{"command":"set_sensitivity","value":0.75}')
+                    # Send audio to keep loop alive then disconnect
+                    ws.send_bytes(b"\x00" * 2560)
 
         # Assert — sensitivity 0.75 → threshold 0.25 (inverted)
         mock_detector.update_threshold.assert_called_once_with(0.25)
@@ -536,3 +550,32 @@ class TestWebSocketSensitivity:
 
         # Assert — update_threshold never called
         mock_detector.update_threshold.assert_not_called()
+
+    def test_reset_detector_reinitializes_detector(self) -> None:
+        """reset_detector command recreates detector instance in-session."""
+        # Arrange
+        first_detector = MagicMock()
+        first_detector.process_audio.return_value = None
+        first_detector.close.return_value = None
+        first_detector.config_info = {"threshold": 0.5}
+
+        second_detector = MagicMock()
+        second_detector.process_audio.return_value = None
+        second_detector.close.return_value = None
+        second_detector.config_info = {"threshold": 0.5}
+
+        client = TestClient(app)
+
+        # Act
+        with patch(
+            "services.wakeword.main.WakeWordDetector",
+            side_effect=[first_detector, second_detector],
+        ) as detector_cls:
+            with client.websocket_connect("/ws/detect") as ws:
+                ws.send_text('{"command":"reset_detector","reason":"test"}')
+                ws.send_bytes(b"\x00" * 2560)
+
+        # Assert
+        assert detector_cls.call_count == 2
+        assert first_detector.close.call_count >= 1
+        second_detector.process_audio.assert_called_once()

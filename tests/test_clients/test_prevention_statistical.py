@@ -306,6 +306,34 @@ class TestDetectAnomaly:
         # Low threshold more likely to flag, high threshold less likely
         assert result_low.is_anomalous is True or result_high.is_anomalous is False
 
+    @pytest.mark.asyncio
+    async def test_anomalous_has_real_values(
+        self,
+        client: StatisticalPreventionClient,
+        anomalous_data: list[DataPoint],
+    ) -> None:
+        """Anomalous result includes expected_value, actual_value, deviation."""
+        result = await client.detect_anomaly(
+            CanonicalMetric.ENERGY_PER_UNIT, anomalous_data,
+        )
+        assert result.expected_value is not None
+        assert result.actual_value is not None
+        assert result.deviation > 0
+        assert result.actual_value != result.expected_value
+
+    @pytest.mark.asyncio
+    async def test_normal_has_values(
+        self,
+        client: StatisticalPreventionClient,
+        normal_data: list[DataPoint],
+    ) -> None:
+        """Normal result also populates expected/actual for transparency."""
+        result = await client.detect_anomaly(
+            CanonicalMetric.ENERGY_PER_UNIT, normal_data,
+        )
+        assert result.expected_value is not None
+        assert result.actual_value is not None
+
 
 # =========================================================================
 # Drift Detection Tests
@@ -436,6 +464,22 @@ class TestHelperFunctions:
     def test_classify_severity_critical(self) -> None:
         assert _classify_severity(4.5) == "critical"
 
+    def test_classify_severity_custom_low_threshold(self) -> None:
+        """z=1.5 is anomalous at threshold=1.0, so severity != none."""
+        assert _classify_severity(1.5, threshold=1.0) == "low"
+
+    def test_classify_severity_below_custom_threshold(self) -> None:
+        """z=0.5 is below threshold=1.0, so severity == none."""
+        assert _classify_severity(0.5, threshold=1.0) == "none"
+
+    def test_classify_severity_at_threshold_boundary(self) -> None:
+        """z exactly at threshold should return low (not none)."""
+        assert _classify_severity(2.0, threshold=2.0) == "low"
+
+    def test_classify_severity_just_below_threshold(self) -> None:
+        """z just below threshold should return none."""
+        assert _classify_severity(1.999, threshold=2.0) == "none"
+
     def test_mean_simple(self) -> None:
         assert _mean([1.0, 2.0, 3.0]) == 2.0
 
@@ -459,3 +503,77 @@ class TestHelperFunctions:
         slope, _intercept, r_sq = _linear_regression(values)
         assert slope == 0.0
         assert r_sq == 0.0
+
+
+# =========================================================================
+# Severity Invariant Tests (P9.1 Phase 1 & 7)
+# =========================================================================
+
+
+class TestSeverityInvariant:
+    """Verify: is_anomalous=True never pairs with severity='none'."""
+
+    @pytest.mark.asyncio
+    async def test_anomalous_result_severity_not_none(
+        self,
+        client: StatisticalPreventionClient,
+    ) -> None:
+        """Spike data with default threshold=2.0."""
+        data = _make_data_points(
+            [2.5, 2.6, 2.4, 2.5, 2.5, 2.6, 2.4, 20.0],
+        )
+        result = await client.detect_anomaly(
+            CanonicalMetric.ENERGY_PER_UNIT, data,
+        )
+        assert result.is_anomalous is True
+        assert result.severity != "none"
+
+    @pytest.mark.asyncio
+    async def test_low_threshold_anomalous_severity_not_none(
+        self,
+        client: StatisticalPreventionClient,
+    ) -> None:
+        """Custom low threshold: flagged as anomalous → severity != none."""
+        data = _make_data_points([2.5, 2.6, 2.4, 2.5, 4.0])
+        result = await client.detect_anomaly(
+            CanonicalMetric.ENERGY_PER_UNIT, data, threshold=1.0,
+        )
+        if result.is_anomalous:
+            assert result.severity != "none", (
+                f"is_anomalous=True but severity={result.severity!r}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_normal_result_severity_is_none(
+        self,
+        client: StatisticalPreventionClient,
+    ) -> None:
+        """Non-anomalous results must have severity='none'."""
+        data = _make_data_points([2.5, 2.6, 2.4, 2.5, 2.55])
+        result = await client.detect_anomaly(
+            CanonicalMetric.ENERGY_PER_UNIT, data,
+        )
+        assert result.is_anomalous is False
+        assert result.severity == "none"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("threshold", [1.0, 1.5, 2.0, 2.5, 3.0])
+    async def test_invariant_holds_across_thresholds(
+        self,
+        client: StatisticalPreventionClient,
+        threshold: float,
+    ) -> None:
+        """Severity contract holds for any threshold value."""
+        data = _make_data_points(
+            [5.0, 5.1, 4.9, 5.0, 5.0, 5.1, 4.9, 12.0],
+        )
+        result = await client.detect_anomaly(
+            CanonicalMetric.OEE, data, threshold=threshold,
+        )
+        if result.is_anomalous:
+            assert result.severity != "none", (
+                f"threshold={threshold}: is_anomalous=True but "
+                f"severity={result.severity!r}"
+            )
+        else:
+            assert result.severity == "none"

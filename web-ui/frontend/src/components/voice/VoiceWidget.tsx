@@ -179,33 +179,38 @@ export default function VoiceWidget({
     }
     lastUserUtteranceRef.current = transcript;
 
-    const immediateReply = buildImmediateAssistantReply(transcript);
-    if (immediateReply) {
-      setIgnoreStuckProcessing(true);
-      setActiveResponse(null);
-      setResponseReceivedAt(null);
-      setAwaitingResponse(false);
-      setResponseFallback(immediateReply);
-      setLocalError("");
-      addAvarosResponse(immediateReply);
-      speakAssistantFallback(immediateReply);
-      return;
-    }
+    // In wake-word mode, let OVOS handle all responses through the
+    // phase-managed on("speak") path in VoiceContext. Client-side
+    // immediate replies bypass phase management and cause stuck sessions.
+    if (voiceMode !== "wake-word") {
+      const immediateReply = buildImmediateAssistantReply(transcript);
+      if (immediateReply) {
+        setIgnoreStuckProcessing(true);
+        setActiveResponse(null);
+        setResponseReceivedAt(null);
+        setAwaitingResponse(false);
+        setResponseFallback(immediateReply);
+        setLocalError("");
+        addAvarosResponse(immediateReply);
+        speakAssistantFallback(immediateReply);
+        return;
+      }
 
-    const guidance = buildGuidanceForUtterance(transcript);
-    if (guidance || isLikelyIncompleteUtterance(transcript)) {
-      setIgnoreStuckProcessing(true);
-      setActiveResponse(null);
-      setResponseReceivedAt(null);
-      setAwaitingResponse(false);
-      const fallbackText =
-        guidance ??
-        "Incomplete voice command. Try: 'what if we increase temperature by 5 degrees'.";
-      setResponseFallback(fallbackText);
-      setLocalError("");
-      addAvarosResponse(fallbackText);
-      speakAssistantFallback(fallbackText);
-      return;
+      const guidance = buildGuidanceForUtterance(transcript);
+      if (guidance || isLikelyIncompleteUtterance(transcript)) {
+        setIgnoreStuckProcessing(true);
+        setActiveResponse(null);
+        setResponseReceivedAt(null);
+        setAwaitingResponse(false);
+        const fallbackText =
+          guidance ??
+          "Incomplete voice command. Try: 'what if we increase temperature by 5 degrees'.";
+        setResponseFallback(fallbackText);
+        setLocalError("");
+        addAvarosResponse(fallbackText);
+        speakAssistantFallback(fallbackText);
+        return;
+      }
     }
 
     setIgnoreStuckProcessing(false);
@@ -302,12 +307,14 @@ export default function VoiceWidget({
       if (visualState === "listening" && voiceMode !== "wake-word") {
         stopListening();
       }
-      if (visualState === "speaking") stopSpeaking();
-      if (visualState === "processing") handleCancelRequest();
-      if (voiceMode === "wake-word") {
-        cancelCurrentQuery();
-        void setVoiceMode("wake-word").catch(() => undefined);
+      if (visualState === "speaking" && voiceMode !== "wake-word") {
+        stopSpeaking();
       }
+      if (visualState === "processing" && voiceMode !== "wake-word") {
+        handleCancelRequest();
+      }
+      // In wake-word mode, Escape only collapses the UI — the voice
+      // session lifecycle is fully managed by VoiceContext.
       setExpanded(false);
     };
 
@@ -320,7 +327,6 @@ export default function VoiceWidget({
     stopSpeaking,
     handleCancelRequest,
     voiceMode,
-    cancelCurrentQuery,
   ]);
 
   useEffect(() => {
@@ -332,11 +338,11 @@ export default function VoiceWidget({
         if (visualState === "listening" && voiceMode !== "wake-word") {
           stopListening();
         }
-        if (visualState === "speaking") stopSpeaking();
-        if (voiceMode === "wake-word") {
-          cancelCurrentQuery();
-          void setVoiceMode("wake-word").catch(() => undefined);
+        if (visualState === "speaking" && voiceMode !== "wake-word") {
+          stopSpeaking();
         }
+        // In wake-word mode, collapsing the onboarding panel must not
+        // abort the hands-free voice session.
       }
     };
     window.addEventListener(
@@ -354,8 +360,6 @@ export default function VoiceWidget({
     stopListening,
     stopSpeaking,
     voiceMode,
-    cancelCurrentQuery,
-    setVoiceMode,
   ]);
 
   useEffect(() => {
@@ -369,11 +373,11 @@ export default function VoiceWidget({
       if (visualState === "listening" && voiceMode !== "wake-word") {
         stopListening();
       }
-      if (visualState === "speaking") stopSpeaking();
-      if (voiceMode === "wake-word") {
-        cancelCurrentQuery();
-        void setVoiceMode("wake-word").catch(() => undefined);
+      if (visualState === "speaking" && voiceMode !== "wake-word") {
+        stopSpeaking();
       }
+      // In wake-word mode, clicking outside only collapses the panel.
+      // The voice session lifecycle is fully managed by VoiceContext.
       setExpanded(false);
     };
 
@@ -389,8 +393,6 @@ export default function VoiceWidget({
     stopListening,
     stopSpeaking,
     voiceMode,
-    cancelCurrentQuery,
-    setVoiceMode,
   ]);
 
   const requestListening = useCallback(async () => {

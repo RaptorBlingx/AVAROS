@@ -34,9 +34,23 @@ _DRIFT_SLOPE_THRESHOLD = 0.001
 _DRIFT_R2_THRESHOLD = 0.1
 
 
-def _classify_severity(z_score: float) -> str:
-    """Classify anomaly severity from z-score magnitude."""
-    if z_score < 2.0:
+def _classify_severity(z_score: float, threshold: float = 2.0) -> str:
+    """Classify anomaly severity from z-score magnitude.
+
+    Severity contract:
+        - ``"none"`` only when z_score < threshold (not anomalous).
+        - ``"low"`` / ``"medium"`` / ``"high"`` / ``"critical"`` when
+          z_score >= threshold (anomalous), so callers never see
+          ``is_anomalous=True`` paired with ``severity="none"``.
+
+    Args:
+        z_score: Absolute z-score magnitude.
+        threshold: Anomaly detection threshold (default 2.0).
+
+    Returns:
+        Severity string.
+    """
+    if z_score < threshold:
         return "none"
     if z_score < 2.5:
         return "low"
@@ -146,6 +160,7 @@ class StatisticalPreventionClient(PreventionClient):
         metric: CanonicalMetric,
         data_points: list[DataPoint],
         threshold: float = 2.0,
+        asset_id: str | None = None,
     ) -> AnomalyDetectionResult:
         """Detect anomalies using z-score analysis on real data.
 
@@ -197,7 +212,7 @@ class StatisticalPreventionClient(PreventionClient):
                 max_idx = i
 
         is_anomalous = max_z >= threshold
-        severity = _classify_severity(max_z) if is_anomalous else "none"
+        severity = _classify_severity(max_z, threshold)
         anomaly_type: str | None = None
 
         if is_anomalous:
@@ -226,6 +241,9 @@ class StatisticalPreventionClient(PreventionClient):
             description=description,
             detected_at=detected_at,
             recommended_action=action,
+            expected_value=mean_val,
+            actual_value=values[max_idx],
+            deviation=round(max_z, 2),
         )
 
     # =====================================================================

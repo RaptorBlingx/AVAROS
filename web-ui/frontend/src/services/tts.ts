@@ -76,6 +76,7 @@ export class TTSService {
     if (!this.synth) {
       throw new Error("SpeechSynthesis is not supported in this browser");
     }
+    console.trace(`[AVAROS-DEBUG] TTS.speak called: "${text.slice(0, 60)}"`);
 
     if (this.state === "speaking") {
       this.queue.push(text);

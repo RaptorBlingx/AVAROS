@@ -57,7 +57,9 @@ def test_generic_kpi_handler_dispatches_energy_per_unit():
 
     skill._safe_dispatch = Mock(side_effect=_safe_dispatch)
 
-    skill._handle_generic_kpi(_message_for_intent("kpi.energy.per_unit"))
+    skill._handle_generic_kpi(
+        _message_for_intent("kpi.energy.per_unit", utterance="energy per unit today"),
+    )
 
     skill.dispatcher.get_kpi.assert_called_once_with(
         metric=CanonicalMetric.ENERGY_PER_UNIT,
@@ -153,7 +155,7 @@ def test_energy_total_without_period_uses_aggregate_window_for_energy_only_seu()
     assert dispatched_period.start.month == 2
     assert dispatched_period.start.day == 1
     assert dispatched_period.start.tzinfo == timezone.utc
-    skill._parse_period.assert_called_once_with("today")
+    skill._parse_period.assert_not_called()
 
 
 def test_energy_total_with_explicit_period_keeps_requested_window():
@@ -429,3 +431,54 @@ def test_energy_total_ignores_non_period_slot_text_for_energy_only_assets():
 
     period = skill.dispatcher.get_kpi.call_args.kwargs["period"]
     assert period.display_name == "in total"
+
+
+def test_generic_kpi_handler_redirects_anomaly_query_to_anomaly_handler():
+    """'check oee anomalies on Line-1' should route to anomaly handler, not KPI."""
+    skill = _make_skill()
+    skill.handle_anomaly_check = Mock()
+    skill._is_anomaly_query = Mock(return_value=True)
+
+    message = _message_for_intent(
+        "kpi.oee",
+        utterance="check oee anomalies on Line-1",
+    )
+    skill._handle_generic_kpi(message)
+
+    skill.handle_anomaly_check.assert_called_once_with(message)
+    skill.dispatcher.get_kpi.assert_not_called()
+
+
+def test_generic_kpi_handler_redirects_drift_query_to_drift_handler():
+    """'check oee drift for Line-1' should route to drift handler, not KPI."""
+    skill = _make_skill()
+    skill.handle_drift_check = Mock()
+    skill._is_anomaly_query = Mock(return_value=False)
+    skill._is_drift_query = Mock(return_value=True)
+
+    message = _message_for_intent(
+        "kpi.oee",
+        utterance="check oee drift for Line-1",
+    )
+    skill._handle_generic_kpi(message)
+
+    skill.handle_drift_check.assert_called_once_with(message)
+    skill.dispatcher.get_kpi.assert_not_called()
+
+
+def test_generic_kpi_handler_normal_kpi_still_works():
+    """'what is oee for Line-1' still dispatches as KPI (no regression)."""
+    skill = _make_skill()
+    skill._is_anomaly_query = Mock(return_value=False)
+    skill._is_drift_query = Mock(return_value=False)
+    skill.dispatcher.get_kpi.return_value = Mock()
+    skill.response_builder.format_kpi_result.return_value = "ok"
+    skill._safe_dispatch = Mock(side_effect=lambda _name, action: action())
+
+    message = _message_for_intent(
+        "kpi.oee",
+        utterance="what is oee for Line-1",
+    )
+    skill._handle_generic_kpi(message)
+
+    skill.dispatcher.get_kpi.assert_called_once()

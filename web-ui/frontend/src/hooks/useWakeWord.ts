@@ -190,6 +190,9 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
     });
 
     const unsubDetected = bww.onDetected((payload) => {
+      console.log(
+        `[AVAROS-DEBUG] wakeWord backend detected: model=${payload.model}, score=${payload.score.toFixed(4)}`,
+      );
       setWakeWordLabel(bww.getWakeWordLabel());
       onDetected(payload);
     });
@@ -235,19 +238,25 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
   }, []);
 
   const pauseDetection = useCallback(() => {
+    console.log(`[AVAROS-DEBUG] pauseDetection called (stopListening)`);
     backendWakeWordRef.current?.stopListening();
   }, []);
 
   const resumeDetection = useCallback(() => {
     const backend = backendWakeWordRef.current;
+    console.log(`[AVAROS-DEBUG] resumeDetection called, hasBackend=${!!backend}`);
     if (!backend) return;
 
-    void backend.startListening().catch(() => {
-      void backend
-        .initialize()
-        .then(() => backend.startListening())
-        .catch(() => undefined);
-    });
+    void backend.startListening()
+      .then(() => console.log(`[AVAROS-DEBUG] resumeDetection: startListening succeeded`))
+      .catch((err) => {
+        console.warn(`[AVAROS-DEBUG] resumeDetection: startListening failed, re-initializing`, err);
+        void backend
+          .initialize()
+          .then(() => backend.startListening())
+          .then(() => console.log(`[AVAROS-DEBUG] resumeDetection: re-init + startListening succeeded`))
+          .catch((err2) => console.error(`[AVAROS-DEBUG] resumeDetection: re-init also failed`, err2));
+      });
   }, []);
 
   return {
