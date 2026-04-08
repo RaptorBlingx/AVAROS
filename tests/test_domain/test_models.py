@@ -198,6 +198,15 @@ class TestTimePeriod:
         
         # Assert
         assert period.display_name == "last week"
+
+    def test_from_natural_language_with_last_2_weeks_returns_last_2_weeks(self):
+        """Should parse 'last 2 weeks' correctly."""
+        # Arrange & Act
+        period = TimePeriod.from_natural_language("last 2 weeks")
+
+        # Assert
+        assert period.display_name == "last 2 weeks"
+        assert 13.5 <= period.duration_days <= 14.5
     
     def test_from_natural_language_with_past_week_returns_last_week(self):
         """Should parse 'past week' as last week."""
@@ -214,6 +223,23 @@ class TestTimePeriod:
         
         # Assert
         assert period.display_name == "today"
+
+    def test_from_natural_language_with_this_month_returns_this_month(self):
+        """Should parse 'this month' correctly."""
+        # Arrange & Act
+        period = TimePeriod.from_natural_language("this month")
+
+        # Assert
+        assert period.display_name == "this month"
+
+    def test_from_natural_language_with_yesterday_returns_yesterday(self):
+        """Should parse 'yesterday' correctly."""
+        # Arrange & Act
+        period = TimePeriod.from_natural_language("yesterday")
+
+        # Assert
+        assert period.display_name == "yesterday"
+        assert 0.9 <= period.duration_days <= 1.1
     
     def test_creation_with_end_before_start_raises_valueerror(self):
         """Should raise ValueError for invalid period."""

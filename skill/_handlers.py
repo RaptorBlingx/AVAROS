@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from skill._metric_handlers import _format_anomaly_query_response
 from skill._metric_handlers import _resolve_anomaly_query_scope
 from skill._metric_handlers import _resolve_default_metric
+from skill._metric_handlers import _resolve_drift_asset
 from skill._metric_handlers import _resolve_kpi_period as _resolve_kpi_period_impl
 from skill.domain.models import CanonicalMetric
 from skill.domain.results import KPIResult
@@ -84,7 +85,7 @@ def _fallback_drift(
     """Execute drift check via fallback path."""
 
     def _execute() -> bool:
-        asset_id = skill._resolve_asset_id(message)
+        asset_id = _resolve_drift_asset(skill, message)
         metric = _resolve_default_metric(skill, utterance)
         result = skill.dispatcher.check_drift(metric=metric, asset_id=asset_id)
         response = skill.response_builder.format_drift_result(result)

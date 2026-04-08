@@ -22,6 +22,7 @@ import concurrent.futures
 from collections import Counter
 import logging
 from datetime import datetime, timedelta, timezone
+import re
 from typing import TYPE_CHECKING
 import uuid
 
@@ -174,6 +175,8 @@ class QueryDispatcher:
             "[%s] get_kpi: metric=%s, asset=%s, period=%s",
             query_id, metric.value, asset_id, period.display_name,
         )
+
+        self._ensure_metric_supported_for_asset(metric, asset_id)
 
         # Intercept derived carbon metrics (DEC-007, DEC-023)
         if self._is_derived_carbon_metric(metric) and self._co2_service:
@@ -893,6 +896,126 @@ class QueryDispatcher:
                 platform=self._adapter.platform_name,
             )
         return summary
+
+    def _ensure_metric_supported_for_asset(
+        self,
+        metric: CanonicalMetric,
+        asset_id: str,
+    ) -> None:
+        """Raise a clear unsupported-metric error for energy-only meters."""
+        if metric is not CanonicalMetric.ENERGY_PER_UNIT:
+            return
+        if not self._is_energy_total_only_asset(asset_id):
+            return
+
+        display_name = self._asset_display_name(asset_id)
+        raise MetricNotSupportedError(
+            message=(
+                f"Metric '{metric.value}' requires production data for asset '{asset_id}'"
+            ),
+            metric=metric.value,
+            platform=self._adapter.platform_name,
+            available_metrics=[CanonicalMetric.ENERGY_TOTAL.value],
+            user_message=(
+                f"Energy per unit is not available for {display_name}. "
+                "This meter only exposes total energy, and energy per unit requires production data."
+            ),
+        )
+
+    def _is_energy_total_only_asset(self, asset_id: str) -> bool:
+        """Return True when asset metadata indicates cumulative energy only."""
+        mapping = self._resolve_asset_mapping(asset_id)
+        if not isinstance(mapping, dict):
+            return False
+
+        capability_mode = str(mapping.get("capability_mode", "")).strip().lower()
+        if capability_mode == "energy_only":
+            return True
+        if capability_mode:
+            return self._metric_resource_metric_names(mapping) == ("energy_total",)
+
+        return (
+            self._native_bound_metric_names(mapping) == ("energy_total",)
+            or self._metric_resource_metric_names(mapping) == ("energy_total",)
+        )
+
+    def _resolve_asset_mapping(self, asset_id: str) -> dict[str, object] | None:
+        """Resolve asset mapping by id, display name, or alias."""
+        if self._settings_service is None:
+            return None
+        try:
+            mappings = self._settings_service.get_asset_mappings()
+        except Exception:
+            logger.debug("Asset mapping lookup failed", exc_info=True)
+            return None
+        if not isinstance(mappings, dict):
+            return None
+
+        direct = mappings.get(asset_id)
+        if isinstance(direct, dict):
+            return direct
+        target = self._normalize_asset_lookup(asset_id)
+        if not target:
+            return None
+
+        for key, raw_mapping in mappings.items():
+            if not isinstance(raw_mapping, dict):
+                continue
+            if self._mapping_matches_asset(target, str(key), raw_mapping):
+                return raw_mapping
+        return None
+
+    def _asset_display_name(self, asset_id: str) -> str:
+        """Return a user-facing asset label when metadata is available."""
+        mapping = self._resolve_asset_mapping(asset_id)
+        if not isinstance(mapping, dict):
+            return asset_id
+        display_name = str(mapping.get("display_name", "")).strip()
+        return display_name or asset_id
+
+    @staticmethod
+    def _native_bound_metric_names(mapping: dict[str, object]) -> tuple[str, ...]:
+        """Return normalized native metric binding names for an asset mapping."""
+        native_bindings = mapping.get("native_metric_bindings")
+        if not isinstance(native_bindings, dict):
+            return ()
+        return tuple(sorted(str(key).strip() for key in native_bindings if str(key).strip()))
+
+    @staticmethod
+    def _metric_resource_metric_names(mapping: dict[str, object]) -> tuple[str, ...]:
+        """Return normalized metric-resource names for an asset mapping."""
+        metric_resources = mapping.get("metric_resources")
+        if not isinstance(metric_resources, dict):
+            return ()
+        return tuple(
+            sorted(
+                str(key).strip()
+                for key, value in metric_resources.items()
+                if str(key).strip() and str(value).strip()
+            ),
+        )
+
+    @staticmethod
+    def _mapping_matches_asset(
+        target: str,
+        key: str,
+        mapping: dict[str, object],
+    ) -> bool:
+        """Return True when an asset mapping row matches normalized lookup text."""
+        candidates = [key, str(mapping.get("display_name", ""))]
+        aliases = mapping.get("aliases")
+        if isinstance(aliases, list):
+            candidates.extend(str(alias) for alias in aliases)
+        return any(
+            QueryDispatcher._normalize_asset_lookup(candidate) == target
+            for candidate in candidates
+            if candidate
+        )
+
+    @staticmethod
+    def _normalize_asset_lookup(value: str) -> str:
+        """Normalize asset identifiers for tolerant comparisons."""
+        return re.sub(r"[^a-z0-9]", "", value.lower().strip())
 
     def _derive_co2_per_unit(
         self, asset_id: str, period: TimePeriod,
