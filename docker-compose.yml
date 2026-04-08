@@ -29,6 +29,7 @@ services:
       - AVAROS_DATABASE_URL=sqlite:////data/avaros.db
       - MESSAGEBUS_HOST=ovos_messagebus
       - MESSAGEBUS_PORT=8181
+      - PREVENTION_URL=${PREVENTION_URL:-http://prevention:8081}
       # Platform config comes from Web UI, NOT here
     volumes:
       - avaros-data:/data

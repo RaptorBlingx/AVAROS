@@ -15,3 +15,12 @@ show production anomalies
 show production anomaly
 production anomalies
 production anomaly
+check for unusual (energy|carbon|scrap|production|quality|supplier) patterns
+check for unusual (energy|carbon|scrap|production|quality|supplier) patterns on {asset}
+any unusual (energy|carbon|scrap|production|quality|supplier) patterns
+any unusual (energy|carbon|scrap|production|quality|supplier) patterns on {asset}
+(are there|) unusual (energy|carbon|scrap|production|quality|supplier) patterns on {asset}
+anomalies in (energy|carbon|scrap|production|quality|supplier)
+any anomalies in (energy|carbon|scrap|production|quality|supplier)
+any anomalies in (energy|carbon|scrap|production|quality|supplier) on {asset}
+check anomalies for (energy|carbon|scrap|production|quality|supplier) on {asset}

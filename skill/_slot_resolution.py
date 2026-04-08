@@ -19,34 +19,58 @@ if TYPE_CHECKING:
 # ── Noise detection constants ─────────────────────────
 
 _NOISE_WORDS = frozenset(
-    {"to", "too", "for", "on", "line", "trend", "production", "energy",
-     "scrap", "carbon", "quality", "show", "check", "compare", "tell",
-     "give", "how", "what", "which", "please", "me", "the", "a", "an"},
+    {"to", "too", "for", "on", "line", "trend", "trending", "production",
+     "energy", "scrap", "carbon", "quality", "show", "check", "compare",
+     "tell", "give", "how", "what", "which", "please", "me", "the", "a",
+     "an", "been", "gradually", "getting", "worse", "better"},
 )
 _NOISE_SLOT_WORDS = frozenset(
     {
         "a",
         "an",
         "and",
+        "any",
+        "are",
+        "at",
+        "been",
+        "better",
+        "carbon",
         "check",
         "compare",
+        "energy",
         "for",
+        "getting",
         "give",
+        "gradually",
+        "has",
+        "have",
         "how",
         "i",
         "in",
         "is",
         "me",
+        "my",
+        "of",
+        "oee",
         "on",
+        "per",
         "please",
+        "production",
+        "quality",
+        "scrap",
         "show",
         "tell",
         "the",
+        "there",
         "to",
         "too",
+        "total",
         "trend",
+        "trending",
+        "unit",
         "what",
         "which",
+        "worse",
     },
 )
 _NOISE_SLOT_PREFIXES = (
@@ -88,7 +112,7 @@ def extract_line_assets_from_text(self, text: str) -> list[str]:
         return []
 
     matches = re.findall(
-        r"\bline\s+(1|2|3|4|5|one|two|three|four|five|to|too)\b",
+        r"\bline[\s-]+(1|2|3|4|5|one|two|three|four|five|to|too)\b",
         text.lower(),
     )
     line_token_to_digit = {

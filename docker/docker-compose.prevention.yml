@@ -28,7 +28,7 @@ services:
     restart: unless-stopped
 
     networks:
-      - ovos
+      - avaros-network
 
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${PREVENTION_MONGO_USER:-prevention}
@@ -55,15 +55,16 @@ services:
     hostname: prevention
     build:
       context: ${PREVENTION_BUILD_CONTEXT:-../../prevention_upd}
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.avaros
     restart: unless-stopped
+    command: gunicorn --workers 2 --bind 0.0.0.0:8081 wsgi:app --preload --timeout 120
 
     depends_on:
       prevention-mongo:
         condition: service_healthy
 
     networks:
-      - ovos
+      - avaros-network
 
     ports:
       - "${PREVENTION_PORT:-8082}:8081"
@@ -99,7 +100,7 @@ services:
           memory: 1G
 
 networks:
-  ovos:
+  avaros-network:
     external: true
 
 volumes:
