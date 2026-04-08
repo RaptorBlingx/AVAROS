@@ -128,9 +128,13 @@ class TestSkillInitializationErrorHandling:
             adapter = skill.adapter_factory._current_adapter
             assert isinstance(adapter, UnconfiguredAdapter)
             
-            # Warning was logged
-            skill.log.warning.assert_called_once()
-            assert "SettingsService initialization failed" in skill.log.warning.call_args[0][0]
+            # Warning was logged about SettingsService failure
+            warning_calls = skill.log.warning.call_args_list
+            settings_warnings = [
+                c for c in warning_calls
+                if "SettingsService initialization failed" in str(c)
+            ]
+            assert len(settings_warnings) == 1
             
             # Still initialized successfully with UnconfiguredAdapter
             skill.log.info.assert_any_call(

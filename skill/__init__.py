@@ -68,7 +68,6 @@ from skill._helpers import (
 from skill._intent_maps import INTENT_METRIC_MAP, NON_KPI_INTENT_MAP
 from skill.adapters.factory import AdapterFactory
 from skill.clients.prevention import PreventionClient
-from skill.clients.prevention_statistical import StatisticalPreventionClient
 from skill.domain.exceptions import AVAROSError
 from skill.services.alert_monitor import AlertMonitor
 from skill.services.response_builder import ResponseBuilder
@@ -327,13 +326,13 @@ class AVAROSSkill(FallbackSkill):
         except Exception:
             return "unconfigured"
 
-    def _create_prevention_client(self) -> PreventionClient:
-        """Create the best available prevention client (DEC-005).
+    def _create_prevention_client(self) -> PreventionClient | None:
+        """Create PREVENTION client if URL is configured.
 
         Resolution order:
             1. ``PREVENTION_URL`` env var → HttpPreventionClient
             2. SettingsService ``prevention_url`` key → HttpPreventionClient
-            3. Fallback → StatisticalPreventionClient (zero-config)
+            3. Not configured → None (anomaly/drift features disabled)
         """
         url = os.environ.get("PREVENTION_URL", "").strip()
         if not url and self.settings_service is not None:
@@ -345,13 +344,13 @@ class AVAROSSkill(FallbackSkill):
                 url = ""
 
         if not url:
-            self._prevention_mode = "fallback"
+            self._prevention_mode = "disabled"
             self._prevention_mode_reason = "prevention_url_missing"
-            self.log.info(
+            self.log.warning(
                 "PREVENTION_URL not configured — "
-                "using StatisticalPreventionClient (zero-config fallback)",
+                "anomaly detection and drift monitoring disabled",
             )
-            return StatisticalPreventionClient()
+            return None
 
         from skill.clients.prevention_http import HttpPreventionClient
 
@@ -574,13 +573,12 @@ class AVAROSSkill(FallbackSkill):
         from skill.adapters.unconfigured import UnconfiguredAdapter
 
         fallback = UnconfiguredAdapter()
-        prevention_client = StatisticalPreventionClient()
-        self._prevention_mode = "fallback"
+        self._prevention_mode = "disabled"
         self._prevention_mode_reason = "forced_unconfigured_fallback"
         self.dispatcher = QueryDispatcher(
             adapter=fallback,
             settings_service=self.settings_service,
-            prevention_client=prevention_client,
+            prevention_client=None,
         )
         if self.response_builder is None:
             self.response_builder = ResponseBuilder(

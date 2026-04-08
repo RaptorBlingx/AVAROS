@@ -1,9 +1,7 @@
-"""Archived MockPreventionClient for deterministic test use.
+"""MockPreventionClient for deterministic test use.
 
-Moved from skill/clients/prevention.py to tests/helpers/ when
-StatisticalPreventionClient replaced it in production. Use this
-client when tests need deterministic, predictable anomaly results
-independent of actual data values.
+Used when tests need deterministic, predictable anomaly results
+independent of actual data values. Production uses HttpPreventionClient.
 """
 
 from __future__ import annotations

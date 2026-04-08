@@ -5,7 +5,7 @@ Platform-agnostic (DEC-001), domain models in skill.domain (DEC-003),
 graceful degradation when unavailable (DEC-005).
 
 Implementations:
-    - StatisticalPreventionClient: Real z-score / linear-drift analysis
+    - HttpPreventionClient: GraphQL client for the PREVENTION platform
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ class PreventionClient(ExternalServiceClient):
         2. Drift monitoring — detect gradual KPI degradation
 
     Implementing Classes:
-        - StatisticalPreventionClient: Real z-score / drift analysis
+        - HttpPreventionClient: GraphQL client for the PREVENTION platform
     """
 
     @abstractmethod

@@ -1,8 +1,8 @@
 """
-Tests for MockPreventionClient (archived to test helpers).
+Tests for MockPreventionClient (test helper).
 
 Model immutability, drift, and helper tests in test_prevention_models.py.
-StatisticalPreventionClient tests in test_prevention_statistical.py.
+HttpPreventionClient tests in test_prevention_http.py.
 """
 
 from __future__ import annotations
