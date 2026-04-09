@@ -180,22 +180,25 @@ def _match_asset_from_registry(token: str, assets: list[Asset]) -> Asset | None:
     if not assets:
         return None
 
-    query_key = _normalize_key(token)
-    if not query_key:
+    query_keys = _normalize_key_variants(token)
+    if not query_keys:
         return None
 
     lookup = _build_lookup(assets)
-    exact = lookup.get(query_key)
-    if exact is not None:
-        return exact
+    for query_key in query_keys:
+        exact = lookup.get(query_key)
+        if exact is not None:
+            return exact
 
-    contained = _best_contained_match(query_key, lookup)
-    if contained is not None:
-        return contained
+    for query_key in query_keys:
+        contained = _best_contained_match(query_key, lookup)
+        if contained is not None:
+            return contained
 
-    close = difflib.get_close_matches(query_key, lookup.keys(), n=1, cutoff=0.82)
-    if close:
-        return lookup[close[0]]
+    for query_key in query_keys:
+        close = difflib.get_close_matches(query_key, lookup.keys(), n=1, cutoff=0.82)
+        if close:
+            return lookup[close[0]]
     return None
 
 
@@ -229,9 +232,9 @@ def _build_lookup(assets: list[Asset]) -> dict[str, Asset]:
     for asset in assets:
         variants = [asset.asset_id, asset.display_name, *asset.aliases]
         for variant in variants:
-            key = _normalize_key(variant)
-            if key and key not in lookup:
-                lookup[key] = asset
+            for key in _normalize_key_variants(variant):
+                if key and key not in lookup:
+                    lookup[key] = asset
     return lookup
 
 
@@ -241,6 +244,39 @@ def _normalize_key(text: str) -> str:
     lowered = lowered.replace("-", " ").replace("_", " ")
     lowered = re.sub(r"[^a-z0-9\s]", " ", lowered)
     return re.sub(r"\s+", " ", lowered).strip()
+
+
+def _normalize_key_variants(text: str) -> tuple[str, ...]:
+    """Return normalized phrase variants for singular/plural-tolerant matching."""
+    normalized = _normalize_key(text)
+    if not normalized:
+        return ()
+
+    singularized = _singularize_normalized_phrase(normalized)
+    if singularized == normalized:
+        return (normalized,)
+    return (normalized, singularized)
+
+
+def _singularize_normalized_phrase(text: str) -> str:
+    """Collapse simple plural tokens so spoken asset phrases stay resolvable."""
+    tokens = text.split()
+    if not tokens:
+        return text
+    return " ".join(_singularize_token(token) for token in tokens)
+
+
+def _singularize_token(token: str) -> str:
+    """Singularize common English plural endings conservatively."""
+    if len(token) <= 4:
+        return token
+    if token.endswith("ies") and len(token) > 4:
+        return token[:-3] + "y"
+    if token.endswith(("sses", "shes", "ches", "xes", "zes")) and len(token) > 5:
+        return token[:-2]
+    if token.endswith("s") and not token.endswith(("ss", "us", "is")):
+        return token[:-1]
+    return token
 
 
 def _build_asset_not_found_message(display_names: list[str]) -> str:

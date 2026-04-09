@@ -25,7 +25,7 @@ from ovos_bus_client import MessageBusClient
 from skill import AVAROSSkill
 from skill.adapters.unconfigured import UnconfiguredAdapter
 from skill.domain.exceptions import AVAROSError
-from skill.domain.models import CanonicalMetric
+from skill.domain.models import Asset, CanonicalMetric
 from skill.use_cases.query_dispatcher import QueryDispatcher
 
 
@@ -509,6 +509,36 @@ class TestAssetResolutionFromUtterance:
 
         assert skill._resolve_asset_id(msg) == "Line-2"
 
+    def test_resolve_asset_from_dash_separated_line(self):
+        """Dash-separated 'line-1' should resolve to Line-1."""
+        skill = _make_skill()
+        msg = Mock()
+        msg.data = {
+            "utterance": "check anomalies for energy per unit on line-1",
+            "asset": "",
+        }
+
+        assert skill._resolve_asset_id(msg) == "Line-1"
+
+    def test_resolve_asset_from_pluralized_meter_phrase(self):
+        """Pluralized meter phrasing should still resolve to the configured asset."""
+        skill = _make_skill()
+        skill._get_asset_registry = Mock(return_value=[
+            Asset(
+                asset_id="Gas-Main-Meter",
+                display_name="Gas Main Meter",
+                asset_type="machine",
+                aliases=["gas main meter"],
+            ),
+        ])
+        msg = Mock()
+        msg.data = {
+            "utterance": "what is the total energy for gas main meters today",
+            "asset": "",
+        }
+
+        assert skill._resolve_asset_id(msg) == "Gas-Main-Meter"
+
     def test_resolve_compare_assets_from_utterance_fallback(self):
         """Extracts two line assets from utterance when compare slots missing."""
         skill = _make_skill()
@@ -556,6 +586,22 @@ class TestAssetResolutionFromUtterance:
         }
 
         assert skill._resolve_compare_assets(msg) == ("Line-1", "Line-2")
+
+    def test_resolve_asset_ignores_metric_phrase_in_slot(self):
+        """Metric phrases like 'energy per unit been trending' are noise."""
+        skill = _make_skill()
+        skill.settings_service = Mock()
+        skill.settings_service.get_asset_mappings.return_value = {
+            "Line-1": {"metric_resources": {"energy_per_unit": "r1"}},
+        }
+        skill.settings_service.get_asset_list.return_value = []
+        msg = Mock()
+        msg.data = {
+            "utterance": "how has energy per unit been trending",
+            "asset": "energy per unit been trending",
+        }
+
+        assert skill._resolve_asset_id(msg) == "Line-1"
 
     def test_resolve_asset_id_defaults_to_first_configured_asset(self):
         """No asset mention should default to first configured asset id."""
@@ -836,11 +882,13 @@ class TestMetricFallback:
         assert dispatched_period.display_name == "in total"
         skill.speak.assert_called_once_with("energy total response")
 
-    def test_metric_query_fallback_energy_total_today_keeps_today_when_spoken(self):
-        """Fallback should keep today when user explicitly says today."""
+    def test_metric_query_fallback_energy_total_today_rejects_cumulative_meter(self):
+        """Fallback should reject spoken today for cumulative-only meter totals."""
         skill = _initialized_skill()
         skill._check_profile_mismatch = Mock()
         skill.dispatcher = Mock()
+        skill.dispatcher.adapter = Mock()
+        skill.dispatcher.adapter.platform_name = "generic_rest"
         skill.dispatcher.get_kpi.return_value = Mock()
         skill.response_builder = Mock()
         skill.response_builder.format_kpi_result.return_value = "energy total response"
@@ -866,10 +914,175 @@ class TestMetricFallback:
 
         handled = skill.handle_metric_query_fallback(msg)
 
+        assert handled is False
+        skill.dispatcher.get_kpi.assert_not_called()
+        skill.speak.assert_called_once_with(
+            "Time-based total energy is not available for Seu. "
+            "This meter only exposes a cumulative total. Ask for total energy without a period."
+        )
+
+    def test_metric_query_fallback_energy_total_last_2_weeks_uses_requested_window(self):
+        """Fallback should preserve supported last-2-weeks phrasing."""
+        skill = _initialized_skill()
+        skill._check_profile_mismatch = Mock()
+        skill.dispatcher = Mock()
+        skill.dispatcher.get_kpi.return_value = Mock()
+        skill.response_builder = Mock()
+        skill.response_builder.format_kpi_result.return_value = "energy total response"
+        skill.speak = Mock()
+        skill._resolve_asset_id = Mock(return_value="Line-1")
+        skill.settings_service = Mock()
+        skill.settings_service.get_asset_mappings.return_value = {}
+
+        msg = Mock()
+        msg.data = {
+            "utterance": "what is total energy for line one last 2 weeks",
+            "period": "last 2 weeks",
+        }
+
+        handled = skill.handle_metric_query_fallback(msg)
+
         assert handled is True
         dispatched_period = skill.dispatcher.get_kpi.call_args.kwargs["period"]
-        assert dispatched_period.display_name == "today"
+        assert dispatched_period.display_name == "last 2 weeks"
         skill.speak.assert_called_once_with("energy total response")
+
+    def test_metric_query_fallback_energy_total_last_week_rejects_cumulative_meter(self):
+        """Fallback should speak a clear rejection for cumulative-only meter periods."""
+        skill = _initialized_skill()
+        skill._check_profile_mismatch = Mock()
+        skill.dispatcher = Mock()
+        skill.dispatcher.adapter = Mock()
+        skill.dispatcher.adapter.platform_name = "generic_rest"
+        skill.response_builder = Mock()
+        skill.speak = Mock()
+        skill._resolve_asset_id = Mock(return_value="Electric-Main-Meter")
+        skill.settings_service = Mock()
+        skill.settings_service.get_asset_mappings.return_value = {
+            "Electric-Main-Meter": {
+                "display_name": "Electric Main Meter",
+                "capability_mode": "energy_only",
+                "native_metric_bindings": {
+                    "energy_total": {
+                        "strategy": "asset_consumption_total",
+                        "default_period_mode": "aggregate_total",
+                        "aggregate_start_iso": "2021-02-01T00:00:00.000Z",
+                    },
+                },
+            },
+        }
+
+        msg = Mock()
+        msg.data = {
+            "utterance": "what is total energy for electric main meter last week",
+            "period": "last week",
+        }
+
+        handled = skill.handle_metric_query_fallback(msg)
+
+        assert handled is False
+        skill.dispatcher.get_kpi.assert_not_called()
+        skill.speak.assert_called_once_with(
+            "Time-based total energy is not available for Electric Main Meter. "
+            "This meter only exposes a cumulative total. Ask for total energy without a period."
+        )
+
+    def test_metric_query_fallback_energy_total_this_month_rejects_metric_resource_only_meter(self):
+        """Fallback should reject periods when mapping ignores time filters."""
+        skill = _initialized_skill()
+        skill._check_profile_mismatch = Mock()
+        skill.dispatcher = Mock()
+        skill.dispatcher.adapter = Mock()
+        skill.dispatcher.adapter.platform_name = "generic_rest"
+        skill.response_builder = Mock()
+        skill.speak = Mock()
+        skill._resolve_asset_id = Mock(return_value="Electric-Main-Meter")
+        skill.settings_service = Mock()
+        skill.settings_service.get_asset_mappings.return_value = {
+            "Electric-Main-Meter": {
+                "display_name": "Electric Main Meter",
+                "capability_mode": "full_kpi",
+                "metric_resources": {
+                    "energy_total": "resource-1",
+                },
+            },
+        }
+        skill.settings_service.get_metric_mapping.return_value = {
+            "endpoint": "/api/u/measurement/metric/item/{resource_id}",
+            "json_path": "$.lastValue",
+            "unit": "kWh",
+        }
+
+        msg = Mock()
+        msg.data = {
+            "utterance": "what is total energy for electric main meter this month",
+            "period": "this month",
+        }
+
+        handled = skill.handle_metric_query_fallback(msg)
+
+        assert handled is False
+        skill.dispatcher.get_kpi.assert_not_called()
+        skill.speak.assert_called_once_with(
+            "Time-based total energy is not available for Electric Main Meter. "
+            "This meter only exposes a cumulative total. Ask for total energy without a period."
+        )
+
+    def test_metric_query_fallback_pluralized_gas_meter_rejects_period(self):
+        """Pluralized meter phrasing should reject on the intended gas meter asset."""
+        skill = _initialized_skill()
+        skill._check_profile_mismatch = Mock()
+        skill.dispatcher = Mock()
+        skill.dispatcher.adapter = Mock()
+        skill.dispatcher.adapter.platform_name = "generic_rest"
+        skill.response_builder = Mock()
+        skill.speak = Mock()
+        skill._get_asset_registry = Mock(return_value=[
+            Asset(
+                asset_id="Gas-Main-Meter",
+                display_name="Gas Main Meter",
+                asset_type="machine",
+                aliases=["gas main meter"],
+            ),
+        ])
+        skill.settings_service = Mock()
+        skill.settings_service.get_asset_mappings.return_value = {
+            "Gas-Main-Meter": {
+                "display_name": "Gas Main Meter",
+                "capability_mode": "full_kpi",
+                "metric_resources": {
+                    "energy_total": "resource-gas-1",
+                },
+                "aliases": ["gas main meter"],
+            },
+            "Line-1": {
+                "display_name": "Line 1",
+                "metric_resources": {
+                    "energy_total": "resource-line-1",
+                    "energy_per_unit": "resource-line-2",
+                },
+            },
+        }
+        skill.settings_service.get_metric_mapping.return_value = {
+            "endpoint": "/api/u/measurement/metric/item/{resource_id}",
+            "json_path": "$.lastValue",
+            "unit": "kWh",
+        }
+
+        msg = Mock()
+        msg.data = {
+            "utterance": "what is the total energy for gas main meters today",
+            "period": "today",
+        }
+
+        handled = skill.handle_metric_query_fallback(msg)
+
+        assert handled is False
+        skill.dispatcher.get_kpi.assert_not_called()
+        skill.speak.assert_called_once_with(
+            "Time-based total energy is not available for Gas Main Meter. "
+            "This meter only exposes a cumulative total. Ask for total energy without a period."
+        )
 
 
 class TestIntentFailureRecovery:

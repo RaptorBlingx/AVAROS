@@ -23,7 +23,7 @@ from __future__ import annotations
 import pytest
 
 from tests.helpers.stub_adapter import StubAdapter
-from skill.clients.prevention_statistical import StatisticalPreventionClient
+from tests.helpers.mock_prevention import MockPreventionClient
 from skill.domain.exceptions import AVAROSError
 from skill.domain.models import (
     CanonicalMetric,
@@ -61,7 +61,7 @@ def dispatcher(audit_logger: AuditLogger) -> QueryDispatcher:
     return QueryDispatcher(
         adapter=StubAdapter(),
         audit_logger=audit_logger,
-        prevention_client=StatisticalPreventionClient(),
+        prevention_client=MockPreventionClient(),
     )
 
 
@@ -220,7 +220,7 @@ class TestTrendPipeline:
 
 
 class TestAnomalyPipeline:
-    """End-to-end: anomaly detection with StatisticalPreventionClient."""
+    """End-to-end: anomaly detection with MockPreventionClient."""
 
     def test_anomaly_pipeline_returns_result(
         self,
@@ -262,7 +262,7 @@ class TestAnomalyPipeline:
 
 
 class TestDriftPipeline:
-    """End-to-end: drift monitoring with StatisticalPreventionClient."""
+    """End-to-end: drift monitoring with MockPreventionClient."""
 
     def test_drift_pipeline_returns_result(
         self,

@@ -5,8 +5,11 @@ from __future__ import annotations
 from datetime import timezone
 from unittest.mock import Mock
 
+import pytest
+
 from skill import AVAROSSkill
-from skill._metric_handlers import dispatch_kpi_for_metric
+from skill._metric_handlers import _resolve_kpi_period, dispatch_kpi_for_metric
+from skill.domain.exceptions import MetricNotSupportedError
 from skill.domain.models import CanonicalMetric, TimePeriod
 
 
@@ -119,6 +122,103 @@ def test_generic_kpi_handler_calls_safe_dispatch():
     assert handler_name == "handle_kpi_oee"
 
 
+def test_resolve_kpi_period_last_2_weeks_uses_explicit_window():
+    """Recognized last-2-weeks phrasing should not collapse to defaults."""
+    skill = _make_skill()
+    message = _message_for_intent(
+        "kpi.energy.per_unit",
+        period="last 2 weeks",
+        utterance="what is energy per unit for line 1 last 2 weeks",
+    )
+
+    period = _resolve_kpi_period(
+        skill,
+        metric=CanonicalMetric.ENERGY_PER_UNIT,
+        asset_id="Line-1",
+        message=message,
+    )
+
+    assert period is skill._parse_period.return_value
+    skill._parse_period.assert_called_once_with("last 2 weeks")
+
+
+def test_resolve_kpi_period_rejects_explicit_period_for_cumulative_meter_total():
+    """Energy-only cumulative meters should reject spoken time windows."""
+    skill = _make_skill()
+    skill.dispatcher = Mock()
+    skill.dispatcher.adapter = Mock()
+    skill.dispatcher.adapter.platform_name = "generic_rest"
+    skill.settings_service = Mock()
+    skill.settings_service.get_asset_mappings.return_value = {
+        "Electric-Main-Meter": {
+            "display_name": "Electric Main Meter",
+            "capability_mode": "energy_only",
+            "native_metric_bindings": {
+                "energy_total": {
+                    "strategy": "asset_consumption_total",
+                    "default_period_mode": "aggregate_total",
+                    "aggregate_start_iso": "2021-02-01T00:00:00.000Z",
+                },
+            },
+        },
+    }
+    message = _message_for_intent(
+        "kpi.energy.total",
+        period="last week",
+        utterance="what is total energy for electric main meter last week",
+    )
+
+    with pytest.raises(MetricNotSupportedError) as exc_info:
+        _resolve_kpi_period(
+            skill,
+            metric=CanonicalMetric.ENERGY_TOTAL,
+            asset_id="Electric-Main-Meter",
+            message=message,
+        )
+
+    assert "Electric Main Meter" in exc_info.value.user_message
+    skill._parse_period.assert_not_called()
+
+
+def test_resolve_kpi_period_rejects_period_for_metric_resource_only_meter_total():
+    """Single-resource total-energy meters should reject unsupported periods."""
+    skill = _make_skill()
+    skill.dispatcher = Mock()
+    skill.dispatcher.adapter = Mock()
+    skill.dispatcher.adapter.platform_name = "generic_rest"
+    skill.settings_service = Mock()
+    skill.settings_service.get_asset_mappings.return_value = {
+        "Electric-Main-Meter": {
+            "display_name": "Electric Main Meter",
+            "capability_mode": "full_kpi",
+            "metric_resources": {
+                "energy_total": "resource-1",
+            },
+        },
+    }
+    skill.settings_service.get_metric_mapping.return_value = {
+        "endpoint": "/api/u/measurement/metric/item/{resource_id}",
+        "json_path": "$.lastValue",
+        "unit": "kWh",
+    }
+    message = _message_for_intent(
+        "kpi.energy.total",
+        period="this month",
+        utterance="what is total energy for electric main meter this month",
+    )
+
+    with pytest.raises(MetricNotSupportedError) as exc_info:
+        _resolve_kpi_period(
+            skill,
+            metric=CanonicalMetric.ENERGY_TOTAL,
+            asset_id="Electric-Main-Meter",
+            message=message,
+        )
+
+    assert "Electric Main Meter" in exc_info.value.user_message
+    skill._parse_period.assert_not_called()
+
+
 def test_energy_total_without_period_uses_aggregate_window_for_energy_only_seu():
     """ENERGY_TOTAL without explicit period should use aggregate window on energy-only assets."""
     skill = _make_skill()
@@ -158,8 +258,8 @@ def test_energy_total_without_period_uses_aggregate_window_for_energy_only_seu()
     skill._parse_period.assert_not_called()
 
 
-def test_energy_total_with_explicit_period_keeps_requested_window():
-    """Explicit period should always override aggregate default behavior."""
+def test_energy_total_with_explicit_period_rejects_cumulative_meter_window():
+    """Explicit periods should be rejected on cumulative-only meter totals."""
     skill = _make_skill()
     skill._resolve_asset_id.return_value = "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4"
     skill.settings_service = Mock()
@@ -185,15 +285,15 @@ def test_energy_total_with_explicit_period_keeps_requested_window():
         utterance="what is total energy for seu today",
     )
 
-    dispatch_kpi_for_metric(
-        skill,
-        metric=CanonicalMetric.ENERGY_TOTAL,
-        message=message,
-        handler_name="handle_kpi_energy_total",
-    )
+    with pytest.raises(MetricNotSupportedError):
+        dispatch_kpi_for_metric(
+            skill,
+            metric=CanonicalMetric.ENERGY_TOTAL,
+            message=message,
+            handler_name="handle_kpi_energy_total",
+        )
 
-    skill._parse_period.assert_called_once_with("today")
-    assert skill.dispatcher.get_kpi.call_args.kwargs["period"] is skill._parse_period.return_value
+    skill._parse_period.assert_not_called()
 
 
 def test_energy_total_with_implicit_today_slot_uses_aggregate_window():
@@ -277,8 +377,8 @@ def test_energy_total_prefers_utterance_over_utterances_for_period_detection():
     assert skill.dispatcher.get_kpi.call_args.kwargs["period"].display_name == "in total"
 
 
-def test_energy_total_uses_today_when_utterance_has_period_phrase():
-    """If utterance contains today and slot is today, explicit today should be respected."""
+def test_energy_total_rejects_today_when_utterance_has_period_phrase():
+    """Spoken today should still be rejected on cumulative-only meter totals."""
     skill = _make_skill()
     skill._resolve_asset_id.return_value = "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4"
     skill.settings_service = Mock()
@@ -305,14 +405,15 @@ def test_energy_total_uses_today_when_utterance_has_period_phrase():
         utterances=["what is total energy for seu"],
     )
 
-    dispatch_kpi_for_metric(
-        skill,
-        metric=CanonicalMetric.ENERGY_TOTAL,
-        message=message,
-        handler_name="handle_kpi_energy_total",
-    )
+    with pytest.raises(MetricNotSupportedError):
+        dispatch_kpi_for_metric(
+            skill,
+            metric=CanonicalMetric.ENERGY_TOTAL,
+            message=message,
+            handler_name="handle_kpi_energy_total",
+        )
 
-    assert skill.dispatcher.get_kpi.call_args.kwargs["period"].display_name == "today"
+    skill._parse_period.assert_not_called()
 
 
 def test_energy_total_without_period_phrase_uses_aggregate_even_for_metric_intent():

@@ -12,6 +12,7 @@ production data:
 from __future__ import annotations
 
 from datetime import date
+from unittest.mock import Mock
 
 import pytest
 
@@ -228,6 +229,79 @@ class TestMaterialEfficiencyDerivation:
 
 class TestDerivedKpiErrors:
     """Error paths for derived KPIs."""
+
+    def test_energy_per_unit_on_energy_only_meter_raises_clear_error(
+        self,
+        adapter: StubAdapter,
+        settings_service: SettingsService,
+        co2_service: CO2DerivationService,
+        production_service_with_data: ProductionDataService,
+        period: TimePeriod,
+    ) -> None:
+        """Energy-only meters should fail fast with asset-aware wording."""
+        settings_service.get_asset_mappings = Mock(return_value={
+            "electric_main_meter": {
+                "display_name": "Electric Main Meter",
+                "capability_mode": "energy_only",
+                "native_metric_bindings": {
+                    "energy_total": {
+                        "strategy": "asset_consumption_total",
+                        "unit": "kWh",
+                    },
+                },
+            },
+        })
+        dispatcher = QueryDispatcher(
+            adapter=adapter,
+            settings_service=settings_service,
+            co2_service=co2_service,
+            production_data_service=production_service_with_data,
+        )
+
+        with pytest.raises(MetricNotSupportedError) as exc_info:
+            dispatcher.get_kpi(
+                metric=CanonicalMetric.ENERGY_PER_UNIT,
+                asset_id="electric_main_meter",
+                period=period,
+            )
+
+        assert exc_info.value.available_metrics == ["energy_total"]
+        assert "Electric Main Meter" in exc_info.value.user_message
+
+    def test_energy_per_unit_on_metric_resource_only_meter_raises_clear_error(
+        self,
+        adapter: StubAdapter,
+        settings_service: SettingsService,
+        co2_service: CO2DerivationService,
+        production_service_with_data: ProductionDataService,
+        period: TimePeriod,
+    ) -> None:
+        """Single-resource total-energy meters should also fail fast."""
+        settings_service.get_asset_mappings = Mock(return_value={
+            "electric_main_meter": {
+                "display_name": "Electric Main Meter",
+                "capability_mode": "full_kpi",
+                "metric_resources": {
+                    "energy_total": "resource-1",
+                },
+            },
+        })
+        dispatcher = QueryDispatcher(
+            adapter=adapter,
+            settings_service=settings_service,
+            co2_service=co2_service,
+            production_data_service=production_service_with_data,
+        )
+
+        with pytest.raises(MetricNotSupportedError) as exc_info:
+            dispatcher.get_kpi(
+                metric=CanonicalMetric.ENERGY_PER_UNIT,
+                asset_id="electric_main_meter",
+                period=period,
+            )
+
+        assert exc_info.value.available_metrics == ["energy_total"]
+        assert "Electric Main Meter" in exc_info.value.user_message
 
     def test_no_production_data_for_period(
         self, adapter: StubAdapter,

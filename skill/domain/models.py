@@ -199,6 +199,15 @@ class TimePeriod:
         now = datetime.now(tz=timezone.utc)
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         return cls(start=start, end=now, display_name="today")
+
+    @classmethod
+    def yesterday(cls) -> TimePeriod:
+        """Create a period for the previous calendar day."""
+        today_start = datetime.now(tz=timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0,
+        )
+        start = today_start - timedelta(days=1)
+        return cls(start=start, end=today_start, display_name="yesterday")
     
     @classmethod
     def this_week(cls) -> TimePeriod:
@@ -207,6 +216,13 @@ class TimePeriod:
         start = now - timedelta(days=now.weekday())
         start = start.replace(hour=0, minute=0, second=0, microsecond=0)
         return cls(start=start, end=now, display_name="this week")
+
+    @classmethod
+    def this_month(cls) -> TimePeriod:
+        """Create a period for the current month."""
+        now = datetime.now(tz=timezone.utc)
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        return cls(start=start, end=now, display_name="this month")
     
     @classmethod
     def last_week(cls) -> TimePeriod:
@@ -216,6 +232,13 @@ class TimePeriod:
         end = end.replace(hour=0, minute=0, second=0, microsecond=0)
         start = end - timedelta(days=7)
         return cls(start=start, end=end, display_name="last week")
+
+    @classmethod
+    def last_two_weeks(cls) -> TimePeriod:
+        """Create a period for the last 14 days."""
+        now = datetime.now(tz=timezone.utc)
+        start = now - timedelta(days=14)
+        return cls(start=start, end=now, display_name="last 2 weeks")
     
     @classmethod
     def last_month(cls) -> TimePeriod:
@@ -246,9 +269,13 @@ class TimePeriod:
         
         mapping = {
             "today": cls.today,
+            "yesterday": cls.yesterday,
             "this week": cls.this_week,
+            "this month": cls.this_month,
             "last week": cls.last_week,
             "past week": cls.last_week,
+            "last 2 weeks": cls.last_two_weeks,
+            "last two weeks": cls.last_two_weeks,
             "last month": cls.last_month,
             "past month": cls.last_month,
         }

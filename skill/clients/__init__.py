@@ -24,14 +24,10 @@ from skill.clients.docubot import (
 from skill.clients.prevention import (
     PreventionClient,
 )
-from skill.clients.prevention_statistical import (
-    StatisticalPreventionClient,
-)
 
 __all__ = [
     "ExternalServiceClient",
     "DocuBotClient",
     "MockDocuBotClient",
     "PreventionClient",
-    "StatisticalPreventionClient",
 ]
