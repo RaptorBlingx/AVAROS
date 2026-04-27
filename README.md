@@ -145,8 +145,9 @@ Use `.env.example` as template. Key variables:
 | Variable | Purpose |
 |----------|---------|
 | `AVAROS_WEB_API_KEY` | Web UI API authentication |
-| `PREVENTION_URL` | PREVENTION endpoint (default: `http://prevention:8081`) |
+| `PREVENTION_URL` | PREVENTION endpoint (leave empty to disable analytics) |
 | `PREVENTION_AUTH_TOKEN` | Bearer token for Keycloak (optional) |
+| `PREVENTION_DATA_MAX_AGE_MINUTES` | Stale-data threshold for PREVENTION export manifests |
 | `HIVEMIND_MASTER_KEY` | HiveMind auth (auto-generated if empty) |
 | `AVAROS_DATABASE_URL` | SQLite/PostgreSQL for SettingsService |
 
@@ -160,20 +161,26 @@ AVAROS integrates the [PREVENTION](https://2smart.2smart.2smart) analytics platf
 
 ### How It Works
 
-1. **Data Export**: RENERYO time-series data is exported to 5 JSON files (energy, production, material, carbon, supplier)
-2. **PREVENTION Addon**: The AVAROS addon (`tools/prevention-addon/`) loads data into MongoDB and configures 9 analytics goals
+1. **Data Export**: Adapter time-series data is exported to 5 JSON files plus an `export_manifest.json` freshness manifest
+2. **PREVENTION Addon**: The AVAROS addon (`tools/prevention-addon/`) loads data into MongoDB and configures 10 analytics goals
 3. **Pre-Computation**: PREVENTION runs z-score anomaly detection and linear regression drift analysis at startup
-4. **Voice Queries**: `HttpPreventionClient` queries PREVENTION's GraphQL API and translates results into voice responses
+4. **Voice Queries**: `HttpPreventionClient` queries PREVENTION's GraphQL API, filters by metric and asset, and translates results into voice responses
 
-### Analytics Goals (9 total)
+### Analytics Goals (10 total)
 
 | Category | Anomaly Check | Drift Check |
 |----------|--------------|-------------|
 | Energy | `ENERGY_ANOMALY_CHECK` | `ENERGY_DRIFT_CHECK` |
 | Production | `PRODUCTION_ANOMALY_CHECK` | `PRODUCTION_DRIFT_CHECK` |
 | Material | `MATERIAL_ANOMALY_CHECK` | `MATERIAL_DRIFT_CHECK` |
-| Carbon | `CO2_ANOMALY_CHECK` | — |
+| Carbon | `CO2_ANOMALY_CHECK` | `CO2_DRIFT_CHECK` |
 | Supplier | `SUPPLIER_ANOMALY_CHECK` | `SUPPLIER_DRIFT_CHECK` |
+
+### Runtime Truthfulness
+
+- AVAROS treats PREVENTION as **disabled** when no URL is configured.
+- AVAROS reports PREVENTION as **healthy** or **unreachable** only after a live health check.
+- The Web UI status endpoint also reports PREVENTION input data freshness from `tools/prevention-addon/data/export_manifest.json`.
 
 ### Understanding Anomaly Results
 
@@ -223,14 +230,14 @@ avaros-ovos-skill/
 │   └── locale/en-us/           # 35 intent files + dialog templates
 ├── tools/
 │   ├── prevention-addon/       # PREVENTION addon (analytics goals + data loader)
-│   └── prevention-data-sync/   # RENERYO → PREVENTION data exporter
+│   └── prevention-data-sync/   # Adapter → PREVENTION data exporter + manifest
 ├── tests/                      # 1,491 tests (pytest)
 ├── web-ui/                     # FastAPI + React dashboard
 ├── docker/                     # Docker artifacts
 │   ├── Dockerfile              # AVAROS skill container
-│   ├── Dockerfile.prevention   # PREVENTION container
+│   ├── Dockerfile.prevention   # Legacy local PREVENTION image artifact
 │   ├── docker-compose.avaros.yml
-│   └── docker-compose.prevention.yml
+│   └── docker-compose.prevention.yml  # PREVENTION development/no-auth overlay
 ├── docker-compose.yml          # Main compose (7 services)
 ├── DEVELOPMENT.md              # Coding standards (1,300+ lines)
 └── README.md
@@ -305,7 +312,7 @@ docker exec avaros-skill python3 /tmp/voice_test.py
 
 ## License
 
-*License information to be added upon WASABI Shop publication.*
+This project is licensed under Apache-2.0. See [LICENSE](LICENSE).
 
 ---
 

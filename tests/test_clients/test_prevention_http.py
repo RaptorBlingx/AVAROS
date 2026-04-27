@@ -339,15 +339,37 @@ class TestHttpClientAnomalyDetection:
             assert 0.0 <= result.confidence <= 1.0
 
     @pytest.mark.asyncio
-    async def test_detect_anomaly_connection_error_propagates(
+    async def test_detect_anomaly_connection_error_falls_back_to_local_series(
         self, client: HttpPreventionClient, sample_data: list[DataPoint],
     ) -> None:
         with patch.object(client, "_fetch_results", new_callable=AsyncMock) as mock_f:
             mock_f.side_effect = ConnectionError("unreachable")
-            with pytest.raises(ConnectionError):
-                await client.detect_anomaly(
-                    CanonicalMetric.ENERGY_PER_UNIT, sample_data,
-                )
+            result = await client.detect_anomaly(
+                CanonicalMetric.ENERGY_PER_UNIT,
+                sample_data,
+            )
+            assert result.is_anomalous is False
+            assert result.severity == "none"
+            assert result.expected_value is not None
+
+    @pytest.mark.asyncio
+    async def test_detect_anomaly_fallback_detects_spike_from_local_series(
+        self, client: HttpPreventionClient,
+    ) -> None:
+        series = _make_data_points([2.5, 2.4, 2.6, 2.5, 5.4])
+
+        with patch.object(client, "_fetch_results", new_callable=AsyncMock) as mock_f:
+            mock_f.side_effect = ConnectionError("unreachable")
+            result = await client.detect_anomaly(
+                CanonicalMetric.ENERGY_PER_UNIT,
+                series,
+            )
+
+        assert result.is_anomalous is True
+        assert result.anomaly_type == "spike"
+        assert result.severity in {"medium", "high", "critical"}
+        assert result.expected_value is not None
+        assert result.actual_value == 5.4
 
     @pytest.mark.asyncio
     async def test_detect_anomaly_queries_correct_goal(
@@ -432,7 +454,7 @@ class TestHttpClientDriftDetection:
                 CanonicalMetric.ENERGY_PER_UNIT, sample_data,
             )
             assert result.has_drift is True
-            assert result.drift_direction == "increasing"
+            assert result.drift_direction == "degrading"
             assert result.drift_rate == 0.0035
 
     @pytest.mark.asyncio
@@ -506,7 +528,7 @@ class TestMetricToGoalMapping:
             )
 
     def test_all_drift_categories_covered(self) -> None:
-        drift_categories = {"energy", "production", "material", "supplier"}
+        drift_categories = {"energy", "production", "material", "carbon", "supplier"}
         for cat in drift_categories:
             assert cat in _CATEGORY_TO_DRIFT_GOAL, (
                 f"Category '{cat}' has no drift goal"
@@ -518,8 +540,8 @@ class TestMetricToGoalMapping:
         assert _CATEGORY_TO_ANOMALY_GOAL["energy"] == "ENERGY_ANOMALY_CHECK"
         assert _CATEGORY_TO_DRIFT_GOAL["energy"] == "ENERGY_DRIFT_CHECK"
 
-    def test_carbon_has_no_drift_goal(self) -> None:
-        assert "carbon" not in _CATEGORY_TO_DRIFT_GOAL
+    def test_carbon_has_drift_goal(self) -> None:
+        assert _CATEGORY_TO_DRIFT_GOAL["carbon"] == "CO2_DRIFT_CHECK"
 
 
 # =========================================================================
@@ -582,8 +604,41 @@ class TestDriftResultParsing:
             MOCK_DRIFT_RESULTS, CanonicalMetric.ENERGY_PER_UNIT, 7,
         )
         assert result.has_drift is True
-        assert result.drift_direction == "increasing"
+        assert result.drift_direction == "degrading"
         assert result.drift_rate == 0.0035
+
+    def test_parses_drift_result_for_asset(self) -> None:
+        results = [
+            {
+                "metric_name": "energy_per_unit",
+                "asset_id": "Line-2",
+                "has_drift": True,
+                "drift_direction": "decreasing",
+                "drift_rate": -0.0025,
+                "periods_analyzed": 12,
+                "description": "energy_per_unit on Line-2: decreasing",
+            },
+            {
+                "metric_name": "energy_per_unit",
+                "asset_id": "Line-1",
+                "has_drift": True,
+                "drift_direction": "increasing",
+                "drift_rate": 0.0035,
+                "periods_analyzed": 16,
+                "description": "energy_per_unit on Line-1: increasing",
+            },
+        ]
+
+        result = _parse_drift_results(
+            results,
+            CanonicalMetric.ENERGY_PER_UNIT,
+            7,
+            asset_id="Line-2",
+        )
+
+        assert result.has_drift is True
+        assert result.drift_direction == "improving"
+        assert result.periods_analyzed == 12
 
     def test_returns_stable_when_no_match(self) -> None:
         result = _parse_drift_results(

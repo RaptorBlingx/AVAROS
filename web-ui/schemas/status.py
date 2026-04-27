@@ -52,10 +52,49 @@ class SystemStatusResponse(BaseModel):
     prevention_mode: str = Field(
         default="unknown",
         description=(
-            "Active prevention runtime mode: http, fallback, or unknown."
+            "Active prevention runtime mode: http, disabled, or unknown."
         ),
     )
     prevention_mode_reason: str = Field(
         default="",
         description="Reason/source for selected prevention mode.",
+    )
+    prevention_state: str = Field(
+        default="unknown",
+        description=(
+            "Live PREVENTION state: healthy, unreachable, misconfigured, "
+            "disabled, or unknown."
+        ),
+    )
+    prevention_verified: bool = Field(
+        default=False,
+        description="True when the PREVENTION endpoint was verified live.",
+    )
+    prevention_message: str = Field(
+        default="",
+        description="Human-readable PREVENTION health message.",
+    )
+    prevention_checked_at: str | None = Field(
+        default=None,
+        description="ISO timestamp of the latest PREVENTION health verification.",
+    )
+    prevention_endpoint: str | None = Field(
+        default=None,
+        description="Resolved PREVENTION base URL, when configured.",
+    )
+    prevention_data_state: str = Field(
+        default="unknown",
+        description="PREVENTION input data freshness: fresh, stale, missing, invalid, or unknown.",
+    )
+    prevention_data_message: str = Field(
+        default="",
+        description="Human-readable PREVENTION input data freshness message.",
+    )
+    prevention_data_updated_at: str | None = Field(
+        default=None,
+        description="ISO timestamp from the latest PREVENTION export manifest.",
+    )
+    prevention_data_record_count: int | None = Field(
+        default=None,
+        description="Record count from the latest PREVENTION export manifest.",
     )

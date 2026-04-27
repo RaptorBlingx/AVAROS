@@ -247,14 +247,13 @@ class ResponseBuilder:
 
         if self.verbosity == "brief":
             return (
-                f"{result.anomalous_pairs} anomalies "
+                f"{result.anomalous_pairs} affected pairs "
                 f"across {result.checked_pairs} {checks_word}"
             )
 
         parts = [
-            f"I found {result.anomalous_pairs} "
-            f"{'anomaly' if result.anomalous_pairs == 1 else 'anomalies'} "
-            f"across {result.checked_pairs} {checks_word}."
+            f"I found anomalies in {result.anomalous_pairs} "
+            f"of {result.checked_pairs} {checks_word}."
         ]
 
         # Top findings (up to 3 at normal, all at detailed)
@@ -308,6 +307,8 @@ class ResponseBuilder:
         metric_name = result.metric.display_name
 
         if not result.has_drift:
+            if result.periods_analyzed == 0 and result.description:
+                return result.description
             return (
                 f"No significant drift detected. "
                 f"{metric_name.capitalize()} is stable."

@@ -38,6 +38,18 @@ Platform connection is configured from the Web UI wizard and stored per profile 
 | `AVAROS_WEB_UI_PORT` | No | `8080` | Web UI | Internal port for the FastAPI web server |
 | `AVAROS_WEB_API_KEY` | Recommended | *(auto-generated)* | Web UI | API key for authenticating Web UI and API requests. If not set, a random key is generated on startup and logged. **Set explicitly for production.** |
 
+## PREVENTION Analytics
+
+| Variable | Required | Default | Used By | Description |
+|----------|----------|---------|---------|-------------|
+| `PREVENTION_URL` | No | *(empty)* | Skill, Web UI | Base URL of the PREVENTION GraphQL endpoint. Leave empty to disable anomaly and drift analytics. |
+| `PREVENTION_AUTH_TOKEN` | No | *(empty)* | Skill, Web UI | Optional bearer token for authenticated PREVENTION deployments. |
+| `PREVENTION_DATA_MAX_AGE_MINUTES` | No | `1440` | Skill, Web UI | Maximum age of the PREVENTION export manifest before AVAROS marks analytics input data as stale. |
+| `PREVENTION_PORT` | No | `8082` | PREVENTION Compose | Host port published by `docker/docker-compose.prevention.yml`. |
+| `PREVENTION_MONGO_USER` | No | `prevention` | PREVENTION Compose | MongoDB username for the PREVENTION development stack. |
+| `PREVENTION_MONGO_PASS` | No | `prevention` | PREVENTION Compose | MongoDB password for the PREVENTION development stack. |
+| `PREVENTION_BUILD_CONTEXT` | No | `../../prevention_upd` | PREVENTION Compose | Filesystem path to the external PREVENTION repo used for local image builds. |
+
 ## HTTPS / TLS (Nginx Proxy)
 
 | Variable | Required | Default | Used By | Description |
@@ -45,6 +57,19 @@ Platform connection is configured from the Web UI wizard and stored per profile 
 | `AVAROS_HTTPS_PORT` | No | `443` | Proxy | External HTTPS port mapped to the host |
 | `AVAROS_HTTP_PORT` | No | `80` | Proxy | External HTTP port (redirects to HTTPS) |
 | `AVAROS_TLS_MODE` | No | `self-signed` | Proxy | TLS mode: `self-signed` or `letsencrypt` |
+
+## HiveMind Voice Bridge
+
+| Variable | Required | Default | Used By | Description |
+|----------|----------|---------|---------|-------------|
+| `HIVEMIND_PORT` | No | `5678` | HiveMind | External port for the HiveMind WebSocket listener. |
+| `HIVEMIND_MASTER_KEY` | Recommended | *(auto-generated)* | HiveMind | Administrative/master key for HiveMind-core. Set explicitly outside local-only demos. |
+| `HIVEMIND_CLIENT_NAME` | No | `avaros-web-client` | HiveMind, Web UI | Browser client identity used in the websocket authorization token. |
+| `HIVEMIND_CLIENT_KEY` | Recommended | *(auto-generated)* | HiveMind, Web UI | Browser client access key embedded in the websocket authorization token. |
+| `HIVEMIND_CLIENT_SECRET` | Recommended | *(auto-generated)* | HiveMind | Browser client password stored in the HiveMind client database. |
+| `HIVEMIND_CLIENT_CRYPTO_KEY` | Recommended | *(derived from secret if empty)* | HiveMind, Web UI | Shared AES key for encrypted HiveMind websocket payloads. This must match in both containers or the browser will reconnect in a loop with MAC/decryption errors. |
+| `HIVEMIND_WS_URL` | Yes for browser voice | `wss://localhost/hivemind` | Web UI | Public websocket URL returned to browser clients for HiveMind connections. |
+| `HIVEMIND_CLIENT_ALLOWED_TYPES` | No | built-in allowlist | HiveMind | Comma-separated OVOS message types allowed for the browser client. |
 
 ## Mock RENERYO Server
 
@@ -92,11 +117,14 @@ These variables configure the `tools/reneryo-data-generator/generator.py` daemon
 
 ## Quick Setup
 
-For a standard Docker deployment, one variable typically needs customization:
+For a standard Docker deployment, two values usually need customization:
 
 ```bash
 # Set a secure API key
 AVAROS_WEB_API_KEY=your-secure-32-char-hex-key-here
+
+# Enable PREVENTION only when the analytics stack is running
+PREVENTION_URL=http://prevention:8081
 ```
 
 All other variables have sensible defaults for Docker Compose deployment.

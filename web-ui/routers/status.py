@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +13,11 @@ from config import APP_VERSION
 from dependencies import get_adapter_factory, get_settings_service
 from schemas.status import SystemStatusResponse
 from skill.adapters.factory import AdapterFactory
+from skill.services.prevention_runtime import (
+    probe_prevention_status,
+    resolve_prevention_config,
+    resolve_prevention_data_status,
+)
 from skill.services.settings import SettingsService
 
 
@@ -23,6 +27,11 @@ router = APIRouter(prefix="/api/v1", tags=["status"])
 
 _LIVE_STATUS_TTL_SECONDS = 20.0
 _live_status_cache: dict[str, tuple[float, dict[str, str | bool | None]]] = {}
+_PREVENTION_STATUS_TTL_SECONDS = 20.0
+_prevention_status_cache: dict[
+    str,
+    tuple[float, dict[str, str | bool | int | None]],
+] = {}
 
 
 def _intent_count() -> int:
@@ -55,24 +64,58 @@ def _live_state_from_error_code(
     return "unknown"
 
 
-def _resolve_prevention_mode(
+async def _resolve_prevention_status(
     settings_service: SettingsService,
-) -> tuple[str, str]:
-    """Resolve active prevention mode from env/settings configuration."""
-    env_url = os.environ.get("PREVENTION_URL", "").strip()
-    if env_url:
-        return "http", "env_prevention_url"
+) -> dict[str, str | bool | int | None]:
+    """Resolve PREVENTION runtime and data freshness state."""
+    config = resolve_prevention_config(settings_service)
+    data_status = resolve_prevention_data_status(settings_service)
 
-    try:
-        settings_url = str(
-            settings_service.get_setting("prevention_url", ""),
-        ).strip()
-    except Exception:
-        settings_url = ""
+    base_value: dict[str, str | bool | int | None] = {
+        "prevention_mode": config.mode,
+        "prevention_mode_reason": config.mode_reason,
+        "prevention_state": "disabled" if config.mode != "http" else "unknown",
+        "prevention_verified": False,
+        "prevention_message": (
+            "PREVENTION is disabled until a URL is configured."
+            if config.mode != "http"
+            else ""
+        ),
+        "prevention_checked_at": None,
+        "prevention_endpoint": config.url or None,
+        "prevention_data_state": data_status.state,
+        "prevention_data_message": data_status.message,
+        "prevention_data_updated_at": data_status.updated_at,
+        "prevention_data_record_count": data_status.record_count,
+    }
 
-    if settings_url:
-        return "http", "settings_prevention_url"
-    return "fallback", "prevention_url_missing"
+    if config.mode != "http" or not config.url:
+        return base_value
+
+    cache_key = "|".join([
+        config.url,
+        config.auth_token[-16:],
+        data_status.updated_at or "",
+        str(data_status.record_count or 0),
+    ])
+    now = time.monotonic()
+    cached = _prevention_status_cache.get(cache_key)
+    if cached is not None and cached[0] > now:
+        return cached[1]
+
+    probe = await probe_prevention_status(config)
+    value = {
+        **base_value,
+        "prevention_state": probe.state,
+        "prevention_verified": probe.verified,
+        "prevention_message": probe.message,
+        "prevention_checked_at": probe.checked_at,
+    }
+    _prevention_status_cache[cache_key] = (
+        now + _PREVENTION_STATUS_TTL_SECONDS,
+        value,
+    )
+    return value
 
 
 async def _resolve_live_connection_status(
@@ -121,7 +164,19 @@ async def get_system_status(
 ) -> SystemStatusResponse:
     """Return current AVAROS configuration and readiness status."""
     loaded_intents = _intent_count()
-    prevention_mode, prevention_reason = "unknown", ""
+    prevention_status: dict[str, str | bool | int | None] = {
+        "prevention_mode": "unknown",
+        "prevention_mode_reason": "",
+        "prevention_state": "unknown",
+        "prevention_verified": False,
+        "prevention_message": "",
+        "prevention_checked_at": None,
+        "prevention_endpoint": None,
+        "prevention_data_state": "unknown",
+        "prevention_data_message": "",
+        "prevention_data_updated_at": None,
+        "prevention_data_record_count": None,
+    }
 
     defaults = SystemStatusResponse(
         configured=False,
@@ -130,13 +185,22 @@ async def get_system_status(
         loaded_intents=loaded_intents,
         database_connected=False,
         version=APP_VERSION,
-        prevention_mode=prevention_mode,
-        prevention_mode_reason=prevention_reason,
+        prevention_mode=str(prevention_status["prevention_mode"]),
+        prevention_mode_reason=str(prevention_status["prevention_mode_reason"]),
+        prevention_state=str(prevention_status["prevention_state"]),
+        prevention_verified=bool(prevention_status["prevention_verified"]),
+        prevention_message=str(prevention_status["prevention_message"]),
+        prevention_checked_at=None,
+        prevention_endpoint=None,
+        prevention_data_state=str(prevention_status["prevention_data_state"]),
+        prevention_data_message=str(prevention_status["prevention_data_message"]),
+        prevention_data_updated_at=None,
+        prevention_data_record_count=None,
     )
 
     try:
         settings_service.initialize()
-        prevention_mode, prevention_reason = _resolve_prevention_mode(
+        prevention_status = await _resolve_prevention_status(
             settings_service,
         )
         platform_config = settings_service.get_platform_config()
@@ -182,8 +246,37 @@ async def get_system_status(
                 if live_status["live_connection_checked_at"] is not None
                 else None
             ),
-            prevention_mode=prevention_mode,
-            prevention_mode_reason=prevention_reason,
+            prevention_mode=str(prevention_status["prevention_mode"] or "unknown"),
+            prevention_mode_reason=str(prevention_status["prevention_mode_reason"] or ""),
+            prevention_state=str(prevention_status["prevention_state"] or "unknown"),
+            prevention_verified=bool(prevention_status["prevention_verified"]),
+            prevention_message=str(prevention_status["prevention_message"] or ""),
+            prevention_checked_at=(
+                str(prevention_status["prevention_checked_at"])
+                if prevention_status["prevention_checked_at"] is not None
+                else None
+            ),
+            prevention_endpoint=(
+                str(prevention_status["prevention_endpoint"])
+                if prevention_status["prevention_endpoint"] is not None
+                else None
+            ),
+            prevention_data_state=str(
+                prevention_status["prevention_data_state"] or "unknown"
+            ),
+            prevention_data_message=str(
+                prevention_status["prevention_data_message"] or ""
+            ),
+            prevention_data_updated_at=(
+                str(prevention_status["prevention_data_updated_at"])
+                if prevention_status["prevention_data_updated_at"] is not None
+                else None
+            ),
+            prevention_data_record_count=(
+                int(prevention_status["prevention_data_record_count"])
+                if prevention_status["prevention_data_record_count"] is not None
+                else None
+            ),
         )
     except Exception as exc:
         logger.exception("Failed to load system status: %s", exc)

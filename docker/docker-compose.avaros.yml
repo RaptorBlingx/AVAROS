@@ -71,6 +71,9 @@ services:
       
       # Mount skill code for hot-reload during development
       - ../skill:/opt/avaros/skill:ro
+
+      # Mount PREVENTION export data so runtime status can inspect freshness
+      - ../tools/prevention-addon/data:/opt/avaros/tools/prevention-addon/data:ro
       
       # Mount locale files (intents & dialogs)
       - ../skill/locale:/opt/avaros/skill/locale:ro
@@ -95,9 +98,11 @@ services:
       - LOG_LEVEL=INFO
       - AVAROS_LOG_LEVEL=INFO
 
-      # PREVENTION analytics (optional — falls back to statistical client)
+      # PREVENTION analytics (optional — disabled when URL is empty)
       - PREVENTION_URL=${PREVENTION_URL:-}
       - PREVENTION_AUTH_TOKEN=${PREVENTION_AUTH_TOKEN:-}
+      - PREVENTION_DATA_MAX_AGE_MINUTES=${PREVENTION_DATA_MAX_AGE_MINUTES:-1440}
+      - PREVENTION_EXPORT_MANIFEST_PATH=/opt/avaros/tools/prevention-addon/data/export_manifest.json
 
       # OVOS configuration
       - OVOS_CONFIG_BASE_FOLDER=mycroft
@@ -156,6 +161,7 @@ services:
 
     volumes:
       - ../skill:/opt/avaros/skill:ro
+      - ../tools/prevention-addon/data:/opt/avaros/tools/prevention-addon/data:ro
 
     env_file:
       - ../.env
@@ -163,6 +169,10 @@ services:
     environment:
       - AVAROS_DATABASE_URL=postgresql://${POSTGRES_USER:-avaros}:${POSTGRES_PASSWORD:-avaros}@avaros_db:5432/avaros
       - AVAROS_WEB_UI_PORT=8080
+      - PREVENTION_URL=${PREVENTION_URL:-}
+      - PREVENTION_AUTH_TOKEN=${PREVENTION_AUTH_TOKEN:-}
+      - PREVENTION_DATA_MAX_AGE_MINUTES=${PREVENTION_DATA_MAX_AGE_MINUTES:-1440}
+      - PREVENTION_EXPORT_MANIFEST_PATH=/opt/avaros/tools/prevention-addon/data/export_manifest.json
       # HiveMind voice config: passed via env_file (.env) — do NOT redeclare
       # here or compose defaults will override the .env values.
       # Required .env vars: HIVEMIND_WS_URL, HIVEMIND_CLIENT_KEY,

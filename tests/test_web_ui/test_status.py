@@ -61,8 +61,15 @@ class TestStatusUnconfigured:
         assert body["live_connection_state"] == "unconfigured"
         assert body["live_connection_verified"] is False
         assert body["live_connection_error_code"] == "UNCONFIGURED"
-        assert body["prevention_mode"] in {"http", "fallback", "unknown"}
+        assert body["prevention_mode"] in {"http", "disabled", "unknown"}
         assert isinstance(body["prevention_mode_reason"], str)
+        assert body["prevention_state"] in {
+            "healthy", "unreachable", "misconfigured", "disabled", "unknown",
+        }
+        assert isinstance(body["prevention_message"], str)
+        assert body["prevention_data_state"] in {
+            "fresh", "stale", "missing", "invalid", "unknown",
+        }
 
 
 class TestStatusConfigured:
@@ -147,6 +154,15 @@ class TestStatusResponseShape:
         "live_connection_checked_at",
         "prevention_mode",
         "prevention_mode_reason",
+        "prevention_state",
+        "prevention_verified",
+        "prevention_message",
+        "prevention_checked_at",
+        "prevention_endpoint",
+        "prevention_data_state",
+        "prevention_data_message",
+        "prevention_data_updated_at",
+        "prevention_data_record_count",
     }
 
     def test_status_response_keys(self, client: TestClient) -> None:

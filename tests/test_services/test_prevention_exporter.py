@@ -25,7 +25,9 @@ sys.path.insert(
 )
 from exporter import (  # noqa: E402
     _CATEGORY_FILES,
+    _MANIFEST_FILENAME,
     _collect_data,
+    _create_adapter,
     _write_files,
 )
 
@@ -186,6 +188,18 @@ class TestCollectData:
         asset_ids = {r["asset_id"] for r in buckets["energy"]}
         assert asset_ids == {"L-1", "L-2"}
 
+    @pytest.mark.asyncio
+    async def test_mock_platform_generates_demo_records(self) -> None:
+        adapter = await _create_adapter(platform="mock", api_url="", api_key="")
+
+        try:
+            buckets = await _collect_data(adapter, days=7)
+        finally:
+            await adapter.shutdown()
+
+        assert set(buckets.keys()) == set(_CATEGORY_FILES.keys())
+        assert all(buckets[category] for category in _CATEGORY_FILES)
+
 
 # ── File Writing Tests ───────────────────────────────
 
@@ -204,6 +218,7 @@ class TestWriteFiles:
 
         for filename in _CATEGORY_FILES.values():
             assert (tmp_path / filename).exists()
+        assert (tmp_path / _MANIFEST_FILENAME).exists()
         assert total == 1
 
     def test_json_is_valid(self, tmp_path: Path) -> None:
@@ -236,3 +251,22 @@ class TestWriteFiles:
         for filename in _CATEGORY_FILES.values():
             data = json.loads((tmp_path / filename).read_text())
             assert data == []
+
+    def test_manifest_contains_record_counts(self, tmp_path: Path) -> None:
+        buckets = {cat: [] for cat in _CATEGORY_FILES}
+        buckets["energy"].append({
+            "id": 1,
+            "metric_name": "energy_per_unit",
+            "asset_id": "Line-1",
+            "timestamp": "2026-04-01T00:00:00.000Z",
+            "value": 1.0,
+            "unit": "kWh/unit",
+        })
+
+        _write_files(buckets, tmp_path, platform="mock", days=7)
+
+        manifest = json.loads((tmp_path / _MANIFEST_FILENAME).read_text())
+        assert manifest["platform"] == "mock"
+        assert manifest["days"] == 7
+        assert manifest["total_records"] == 1
+        assert manifest["files"]["energy"]["records"] == 1

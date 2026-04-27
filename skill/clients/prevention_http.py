@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import statistics
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
@@ -52,8 +53,17 @@ _CATEGORY_TO_DRIFT_GOAL: dict[str, str] = {
     "energy": "ENERGY_DRIFT_CHECK",
     "production": "PRODUCTION_DRIFT_CHECK",
     "material": "MATERIAL_DRIFT_CHECK",
+    "carbon": "CO2_DRIFT_CHECK",
     "supplier": "SUPPLIER_DRIFT_CHECK",
 }
+
+_HIGHER_IS_BETTER_METRICS = frozenset({
+    "oee",
+    "throughput",
+    "material_efficiency",
+    "recycled_content",
+    "supplier_on_time",
+})
 
 _GRAPHQL_RESULT_REQUEST = (
     '{{ resultRequest(request: [{{request: ["{goal}"]}}])'
@@ -175,13 +185,18 @@ class HttpPreventionClient(PreventionClient):
 
         try:
             results = await self._fetch_results(goal)
-        except ConnectionError:
-            raise
         except Exception as exc:
-            logger.error("Anomaly query failed for %s: %s", goal, exc)
-            raise ConnectionError(
-                f"Failed to query PREVENTION for {goal}",
-            ) from exc
+            logger.warning(
+                "Anomaly query failed for %s; falling back to local series analysis: %s",
+                goal,
+                exc,
+            )
+            return _fallback_anomaly_result_from_series(
+                metric,
+                category,
+                data_points,
+                threshold,
+            )
 
         return _parse_anomaly_results(
             results,
@@ -201,6 +216,7 @@ class HttpPreventionClient(PreventionClient):
         metric: CanonicalMetric,
         data_points: list[DataPoint],
         periods: int = 7,
+        asset_id: str | None = None,
     ) -> DriftReport:
         """Retrieve pre-computed drift results from PREVENTION.
 
@@ -237,7 +253,12 @@ class HttpPreventionClient(PreventionClient):
                 f"Failed to query PREVENTION for {goal}",
             ) from exc
 
-        return _parse_drift_results(results, metric, periods)
+        return _parse_drift_results(
+            results,
+            metric,
+            periods,
+            asset_id=asset_id,
+        )
 
     # =====================================================================
     # GraphQL Communication
@@ -405,19 +426,110 @@ def _parse_anomaly_results(
     )
 
 
+def _fallback_anomaly_result_from_series(
+    metric: CanonicalMetric,
+    category: str,
+    data_points: list[DataPoint],
+    threshold: float,
+) -> AnomalyDetectionResult:
+    """Derive an anomaly result from the collected series when GraphQL fails."""
+    if len(data_points) < 3:
+        return AnomalyDetectionResult(
+            metric=metric,
+            is_anomalous=False,
+            severity="none",
+            confidence=0.4,
+            anomaly_type=None,
+            description=(
+                "Anomaly service is unavailable and there is not enough local "
+                "history to evaluate this metric yet."
+            ),
+            detected_at=_get_detection_timestamp(data_points),
+            recommended_action=None,
+        )
+
+    baseline_values = [float(point.value) for point in data_points[:-1]]
+    latest_point = data_points[-1]
+    latest_value = float(latest_point.value)
+    baseline_mean = statistics.fmean(baseline_values)
+    baseline_std = (
+        statistics.pstdev(baseline_values)
+        if len(baseline_values) > 1
+        else 0.0
+    )
+
+    if baseline_std <= 1e-9:
+        deviation = 0.0 if abs(latest_value - baseline_mean) <= 1e-9 else threshold + 1.0
+    else:
+        deviation = abs(latest_value - baseline_mean) / baseline_std
+
+    if deviation < threshold:
+        return AnomalyDetectionResult(
+            metric=metric,
+            is_anomalous=False,
+            severity="none",
+            confidence=min(0.9, 0.6 + (len(data_points) / 100.0)),
+            anomaly_type=None,
+            description=_build_anomaly_description(category, False, deviation),
+            detected_at=latest_point.timestamp.isoformat(),
+            recommended_action=None,
+            expected_value=round(baseline_mean, 2),
+            actual_value=latest_value,
+            deviation=round(deviation, 2),
+        )
+
+    anomaly_type = "spike" if latest_value >= baseline_mean else "dip"
+    severity = _severity_from_deviation(deviation)
+    confidence = min(
+        0.95,
+        0.65 + (min(deviation, 6.0) / 10.0) + (min(len(data_points), 30) / 200.0),
+    )
+
+    return AnomalyDetectionResult(
+        metric=metric,
+        is_anomalous=True,
+        severity=severity,
+        confidence=round(confidence, 2),
+        anomaly_type=anomaly_type,
+        description=_build_anomaly_description(category, True, deviation),
+        detected_at=latest_point.timestamp.isoformat(),
+        recommended_action=_get_recommended_action(category, True),
+        expected_value=round(baseline_mean, 2),
+        actual_value=latest_value,
+        deviation=round(deviation, 2),
+    )
+
+
+def _severity_from_deviation(deviation: float) -> str:
+    """Map z-score style deviation into conversational severity bands."""
+    if deviation >= 4.0:
+        return "critical"
+    if deviation >= 3.0:
+        return "high"
+    if deviation >= 2.5:
+        return "medium"
+    return "low"
+
+
 def _parse_drift_results(
     results: list[dict],
     metric: CanonicalMetric,
     periods: int,
+    asset_id: str | None = None,
 ) -> DriftReport:
     """Parse PREVENTION drift results into domain model."""
     metric_name = metric.value
     match = next(
-        (r for r in results if r.get("metric_name") == metric_name),
+        (
+            r for r in results
+            if r.get("metric_name") == metric_name
+            and (asset_id is None or r.get("asset_id") == asset_id)
+        ),
         None,
     )
 
     if match is None:
+        asset_text = f" for {asset_id}" if asset_id else ""
         return DriftReport(
             metric=metric,
             has_drift=False,
@@ -425,18 +537,27 @@ def _parse_drift_results(
             drift_rate=0.0,
             periods_analyzed=0,
             description=(
-                f"No drift data found for {metric.display_name} in "
+                f"No drift data found for {metric.display_name}{asset_text} in "
                 f"PREVENTION results."
             ),
         )
 
     has_drift = bool(match.get("has_drift", False))
-    direction = str(match.get("drift_direction", "stable"))
     rate = float(match.get("drift_rate", 0.0))
-    analyzed = int(match.get("periods_analyzed", 0))
-    description = str(
-        match.get("description", f"{metric.display_name}: {direction}"),
+    direction = _normalize_drift_direction(
+        metric,
+        str(match.get("drift_direction", "stable")),
+        rate,
     )
+    analyzed = int(match.get("periods_analyzed", 0))
+    description = str(match.get("description", "")).strip()
+    if not description or description == "No data":
+        description = _default_drift_description(
+            metric,
+            direction,
+            analyzed or periods,
+            asset_id,
+        )
 
     return DriftReport(
         metric=metric,
@@ -445,6 +566,45 @@ def _parse_drift_results(
         drift_rate=rate,
         periods_analyzed=analyzed or periods,
         description=description,
+    )
+
+
+def _normalize_drift_direction(
+    metric: CanonicalMetric,
+    raw_direction: str,
+    rate: float,
+) -> str:
+    """Normalize raw slope directions into domain-level semantics."""
+    normalized = raw_direction.strip().lower()
+    if normalized in {"stable", "improving", "degrading"}:
+        return normalized
+
+    if normalized not in {"increasing", "decreasing"}:
+        if abs(rate) < 1e-12:
+            return "stable"
+        normalized = "increasing" if rate > 0 else "decreasing"
+
+    if metric.value in _HIGHER_IS_BETTER_METRICS:
+        return "improving" if normalized == "increasing" else "degrading"
+    return "degrading" if normalized == "increasing" else "improving"
+
+
+def _default_drift_description(
+    metric: CanonicalMetric,
+    direction: str,
+    periods: int,
+    asset_id: str | None,
+) -> str:
+    """Build a fallback drift description when PREVENTION omits one."""
+    asset_text = f" on {asset_id}" if asset_id else ""
+    if direction == "stable":
+        return (
+            f"{metric.display_name} is stable{asset_text} across "
+            f"{periods} analyzed data points."
+        )
+    return (
+        f"{metric.display_name} is {direction}{asset_text} across "
+        f"{periods} analyzed data points."
     )
 
 

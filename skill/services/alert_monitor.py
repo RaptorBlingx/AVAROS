@@ -65,6 +65,19 @@ def _pair_key(alert_type: AlertType, pair: MonitoredPair) -> str:
     return f"{alert_type}:{pair.metric.value}:{pair.asset_id}"
 
 
+def _drift_severity(direction: str, rate: float) -> SeverityLevel:
+    """Map drift direction and rate to alert severity."""
+    if direction != "degrading":
+        return "low"
+
+    magnitude = abs(rate)
+    if magnitude >= 0.01:
+        return "high"
+    if magnitude >= 0.003:
+        return "medium"
+    return "low"
+
+
 class AlertMonitor:
     """Runs background anomaly/drift checks and builds alert events.
 
@@ -195,7 +208,10 @@ class AlertMonitor:
         return self._build_event(
             alert_type="drift",
             pair=pair,
-            severity="medium" if result.drift_direction == "degrading" else "low",
+            severity=_drift_severity(
+                result.drift_direction,
+                result.drift_rate,
+            ),
             config=config,
             now=now,
             description=self._drift_message(

@@ -70,6 +70,7 @@ from skill.adapters.factory import AdapterFactory
 from skill.clients.prevention import PreventionClient
 from skill.domain.exceptions import AVAROSError
 from skill.services.alert_monitor import AlertMonitor
+from skill.services.prevention_runtime import resolve_prevention_config
 from skill.services.response_builder import ResponseBuilder
 from skill.use_cases.query_dispatcher import QueryDispatcher
 
@@ -138,6 +139,9 @@ class AVAROSSkill(FallbackSkill):
         self._alert_scheduler_active: bool = False
         self._prevention_mode: str = "unknown"
         self._prevention_mode_reason: str = ""
+        self._prevention_state: str = "unknown"
+        self._prevention_state_reason: str = ""
+        self._prevention_endpoint: str = ""
 
         super().__init__(*args, **kwargs)
 
@@ -182,6 +186,7 @@ class AVAROSSkill(FallbackSkill):
             self.dispatcher._run_async(adapter.initialize())
         except Exception as exc:
             self.log.warning("Adapter initialize failed at startup: %s", exc)
+        self._initialize_prevention_client(prevention_client)
         self.response_builder = ResponseBuilder(
             verbosity="normal",
             asset_name_resolver=self._resolve_asset_name_for_voice,
@@ -334,18 +339,14 @@ class AVAROSSkill(FallbackSkill):
             2. SettingsService ``prevention_url`` key → HttpPreventionClient
             3. Not configured → None (anomaly/drift features disabled)
         """
-        url = os.environ.get("PREVENTION_URL", "").strip()
-        if not url and self.settings_service is not None:
-            try:
-                url = str(
-                    self.settings_service.get_setting("prevention_url", ""),
-                ).strip()
-            except Exception:
-                url = ""
+        config = resolve_prevention_config(self.settings_service)
+        self._prevention_mode = config.mode
+        self._prevention_mode_reason = config.mode_reason
+        self._prevention_endpoint = config.url
 
-        if not url:
-            self._prevention_mode = "disabled"
-            self._prevention_mode_reason = "prevention_url_missing"
+        if config.mode != "http" or not config.url:
+            self._prevention_state = "disabled"
+            self._prevention_state_reason = config.mode_reason
             self.log.warning(
                 "PREVENTION_URL not configured — "
                 "anomaly detection and drift monitoring disabled",
@@ -354,24 +355,57 @@ class AVAROSSkill(FallbackSkill):
 
         from skill.clients.prevention_http import HttpPreventionClient
 
-        auth_token = os.environ.get("PREVENTION_AUTH_TOKEN", "").strip()
-        if not auth_token and self.settings_service is not None:
-            try:
-                auth_token = str(
-                    self.settings_service.get_setting(
-                        "prevention_auth_token", "",
-                    ),
-                ).strip()
-            except Exception:
-                auth_token = ""
-
-        self.log.info("Connecting to PREVENTION at %s", url)
-        self._prevention_mode = "http"
-        self._prevention_mode_reason = "prevention_url_configured"
+        self.log.info("Connecting to PREVENTION at %s", config.url)
+        self._prevention_state = "unknown"
+        self._prevention_state_reason = "prevention_not_initialized"
         return HttpPreventionClient(
-            url=url,
-            auth_token=auth_token,
+            url=config.url,
+            auth_token=config.auth_token,
         )
+
+    def _initialize_prevention_client(
+        self,
+        prevention_client: PreventionClient | None,
+    ) -> None:
+        """Initialize the PREVENTION client and capture live state."""
+        if prevention_client is None or self.dispatcher is None:
+            return
+
+        try:
+            self.dispatcher._run_async(prevention_client.initialize())
+        except Exception as exc:
+            self._prevention_state = "unreachable"
+            self._prevention_state_reason = "prevention_initialize_failed"
+            self.log.warning("PREVENTION initialize failed: %s", exc)
+            return
+
+        if prevention_client.is_connected:
+            self._prevention_state = "healthy"
+            self._prevention_state_reason = "prevention_health_check_passed"
+            self.log.info("PREVENTION connected and healthy")
+            return
+
+        self._prevention_state = "unreachable"
+        self._prevention_state_reason = "prevention_health_check_failed"
+        self.log.warning(
+            "PREVENTION configured at %s but not reachable",
+            self._prevention_endpoint,
+        )
+
+    def _shutdown_prevention_client(
+        self,
+        prevention_client: PreventionClient | None,
+    ) -> None:
+        """Shutdown the PREVENTION client safely."""
+        if prevention_client is None:
+            return
+        try:
+            if self.dispatcher is not None:
+                self.dispatcher._run_async(prevention_client.shutdown())
+            else:
+                self._run_with_current_event_loop(prevention_client.shutdown())
+        except Exception as exc:
+            self.log.warning("PREVENTION shutdown failed: %s", exc)
 
     @staticmethod
     def _normalize_asset_lookup_key(value: str) -> str:
@@ -515,6 +549,14 @@ class AVAROSSkill(FallbackSkill):
             self.log.warning("No adapter factory — cannot reload")
             return
 
+        old_prevention_client = None
+        if self.dispatcher is not None:
+            old_prevention_client = getattr(
+                self.dispatcher,
+                "_prevention_client",
+                None,
+            )
+
         new_adapter = self._run_adapter_reload(profile_name)
 
         prevention_client = self._create_prevention_client()
@@ -523,6 +565,8 @@ class AVAROSSkill(FallbackSkill):
             settings_service=self.settings_service,
             prevention_client=prevention_client,
         )
+        self._initialize_prevention_client(prevention_client)
+        self._shutdown_prevention_client(old_prevention_client)
         if self.response_builder is None:
             self.response_builder = ResponseBuilder(
                 verbosity="normal",
@@ -572,14 +616,26 @@ class AVAROSSkill(FallbackSkill):
         """Force UnconfiguredAdapter as safe fallback."""
         from skill.adapters.unconfigured import UnconfiguredAdapter
 
+        old_prevention_client = None
+        if self.dispatcher is not None:
+            old_prevention_client = getattr(
+                self.dispatcher,
+                "_prevention_client",
+                None,
+            )
+
         fallback = UnconfiguredAdapter()
         self._prevention_mode = "disabled"
         self._prevention_mode_reason = "forced_unconfigured_fallback"
+        self._prevention_state = "disabled"
+        self._prevention_state_reason = "forced_unconfigured_fallback"
+        self._prevention_endpoint = ""
         self.dispatcher = QueryDispatcher(
             adapter=fallback,
             settings_service=self.settings_service,
             prevention_client=None,
         )
+        self._shutdown_prevention_client(old_prevention_client)
         if self.response_builder is None:
             self.response_builder = ResponseBuilder(
                 verbosity="normal",
@@ -855,6 +911,15 @@ class AVAROSSkill(FallbackSkill):
         self._stop_alert_scheduler()
         try:
             if self.dispatcher is not None:
+                prevention_client = getattr(
+                    self.dispatcher,
+                    "_prevention_client",
+                    None,
+                )
+                if prevention_client is not None:
+                    shutdown_prevention_coro = prevention_client.shutdown()
+                else:
+                    shutdown_prevention_coro = None
                 shutdown_coro = self.dispatcher.adapter.shutdown()
                 try:
                     running_loop = asyncio.get_running_loop()
@@ -863,8 +928,12 @@ class AVAROSSkill(FallbackSkill):
 
                 if running_loop and running_loop.is_running():
                     running_loop.create_task(shutdown_coro)
+                    if shutdown_prevention_coro is not None:
+                        running_loop.create_task(shutdown_prevention_coro)
                 else:
                     asyncio.run(shutdown_coro)
+                    if shutdown_prevention_coro is not None:
+                        asyncio.run(shutdown_prevention_coro)
         except Exception as exc:
             self.log.warning("Adapter shutdown during stop() failed: %s", exc)
         finally:

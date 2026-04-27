@@ -155,7 +155,7 @@ def api_put(path: str, data: dict) -> Any:
 # ===========================================================================
 
 def compute_z_score_anomaly(values: list[float], threshold: float = 4.0):
-    """Compute z-score anomaly detection — matches StatisticalPreventionClient."""
+    """Compute z-score anomaly detection for independent audit cross-checks."""
     if len(values) < 3:
         return {"is_anomalous": False, "reason": "insufficient_data", "max_z": 0.0}
 
@@ -198,7 +198,7 @@ def compute_z_score_anomaly(values: list[float], threshold: float = 4.0):
 
 
 def compute_linear_drift(values: list[float]):
-    """Linear regression drift — matches StatisticalPreventionClient."""
+    """Compute linear regression drift for independent audit cross-checks."""
     n = len(values)
     if n < 10:
         return {"has_drift": False, "reason": "insufficient_data"}
@@ -482,8 +482,8 @@ def run_anomaly_accuracy_tests(dispatcher: UtteranceDispatcher, profile_name: st
 
     # --- Ground truth: independently compute anomalies for ALL metric×asset pairs ---
     print("\n--- Ground Truth: Independent anomaly scan (statistical z-score)")
-    print("  Computing anomalies for all metric×asset pairs using the SAME")
-    print("  StatisticalPreventionClient logic...")
+    print("  Computing anomalies for all metric×asset pairs using the same")
+    print("  audit-side z-score heuristic...")
 
     try:
         metrics = api_get("/api/v1/config/metrics")
@@ -505,7 +505,7 @@ def run_anomaly_accuracy_tests(dispatcher: UtteranceDispatcher, profile_name: st
     # We'll use the SKILL's own code to compute ground truth by calling
     # the dispatcher directly — but we can't do that from outside.
     # Instead, we'll send individual KPI queries for 7 days and compute z-score.
-    # This is exactly what the StatisticalPreventionClient does.
+    # This mirrors the audit-side z-score heuristic above.
 
     anomaly_ground_truth = []
     checked = 0

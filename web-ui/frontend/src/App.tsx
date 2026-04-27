@@ -12,6 +12,8 @@ import ErrorBoundary from "./components/common/ErrorBoundary";
 import { useTheme } from "./components/common/ThemeProvider";
 import Sidebar from "./components/Sidebar";
 import VoiceWidget from "./components/voice/VoiceWidget";
+import { HiveMindProvider } from "./contexts/HiveMindContext";
+import { VoiceProvider } from "./contexts/VoiceContext";
 import Dashboard from "./pages/Dashboard";
 import KPIDashboard from "./pages/KPIDashboard";
 import Login from "./pages/Login";
@@ -113,9 +115,13 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <BrowserRouter>
-        <AppContent isDark={isDark} />
-      </BrowserRouter>
+      <HiveMindProvider>
+        <VoiceProvider>
+          <BrowserRouter>
+            <AppContent isDark={isDark} />
+          </BrowserRouter>
+        </VoiceProvider>
+      </HiveMindProvider>
     </ErrorBoundary>
   );
 }

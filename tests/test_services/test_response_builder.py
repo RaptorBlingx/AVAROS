@@ -690,7 +690,7 @@ class TestFormatAnomalyScanResult:
     ) -> None:
         """Normal verbosity includes scan and anomaly counts."""
         result = builder.format_anomaly_scan_result(anomaly_scan_result)
-        assert "1 anomaly" in result
+        assert "anomalies in 1 of 12 checks" in result
         assert "12 checks" in result
 
     def test_format_scan_brief_is_compact(
@@ -700,7 +700,7 @@ class TestFormatAnomalyScanResult:
     ) -> None:
         """Brief verbosity keeps a compact count-focused sentence."""
         result = brief_builder.format_anomaly_scan_result(anomaly_scan_result)
-        assert result == "1 anomalies across 12 checks"
+        assert result == "1 affected pairs across 12 checks"
 
     def test_format_scan_no_findings_reassures(
         self,

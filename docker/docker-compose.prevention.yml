@@ -1,7 +1,9 @@
-# PREVENTION Analytics Platform — Docker Compose
+# PREVENTION Analytics Platform — Development / No-Auth Docker Compose
 #
-# Deploys the PREVENTION GraphQL analytics engine and MongoDB.
-# Used alongside docker-compose.avaros.yml for full AVAROS + PREVENTION stack.
+# Deploys the PREVENTION GraphQL analytics engine and MongoDB for local
+# development. This overlay intentionally bypasses Keycloak by mounting
+# `docker/prevention_init_noauth.py` into the upstream PREVENTION image.
+# Used alongside docker-compose.avaros.yml for local AVAROS + PREVENTION tests.
 #
 # Prerequisites:
 #   - PREVENTION repo cloned at ~/prevention_upd (or set PREVENTION_BUILD_CONTEXT)

@@ -71,6 +71,7 @@ class PreventionClient(ExternalServiceClient):
         metric: CanonicalMetric,
         data_points: list[DataPoint],
         periods: int = 7,
+        asset_id: str | None = None,
     ) -> DriftReport:
         """
         Check for gradual drift in metric values.
@@ -79,6 +80,8 @@ class PreventionClient(ExternalServiceClient):
             metric: The canonical metric to monitor
             data_points: Time-series data points to evaluate
             periods: Number of periods to analyze
+            asset_id: Optional asset identifier for clients that can
+                return asset-scoped drift reports.
 
         Returns:
             DriftReport with drift analysis findings

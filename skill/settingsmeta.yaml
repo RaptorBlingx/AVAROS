@@ -64,6 +64,29 @@ sections:
             label: Imperial (BTU, lb, °F)
         helpText: Measurement units for voice responses
 
+  - name: PREVENTION Analytics
+    fields:
+      - name: prevention_url
+        type: text
+        label: PREVENTION URL
+        value: ""
+        placeholder: "http://prevention:8081"
+        helpText: Base URL of the PREVENTION GraphQL service. Leave empty to disable anomaly and drift analytics.
+
+      - name: prevention_auth_token
+        type: password
+        label: PREVENTION Auth Token
+        value: ""
+        placeholder: "Bearer token for protected PREVENTION deployments"
+        helpText: Optional bearer token for authenticated PREVENTION deployments.
+
+      - name: prevention_data_max_age_minutes
+        type: number
+        label: PREVENTION Data Freshness Limit (minutes)
+        value: 1440
+        placeholder: "1440"
+        helpText: Mark PREVENTION input data as stale when the export manifest is older than this threshold.
+
   - name: Default Assets
     fields:
       - name: default_asset

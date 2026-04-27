@@ -114,6 +114,7 @@ class MockPreventionClient(PreventionClient):
         metric: CanonicalMetric,
         data_points: list[DataPoint],
         periods: int = 7,
+        asset_id: str | None = None,
     ) -> DriftReport:
         """Check for drift using deterministic demo profiles."""
         category = _get_category_for_metric(metric)

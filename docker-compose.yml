@@ -29,12 +29,15 @@ services:
       - AVAROS_DATABASE_URL=sqlite:////data/avaros.db
       - MESSAGEBUS_HOST=ovos_messagebus
       - MESSAGEBUS_PORT=8181
-      - PREVENTION_URL=${PREVENTION_URL:-http://prevention:8081}
+      - PREVENTION_URL=${PREVENTION_URL:-}
+      - PREVENTION_AUTH_TOKEN=${PREVENTION_AUTH_TOKEN:-}
+      - PREVENTION_DATA_MAX_AGE_MINUTES=${PREVENTION_DATA_MAX_AGE_MINUTES:-1440}
+      - PREVENTION_EXPORT_MANIFEST_PATH=/opt/avaros/tools/prevention-addon/data/export_manifest.json
       # Platform config comes from Web UI, NOT here
     volumes:
       - avaros-data:/data
-    ports:
-      - "${AVAROS_PORT:-8080}:8080"
+      - ./tools/prevention-addon/data:/opt/avaros/tools/prevention-addon/data:ro
+    # launch_skill.py is a messagebus client; it does not serve HTTP.
     networks:
       - avaros-network
     depends_on:
@@ -107,17 +110,23 @@ services:
       dockerfile: web-ui/Dockerfile
     container_name: avaros-web-ui
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      - AVAROS_WEB_API_KEY=${AVAROS_WEB_API_KEY:-}
       - AVAROS_DATABASE_URL=sqlite:////data/avaros.db
       - HIVEMIND_WS_URL=${HIVEMIND_WS_URL:-ws://localhost:5678}
       - HIVEMIND_CLIENT_NAME=${HIVEMIND_CLIENT_NAME:-avaros-web-client}
       - HIVEMIND_CLIENT_KEY=${HIVEMIND_CLIENT_KEY:-}
       - HIVEMIND_CLIENT_SECRET=${HIVEMIND_CLIENT_SECRET:-}
       - AVAROS_GENERATOR_MAPPING_FILE=/opt/avaros/tools/reneryo-data-generator/mapping_output.json
+      - PREVENTION_URL=${PREVENTION_URL:-}
+      - PREVENTION_AUTH_TOKEN=${PREVENTION_AUTH_TOKEN:-}
+      - PREVENTION_DATA_MAX_AGE_MINUTES=${PREVENTION_DATA_MAX_AGE_MINUTES:-1440}
+      - PREVENTION_EXPORT_MANIFEST_PATH=/opt/avaros/tools/prevention-addon/data/export_manifest.json
     volumes:
       - avaros-data:/data
       - ./skill:/opt/avaros/skill:ro
+      - ./tools/prevention-addon/data:/opt/avaros/tools/prevention-addon/data:ro
       - ./tools/reneryo-data-generator:/opt/avaros/tools/reneryo-data-generator:ro
     ports:
       - "8080:8080"
@@ -194,16 +203,15 @@ services:
       dockerfile: Dockerfile
     container_name: avaros-hivemind
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      - HIVEMIND_MASTER_KEY=${HIVEMIND_MASTER_KEY:-}
       - OVOS_BUS_HOST=ovos_messagebus
       - OVOS_BUS_PORT=8181
       - HIVEMIND_WS_PORT=5678
-      - HIVEMIND_CLIENT_NAME=${HIVEMIND_CLIENT_NAME:-avaros-web-client}
-      - HIVEMIND_CLIENT_KEY=${HIVEMIND_CLIENT_KEY:-}
-      - HIVEMIND_CLIENT_SECRET=${HIVEMIND_CLIENT_SECRET:-}
-      - HIVEMIND_ACCESS_KEY=${HIVEMIND_ACCESS_KEY:-}
-      - HIVEMIND_PASSWORD=${HIVEMIND_PASSWORD:-}
+      # HiveMind credentials come from .env via env_file.
+      # Do NOT redeclare them here or compose shell defaults can drift from
+      # the browser-facing Web UI configuration and break encrypted WS traffic.
     volumes:
       - hivemind-data:/home/hivemind/.config/hivemind-core
     ports:

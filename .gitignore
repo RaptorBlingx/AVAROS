@@ -31,6 +31,7 @@ ENV/
 env/
 .venv
 .venv-markitdown/
+.venv-playwright/
 
 # Testing
 .pytest_cache/
@@ -62,6 +63,13 @@ docker/nginx/ssl/*.pem
 *.tmp
 *.bak
 *.backup
+
+# Local diagnostics and scratch scripts
+scripts/audit_output.txt
+scripts/deep_audit_reneryo_output.txt
+test_hivemind.py
+test_messagebus.py
+web-ui/frontend/test_ws.py
 
 # Lead-only local files (not pushed to repo)
 # Agents, instructions, and docs are local workflow tools for the Lead developer.

@@ -477,7 +477,7 @@ class QueryDispatcher:
         if self._prevention_client is None:
             return None
         try:
-            data_points = await self._collect_daily_series_async(
+            data_points = await self._collect_analysis_series_async(
                 metric, asset_id, days=self._ANOMALY_LOOKBACK_DAYS,
             )
             detection = await self._prevention_client.detect_anomaly(
@@ -492,6 +492,33 @@ class QueryDispatcher:
                 metric.value, asset_id, exc,
             )
             return None
+
+    async def _collect_analysis_series_async(
+        self,
+        metric: CanonicalMetric,
+        asset_id: str,
+        days: int = 7,
+    ) -> list[DataPoint]:
+        """Collect raw series first, then fall back to daily KPI snapshots."""
+        now = datetime.now(timezone.utc)
+        period = TimePeriod(
+            start=now - timedelta(days=days),
+            end=now,
+            display_name="",
+        )
+        try:
+            points = await self._adapter.get_raw_data(metric, asset_id, period)
+            if len(points) >= 2:
+                return sorted(points, key=lambda point: point.timestamp)
+        except Exception as exc:
+            logger.debug(
+                "Raw series fallback for %s/%s: %s",
+                metric.value,
+                asset_id,
+                exc,
+            )
+
+        return await self._collect_daily_series_async(metric, asset_id, days)
 
     async def _collect_daily_series_async(
         self,
@@ -547,7 +574,7 @@ class QueryDispatcher:
                 ),
             )
 
-        data_points = self._collect_daily_series(
+        data_points = self._collect_analysis_series(
             metric, asset_id, days=self._ANOMALY_LOOKBACK_DAYS,
         )
         detection = self._run_async(
@@ -622,6 +649,35 @@ class QueryDispatcher:
         """Build severity distribution from anomaly findings."""
         counts = Counter(result.severity for result in findings)
         return dict(sorted(counts.items()))
+
+    def _collect_analysis_series(
+        self,
+        metric: CanonicalMetric,
+        asset_id: str,
+        days: int = 7,
+    ) -> list[DataPoint]:
+        """Collect raw series first, then fall back to daily KPI snapshots."""
+        now = datetime.now(timezone.utc)
+        period = TimePeriod(
+            start=now - timedelta(days=days),
+            end=now,
+            display_name="",
+        )
+        try:
+            points = self._run_async(
+                self._adapter.get_raw_data(metric, asset_id, period),
+            )
+            if len(points) >= 2:
+                return sorted(points, key=lambda point: point.timestamp)
+        except Exception as exc:
+            logger.debug(
+                "Raw series fallback for %s/%s: %s",
+                metric.value,
+                asset_id,
+                exc,
+            )
+
+        return self._collect_daily_series(metric, asset_id, days)
 
     def _collect_daily_series(
         self,
@@ -740,13 +796,15 @@ class QueryDispatcher:
                 ),
             )
 
-        period = TimePeriod.last_week()
-        data_points = self._collect_daily_series(
+        data_points = self._collect_analysis_series(
             metric, asset_id, days=self._DRIFT_LOOKBACK_DAYS,
         )
         result = self._run_async(
             self._prevention_client.check_drift(
-                metric, data_points, periods,
+                metric,
+                data_points,
+                periods,
+                asset_id=asset_id,
             ),
         )
         self._log_audit(

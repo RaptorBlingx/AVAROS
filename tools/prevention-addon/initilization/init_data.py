@@ -5,11 +5,14 @@ goals (5 anomaly + 4 drift) in MongoDB. Follows PREVENTION's
 Initialization ABC pattern.
 """
 
+import urllib.parse
+
 from core.initialization import Initialization
 from core.utils.datasources.mongo import mongo_utils
 from addons.avaros.services.lifecycle.build.build_analysis import (
     AvarosBuildAnalysis,
 )
+from pymongo import MongoClient
 
 
 # All data columns available in the KPI time-series
@@ -50,6 +53,8 @@ DRIFT_GOALS = [
      {"window_periods": 7, "metric_filter": ["oee", "throughput", "cycle_time", "changeover_time"]}),
     ("Material Drift Check", "MATERIAL_DRIFT_CHECK", "LINEAR_DRIFT",
      {"window_periods": 7, "metric_filter": ["scrap_rate", "rework_rate", "material_efficiency", "recycled_content"]}),
+    ("CO2 Drift Check", "CO2_DRIFT_CHECK", "LINEAR_DRIFT",
+     {"window_periods": 7, "metric_filter": ["co2_per_unit", "co2_total", "co2_per_batch"]}),
     ("Supplier Drift Check", "SUPPLIER_DRIFT_CHECK", "LINEAR_DRIFT",
      {"window_periods": 7, "metric_filter": ["supplier_lead_time", "supplier_defect_rate", "supplier_on_time", "supplier_co2_per_kg"]}),
 ]
@@ -65,6 +70,11 @@ class AvarosInit(Initialization):
             print("[AVAROS] Failed to create dataset — aborting init")
             return
 
+        source_record_count = self._count_source_records()
+        if source_record_count == 0:
+            print("[AVAROS] No KPI records found — skipping analytics initialization")
+            return
+
         all_goals = ANOMALY_GOALS + DRIFT_GOALS
         for name, goal_key, model_type, config in all_goals:
             self._create_analysis_chain(
@@ -75,6 +85,18 @@ class AvarosInit(Initialization):
                 config=config,
             )
         print(f"[AVAROS] Initialized {len(all_goals)} analytics goals")
+
+    def _count_source_records(self) -> int:
+        """Return the number of KPI rows currently loaded into MongoDB."""
+        client = MongoClient(
+            f"mongodb://{mongo_utils.mongo_username}:"
+            f"{urllib.parse.quote_plus(mongo_utils.mongo_pass)}"
+            f"@{mongo_utils.mongo_host}:{int(mongo_utils.mongo_port)}/"
+        )
+        try:
+            return int(client["init_data"]["kpi_metrics"].count_documents({}))
+        finally:
+            client.close()
 
     def _create_dataset(self) -> dict | None:
         """Create the shared KPI metrics dataset entity."""

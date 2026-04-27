@@ -33,6 +33,15 @@ DATABASES_TO_CLEAN = [
     f"{ADDON_NAME}-results",
 ]
 
+REQUIRED_COLUMNS = [
+    "id",
+    "metric_name",
+    "asset_id",
+    "timestamp",
+    "value",
+    "unit",
+]
+
 
 class AvarosDataLoad(DataLoad):
     """Load AVAROS manufacturing KPI data into PREVENTION MongoDB."""
@@ -60,16 +69,35 @@ class AvarosDataLoad(DataLoad):
                 print(f"[AVAROS] WARNING: {filepath} not found, skipping")
                 continue
             df = pd.read_json(filepath)
-            frames.append(df)
             print(f"[AVAROS] Loaded {len(df)} records from {filename}")
 
+            if df.empty:
+                continue
+
+            missing_columns = [
+                column for column in REQUIRED_COLUMNS if column not in df.columns
+            ]
+            if missing_columns:
+                print(
+                    "[AVAROS] WARNING: "
+                    f"{filename} missing columns {missing_columns}, skipping",
+                )
+                continue
+
+            frames.append(df)
+
         if not frames:
-            print("[AVAROS] No data files found — addon will have no data")
+            print("[AVAROS] No non-empty valid data files found — addon will start without KPI records")
             return
 
         combined = pd.concat(frames, ignore_index=True)
         combined = combined.drop_duplicates(subset=self.id_column, keep="first")
         combined = combined.dropna(how="all")
+
+        if combined.empty:
+            print("[AVAROS] Combined KPI dataset is empty after cleanup")
+            return
+
         combined = combined.sort_values(by=self.date_column)
 
         _insert_to_mongo(
