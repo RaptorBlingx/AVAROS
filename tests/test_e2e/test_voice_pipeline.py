@@ -226,31 +226,6 @@ class TestAnomalyPipeline:
 
 
 # ══════════════════════════════════════════════════════════
-# 5. What-If Voice Pipeline
-# ══════════════════════════════════════════════════════════
-
-
-class TestWhatIfPipeline:
-    """What-if simulation through the full voice pipeline."""
-
-    def test_whatif_temperature_intent(self, bus_client) -> None:
-        """whatif.temperature intent returns simulation result."""
-        response = send_intent_and_wait(
-            bus_client,
-            "whatif.temperature.intent",
-            {"amount": "5", "asset": "Line-1"},
-        )
-
-        assert response is not None, "No speak response received (timeout)"
-        utterance = response["utterance"].lower()
-        # ResponseBuilder formats what-if: "Reducing … would …"
-        assert any(
-            word in utterance
-            for word in ("reduc", "impact", "change", "energy", "saving", "would")
-        )
-
-
-# ══════════════════════════════════════════════════════════
 # 6. Error Handling
 # ══════════════════════════════════════════════════════════
 

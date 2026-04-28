@@ -436,74 +436,6 @@ class TestScanAnomalies:
 
 
 # ══════════════════════════════════════════════════════════
-# 7. simulate_whatif (Phase 1 stub)
-# ══════════════════════════════════════════════════════════
-
-
-class TestSimulateWhatIf:
-    """Tests for simulate_whatif()."""
-
-    def test_simulate_whatif_returns_whatif_result(
-        self, dispatcher: QueryDispatcher, scenario: WhatIfScenario
-    ) -> None:
-        """simulate_whatif() returns a valid WhatIfResult."""
-        result = dispatcher.simulate_whatif(scenario)
-        assert isinstance(result, WhatIfResult)
-        assert result.scenario_name == "temperature_reduction"
-        assert result.target_metric == CanonicalMetric.ENERGY_PER_UNIT
-        assert result.confidence > 0
-        assert "temperature" in result.factors
-
-    def test_simulate_whatif_creates_audit_record(
-        self, dispatcher: QueryDispatcher, audit_logger: AuditLogger, scenario: WhatIfScenario
-    ) -> None:
-        """simulate_whatif() logs an audit entry."""
-        dispatcher.simulate_whatif(scenario)
-
-        logs = audit_logger.get_recent_logs(limit=1)
-        assert len(logs) == 1
-        assert logs[0].query_type == "simulate_whatif"
-
-    def test_simulate_whatif_changes_with_temperature_delta(
-        self, dispatcher: QueryDispatcher
-    ) -> None:
-        """Larger temperature reduction yields larger projected savings."""
-        scenario_three = WhatIfScenario(
-            name="temperature_reduction",
-            asset_id="Line-1",
-            parameters=[
-                ScenarioParameter(
-                    name="temperature",
-                    baseline_value=25.0,
-                    proposed_value=22.0,
-                    unit="°C",
-                ),
-            ],
-            target_metric=CanonicalMetric.ENERGY_PER_UNIT,
-        )
-        scenario_five = WhatIfScenario(
-            name="temperature_reduction",
-            asset_id="Line-1",
-            parameters=[
-                ScenarioParameter(
-                    name="temperature",
-                    baseline_value=25.0,
-                    proposed_value=20.0,
-                    unit="°C",
-                ),
-            ],
-            target_metric=CanonicalMetric.ENERGY_PER_UNIT,
-        )
-
-        result_three = dispatcher.simulate_whatif(scenario_three)
-        result_five = dispatcher.simulate_whatif(scenario_five)
-
-        assert result_three.delta_percent < 0
-        assert result_five.delta_percent < result_three.delta_percent
-        assert abs(result_five.delta_percent) > abs(result_three.delta_percent)
-
-
-# ══════════════════════════════════════════════════════════
 # 8. _run_async
 # ══════════════════════════════════════════════════════════
 
@@ -666,14 +598,6 @@ class TestGenerateResponseSummary:
         )
         summary = dispatcher._generate_response_summary(result)
         assert "Anomalous" in summary
-
-    def test_summary_for_whatif_result(
-        self, dispatcher: QueryDispatcher, scenario: WhatIfScenario
-    ) -> None:
-        """WhatIfResult summary includes delta."""
-        result = dispatcher.simulate_whatif(scenario)
-        summary = dispatcher._generate_response_summary(result)
-        assert "Delta" in summary
 
     def test_summary_for_unknown_result_type(
         self, dispatcher: QueryDispatcher

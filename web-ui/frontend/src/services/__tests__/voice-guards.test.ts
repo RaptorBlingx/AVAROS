@@ -56,18 +56,8 @@ describe("isLikelyNoiseUtterance", () => {
 });
 
 describe("isIncompleteIntentText", () => {
-  it("detects bare what if as incomplete", () => {
-    expect(isIncompleteIntentText("what if")).toBe(true);
-  });
-
   it("detects bare show as incomplete", () => {
     expect(isIncompleteIntentText("show")).toBe(true);
-  });
-
-  it("accepts what if with amount", () => {
-    expect(
-      isIncompleteIntentText("what if we increase temperature by 5 degrees"),
-    ).toBe(false);
   });
 
   it("accepts full command", () => {

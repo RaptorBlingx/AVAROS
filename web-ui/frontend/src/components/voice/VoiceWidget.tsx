@@ -204,7 +204,7 @@ export default function VoiceWidget({
         setAwaitingResponse(false);
         const fallbackText =
           guidance ??
-          "Incomplete voice command. Try: 'what if we increase temperature by 5 degrees'.";
+          "Incomplete voice command. Try: 'show energy trend today'.";
         setResponseFallback(fallbackText);
         setLocalError("");
         addAvarosResponse(fallbackText);

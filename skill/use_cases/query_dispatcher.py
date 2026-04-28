@@ -820,67 +820,21 @@ class QueryDispatcher:
         self,
         scenario: WhatIfScenario,
     ) -> WhatIfResult:
-        """
-        Run what-if simulation (orchestrates DocuBoT + ML models).
-        
-        Current behavior uses current KPI as baseline and applies a lightweight
-        temperature sensitivity model so request deltas produce distinct results.
-        
-        Args:
-            scenario: Scenario definition with parameter changes
-            
-        Returns:
-            WhatIfResult with baseline, projected, and confidence
-        """
+        """Reject what-if simulation until a real implementation exists."""
         query_id = self._generate_query_id()
-        
+
         logger.info(
             "[%s] simulate_whatif: scenario=%s, asset=%s, target=%s",
             query_id, scenario.name, scenario.asset_id, scenario.target_metric.value,
         )
-        
-        baseline_result = self._run_async(
-            self._adapter.get_kpi(
-                scenario.target_metric,
-                scenario.asset_id,
-                TimePeriod.wide_default(),
+        raise AVAROSError(
+            message="What-if simulation is not configured in this deployment",
+            code="WHATIF_NOT_CONFIGURED",
+            user_message=(
+                "What-if simulation is not available right now. "
+                "This deployment only supports live KPI, trend, and PREVENTION analytics."
             ),
         )
-        baseline = baseline_result.value
-
-        temperature_delta = 0.0
-        for parameter in scenario.parameters:
-            if parameter.name.lower() == "temperature":
-                temperature_delta += parameter.delta
-
-        # Mock sensitivity model: each 1°C reduction improves target metric by 1%
-        # (bounded to avoid unrealistic outputs in demo mode).
-        improvement_percent = max(0.0, min(30.0, -temperature_delta))
-        projected = baseline * (1.0 - improvement_percent / 100.0)
-        delta = projected - baseline
-        delta_percent = (delta / baseline) * 100.0 if baseline else 0.0
-
-        confidence = min(0.9, 0.65 + (improvement_percent * 0.02))
-
-        from skill.domain.results import WhatIfResult
-        result = WhatIfResult(
-            scenario_name=scenario.name,
-            target_metric=scenario.target_metric,
-            baseline=round(baseline, 2),
-            projected=round(projected, 2),
-            delta=round(delta, 2),
-            delta_percent=round(delta_percent, 2),
-            confidence=round(confidence, 2),
-            factors={param.name: param.delta for param in scenario.parameters},
-            unit=baseline_result.unit,
-            recommendation_id=self._generate_query_id(),
-        )
-        
-        self._log_audit(
-            "simulate_whatif", query_id, 
-            scenario.target_metric.value, scenario.asset_id, result
-        )
-        return result
     
     # =========================================================================
     # CO₂ Derivation (DEC-007, DEC-023)

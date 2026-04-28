@@ -230,19 +230,14 @@ describe("PlatformConfigSection with ProfileSelector", () => {
       expect(screen.getByTestId("profile-dropdown")).toBeTruthy();
     });
 
+    mockListProfiles.mockResolvedValue(updatedProfiles);
+
     fireEvent.change(screen.getByTestId("profile-dropdown"), {
       target: { value: "my-custom_rest" },
     });
 
     await waitFor(() => {
       expect(mockGetProfile).toHaveBeenCalledWith("my-custom_rest");
-    });
-
-    mockListProfiles.mockResolvedValue(updatedProfiles);
-
-    fireEvent.click(screen.getByTestId("profile-switch-btn"));
-
-    await waitFor(() => {
       expect(mockActivateProfile).toHaveBeenCalledWith("my-custom_rest");
     });
 
@@ -370,7 +365,7 @@ describe("PlatformConfigSection with ProfileSelector", () => {
     expect(payload?.api_key).toBe("");
   });
 
-  it("hides API fields and saves mock-safe payload when mock preset is active", async () => {
+  it("keeps API fields visible and saves no-auth payload for custom REST profiles", async () => {
     const activeProfileConfig: PlatformConfigResponse = {
       platform_type: "custom_rest",
       api_url: "https://api.custom_rest.com",
@@ -404,11 +399,13 @@ describe("PlatformConfigSection with ProfileSelector", () => {
     });
 
     fireEvent.click(screen.getByText("Edit"));
-    fireEvent.click(screen.getByRole("button", { name: "Use Mock" }));
+    fireEvent.change(screen.getByLabelText("Auth Type"), {
+      target: { value: "none" },
+    });
 
-    expect(screen.queryByLabelText("API URL")).toBeNull();
-    expect(screen.queryByLabelText("Auth Type")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Test Connection" })).toBeNull();
+    expect(screen.getByLabelText("API URL")).toBeTruthy();
+    expect(screen.getByLabelText("Auth Type")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Test Connection" })).toBeTruthy();
 
     fireEvent.click(screen.getByText("Save Changes"));
 
@@ -421,7 +418,7 @@ describe("PlatformConfigSection with ProfileSelector", () => {
         mockCreatePlatformConfig.mock.calls.length - 1
       ]?.[0];
     expect(payload?.platform_type).toBe("custom_rest");
-    expect(payload?.api_url).toBe("http://reneryo-data-generator-api:8090");
+      expect(payload?.api_url).toBe("https://api.custom_rest.com");
     expect(payload?.extra_settings?.auth_type).toBe("none");
     expect(payload?.api_key).toBe("");
   });

@@ -428,19 +428,19 @@ describe("ProfileSelector", () => {
     });
   });
 
-  it("creates profile in mock preset mode with no-auth payload", async () => {
+  it("creates a blank custom REST profile", async () => {
     const newConfig: ProfileDetailResponse = {
-      name: "mock-profile",
+      name: "new-profile",
       platform_type: "custom_rest",
-      api_url: "http://reneryo-data-generator-api:8090",
-      api_key: "****",
-      extra_settings: { auth_type: "none" },
+      api_url: "",
+      api_key: "",
+      extra_settings: {},
       is_builtin: false,
       is_active: false,
     };
     mockCreateProfile.mockResolvedValue(newConfig);
     mockGetProfile.mockImplementation(async (name: string) => {
-      if (name === "mock-profile") return newConfig;
+      if (name === "new-profile") return newConfig;
       if (name === "unconfigured") return MOCK_PROFILE_CONFIG;
       return RENERYO_PROFILE_CONFIG;
     });
@@ -457,25 +457,21 @@ describe("ProfileSelector", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("profile-new-name")).toBeTruthy();
-      expect(screen.getByTestId("profile-new-mode")).toBeTruthy();
     });
 
     fireEvent.change(screen.getByTestId("profile-new-name"), {
-      target: { value: "mock-profile" },
-    });
-    fireEvent.change(screen.getByTestId("profile-new-mode"), {
-      target: { value: "mock" },
+      target: { value: "new-profile" },
     });
 
     fireEvent.click(screen.getByTestId("profile-create-btn"));
 
     await waitFor(() => {
       expect(mockCreateProfile).toHaveBeenCalledWith({
-        name: "mock-profile",
+        name: "new-profile",
         platform_type: "custom_rest",
-        api_url: "http://reneryo-data-generator-api:8090",
+        api_url: "",
         api_key: "",
-        extra_settings: { auth_type: "none" },
+        extra_settings: {},
       });
     });
   });
@@ -529,14 +525,8 @@ describe("ProfileSelector", () => {
     });
 
     await waitFor(() => {
+      expect(mockActivateProfile).toHaveBeenCalledWith("my-custom_rest");
       expect(onProfileChange).toHaveBeenCalledWith(RENERYO_PROFILE_CONFIG);
-    });
-
-    onNotify.mockClear();
-
-    fireEvent.click(screen.getByTestId("profile-switch-btn"));
-
-    await waitFor(() => {
       expect(onNotify).toHaveBeenCalledWith("error", expect.any(String));
     });
 

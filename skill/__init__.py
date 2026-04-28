@@ -32,7 +32,6 @@ from skill._system_handlers import (
     handle_list_assets as _handle_list_assets_impl,
     handle_status_profile_show as _handle_status_profile_show_impl,
     handle_status_system_show as _handle_status_system_show_impl,
-    handle_whatif_temperature as _handle_whatif_temperature_impl,
 )
 from skill._metric_handlers import (
     dispatch_kpi_for_metric,
@@ -109,7 +108,6 @@ class AVAROSSkill(FallbackSkill):
     handle_trend_energy = _handle_trend_energy_impl
     handle_anomaly_check = _handle_anomaly_check_impl
     handle_drift_check = _handle_drift_check_impl
-    handle_whatif_temperature = _handle_whatif_temperature_impl
     handle_control_turn_on = _handle_control_turn_on_impl
     handle_control_turn_off = _handle_control_turn_off_impl
     handle_status_system_show = _handle_status_system_show_impl

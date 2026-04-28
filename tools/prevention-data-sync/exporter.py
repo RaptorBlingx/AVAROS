@@ -1,28 +1,21 @@
 #!/usr/bin/env python3
-"""Platform-agnostic data exporter for PREVENTION analytics.
+"""Data exporter for PREVENTION analytics.
 
-Pulls time-series data from ANY ManufacturingAdapter and writes
+Pulls time-series data from a configured REST adapter and writes
 PREVENTION-compatible JSON files. The output files are consumed by
 the AVAROS PREVENTION addon's ``load_data.py``.
 
 Usage:
-    # Export from mock adapter (demo / CI):
-    python3 tools/prevention-data-sync/exporter.py --platform mock
-
-    # Export from a configured REST backend:
     python3 tools/prevention-data-sync/exporter.py \\
         --platform generic_rest \\
         --api-url https://api.example.com \\
         --api-key SECRET \\
         --days 30
 
-    # Custom output directory:
     python3 tools/prevention-data-sync/exporter.py \\
-        --platform mock \\
+        --platform generic_rest \\
+        --api-url https://api.example.com \\
         --output /tmp/prevention-data
-
-DEC-001: No platform names — works with any adapter.
-DEC-005: Defaults to mock adapter for zero-config demo.
 """
 
 from __future__ import annotations
@@ -31,9 +24,7 @@ import argparse
 import asyncio
 import json
 import logging
-import math
 import sys
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -42,7 +33,6 @@ from typing import Any
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
-from skill.clients._prevention_demo_data import METRIC_CATEGORY_MAP  # noqa: E402
 from skill.domain.models import Asset, CanonicalMetric, DataPoint, TimePeriod  # noqa: E402
 
 logger = logging.getLogger("prevention-data-sync")
@@ -58,131 +48,27 @@ _CATEGORY_FILES: dict[str, str] = {
 
 _DEFAULT_OUTPUT = _REPO_ROOT / "tools" / "prevention-addon" / "data"
 _MANIFEST_FILENAME = "export_manifest.json"
-
-
-@dataclass(frozen=True)
-class _DemoMetricProfile:
-    """Deterministic synthetic-series settings for zero-config exports."""
-
-    base: float
-    trend: float
-    amplitude: float
-    minimum: float
-    maximum: float | None = None
-
-
-_DEMO_ASSETS = (
-    Asset(asset_id="Line-1", display_name="Assembly Line 1", asset_type="line"),
-    Asset(asset_id="Line-2", display_name="Assembly Line 2", asset_type="line"),
-)
-
-_DEMO_METRIC_PROFILES: dict[CanonicalMetric, _DemoMetricProfile] = {
-    CanonicalMetric.ENERGY_PER_UNIT: _DemoMetricProfile(2.6, 0.015, 0.18, 0.8),
-    CanonicalMetric.ENERGY_TOTAL: _DemoMetricProfile(3200.0, 16.0, 125.0, 200.0),
-    CanonicalMetric.PEAK_DEMAND: _DemoMetricProfile(470.0, 1.8, 22.0, 10.0),
-    CanonicalMetric.PEAK_TARIFF_EXPOSURE: _DemoMetricProfile(10.5, 0.08, 1.8, 0.0, 100.0),
-    CanonicalMetric.SCRAP_RATE: _DemoMetricProfile(3.4, 0.04, 0.45, 0.0, 100.0),
-    CanonicalMetric.REWORK_RATE: _DemoMetricProfile(2.2, 0.02, 0.28, 0.0, 100.0),
-    CanonicalMetric.MATERIAL_EFFICIENCY: _DemoMetricProfile(93.0, -0.03, 0.7, 0.0, 100.0),
-    CanonicalMetric.RECYCLED_CONTENT: _DemoMetricProfile(18.0, 0.05, 1.5, 0.0, 100.0),
-    CanonicalMetric.SUPPLIER_LEAD_TIME: _DemoMetricProfile(6.2, 0.03, 0.6, 0.5),
-    CanonicalMetric.SUPPLIER_DEFECT_RATE: _DemoMetricProfile(1.6, 0.01, 0.2, 0.0, 100.0),
-    CanonicalMetric.SUPPLIER_ON_TIME: _DemoMetricProfile(95.0, -0.03, 1.2, 0.0, 100.0),
-    CanonicalMetric.SUPPLIER_CO2_PER_KG: _DemoMetricProfile(0.95, 0.004, 0.05, 0.05),
-    CanonicalMetric.OEE: _DemoMetricProfile(82.0, -0.05, 2.4, 0.0, 100.0),
-    CanonicalMetric.THROUGHPUT: _DemoMetricProfile(124.0, -0.18, 4.5, 1.0),
-    CanonicalMetric.CYCLE_TIME: _DemoMetricProfile(42.0, 0.12, 1.6, 1.0),
-    CanonicalMetric.CHANGEOVER_TIME: _DemoMetricProfile(18.0, 0.06, 0.8, 1.0),
-    CanonicalMetric.CO2_PER_UNIT: _DemoMetricProfile(1.85, 0.01, 0.08, 0.1),
-    CanonicalMetric.CO2_TOTAL: _DemoMetricProfile(2100.0, 9.0, 78.0, 50.0),
-    CanonicalMetric.CO2_PER_BATCH: _DemoMetricProfile(28.5, 0.14, 1.3, 1.0),
+_METRIC_CATEGORY_MAP: dict[str, str] = {
+    "energy_per_unit": "energy",
+    "energy_total": "energy",
+    "peak_demand": "energy",
+    "peak_tariff_exposure": "energy",
+    "scrap_rate": "material",
+    "rework_rate": "material",
+    "material_efficiency": "material",
+    "recycled_content": "material",
+    "supplier_lead_time": "supplier",
+    "supplier_defect_rate": "supplier",
+    "supplier_on_time": "supplier",
+    "supplier_co2_per_kg": "supplier",
+    "oee": "production",
+    "throughput": "production",
+    "cycle_time": "production",
+    "changeover_time": "production",
+    "co2_per_unit": "carbon",
+    "co2_total": "carbon",
+    "co2_per_batch": "carbon",
 }
-
-_NEGATIVE_SHOCK_METRICS = {
-    CanonicalMetric.MATERIAL_EFFICIENCY,
-    CanonicalMetric.RECYCLED_CONTENT,
-    CanonicalMetric.SUPPLIER_ON_TIME,
-    CanonicalMetric.OEE,
-    CanonicalMetric.THROUGHPUT,
-}
-
-
-class _DemoAdapter:
-    """Synthetic adapter used for zero-config PREVENTION demo exports."""
-
-    async def initialize(self) -> None:
-        return None
-
-    async def shutdown(self) -> None:
-        return None
-
-    def get_supported_metrics(self) -> list[CanonicalMetric]:
-        return list(_DEMO_METRIC_PROFILES)
-
-    async def list_assets(self) -> list[Asset]:
-        return list(_DEMO_ASSETS)
-
-    async def get_raw_data(
-        self,
-        metric: CanonicalMetric,
-        asset_id: str,
-        period: TimePeriod,
-    ) -> list[DataPoint]:
-        try:
-            asset_index = next(
-                idx for idx, asset in enumerate(_DEMO_ASSETS)
-                if asset.asset_id == asset_id
-            )
-        except StopIteration as exc:
-            raise ValueError(f"Unknown demo asset: {asset_id}") from exc
-
-        profile = _DEMO_METRIC_PROFILES[metric]
-        current = period.start.astimezone(timezone.utc).replace(
-            hour=12,
-            minute=0,
-            second=0,
-            microsecond=0,
-        )
-        end = period.end.astimezone(timezone.utc)
-        points: list[DataPoint] = []
-        day_index = 0
-
-        while current <= end:
-            points.append(
-                DataPoint(
-                    timestamp=current,
-                    value=self._value_for(metric, profile, day_index, asset_index),
-                    unit=metric.default_unit,
-                ),
-            )
-            current += timedelta(days=1)
-            day_index += 1
-
-        return points
-
-    def _value_for(
-        self,
-        metric: CanonicalMetric,
-        profile: _DemoMetricProfile,
-        day_index: int,
-        asset_index: int,
-    ) -> float:
-        asset_multiplier = 1.0 + (asset_index * 0.08)
-        seasonal = math.sin((day_index + 1) / 3.0 + asset_index) * profile.amplitude
-        trend = profile.trend * day_index
-        value = (profile.base * asset_multiplier) + seasonal + trend
-
-        if day_index in {6, 17, 26}:
-            shock = profile.amplitude * (3.0 + (asset_index * 0.5))
-            if metric in _NEGATIVE_SHOCK_METRICS:
-                value -= shock
-            else:
-                value += shock
-
-        if profile.maximum is not None:
-            value = min(value, profile.maximum)
-        value = max(value, profile.minimum)
-        return round(value, 4)
 
 
 # ── Adapter creation ─────────────────────────────────────────────
@@ -196,7 +82,7 @@ async def _create_adapter(
     """Instantiate and initialise a ManufacturingAdapter.
 
     Args:
-        platform: Adapter type (``mock``, ``generic_rest``).
+        platform: Adapter type (currently ``generic_rest`` only).
         api_url: Base URL for REST-based adapters.
         api_key: API key / bearer token.
 
@@ -206,11 +92,6 @@ async def _create_adapter(
     Raises:
         SystemExit: If the platform is unknown or config is missing.
     """
-    if platform == "mock":
-        adapter = _DemoAdapter()
-        await adapter.initialize()
-        return adapter
-
     if platform == "generic_rest":
         if not api_url:
             logger.error("--api-url is required for generic_rest")
@@ -226,7 +107,7 @@ async def _create_adapter(
         await adapter.initialize()
         return adapter
 
-    logger.error("Unknown platform '%s'. Supported: mock, generic_rest", platform)
+    logger.error("Unknown platform '%s'. Supported: generic_rest", platform)
     raise SystemExit(1)
 
 
@@ -271,7 +152,7 @@ async def _collect_data(
     record_id = 0
 
     for metric in metrics:
-        category = METRIC_CATEGORY_MAP.get(metric.value)
+        category = _METRIC_CATEGORY_MAP.get(metric.value)
         if category is None:
             logger.debug("Skipping unmapped metric %s", metric.value)
             continue
@@ -374,8 +255,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--platform",
-        default="mock",
-        help="Adapter type: mock, generic_rest (default: mock)",
+        default="generic_rest",
+        help="Adapter type: generic_rest (default: generic_rest)",
     )
     parser.add_argument(
         "--api-url",

@@ -130,10 +130,8 @@ def _ensure_preprocessing_assets() -> None:
     logger.info("Downloading shared preprocessing assets to %s", resources_dir)
 
     try:
-        from openwakeword.utils import download_models
-
         os.makedirs(resources_dir, exist_ok=True)
-        download_models(target_directory=resources_dir)
+        _download_openwakeword_models(resources_dir)
     except Exception as exc:  # noqa: BLE001
         raise ValueError(
             f"Failed to download preprocessing assets: {exc}"
@@ -162,9 +160,7 @@ def _ensure_openwakeword_assets(model_name: str) -> str:
 
     if not os.path.exists(model_path):
         try:
-            from openwakeword.utils import download_models
-
-            download_models(target_directory=os.path.dirname(model_path))
+            _download_openwakeword_models(os.path.dirname(model_path))
         except Exception as exc:  # noqa: BLE001
             raise ValueError(
                 f"Failed to download wakeword model '{model_name}': {exc}"
@@ -174,6 +170,13 @@ def _ensure_openwakeword_assets(model_name: str) -> str:
         raise ValueError(f"Model file missing after download: {model_path}")
 
     return model_path
+
+
+def _download_openwakeword_models(target_directory: str) -> None:
+    """Download openWakeWord model assets into *target_directory*."""
+    from openwakeword.utils import download_models
+
+    download_models(target_directory=target_directory)
 
 
 # ── Detector ─────────────────────────────────────────────

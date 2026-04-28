@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
+import sys
 
 from fastapi import Depends
 
@@ -10,6 +12,23 @@ from skill.adapters.factory import AdapterFactory
 from skill.services.kpi_measurement import KPIMeasurementService
 from skill.services.production_data import ProductionDataService
 from skill.services.settings import SettingsService
+
+_WEB_UI_DIR = Path(__file__).resolve().parent
+_LOCAL_SERVICES_DIR = _WEB_UI_DIR / "services"
+
+if str(_WEB_UI_DIR) not in sys.path:
+    sys.path.insert(0, str(_WEB_UI_DIR))
+
+loaded_services = sys.modules.get("services")
+loaded_services_file = getattr(loaded_services, "__file__", "")
+if loaded_services_file:
+    try:
+        loaded_services_path = Path(loaded_services_file).resolve().parent
+    except OSError:
+        loaded_services_path = None
+    if loaded_services_path != _LOCAL_SERVICES_DIR:
+        sys.modules.pop("services", None)
+
 from services.kpi_collector import KPICollector
 from services.kpi_scheduler import KPIScheduler
 
@@ -54,6 +73,5 @@ def get_kpi_scheduler() -> KPIScheduler:
         kpi_service=get_kpi_measurement_service(),
     )
     return KPIScheduler(collector=collector)
-
 
 

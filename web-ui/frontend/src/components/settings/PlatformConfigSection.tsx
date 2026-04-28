@@ -27,24 +27,6 @@ type PlatformConfigSectionProps = {
 };
 
 type AuthType = "api_key" | "cookie" | "none";
-const MOCK_PRESET_URL =
-  (import.meta.env.VITE_MOCK_PRESET_URL || "http://reneryo-data-generator-api:8090").trim();
-
-function normalizeUrl(url: string): string {
-  return url.trim().replace(/\/+$/, "");
-}
-
-function isMockPresetConfig(config: {
-  platformType: PlatformType;
-  authType: AuthType;
-  apiUrl: string;
-}): boolean {
-  return (
-    config.platformType === "custom_rest" &&
-    config.authType === "none" &&
-    normalizeUrl(config.apiUrl) === normalizeUrl(MOCK_PRESET_URL)
-  );
-}
 
 function toBackendAuthType(authType: AuthType): "bearer" | "cookie" | "none" {
   if (authType === "cookie") {
@@ -71,23 +53,16 @@ function createPayload(config: {
   apiUrl: string;
   apiKey: string;
   authType: AuthType;
-  isMockPreset: boolean;
 }): PlatformConfigRequest {
   const shouldBlankApiKey =
     config.platformType === "unconfigured" ||
-    config.authType === "none" ||
-    config.isMockPreset;
+    config.authType === "none";
   return {
     platform_type: config.platformType,
-    api_url:
-      config.platformType === "unconfigured"
-        ? ""
-        : config.isMockPreset
-        ? MOCK_PRESET_URL
-        : config.apiUrl.trim(),
+    api_url: config.platformType === "unconfigured" ? "" : config.apiUrl.trim(),
     api_key: shouldBlankApiKey ? "" : config.apiKey.trim(),
     extra_settings: {
-      auth_type: config.isMockPreset ? "none" : toBackendAuthType(config.authType),
+      auth_type: toBackendAuthType(config.authType),
     },
   };
 }
@@ -97,9 +72,8 @@ function validate(config: {
   apiUrl: string;
   apiKey: string;
   authType: AuthType;
-  isMockPreset: boolean;
 }): string {
-  if (config.platformType === "unconfigured" || config.isMockPreset) {
+  if (config.platformType === "unconfigured") {
     return "";
   }
   if (!config.apiUrl.trim()) {
@@ -131,7 +105,6 @@ export default function PlatformConfigSection({
   const [authType, setAuthType] = useState<AuthType>("api_key");
   const [apiUrl, setApiUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [isMockPreset, setIsMockPreset] = useState(false);
   const [testResult, setTestResult] = useState<ConnectionTestResponse | null>(
     null,
   );
@@ -141,13 +114,8 @@ export default function PlatformConfigSection({
 
   const isUnconfigured = useMemo(() => platformType === "unconfigured", [platformType]);
   const adapterTarget = useMemo(
-    () =>
-      platformType === "custom_rest"
-        ? isMockPreset
-          ? "Mock API"
-          : "REST API"
-        : "Unconfigured",
-    [isMockPreset, platformType],
+    () => (platformType === "custom_rest" ? "REST API" : "Unconfigured"),
+    [platformType],
   );
 
   const formLocked = isBuiltinProfile;
@@ -160,13 +128,6 @@ export default function PlatformConfigSection({
     setApiUrl(nextApiUrl);
     setApiKey("");
     setAuthType(nextAuthType);
-    setIsMockPreset(
-      isMockPresetConfig({
-        platformType: nextPlatformType,
-        authType: nextAuthType,
-        apiUrl: nextApiUrl,
-      }),
-    );
     setConfig({
       platform_type: nextPlatformType,
       api_url: nextApiUrl,
@@ -190,13 +151,6 @@ export default function PlatformConfigSection({
       setAuthType(nextAuthType);
       setApiUrl(data.api_url);
       setApiKey("");
-      setIsMockPreset(
-        isMockPresetConfig({
-          platformType: data.platform_type as PlatformType,
-          authType: nextAuthType,
-          apiUrl: data.api_url,
-        }),
-      );
       setIsBuiltinProfile(data.platform_type === "unconfigured");
     } catch (error: unknown) {
       const message = toFriendlyErrorMessage(error);
@@ -216,7 +170,6 @@ export default function PlatformConfigSection({
       apiUrl,
       apiKey,
       authType,
-      isMockPreset,
     });
     setInlineError(validationError);
     setTestResult(null);
@@ -230,7 +183,6 @@ export default function PlatformConfigSection({
         apiUrl,
         apiKey,
         authType,
-        isMockPreset,
       });
       const saved = await createPlatformConfig(payload);
       setConfig(saved);
@@ -239,13 +191,6 @@ export default function PlatformConfigSection({
       const savedAuthType = fromBackendAuthType(saved.extra_settings?.auth_type);
       setAuthType(savedAuthType);
       setApiUrl(saved.api_url);
-      setIsMockPreset(
-        isMockPresetConfig({
-          platformType: saved.platform_type as PlatformType,
-          authType: savedAuthType,
-          apiUrl: saved.api_url,
-        }),
-      );
       setProfileRefreshKey((k) => k + 1);
       onNotify("success", "Platform config updated.");
     } catch (error: unknown) {
@@ -255,7 +200,7 @@ export default function PlatformConfigSection({
     } finally {
       setSaving(false);
     }
-  }, [apiKey, apiUrl, authType, isMockPreset, onNotify, platformType]);
+  }, [apiKey, apiUrl, authType, onNotify, platformType]);
 
   const handleReset = useCallback(async () => {
     const confirmed = window.confirm(
@@ -288,7 +233,6 @@ export default function PlatformConfigSection({
       apiUrl,
       apiKey: isUnconfigured ? "" : apiKey,
       authType,
-      isMockPreset,
     });
     setInlineError(validationError);
     setTestResult(null);
@@ -302,7 +246,6 @@ export default function PlatformConfigSection({
         apiUrl,
         apiKey,
         authType,
-        isMockPreset,
       });
       const result = await testConnection(payload);
       setTestResult(result);
@@ -318,43 +261,13 @@ export default function PlatformConfigSection({
     apiKey,
     apiUrl,
     authType,
-    isMockPreset,
     isUnconfigured,
     onNotify,
     platformType,
   ]);
 
-  const handleUseMockPreset = useCallback(() => {
-    if (!editing || saving || formLocked) {
-      return;
-    }
-    setPlatformType("custom_rest");
-    setAuthType("none");
-    setApiUrl(MOCK_PRESET_URL);
-    setApiKey("");
-    setIsMockPreset(true);
-    setInlineError("");
-    setTestResult(null);
-  }, [editing, formLocked, saving]);
-
-  const handleUseApiMode = useCallback(() => {
-    if (!editing || saving || formLocked) {
-      return;
-    }
-    setIsMockPreset(false);
-    setPlatformType("custom_rest");
-    setAuthType((prev) => (prev === "none" ? "api_key" : prev));
-    setApiUrl((prev) => (normalizeUrl(prev) === normalizeUrl(MOCK_PRESET_URL) ? "" : prev));
-    setApiKey("");
-    setInlineError("");
-    setTestResult(null);
-  }, [editing, formLocked, saving]);
-
   const handlePlatformTypeChange = useCallback((value: PlatformType) => {
     setPlatformType(value);
-    if (value !== "custom_rest") {
-      setIsMockPreset(false);
-    }
   }, []);
 
   const handleProfileSwitchInternal = useCallback(
@@ -410,32 +323,6 @@ export default function PlatformConfigSection({
         </div>
       ) : (
         <div className="brand-surface reveal-in rounded-xl p-4">
-          {editing && !formLocked && !isUnconfigured && (
-            <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/40">
-              <p className="m-0 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                Integration Mode
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={handleUseApiMode}
-                  className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
-                  disabled={saving}
-                >
-                  Use API
-                </button>
-                <button
-                  type="button"
-                  onClick={handleUseMockPreset}
-                  className="btn-brand-subtle rounded-lg px-3 py-1.5 text-xs font-semibold"
-                  disabled={saving}
-                >
-                  Use Mock
-                </button>
-              </div>
-            </div>
-          )}
-
           <div className="grid gap-3 md:grid-cols-2">
             <label className="block">
               <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
@@ -455,25 +342,6 @@ export default function PlatformConfigSection({
             </label>
 
             {!isUnconfigured && (
-              <label className="block">
-                <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
-                  Current Mode
-                </span>
-                <input
-                  type="text"
-                  value={isMockPreset ? "Mock Preset" : "API Connection"}
-                  readOnly
-                  className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700"
-                />
-              </label>
-            )}
-
-            {isMockPreset && !isUnconfigured ? (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-900/30 dark:text-emerald-200 md:col-span-2">
-                Mock preset is active. This profile uses the built-in mock endpoint with no
-                authentication. Switch to <strong>Use API</strong> to edit URL and auth fields.
-              </div>
-            ) : (
               <>
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
@@ -536,7 +404,7 @@ export default function PlatformConfigSection({
           {testResult && <ConnectionTestResult result={testResult} />}
 
           <div className="mt-4 flex flex-wrap gap-2">
-            {!isUnconfigured && !isMockPreset && (
+            {!isUnconfigured && (
               <button
                 type="button"
                 onClick={() => void handleTest()}

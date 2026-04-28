@@ -43,12 +43,15 @@ const WAKE_WORD_CAPTURE_TIMEOUT_MS = 10000;
 const WAKE_WORD_CAPTURE_START_RETRY_MS = 220;
 const WAKE_WORD_CAPTURE_MAX_START_RETRIES = 2;
 const SPEAK_EVENT_DEDUP_MS = 1200;
-const VOICE_DEBUG_BUILD_TAG = "voice-debug-2026-04-07-r4";
+const VOICE_DEBUG_BUILD_TAG = "voice-debug-2026-04-28-r5";
 const WAKE_WORD_POST_RESUME_DETECTION_SUPPRESSION_MS = 1500;
 /** Safety net: force-finish any wake-word session stuck longer than this. */
 const WAKE_WORD_SESSION_SAFETY_TIMEOUT_MS = 30000;
 /** If no speak event arrives within this time after entering awaiting_response, finish the session. */
 const WAKE_WORD_RESPONSE_TIMEOUT_MS = 10000;
+const WAKE_WORD_TTS_WATCHDOG_MIN_MS = 8000;
+const WAKE_WORD_TTS_WATCHDOG_MAX_MS = 30000;
+const WAKE_WORD_TTS_WATCHDOG_MS_PER_CHAR = 90;
 
 type WakeInteractionPhase =
   | "idle"
@@ -225,6 +228,25 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         finishWakeWordSession();
       }
     }, WAKE_WORD_RESPONSE_TIMEOUT_MS);
+  }, [clearWakeWordResponseTimer, finishWakeWordSession]);
+
+  const startWakeWordTtsWatchdog = useCallback((text: string) => {
+    clearWakeWordResponseTimer();
+    const timeoutMs = Math.min(
+      WAKE_WORD_TTS_WATCHDOG_MAX_MS,
+      Math.max(
+        WAKE_WORD_TTS_WATCHDOG_MIN_MS,
+        text.length * WAKE_WORD_TTS_WATCHDOG_MS_PER_CHAR,
+      ),
+    );
+    wakeWordResponseTimerRef.current = window.setTimeout(() => {
+      if (wakeWordSessionPhaseRef.current === "speaking_response") {
+        console.warn(
+          "[AVAROS-DEBUG] TTS watchdog fired — finishing wake-word session",
+        );
+        finishWakeWordSession();
+      }
+    }, timeoutMs);
   }, [clearWakeWordResponseTimer, finishWakeWordSession]);
 
   const startWakeWordCommandCapture = useCallback(async () => {
@@ -731,8 +753,8 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
             phase === "capturing" ||
             phase === "prompting"
           ) {
-            clearWakeWordResponseTimer();
             setWakeWordSessionPhase("speaking_response");
+            startWakeWordTtsWatchdog(normalized);
           } else {
             console.warn(`[AVAROS-DEBUG] speak event: phase '${phase}' not transitioned to speaking_response`);
           }
@@ -743,7 +765,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         void ttsRef.current.speak(normalized).catch(() => undefined);
       }
     });
-  }, [clearWakeWordResponseTimer, on, setWakeWordSessionPhase, voiceMode]);
+  }, [on, setWakeWordSessionPhase, startWakeWordTtsWatchdog, voiceMode]);
 
   // ── Actions ────────────────────────────────────────
 

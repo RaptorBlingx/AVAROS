@@ -168,7 +168,6 @@ export function isLikelyIncompleteUtterance(raw: string): boolean {
   if (!text) return true;
 
   const exactIncomplete = new Set([
-    "what if",
     "show",
     "show me",
     "what is",
@@ -176,15 +175,6 @@ export function isLikelyIncompleteUtterance(raw: string): boolean {
     "check",
   ]);
   if (exactIncomplete.has(text)) return true;
-
-  // What-if scenarios require a change amount (digit or number-word).
-  const hasAmount =
-    /\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/.test(
-      text,
-    );
-  if (text.startsWith("what if") && !hasAmount) {
-    return true;
-  }
 
   return false;
 }
@@ -208,7 +198,7 @@ export function buildImmediateAssistantReply(raw: string): string | null {
     return "Hello! I'm AVAROS, your manufacturing assistant. Ask me about energy, scrap rate, OEE, or production anomalies.";
   }
   if (HELP_WORDS.has(text)) {
-    return "I can answer questions about energy per unit, OEE, scrap rate, energy trends, production anomalies, and what-if simulations.";
+    return "I can answer questions about energy per unit, OEE, scrap rate, energy trends, and production anomalies.";
   }
   return null;
 }

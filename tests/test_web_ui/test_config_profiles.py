@@ -445,41 +445,6 @@ class TestActivateProfile:
         assert body["active_profile"] == "unconfigured"
         assert body["adapter_type"] == "unconfigured"
 
-    def test_activate_legacy_mock_profile_auto_migrates_url(
-        self,
-        client: TestClient,
-        settings_service: SettingsService,
-    ) -> None:
-        """Legacy localhost mock preset is normalized before activation."""
-        settings_service.create_profile(
-            "mock-legacy",
-            PlatformConfig(
-                platform_type="custom_rest",
-                api_url="http://localhost:8082",
-                api_key="legacy-key",
-                extra_settings={"auth_type": "none"},
-            ),
-        )
-
-        with patch(
-            "routers.profiles._notify_skill_via_bus",
-            return_value=True,
-        ), patch(
-            "skill.adapters.generic_rest.GenericRestAdapter._probe_base_url",
-            new_callable=AsyncMock,
-        ):
-            resp = client.post(
-                "/api/v1/config/profiles/mock-legacy/activate",
-            )
-
-        assert resp.status_code == 200
-        assert settings_service.get_active_profile_name() == "mock-legacy"
-        updated = settings_service.get_profile("mock-legacy")
-        assert updated is not None
-        assert updated.api_url == "http://reneryo-data-generator-api:8090"
-        assert str(updated.extra_settings.get("auth_type", "")).lower() == "none"
-        assert updated.api_key == ""
-
     def test_activate_nonexistent_returns_404(
         self,
         client: TestClient,

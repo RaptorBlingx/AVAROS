@@ -24,6 +24,7 @@ from routers.production_data import router as production_data_router
 from routers.profiles import router as profiles_router
 from routers.status import router as status_router
 from routers.voice import router as voice_router
+from routers.wakeword import router as wakeword_router
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -132,6 +133,7 @@ def health() -> dict[str, str]:
 
 
 app.include_router(status_router)
+app.include_router(wakeword_router)
 app.include_router(assets_router)
 app.include_router(config_router)
 app.include_router(profiles_router)

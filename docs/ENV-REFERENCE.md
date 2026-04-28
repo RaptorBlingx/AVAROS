@@ -68,8 +68,9 @@ Platform connection is configured from the Web UI wizard and stored per profile 
 | `HIVEMIND_CLIENT_KEY` | Recommended | *(auto-generated)* | HiveMind, Web UI | Browser client access key embedded in the websocket authorization token. |
 | `HIVEMIND_CLIENT_SECRET` | Recommended | *(auto-generated)* | HiveMind | Browser client password stored in the HiveMind client database. |
 | `HIVEMIND_CLIENT_CRYPTO_KEY` | Recommended | *(derived from secret if empty)* | HiveMind, Web UI | Shared AES key for encrypted HiveMind websocket payloads. This must match in both containers or the browser will reconnect in a loop with MAC/decryption errors. |
-| `HIVEMIND_WS_URL` | Yes for browser voice | `wss://localhost/hivemind` | Web UI | Public websocket URL returned to browser clients for HiveMind connections. |
+| `HIVEMIND_WS_URL` | No | `auto` | Web UI | Public websocket URL returned to browser clients for HiveMind connections. `auto` derives `ws(s)://<current-host>/hivemind/` from the request and is recommended behind the AVAROS proxy. |
 | `HIVEMIND_CLIENT_ALLOWED_TYPES` | No | built-in allowlist | HiveMind | Comma-separated OVOS message types allowed for the browser client. |
+| `WAKEWORD_BACKEND_URL` | No | `http://avaros-wakeword:9999` | Web UI | Internal wake-word backend URL used by the Web UI same-origin `/wakeword/*` proxy. Keep the Docker default unless the wake-word service is deployed separately. |
 
 ## Mock RENERYO Server
 

@@ -255,17 +255,6 @@ def test_import_generator_mapping_rejects_empty(
     assert response.status_code == 400
 
 
-def test_import_generator_mapping_on_mock_profile_fails(
-    client: TestClient,
-) -> None:
-    """Mock profile should reject mapping import (read-only)."""
-    response = client.post(
-        "/api/v1/assets/import-generator-mapping",
-        json={"mapping": {"energy_per_unit": {"line-1": "uuid-1"}}},
-    )
-    assert response.status_code == 400
-
-
 def test_import_generator_mapping_rejects_unknown_metric_names(
     client: TestClient,
     settings_service: SettingsService,

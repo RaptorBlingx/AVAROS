@@ -13,7 +13,6 @@ Pipelines tested:
     - Trend: dispatcher.get_trend() → builder.format_trend_result()
     - Anomaly: dispatcher.check_anomaly() → AnomalyResult → formatted response
     - Drift: dispatcher.check_drift() → DriftReport → formatted response
-    - WhatIf: dispatcher.simulate_whatif() → builder.format_whatif_result()
     - Adapter hot-swap
     - Audit trail round-trip
 """
@@ -27,16 +26,13 @@ from tests.helpers.mock_prevention import MockPreventionClient
 from skill.domain.exceptions import AVAROSError
 from skill.domain.models import (
     CanonicalMetric,
-    ScenarioParameter,
     TimePeriod,
-    WhatIfScenario,
 )
 from skill.domain.results import (
     AnomalyResult,
     ComparisonResult,
     KPIResult,
     TrendResult,
-    WhatIfResult,
 )
 from skill.services.audit import AuditLogger
 from skill.services.response_builder import ResponseBuilder
@@ -298,38 +294,7 @@ class TestDriftPipeline:
 
 
 # ══════════════════════════════════════════════════════════
-# 5. Full WhatIf Pipeline
-# ══════════════════════════════════════════════════════════
-
-
-class TestWhatIfPipeline:
-    """End-to-end: dispatcher → response_builder for what-if simulations."""
-
-    def test_whatif_pipeline_produces_response(
-        self,
-        dispatcher: QueryDispatcher,
-        builder: ResponseBuilder,
-    ) -> None:
-        """WhatIf pipeline returns formatted response with change %."""
-        scenario = WhatIfScenario(
-            name="temperature_reduction",
-            asset_id="Line-1",
-            parameters=[
-                ScenarioParameter("temperature", 200.0, 190.0, "°C"),
-            ],
-            target_metric=CanonicalMetric.ENERGY_PER_UNIT,
-        )
-
-        result = dispatcher.simulate_whatif(scenario)
-        response = builder.format_whatif_result(result)
-
-        assert isinstance(result, WhatIfResult)
-        assert isinstance(response, str)
-        assert len(response) > 0
-
-
-# ══════════════════════════════════════════════════════════
-# 6. Adapter Hot-Swap
+# 5. Adapter Hot-Swap
 # ══════════════════════════════════════════════════════════
 
 
@@ -357,7 +322,7 @@ class TestAdapterHotSwap:
 
 
 # ══════════════════════════════════════════════════════════
-# 7. Audit Trail Round-Trip
+# 6. Audit Trail Round-Trip
 # ══════════════════════════════════════════════════════════
 
 

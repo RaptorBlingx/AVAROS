@@ -838,7 +838,6 @@ class TestSetIntentActive:
             "trend.scrap",
             "trend.energy",
             "anomaly.production.check",
-            "whatif.temperature",
             "control.device.turn_on",
             "control.device.turn_off",
             "status.system.show",

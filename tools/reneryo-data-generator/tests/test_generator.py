@@ -19,9 +19,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from generator import (
+    DEFAULT_ASSETS,
     MAPPING_FILE,
+    _metric_asset_key,
     _load_mapping,
     _parse_args,
+    _physical_metric_name,
     _save_mapping,
     _write_batched,
     ensure_metrics_exist,
@@ -133,6 +136,10 @@ class TestMappingIO:
 class TestEnsureMetrics:
     """Tests for metric creation / lookup."""
 
+    @staticmethod
+    def _expected_total() -> int:
+        return len(METRIC_PROFILES) * len(DEFAULT_ASSETS)
+
     @pytest.mark.asyncio
     async def test_creates_missing_metrics(self) -> None:
         client = AsyncMock()
@@ -141,14 +148,19 @@ class TestEnsureMetrics:
 
         result = await ensure_metrics_exist(client)
 
-        assert len(result) == 19
-        assert client.create_metric.call_count == 19
+        assert len(result) == self._expected_total()
+        assert result["oee::Line-1"] == "id-AVAROS OEE :: Line-1"
+        assert client.create_metric.call_count == self._expected_total()
 
     @pytest.mark.asyncio
     async def test_reuses_existing_metrics(self) -> None:
         existing = [
-            {"name": p.display_name, "id": f"existing-{p.name}"}
-            for p in METRIC_PROFILES
+            {
+                "name": _physical_metric_name(profile, asset),
+                "id": f"existing-{_metric_asset_key(profile.name, asset)}",
+            }
+            for profile in METRIC_PROFILES
+            for asset in DEFAULT_ASSETS
         ]
         client = AsyncMock()
         client.list_metrics = AsyncMock(return_value=existing)
@@ -156,15 +168,15 @@ class TestEnsureMetrics:
 
         result = await ensure_metrics_exist(client)
 
-        assert len(result) == 19
+        assert len(result) == self._expected_total()
         assert client.create_metric.call_count == 0
-        assert result["oee"] == "existing-oee"
+        assert result["oee::Line-1"] == "existing-oee::Line-1"
 
     @pytest.mark.asyncio
     async def test_mixed_existing_and_new(self) -> None:
         existing = [
-            {"name": "AVAROS OEE", "id": "oee-existing"},
-            {"name": "AVAROS Throughput", "id": "tp-existing"},
+            {"name": "AVAROS OEE :: Line-1", "id": "oee-existing"},
+            {"name": "AVAROS Throughput :: Line-1", "id": "tp-existing"},
         ]
         client = AsyncMock()
         client.list_metrics = AsyncMock(return_value=existing)
@@ -174,24 +186,24 @@ class TestEnsureMetrics:
 
         result = await ensure_metrics_exist(client)
 
-        assert len(result) == 19
-        assert result["oee"] == "oee-existing"
-        assert result["throughput"] == "tp-existing"
-        assert client.create_metric.call_count == 17
+        assert len(result) == self._expected_total()
+        assert result["oee::Line-1"] == "oee-existing"
+        assert result["throughput::Line-1"] == "tp-existing"
+        assert client.create_metric.call_count == self._expected_total() - 2
 
     @pytest.mark.asyncio
     async def test_duplicate_name_create_fallback_reuses_metric(self) -> None:
         """On create 4xx, ensure_metrics_exist re-queries and reuses existing metric."""
         existing_after_error = {
-            "AVAROS OEE": "oee-existing-after-error",
+            "AVAROS OEE :: Line-1": "oee-existing-after-error",
         }
         client = AsyncMock()
         client.list_metrics = AsyncMock(
-            side_effect=[[], [{"name": "AVAROS OEE", "id": "oee-existing-after-error"}]],
+            side_effect=[[], [{"name": "AVAROS OEE :: Line-1", "id": "oee-existing-after-error"}]],
         )
 
         async def create_metric_side_effect(**kwargs: str) -> str:
-            if kwargs["name"] == "AVAROS OEE":
+            if kwargs["name"] == "AVAROS OEE :: Line-1":
                 raise ReneryoApiError("400 duplicate")
             return f"new-{kwargs['name']}"
 
@@ -199,7 +211,7 @@ class TestEnsureMetrics:
 
         result = await ensure_metrics_exist(client)
 
-        assert result["oee"] == existing_after_error["AVAROS OEE"]
+        assert result["oee::Line-1"] == existing_after_error["AVAROS OEE :: Line-1"]
 
 
 # =========================================================================
@@ -220,9 +232,7 @@ class TestWriteBatched:
             for i in range(1200)
         ]
 
-        result = await _write_batched(
-            client, "m1", points, asset="Line-1", delay_s=0,
-        )
+        result = await _write_batched(client, "m1", points, delay_s=0)
 
         assert result == "res-1"
         # 1200 / 500 = 3 batches (500, 500, 200)
@@ -235,27 +245,23 @@ class TestWriteBatched:
 
         points = [{"value": 1.0, "datetime": "2026-01-01T00:00:00.000Z"}]
 
-        result = await _write_batched(
-            client, "m1", points, asset="Line-1", delay_s=0,
-        )
+        result = await _write_batched(client, "m1", points, delay_s=0)
 
         assert result == "res-2"
         assert client.write_values.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_labels_include_asset(self) -> None:
+    async def test_uses_unlabeled_resource_writes(self) -> None:
         client = AsyncMock()
         client.write_values = AsyncMock(return_value="res-3")
 
         points = [{"value": 1.0, "datetime": "2026-01-01T00:00:00.000Z"}]
 
-        await _write_batched(
-            client, "m1", points, asset="Line-2", delay_s=0,
-        )
+        await _write_batched(client, "m1", points, delay_s=0)
 
         call_args = client.write_values.call_args
         labels = call_args[0][3]  # 4th positional arg
-        assert labels == [{"key": "asset", "value": "Line-2"}]
+        assert labels == []
 
 
 # =========================================================================
@@ -308,8 +314,12 @@ class TestSeedFlow:
     ) -> None:
         """Re-running seed with existing metrics doesn't error."""
         existing = [
-            {"name": p.display_name, "id": f"existing-{p.name}"}
-            for p in METRIC_PROFILES
+            {
+                "name": _physical_metric_name(profile, asset),
+                "id": f"existing-{_metric_asset_key(profile.name, asset)}",
+            }
+            for profile in METRIC_PROFILES
+            for asset in DEFAULT_ASSETS
         ]
         client = AsyncMock()
         client.list_metrics = AsyncMock(return_value=existing)

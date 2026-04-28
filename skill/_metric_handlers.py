@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from skill.domain.exceptions import AdapterError, AssetNotFoundError, MetricNotSupportedError
 from skill.domain.models import CanonicalMetric, TimePeriod
-from skill.domain.results import AnomalyResult, ComparisonResult, KPIResult, TrendResult, WhatIfResult
+from skill.domain.results import AnomalyResult, ComparisonResult, KPIResult, TrendResult
 
 if TYPE_CHECKING:
     from skill import AVAROSSkill
@@ -721,33 +721,3 @@ def handle_drift_check(skill: "AVAROSSkill", message) -> None:
 
     skill._safe_dispatch("handle_drift_check", _execute)
 
-
-def handle_whatif_temperature(skill: "AVAROSSkill", message) -> None:
-    """Handle: 'What if we reduce temperature by {amount} degrees?'."""
-
-    def _execute() -> None:
-        from skill.domain.models import ScenarioParameter, WhatIfScenario
-
-        amount = skill._resolve_temperature_amount(message)
-        asset_id = skill._resolve_asset_id(message)
-
-        scenario = WhatIfScenario(
-            name="temperature_change",
-            asset_id=asset_id,
-            parameters=[
-                ScenarioParameter(
-                    name="temperature",
-                    baseline_value=25.0,
-                    proposed_value=25.0 - amount,
-                    unit="°C",
-                )
-            ],
-            target_metric=CanonicalMetric.ENERGY_PER_UNIT,
-        )
-
-        result: WhatIfResult = skill.dispatcher.simulate_whatif(scenario)
-
-        response = skill.response_builder.format_whatif_result(result)
-        skill.speak(response)
-
-    skill._safe_dispatch("handle_whatif_temperature", _execute)

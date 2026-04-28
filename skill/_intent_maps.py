@@ -36,7 +36,6 @@ NON_KPI_INTENT_MAP: tuple[tuple[str, str], ...] = (
     ("trend.metric.intent", "handle_trend_metric"),
     ("anomaly.production.check.intent", "handle_anomaly_check"),
     ("drift.production.check.intent", "handle_drift_check"),
-    ("whatif.temperature.intent", "handle_whatif_temperature"),
     ("control.device.turn_on.intent", "handle_control_turn_on"),
     ("control.device.turn_off.intent", "handle_control_turn_off"),
     ("status.system.show.intent", "handle_status_system_show"),

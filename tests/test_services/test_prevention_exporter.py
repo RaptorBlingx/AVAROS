@@ -188,19 +188,6 @@ class TestCollectData:
         asset_ids = {r["asset_id"] for r in buckets["energy"]}
         assert asset_ids == {"L-1", "L-2"}
 
-    @pytest.mark.asyncio
-    async def test_mock_platform_generates_demo_records(self) -> None:
-        adapter = await _create_adapter(platform="mock", api_url="", api_key="")
-
-        try:
-            buckets = await _collect_data(adapter, days=7)
-        finally:
-            await adapter.shutdown()
-
-        assert set(buckets.keys()) == set(_CATEGORY_FILES.keys())
-        assert all(buckets[category] for category in _CATEGORY_FILES)
-
-
 # ── File Writing Tests ───────────────────────────────
 
 
@@ -263,10 +250,10 @@ class TestWriteFiles:
             "unit": "kWh/unit",
         })
 
-        _write_files(buckets, tmp_path, platform="mock", days=7)
+        _write_files(buckets, tmp_path, platform="generic_rest", days=7)
 
         manifest = json.loads((tmp_path / _MANIFEST_FILENAME).read_text())
-        assert manifest["platform"] == "mock"
+        assert manifest["platform"] == "generic_rest"
         assert manifest["days"] == 7
         assert manifest["total_records"] == 1
         assert manifest["files"]["energy"]["records"] == 1

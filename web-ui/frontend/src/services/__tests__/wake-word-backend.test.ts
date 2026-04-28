@@ -106,6 +106,7 @@ function createMockAudioContext(): AudioContext {
   };
 
   return {
+    state: "running",
     sampleRate: 48000,
     createMediaStreamSource: vi.fn().mockReturnValue(mockSourceNode),
     createScriptProcessor: vi.fn().mockReturnValue({
@@ -117,6 +118,7 @@ function createMockAudioContext(): AudioContext {
       addModule: vi.fn().mockRejectedValue(new Error("No AudioWorklet")),
     },
     close: vi.fn().mockResolvedValue(undefined),
+    resume: vi.fn().mockResolvedValue(undefined),
     destination: {},
   } as unknown as AudioContext;
 }
@@ -350,6 +352,22 @@ describe("BackendWakeWordService", () => {
 
       service.stopListening();
       expect(service.state).toBe("idle");
+    });
+
+    it("test_stop_listening_keeps_audio_context_for_mobile_resume", async () => {
+      const listenPromise = service.startListening();
+      MockWebSocket.lastInstance()!.simulateOpen();
+      await listenPromise;
+
+      service.stopListening();
+      const contextCountAfterStop = (AudioContext as unknown as ReturnType<typeof vi.fn>)
+        .mock.calls.length;
+
+      await service.startListening();
+
+      expect(
+        (AudioContext as unknown as ReturnType<typeof vi.fn>).mock.calls.length,
+      ).toBe(contextCountAfterStop);
     });
 
     it("test_stop_listening_noop_when_idle", () => {

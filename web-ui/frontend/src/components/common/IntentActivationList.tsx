@@ -23,7 +23,6 @@ const INTENT_LABELS: Record<string, string> = {
   "trend.scrap": "Scrap Trend",
   "trend.energy": "Energy Trend",
   "anomaly.production.check": "Production Anomaly Check",
-  "whatif.temperature": "Temperature What-If",
 };
 
 function toIntentLabel(intentName: string): string {

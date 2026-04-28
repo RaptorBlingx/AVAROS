@@ -9,7 +9,6 @@ export function normalizeUtteranceForIntent(raw: string): string {
 
   // Common substitutions from STT + typed shorthand.
   text = text.replace(/°/g, " degrees");
-  text = text.replace(/\bwhat if (you|u)\b/gi, "what if we");
   text = text.replace(/\btrain\b/gi, "trend");
   text = text.replace(/\bsnergy\b/gi, "energy");
   text = text.replace(
@@ -58,31 +57,6 @@ export function normalizeUtteranceForIntent(raw: string): string {
     /\bcheck production anomal(y|ies)\b/gi,
     "check production anomalies",
   );
-  text = text.replace(
-    /\bwhat is temperature (increase|increases|increased|raise|raises|raised)\s+by\s+([0-9]+(?:\.[0-9]+)?)\s*degrees?\b/gi,
-    "what if we increase temperature by $2 degrees",
-  );
-  text = text.replace(
-    /\bwhat is temperature (decrease|decreases|decreased|reduce|reduces|reduced|lower|lowers|lowered)\s+by\s+([0-9]+(?:\.[0-9]+)?)\s*degrees?\b/gi,
-    "what if we decrease temperature by $2 degrees",
-  );
-  text = text.replace(
-    /\bwhat if temperature (increase|increases|increased|raise|raises|raised)\s+by\s+([0-9]+(?:\.[0-9]+)?)\s*degrees?\b/gi,
-    "what if we increase temperature by $2 degrees",
-  );
-  text = text.replace(
-    /\bwhat if we (increase|increases|increased|raise|raises|raised)\s+temperature\s+by\s+([0-9]+(?:\.[0-9]+)?)\b/gi,
-    "what if we increase temperature by $2 degrees",
-  );
-  text = text.replace(
-    /\bwhat if temperature (decrease|decreases|decreased|reduce|reduces|reduced|lower|lowers|lowered)\s+by\s+([0-9]+(?:\.[0-9]+)?)\s*degrees?\b/gi,
-    "what if we decrease temperature by $2 degrees",
-  );
-  text = text.replace(
-    /\bwhat if we (decrease|decreases|decreased|reduce|reduces|reduced|lower|lowers|lowered)\s+temperature\s+by\s+([0-9]+(?:\.[0-9]+)?)\b/gi,
-    "what if we decrease temperature by $2 degrees",
-  );
-
   // Canonicalize very short MVP commands to routable phrases.
   const compact = sanitize(text);
   if (

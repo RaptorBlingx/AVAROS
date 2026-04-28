@@ -30,7 +30,6 @@ class TestIntentFilesExist:
         "trend.energy.intent",
         "trend.scrap.intent",
         "anomaly.production.check.intent",
-        "whatif.temperature.intent",
     ]
 
     @pytest.mark.parametrize("intent_file", EXPECTED_INTENTS)
@@ -65,7 +64,6 @@ class TestDockerComposeReferences:
             "avaros_db",
             "avaros_skill",
             "avaros-web-ui",
-            "reneryo-data-generator-api",
             "avaros-proxy",
         ]
         for service in expected_services:
@@ -194,7 +192,6 @@ class TestVoiceCommandsReference:
             "Comparison",
             "Trend",
             "Anomaly",
-            "What-If",
         ]
         for category in categories:
             assert category.lower() in content.lower(), (

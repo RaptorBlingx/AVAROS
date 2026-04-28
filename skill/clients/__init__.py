@@ -5,7 +5,6 @@ Client interfaces and implementations for WASABI consortium services.
 Each client follows the ExternalServiceClient ABC contract.
 
 Available Clients:
-    - DocuBotClient: Document-grounded Q&A service
     - PreventionClient: Anomaly detection and drift monitoring
 
 Design Principles:
@@ -17,17 +16,11 @@ Design Principles:
 """
 
 from skill.clients.base import ExternalServiceClient
-from skill.clients.docubot import (
-    DocuBotClient,
-    MockDocuBotClient,
-)
 from skill.clients.prevention import (
     PreventionClient,
 )
 
 __all__ = [
     "ExternalServiceClient",
-    "DocuBotClient",
-    "MockDocuBotClient",
     "PreventionClient",
 ]

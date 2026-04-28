@@ -31,6 +31,7 @@ const LEGACY_VOICE_MODE_STORAGE_KEY = "avaros-voice-mode";
 const WAKE_WORD_URL_STORAGE_KEY = "avaros_wake_word_url";
 const WAKE_WORD_SENSITIVITY_STORAGE_KEY = "avaros_wake_word_sensitivity";
 const DEFAULT_WAKE_WORD_SENSITIVITY = 0.75;
+const WAKE_WORD_RESUME_RETRY_DELAYS_MS = [0, 500, 1500, 3000];
 
 function getInitialVoiceMode(): VoiceMode {
   if (typeof window === "undefined") return "text";
@@ -247,16 +248,34 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
     console.log(`[AVAROS-DEBUG] resumeDetection called, hasBackend=${!!backend}`);
     if (!backend) return;
 
-    void backend.startListening()
-      .then(() => console.log(`[AVAROS-DEBUG] resumeDetection: startListening succeeded`))
-      .catch((err) => {
-        console.warn(`[AVAROS-DEBUG] resumeDetection: startListening failed, re-initializing`, err);
+    const attemptResume = (attempt: number): void => {
+      const delay = WAKE_WORD_RESUME_RETRY_DELAYS_MS[attempt] ?? 0;
+      window.setTimeout(() => {
         void backend
           .initialize()
           .then(() => backend.startListening())
-          .then(() => console.log(`[AVAROS-DEBUG] resumeDetection: re-init + startListening succeeded`))
-          .catch((err2) => console.error(`[AVAROS-DEBUG] resumeDetection: re-init also failed`, err2));
-      });
+          .then(() => console.log(
+            `[AVAROS-DEBUG] resumeDetection: startListening succeeded on attempt ${attempt + 1}`,
+          ))
+          .catch((err) => {
+            const nextAttempt = attempt + 1;
+            if (nextAttempt >= WAKE_WORD_RESUME_RETRY_DELAYS_MS.length) {
+              console.error(
+                `[AVAROS-DEBUG] resumeDetection: all restart attempts failed`,
+                err,
+              );
+              return;
+            }
+            console.warn(
+              `[AVAROS-DEBUG] resumeDetection: restart attempt ${attempt + 1} failed, retrying`,
+              err,
+            );
+            attemptResume(nextAttempt);
+          });
+      }, delay);
+    };
+
+    attemptResume(0);
   }, []);
 
   return {

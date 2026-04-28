@@ -103,6 +103,7 @@ services:
       - PREVENTION_AUTH_TOKEN=${PREVENTION_AUTH_TOKEN:-}
       - PREVENTION_DATA_MAX_AGE_MINUTES=${PREVENTION_DATA_MAX_AGE_MINUTES:-1440}
       - PREVENTION_EXPORT_MANIFEST_PATH=/opt/avaros/tools/prevention-addon/data/export_manifest.json
+      - WAKEWORD_BACKEND_URL=${WAKEWORD_BACKEND_URL:-http://avaros-wakeword:9999}
 
       # OVOS configuration
       - OVOS_CONFIG_BASE_FOLDER=mycroft
@@ -147,6 +148,8 @@ services:
     depends_on:
       avaros_db:
         condition: service_healthy
+      avaros-wakeword:
+        condition: service_healthy
 
     networks:
       - ovos
@@ -175,8 +178,9 @@ services:
       - PREVENTION_EXPORT_MANIFEST_PATH=/opt/avaros/tools/prevention-addon/data/export_manifest.json
       # HiveMind voice config: passed via env_file (.env) — do NOT redeclare
       # here or compose defaults will override the .env values.
-      # Required .env vars: HIVEMIND_WS_URL, HIVEMIND_CLIENT_KEY,
-      # HIVEMIND_CLIENT_SECRET (see .env for details).
+      # Voice .env vars: HIVEMIND_WS_URL=auto is recommended behind the
+      # AVAROS proxy; HIVEMIND_CLIENT_KEY and HIVEMIND_CLIENT_SECRET/crypto
+      # key must match the HiveMind client database.
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
 
@@ -248,28 +252,6 @@ services:
         limits:
           cpus: '0.5'
           memory: 256M
-
-  reneryo-data-generator-api:
-    container_name: reneryo-data-generator-api
-    hostname: reneryo-data-generator-api
-    build:
-      context: ../tools/reneryo-data-generator
-    restart: unless-stopped
-    ports:
-      - "${MOCK_RENERYO_PORT:-8090}:8090"
-    networks:
-      - ovos
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   certbot:
     container_name: avaros-certbot

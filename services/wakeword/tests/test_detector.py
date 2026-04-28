@@ -134,14 +134,12 @@ class TestEnsureOpenWakewordAssets:
             "services.wakeword.detector.os.path.exists",
             side_effect=[False, True],
         ), patch(
-            "openwakeword.utils.download_models",
+            "services.wakeword.detector._download_openwakeword_models",
         ) as mock_download:
             path = _ensure_openwakeword_assets("hey_jarvis")
 
         assert path == "/pkg/resources/models/hey_jarvis_v0.1.tflite"
-        mock_download.assert_called_once_with(
-            target_directory="/pkg/resources/models"
-        )
+        mock_download.assert_called_once_with("/pkg/resources/models")
 
 
 # ── WakeWordDetector with mock model ─────────────────────

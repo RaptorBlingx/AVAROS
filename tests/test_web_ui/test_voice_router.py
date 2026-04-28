@@ -140,6 +140,25 @@ class TestGetVoiceConfigFromSettings:
         data = response.json()
         assert data["hivemind_url"] == "wss://prod.example.com/hivemind/"
 
+    def test_auto_url_uses_request_origin(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """auto mode returns a public same-origin HiveMind URL."""
+        settings_service.update_voice_config(VoiceConfig(hivemind_url="auto"))
+        response = client.get(
+            "/api/v1/voice/config",
+            headers={
+                "Host": "avaros.intel50001.com",
+                "X-Forwarded-Proto": "https",
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["hivemind_url"] == "wss://avaros.intel50001.com/hivemind/"
+
     def test_returns_configured_key(
         self,
         client: TestClient,

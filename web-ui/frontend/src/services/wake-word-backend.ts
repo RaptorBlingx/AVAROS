@@ -260,6 +260,11 @@ export class BackendWakeWordService {
       await this.initialize();
     }
 
+    // Mobile Chrome can leave a previous failed capture graph half-created.
+    // Clean the stream/nodes before each resumed cycle, but keep the
+    // user-activated AudioContext alive so later timer-based resumes can run.
+    this.stopAudioCapture({ keepAudioContext: true });
+
     // Ensure each resumed listening cycle starts with clean detector state.
     this.sendControlCommand("reset_detector", { reason: "start_listening" });
 
@@ -276,7 +281,7 @@ export class BackendWakeWordService {
    * Releases the microphone and tears down the audio pipeline.
    */
   stopListening(): void {
-    this.stopAudioCapture();
+    this.stopAudioCapture({ keepAudioContext: true });
     this.sendControlCommand("reset_detector", { reason: "stop_listening" });
     if (this._state === "listening" || this._state === "detected") {
       this.setState("idle");
@@ -289,7 +294,7 @@ export class BackendWakeWordService {
   dispose(): void {
     this.shouldReconnect = false;
     this.clearReconnectTimer();
-    this.stopAudioCapture();
+    this.stopAudioCapture({ keepAudioContext: false });
     this.closeWebSocket();
     this.detectedCallbacks = [];
     this.stateCallbacks = [];
@@ -553,24 +558,42 @@ export class BackendWakeWordService {
    * ScriptProcessorNode for older environments.
    */
   private async startAudioCapture(): Promise<void> {
-    this.mediaStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        sampleRate: { ideal: 16000 },
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-      },
-    });
-
-    this.audioContext = new AudioContext();
-    this.sourceNode = this.audioContext.createMediaStreamSource(
-      this.mediaStream,
-    );
-
     try {
-      await this.setupAudioWorklet();
-    } catch {
-      this.setupScriptProcessor();
+      this.mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: { ideal: 16000 },
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+
+      if (!this.audioContext || this.audioContext.state === "closed") {
+        this.audioContext = new AudioContext();
+      }
+      if (this.audioContext.state === "suspended") {
+        await this.audioContext.resume();
+      }
+
+      this.sourceNode = this.audioContext.createMediaStreamSource(
+        this.mediaStream,
+      );
+
+      try {
+        await this.setupAudioWorklet();
+      } catch {
+        this.setupScriptProcessor();
+      }
+
+      if (this.audioContext.state === "suspended") {
+        await this.audioContext.resume();
+      }
+      if (this.audioContext.state !== "running") {
+        throw new Error(`AudioContext did not resume (${this.audioContext.state})`);
+      }
+    } catch (err) {
+      this.stopAudioCapture({ keepAudioContext: true });
+      throw err;
     }
   }
 
@@ -680,21 +703,35 @@ export class BackendWakeWordService {
   }
 
   /** Release microphone and audio resources. */
-  private stopAudioCapture(): void {
+  private stopAudioCapture(
+    options: { keepAudioContext?: boolean } = {},
+  ): void {
     if (this.workletNode) {
       this.workletNode.port.onmessage = null;
-      this.workletNode.disconnect();
+      try {
+        this.workletNode.disconnect();
+      } catch {
+        // Already disconnected.
+      }
       this.workletNode = null;
     }
 
     if (this.scriptProcessor) {
       this.scriptProcessor.onaudioprocess = null;
-      this.scriptProcessor.disconnect();
+      try {
+        this.scriptProcessor.disconnect();
+      } catch {
+        // Already disconnected.
+      }
       this.scriptProcessor = null;
     }
 
     if (this.sourceNode) {
-      this.sourceNode.disconnect();
+      try {
+        this.sourceNode.disconnect();
+      } catch {
+        // Already disconnected.
+      }
       this.sourceNode = null;
     }
 
@@ -705,10 +742,13 @@ export class BackendWakeWordService {
       this.mediaStream = null;
     }
 
-    if (this.audioContext) {
+    if (this.audioContext && !options.keepAudioContext) {
       void this.audioContext.close();
       this.audioContext = null;
     }
+
+    this._spBuffer = new Int16Array(0);
+    this._spOffset = 0;
   }
 
   // ── Internal helpers ───────────────────────────────

@@ -25,7 +25,6 @@ class ExternalServiceClient(ABC):
     and graceful degradation.
 
     Implementing Classes:
-        - DocuBotClient: Document-grounded Q&A
         - PreventionClient: Predictive maintenance (P3-L04)
 
     Lifecycle:
@@ -35,10 +34,10 @@ class ExternalServiceClient(ABC):
         4. Call shutdown() for cleanup
 
     Example:
-        client = MockDocuBotClient()
+        client = SomeClientImplementation()
         await client.initialize()
         if await client.health_check():
-            result = await client.search_documents("energy reduction")
+            ...
         await client.shutdown()
     """
 

@@ -46,7 +46,6 @@ export function isIncompleteIntentText(raw: string): boolean {
   if (!text) return true;
 
   const exactIncomplete = new Set([
-    "what if",
     "show",
     "show me",
     "what is",
@@ -55,10 +54,5 @@ export function isIncompleteIntentText(raw: string): boolean {
   ]);
   if (exactIncomplete.has(text)) return true;
 
-  const hasAmount =
-    /\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/.test(
-      text,
-    );
-  if (text.startsWith("what if") && !hasAmount) return true;
   return false;
 }

@@ -33,6 +33,7 @@ services:
       - PREVENTION_AUTH_TOKEN=${PREVENTION_AUTH_TOKEN:-}
       - PREVENTION_DATA_MAX_AGE_MINUTES=${PREVENTION_DATA_MAX_AGE_MINUTES:-1440}
       - PREVENTION_EXPORT_MANIFEST_PATH=/opt/avaros/tools/prevention-addon/data/export_manifest.json
+      - WAKEWORD_BACKEND_URL=${WAKEWORD_BACKEND_URL:-http://avaros-wakeword:9999}
       # Platform config comes from Web UI, NOT here
     volumes:
       - avaros-data:/data
@@ -114,7 +115,7 @@ services:
       - .env
     environment:
       - AVAROS_DATABASE_URL=sqlite:////data/avaros.db
-      - HIVEMIND_WS_URL=${HIVEMIND_WS_URL:-ws://localhost:5678}
+      - HIVEMIND_WS_URL=${HIVEMIND_WS_URL:-auto}
       - HIVEMIND_CLIENT_NAME=${HIVEMIND_CLIENT_NAME:-avaros-web-client}
       - HIVEMIND_CLIENT_KEY=${HIVEMIND_CLIENT_KEY:-}
       - HIVEMIND_CLIENT_SECRET=${HIVEMIND_CLIENT_SECRET:-}
@@ -133,7 +134,10 @@ services:
     networks:
       - avaros-network
     depends_on:
-      - avaros
+      avaros:
+        condition: service_healthy
+      avaros-wakeword:
+        condition: service_healthy
 
   # =========================================================================
   # Wake-word Detection Service (Web UI voice wake trigger)
@@ -172,27 +176,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
-
-  reneryo-data-generator-api:
-    build:
-      context: ./tools/reneryo-data-generator
-    container_name: reneryo-data-generator-api
-    restart: unless-stopped
-    ports:
-      - "${MOCK_RENERYO_PORT:-8090}:8090"
-    networks:
-      - avaros-network
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   # =========================================================================
   # HiveMind-core (WebSocket Proxy for Voice — DEC-026)

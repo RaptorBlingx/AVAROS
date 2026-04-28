@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from skill.domain.models import CanonicalMetric, ScenarioParameter, WhatIfScenario
-from skill.domain.results import WhatIfResult
-
 if TYPE_CHECKING:
     from ovos_bus_client.message import Message
     from skill import AVAROSSkill
@@ -20,35 +17,6 @@ def handle_greeting(skill: "AVAROSSkill", message: Message) -> None:
 def handle_help(skill: "AVAROSSkill", message: Message) -> None:
     """Handle generic help requests."""
     skill.speak_dialog("help.response")
-
-
-def handle_whatif_temperature(skill: "AVAROSSkill", message: Message) -> None:
-    """Handle: 'What if we reduce temperature by {amount} degrees?'."""
-
-    def _execute() -> None:
-        amount = skill._resolve_temperature_amount(message)
-        asset_id = skill._resolve_asset_id(message)
-
-        scenario = WhatIfScenario(
-            name="temperature_change",
-            asset_id=asset_id,
-            parameters=[
-                ScenarioParameter(
-                    name="temperature",
-                    baseline_value=25.0,
-                    proposed_value=25.0 - amount,
-                    unit="°C",
-                )
-            ],
-            target_metric=CanonicalMetric.ENERGY_PER_UNIT,
-        )
-
-        result: WhatIfResult = skill.dispatcher.simulate_whatif(scenario)
-
-        response = skill.response_builder.format_whatif_result(result)
-        skill.speak(response)
-
-    skill._safe_dispatch("handle_whatif_temperature", _execute)
 
 
 def handle_control_turn_on(skill: "AVAROSSkill", message: Message) -> None:
@@ -140,8 +108,8 @@ def handle_help_capabilities_list(skill: "AVAROSSkill", message: Message) -> Non
             metric_part = "energy per unit, scrap rate, OEE"
         skill.speak(
             f"I can report KPIs like {metric_part}. "
-            "I can also compare metrics, check anomalies, show trends, "
-            "run what if simulations, and handle commands like turn on, "
+            "I can also compare metrics, check anomalies, show trends, and "
+            "handle commands like turn on, "
             "turn off, and show status."
         )
 

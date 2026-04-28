@@ -427,7 +427,9 @@ class TestReloadAdapterEdgeCases:
         async_runner = Mock(side_effect=_run_async_stub)
         skill.dispatcher._run_async = async_runner
 
-        with patch("skill.asyncio.new_event_loop") as new_loop:
+        with patch.object(skill, "_initialize_prevention_client"), patch(
+            "skill.asyncio.new_event_loop",
+        ) as new_loop:
             skill._reload_adapter("demo")
 
         async_runner.assert_called_once()

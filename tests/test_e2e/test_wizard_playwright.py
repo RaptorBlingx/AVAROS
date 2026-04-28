@@ -1,8 +1,8 @@
-"""Playwright E2E tests for the AVAROS Web UI Configuration Wizard.
+"""Playwright E2E tests for the AVAROS Web UI configuration wizard.
 
 Tests the full wizard flow end-to-end in a real browser:
   - Login with API key
-  - Step 1: Platform Setup (Mock preset and RENERYO cookie auth)
+  - Step 1: Platform Setup (RENERYO cookie auth)
   - Step 2: Asset Registration
   - Step 3: Metric Mapping
   - Step 4: Intent Activation
@@ -26,7 +26,12 @@ import re
 
 import pytest
 import requests
-from playwright.sync_api import Page, expect
+
+playwright = pytest.importorskip("playwright.sync_api")
+Page = playwright.Page
+expect = playwright.expect
+
+pytestmark = pytest.mark.e2e
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -41,10 +46,6 @@ RENERYO_SESSION_COOKIE = os.environ.get(
     "50e2a9a7-a030-4356-9b47-3db126c17c8d"
     ".azDOYokXB9DNsm9xBPb3SRJ5N36HQ6E5ehmH1RdyWyI%3D",
 )
-MOCK_GENERATOR_URL = os.environ.get(
-    "MOCK_GENERATOR_URL", "http://reneryo-data-generator-api:8090"
-)
-
 # Timeouts (ms)
 NAV_TIMEOUT = 15_000
 ACTION_TIMEOUT = 20_000
@@ -145,83 +146,6 @@ def wizard_page(page: Page, _check_services: None) -> Page:
     _login(page)
     _navigate_to_wizard(page)
     return page
-
-
-# ---------------------------------------------------------------------------
-# Test: Mock Preset Wizard Flow
-# ---------------------------------------------------------------------------
-class TestMockWizardFlow:
-    """Full wizard walkthrough using the Mock quick-action preset."""
-
-    def test_step1_mock_save_and_continue(self, wizard_page: Page) -> None:
-        """Step 1: Use Mock preset and save."""
-        page = wizard_page
-
-        _take_screenshot(page, "step1-before-mock")
-
-        # Click "Use Mock" quick action
-        _click_button(page, "Use Mock")
-
-        # Should see mock active message
-        expect(
-            page.get_by_text("Mock quick action is active", exact=False).first
-        ).to_be_visible(timeout=ACTION_TIMEOUT)
-
-        _take_screenshot(page, "step1-mock-active")
-
-        # Save & Continue
-        _click_button(page, "Save & Continue")
-
-        # Wait for step 2
-        _wait_for_step(page, "Asset Registration")
-        _take_screenshot(page, "step2-asset-registration")
-
-    def test_full_mock_wizard_flow(self, wizard_page: Page) -> None:
-        """Complete the full wizard using Mock preset: Steps 1-5."""
-        page = wizard_page
-
-        # --- Step 1: Platform Setup (Mock) ---
-        _click_button(page, "Use Mock")
-        expect(
-            page.get_by_text("Mock quick action is active", exact=False).first
-        ).to_be_visible(timeout=ACTION_TIMEOUT)
-        _click_button(page, "Save & Continue")
-        _wait_for_step(page, "Asset Registration")
-        _take_screenshot(page, "mock-step2")
-
-        # --- Step 2: Asset Registration (Skip) ---
-        _click_button(page, "Skip")
-        _wait_for_step(page, "Metric Mapping")
-        _take_screenshot(page, "mock-step3")
-
-        # --- Step 3: Metric Mapping (Skip) ---
-        _click_button(page, "Skip")
-        _wait_for_step(page, "Intent Activation")
-        _take_screenshot(page, "mock-step4")
-
-        # --- Step 4: Intent Activation ---
-        # Wait for intents to load
-        page.wait_for_timeout(2_000)
-        _take_screenshot(page, "mock-step4-loaded")
-
-        # Click "Continue to Success"
-        _click_button(page, "Continue to Success")
-
-        # --- Step 5: Success ---
-        expect(
-            page.get_by_text("AVAROS is now configured", exact=False).first
-        ).to_be_visible(timeout=LONG_TIMEOUT)
-        _take_screenshot(page, "mock-step5-success")
-
-        # Verify success details
-        expect(
-            page.get_by_text("Setup Complete", exact=False).first
-        ).to_be_visible()
-
-        # Verify "Go to Dashboard" button exists
-        expect(
-            page.get_by_role("button", name="Go to Dashboard").first
-        ).to_be_visible()
 
 
 # ---------------------------------------------------------------------------
@@ -357,26 +281,6 @@ class TestPlatformSetupStep:
         page = wizard_page
         expect(page.get_by_text("Configured", exact=False).first).to_be_visible()
         expect(page.get_by_text("Database", exact=False).first).to_be_visible()
-
-    def test_mock_preset_toggles_mode(self, wizard_page: Page) -> None:
-        """Clicking 'Use Mock' and 'Use API' toggles between modes."""
-        page = wizard_page
-
-        # Start in API mode — URL input should be visible
-        url_input = page.locator("input[type='url']")
-
-        # Switch to Mock
-        _click_button(page, "Use Mock")
-        expect(
-            page.get_by_text("Mock quick action is active", exact=False).first
-        ).to_be_visible(timeout=ACTION_TIMEOUT)
-
-        # URL input should NOT be visible in mock mode
-        expect(url_input).not_to_be_visible()
-
-        # Switch back to API
-        _click_button(page, "Use API")
-        expect(url_input).to_be_visible(timeout=ACTION_TIMEOUT)
 
     def test_auth_type_shows_cookie_field(self, wizard_page: Page) -> None:
         """Selecting 'Session Cookie' auth type shows the cookie input."""
