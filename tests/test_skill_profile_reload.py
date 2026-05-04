@@ -856,6 +856,55 @@ class TestMetricFallback:
         skill.dispatcher.get_kpi.assert_not_called()
         skill.speak.assert_called_once_with("forecast response")
 
+    def test_metric_query_fallback_routes_whatif_scrap(self):
+        """Fallback should route what-if phrases to scenario simulation."""
+        skill = _initialized_skill()
+        skill._check_profile_mismatch = Mock()
+        skill._resolve_asset_id = Mock(return_value="Line-1")
+        skill.dispatcher = Mock()
+        skill.dispatcher.simulate_whatif.return_value = Mock()
+        skill.response_builder = Mock()
+        skill.response_builder.format_whatif_result.return_value = (
+            "what-if response"
+        )
+        skill.speak = Mock()
+
+        msg = Mock()
+        msg.data = {
+            "utterance": "what if scrap rate improves by 5 percent",
+        }
+
+        handled = skill.handle_metric_query_fallback(msg)
+
+        assert handled is True
+        scenario = skill.dispatcher.simulate_whatif.call_args.args[0]
+        assert scenario.target_metric == CanonicalMetric.SCRAP_RATE
+        assert scenario.asset_id == "Line-1"
+        assert scenario.parameters[0].proposed_value == -5.0
+        skill.speak.assert_called_once_with("what-if response")
+
+    def test_metric_query_fallback_whatif_ignores_line_number_as_amount(self):
+        """What-if parser should use the percent value, not Line 1."""
+        skill = _initialized_skill()
+        skill._check_profile_mismatch = Mock()
+        skill._resolve_asset_id = Mock(return_value="Line-1")
+        skill.dispatcher = Mock()
+        skill.dispatcher.simulate_whatif.return_value = Mock()
+        skill.response_builder = Mock()
+        skill.response_builder.format_whatif_result.return_value = "ok"
+        skill.speak = Mock()
+
+        msg = Mock()
+        msg.data = {
+            "utterance": "what if scrap rate on Line 1 improves by 5 percent",
+        }
+
+        handled = skill.handle_metric_query_fallback(msg)
+
+        assert handled is True
+        scenario = skill.dispatcher.simulate_whatif.call_args.args[0]
+        assert scenario.parameters[0].proposed_value == -5.0
+
     def test_metric_query_fallback_ignores_non_metric_utterance(self):
         """Fallback returns False for unrelated utterances."""
         skill = _initialized_skill()
@@ -1235,6 +1284,14 @@ class TestFallbackEligibility:
         skill = _make_skill()
         msg = Mock()
         msg.data = {"utterances": ["forecast energy for Line 1"]}
+
+        assert skill.can_answer(msg) is True
+
+    def test_can_answer_true_for_whatif_utterance(self):
+        """Fallback ping should claim what-if phrases for AVAROS routing."""
+        skill = _make_skill()
+        msg = Mock()
+        msg.data = {"utterances": ["what if energy per unit drops by 8 percent"]}
 
         assert skill.can_answer(msg) is True
 

@@ -1,0 +1,11 @@
+what if {metric} changes by {amount} percent for {asset}
+what if {metric} improves by {amount} percent for {asset}
+what if {metric} drops by {amount} percent for {asset}
+what if {metric} increases by {amount} percent for {asset}
+simulate {metric} changing by {amount} percent for {asset}
+project impact if {metric} improves by {amount} percent on {asset}
+what would happen if {metric} changes by {amount} percent on {asset}
+what if scrap rate improves by {amount} percent
+what if energy per unit drops by {amount} percent
+what if supplier defect rate increases by {amount} percent
+what if production shifts away from peak demand

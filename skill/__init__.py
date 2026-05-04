@@ -22,6 +22,7 @@ from skill._handlers import (
     can_answer as _can_answer_impl,
     handle_intent_failure as _handle_intent_failure_impl,
     handle_metric_query_fallback as _handle_metric_query_fallback_impl,
+    handle_whatif_scenario as _handle_whatif_scenario_impl,
 )
 from skill._system_handlers import (
     handle_control_turn_off as _handle_control_turn_off_impl,
@@ -55,6 +56,7 @@ from skill._helpers import (
     is_anomaly_query as _is_anomaly_query_impl,
     is_drift_query as _is_drift_query_impl,
     is_forecast_query as _is_forecast_query_impl,
+    is_whatif_query as _is_whatif_query_impl,
     has_configured_profile as _has_configured_profile_impl,
     parse_numeric_amount as _parse_numeric_amount_impl,
     parse_period as _parse_period_impl,
@@ -100,6 +102,7 @@ class AVAROSSkill(FallbackSkill):
     _is_anomaly_query = _is_anomaly_query_impl
     _is_drift_query = _is_drift_query_impl
     _is_forecast_query = _is_forecast_query_impl
+    _is_whatif_query = _is_whatif_query_impl
     _extract_intent_name = _extract_intent_name_impl
 
     handle_greeting = _handle_greeting_impl
@@ -112,6 +115,7 @@ class AVAROSSkill(FallbackSkill):
     handle_anomaly_check = _handle_anomaly_check_impl
     handle_drift_check = _handle_drift_check_impl
     handle_forecast_metric = _handle_forecast_metric_impl
+    handle_whatif_scenario = _handle_whatif_scenario_impl
     handle_control_turn_on = _handle_control_turn_on_impl
     handle_control_turn_off = _handle_control_turn_off_impl
     handle_status_system_show = _handle_status_system_show_impl
@@ -303,6 +307,10 @@ class AVAROSSkill(FallbackSkill):
 
         if self._is_forecast_query(utterance):
             self.handle_forecast_metric(message)
+            return
+
+        if self._is_whatif_query(utterance):
+            self.handle_whatif_scenario(message)
             return
 
         if "trend" in utterance:

@@ -27,17 +27,29 @@ from typing import TYPE_CHECKING
 import uuid
 
 from skill.domain.exceptions import AVAROSError, MetricNotSupportedError
-from skill.domain.models import Anomaly, CanonicalMetric, DataPoint, TimePeriod
-from skill.domain.results import AnomalyResult, AnomalyScanResult, KPIResult
+from skill.domain.models import (
+    Anomaly,
+    CanonicalMetric,
+    DataPoint,
+    ScenarioParameter,
+    TimePeriod,
+    WhatIfScenario,
+)
+from skill.domain.results import (
+    AnomalyResult,
+    AnomalyScanResult,
+    KPIResult,
+    WhatIfResult,
+)
 from skill.services.audit import AuditLogger
 
 if TYPE_CHECKING:
     from skill.adapters.base import ManufacturingAdapter
     from skill.clients.prevention import PreventionClient
     from skill.domain.anomaly_models import DriftReport, ForecastReport
-    from skill.domain.models import TimePeriod, WhatIfScenario
+    from skill.domain.models import TimePeriod
     from skill.domain.production import ProductionSummary
-    from skill.domain.results import ComparisonResult, TrendResult, WhatIfResult
+    from skill.domain.results import ComparisonResult, TrendResult
     from skill.services.co2_service import CO2DerivationService
     from skill.services.production_data import ProductionDataService
     from skill.services.settings import SettingsService
@@ -861,21 +873,102 @@ class QueryDispatcher:
         self,
         scenario: WhatIfScenario,
     ) -> WhatIfResult:
-        """Reject what-if simulation until a real implementation exists."""
+        """Run a bounded decision-support what-if scenario.
+
+        This is intentionally not a causal optimizer. It takes a live KPI
+        baseline from the active adapter and applies the operator-stated
+        scenario change to show the projected KPI value. The output is safe
+        for proposal-level what-if exploration because assumptions stay
+        explicit and no hidden model is claimed.
+        """
         query_id = self._generate_query_id()
 
         logger.info(
             "[%s] simulate_whatif: scenario=%s, asset=%s, target=%s",
             query_id, scenario.name, scenario.asset_id, scenario.target_metric.value,
         )
-        raise AVAROSError(
-            message="What-if simulation is not configured in this deployment",
-            code="WHATIF_NOT_CONFIGURED",
-            user_message=(
-                "What-if simulation is not available right now. "
-                "This deployment only supports live KPI, trend, and PREVENTION analytics."
-            ),
+
+        if not scenario.parameters:
+            raise AVAROSError(
+                message="What-if scenario has no parameter changes",
+                code="WHATIF_INVALID_SCENARIO",
+                user_message=(
+                    "I need a specific what-if change, for example "
+                    "'what if scrap rate improves by 5 percent'."
+                ),
+            )
+
+        baseline = self.get_kpi(
+            metric=scenario.target_metric,
+            asset_id=scenario.asset_id,
+            period=TimePeriod.today(),
         )
+        change_percent = self._scenario_change_percent(scenario.parameters)
+        projected = max(0.0, baseline.value * (1 + change_percent / 100.0))
+        delta = projected - baseline.value
+        delta_percent = (
+            (delta / baseline.value) * 100.0
+            if baseline.value
+            else change_percent
+        )
+        confidence = self._whatif_confidence(scenario.parameters)
+        factors = {
+            parameter.name: self._parameter_change_percent(parameter)
+            for parameter in scenario.parameters
+        }
+
+        result = WhatIfResult(
+            scenario_name=scenario.name,
+            target_metric=scenario.target_metric,
+            baseline=round(baseline.value, 6),
+            projected=round(projected, 6),
+            delta=round(delta, 6),
+            delta_percent=round(delta_percent, 4),
+            confidence=confidence,
+            factors=factors,
+            unit=baseline.unit or scenario.target_metric.default_unit,
+            recommendation_id=f"whatif-{query_id}",
+        )
+        self._log_audit(
+            "simulate_whatif",
+            query_id,
+            scenario.target_metric.value,
+            scenario.asset_id,
+            result,
+        )
+        return result
+
+    @staticmethod
+    def _parameter_change_percent(parameter: ScenarioParameter) -> float:
+        """Resolve a scenario parameter as a percentage change."""
+        if parameter.unit.strip() == "%" and parameter.baseline_value == 0:
+            return parameter.proposed_value
+        return parameter.delta_percent
+
+    @classmethod
+    def _scenario_change_percent(
+        cls,
+        parameters: tuple[ScenarioParameter, ...],
+    ) -> float:
+        """Combine scenario parameters into one bounded percentage change."""
+        combined = sum(cls._parameter_change_percent(param) for param in parameters)
+        return max(-95.0, min(300.0, combined))
+
+    @classmethod
+    def _whatif_confidence(
+        cls,
+        parameters: tuple[ScenarioParameter, ...],
+    ) -> float:
+        """Confidence reflects small transparent assumptions, not model proof."""
+        max_abs_change = max(
+            abs(cls._parameter_change_percent(param))
+            for param in parameters
+        )
+        if max_abs_change <= 10:
+            return 0.65
+        if max_abs_change <= 25:
+            return 0.55
+        return 0.45
     
     # =========================================================================
     # CO₂ Derivation (DEC-007, DEC-023)

@@ -509,7 +509,83 @@ class TestForecastMetric:
 
 
 # ══════════════════════════════════════════════════════════
-# 8. _run_async
+# 8. simulate_whatif
+# ══════════════════════════════════════════════════════════
+
+
+class TestSimulateWhatIf:
+    """Tests for bounded what-if decision-support scenarios."""
+
+    def test_simulate_whatif_applies_stated_metric_decrease(
+        self,
+        dispatcher: QueryDispatcher,
+    ) -> None:
+        scenario = WhatIfScenario(
+            name="energy_decrease_8_percent",
+            asset_id="Line-1",
+            parameters=[
+                ScenarioParameter(
+                    name="assumed_kpi_change_percent",
+                    baseline_value=0.0,
+                    proposed_value=-8.0,
+                    unit="%",
+                ),
+            ],
+            target_metric=CanonicalMetric.ENERGY_PER_UNIT,
+        )
+
+        result = dispatcher.simulate_whatif(scenario)
+
+        assert isinstance(result, WhatIfResult)
+        assert result.baseline == 42.5
+        assert result.projected == 39.1
+        assert result.delta_percent == -8.0
+        assert result.is_improvement is True
+        assert result.factors["assumed_kpi_change_percent"] == -8.0
+
+    def test_simulate_whatif_treats_oee_increase_as_improvement(
+        self,
+        dispatcher: QueryDispatcher,
+    ) -> None:
+        scenario = WhatIfScenario(
+            name="oee_increase_5_percent",
+            asset_id="Line-2",
+            parameters=[
+                ScenarioParameter(
+                    name="assumed_kpi_change_percent",
+                    baseline_value=0.0,
+                    proposed_value=5.0,
+                    unit="%",
+                ),
+            ],
+            target_metric=CanonicalMetric.OEE,
+        )
+
+        result = dispatcher.simulate_whatif(scenario)
+
+        assert result.baseline == 85.0
+        assert result.projected == 89.25
+        assert result.is_improvement is True
+
+    def test_simulate_whatif_rejects_empty_scenario(
+        self,
+        dispatcher: QueryDispatcher,
+    ) -> None:
+        scenario = WhatIfScenario(
+            name="empty",
+            asset_id="Line-1",
+            parameters=[],
+            target_metric=CanonicalMetric.SCRAP_RATE,
+        )
+
+        with pytest.raises(AVAROSError) as exc:
+            dispatcher.simulate_whatif(scenario)
+
+        assert exc.value.code == "WHATIF_INVALID_SCENARIO"
+
+
+# ══════════════════════════════════════════════════════════
+# 9. _run_async
 # ══════════════════════════════════════════════════════════
 
 

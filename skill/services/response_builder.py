@@ -392,6 +392,9 @@ class ResponseBuilder:
         metric_name = result.target_metric.display_name
         baseline = self._format_value(result.baseline, result.unit)
         projected = self._format_value(result.projected, result.unit)
+        if baseline == projected and abs(result.delta) > 0:
+            baseline = self._format_value(result.baseline, result.unit, decimals=2)
+            projected = self._format_value(result.projected, result.unit, decimals=2)
         change = abs(result.delta_percent)
         
         # Determine if change is improvement
@@ -406,9 +409,25 @@ class ResponseBuilder:
         if self.verbosity == "brief":
             return f"{change:.1f} percent {change_word}"
         elif self.verbosity == "normal":
-            return f"The simulation shows {metric_name} would change from {baseline} to {projected}, about {change:.1f} percent {change_word}"
+            return (
+                f"Decision support scenario: {metric_name} would change "
+                f"from {baseline} to {projected}, about "
+                f"{change:.1f} percent {change_word}."
+            )
         else:  # detailed
-            return f"If you proceed, {metric_name} would go from {baseline} to {projected}. That's {change:.1f} percent {change_word} with {confidence_level} confidence ({confidence_pct} percent)"
+            assumptions = ", ".join(
+                f"{name}={value:.1f}%"
+                for name, value in result.factors.items()
+            )
+            if assumptions:
+                assumptions = f" Assumptions: {assumptions}."
+            return (
+                f"Decision support only: if the stated assumptions hold, "
+                f"{metric_name} would go from {baseline} to {projected}. "
+                f"That's {change:.1f} percent {change_word} with "
+                f"{confidence_level} confidence ({confidence_pct} percent)."
+                f"{assumptions}"
+            )
     
     # =========================================================================
     # Helper Methods
@@ -451,9 +470,18 @@ class ResponseBuilder:
         # Convert "Line-1" → "Line 1", "Compressor-2" → "Compressor 2"
         return asset_id.replace("-", " ").replace("_", " ")
     
-    def _format_value(self, value: float, unit: str) -> str:
+    def _format_value(
+        self,
+        value: float,
+        unit: str,
+        decimals: int | None = None,
+    ) -> str:
         """Format numeric value with appropriate precision."""
-        formatted = self._format_number(value)
+        formatted = (
+            f"{value:.{decimals}f}"
+            if decimals is not None
+            else self._format_number(value)
+        )
         if unit == "%":
             return f"{formatted} percent"
         elif "kWh" in unit:

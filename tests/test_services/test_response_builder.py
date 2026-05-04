@@ -901,6 +901,7 @@ class TestFormatWhatIfResult:
     ) -> None:
         """Improvement scenario mentions savings/improvement."""
         result = builder.format_whatif_result(whatif_improvement)
+        assert "Decision support scenario" in result
         assert "energy per unit" in result.lower()
         assert "21.4" in result
 
@@ -924,6 +925,8 @@ class TestFormatWhatIfResult:
     ) -> None:
         """Detailed includes confidence level."""
         result = detailed_builder.format_whatif_result(whatif_improvement)
+        assert "Decision support only" in result
+        assert "Assumptions:" in result
         assert "high" in result.lower() or "85" in result
 
     def test_format_whatif_degradation_normal(
@@ -960,6 +963,28 @@ class TestFormatWhatIfResult:
         result = builder.format_whatif_result(result_obj)
         assert isinstance(result, str)
         assert "0.0" in result
+
+    def test_format_whatif_shows_precision_when_change_would_round_away(
+        self,
+        builder: ResponseBuilder,
+    ) -> None:
+        """Small non-zero changes should not look unchanged after rounding."""
+        result_obj = WhatIfResult(
+            scenario_name="supplier_defect_increase",
+            target_metric=CanonicalMetric.SUPPLIER_DEFECT_RATE,
+            baseline=1.86,
+            projected=1.8972,
+            delta=0.0372,
+            delta_percent=2.0,
+            confidence=0.65,
+            factors={"assumed_kpi_change_percent": 2.0},
+            unit="%",
+        )
+
+        result = builder.format_whatif_result(result_obj)
+
+        assert "1.86 percent" in result
+        assert "1.90 percent" in result
 
 
 # ══════════════════════════════════════════════════════════
