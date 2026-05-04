@@ -19,6 +19,8 @@ from __future__ import annotations
 import json
 import logging
 import statistics
+import time
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
@@ -31,7 +33,11 @@ from skill.clients.prevention import (
     _get_detection_timestamp,
     _get_recommended_action,
 )
-from skill.domain.anomaly_models import AnomalyDetectionResult, DriftReport
+from skill.domain.anomaly_models import (
+    AnomalyDetectionResult,
+    DriftReport,
+    ForecastReport,
+)
 
 if TYPE_CHECKING:
     from skill.domain.models import CanonicalMetric, DataPoint
@@ -57,6 +63,14 @@ _CATEGORY_TO_DRIFT_GOAL: dict[str, str] = {
     "supplier": "SUPPLIER_DRIFT_CHECK",
 }
 
+_CATEGORY_TO_FORECAST_GOAL: dict[str, str] = {
+    "energy": "ENERGY_FORECAST",
+    "production": "PRODUCTION_FORECAST",
+    "material": "MATERIAL_FORECAST",
+    "carbon": "CO2_FORECAST",
+    "supplier": "SUPPLIER_FORECAST",
+}
+
 _HIGHER_IS_BETTER_METRICS = frozenset({
     "oee",
     "throughput",
@@ -70,7 +84,7 @@ _GRAPHQL_RESULT_REQUEST = (
     " {{ results reason }} }}"
 )
 
-_GRAPHQL_HEALTH_CHECK = "{ allAnalysis { name analyticsGoal } }"
+_GRAPHQL_HEALTH_CHECK = "{ allAnalysis { name analyticsGoal analyticsType } }"
 
 
 class HttpPreventionClient(PreventionClient):
@@ -83,7 +97,12 @@ class HttpPreventionClient(PreventionClient):
     Args:
         url: Base URL of the PREVENTION service (e.g. ``http://prevention:8081``).
         timeout: HTTP request timeout in seconds.
-        auth_token: Optional bearer token for Keycloak authentication.
+        auth_token: Optional pre-issued bearer token.
+        keycloak_token_url: Optional Keycloak/OIDC token endpoint for
+            client-credentials authentication.
+        keycloak_client_id: Optional Keycloak/OIDC client ID.
+        keycloak_client_secret: Optional Keycloak/OIDC client secret.
+        keycloak_scope: Optional OAuth scope for token requests.
     """
 
     def __init__(
@@ -91,11 +110,21 @@ class HttpPreventionClient(PreventionClient):
         url: str,
         timeout: int = 30,
         auth_token: str = "",
+        keycloak_token_url: str = "",
+        keycloak_client_id: str = "",
+        keycloak_client_secret: str = "",
+        keycloak_scope: str = "",
     ) -> None:
         self._base_url = url.rstrip("/")
         self._graphql_url = f"{self._base_url}/graphql"
         self._timeout = aiohttp.ClientTimeout(total=timeout)
         self._auth_token = auth_token
+        self._keycloak_token_url = keycloak_token_url.strip()
+        self._keycloak_client_id = keycloak_client_id.strip()
+        self._keycloak_client_secret = keycloak_client_secret.strip()
+        self._keycloak_scope = keycloak_scope.strip()
+        self._keycloak_access_token = ""
+        self._keycloak_token_expires_at = 0.0
         self._session: aiohttp.ClientSession | None = None
         self._connected: bool = False
 
@@ -143,6 +172,27 @@ class HttpPreventionClient(PreventionClient):
         except Exception:
             logger.debug("Health check failed", exc_info=True)
             return False
+
+    async def list_analytics(self) -> list[dict[str, str]]:
+        """Return configured PREVENTION analyses for capability reporting."""
+        data = await self._query(_GRAPHQL_HEALTH_CHECK)
+        analyses = data.get("allAnalysis", [])
+        if not isinstance(analyses, list):
+            return []
+        normalized: list[dict[str, str]] = []
+        for item in analyses:
+            if not isinstance(item, dict):
+                continue
+            normalized.append({
+                "name": str(item.get("name", "")),
+                "analytics_goal": str(
+                    item.get("analyticsGoal") or item.get("analytics_goal") or "",
+                ),
+                "analytics_type": str(
+                    item.get("analyticsType") or item.get("analytics_type") or "",
+                ).upper(),
+            })
+        return normalized
 
     @property
     def service_name(self) -> str:
@@ -261,6 +311,77 @@ class HttpPreventionClient(PreventionClient):
         )
 
     # =====================================================================
+    # Forecasting
+    # =====================================================================
+
+    async def forecast_metric(
+        self,
+        metric: CanonicalMetric,
+        data_points: list[DataPoint],
+        horizon_periods: int = 7,
+        asset_id: str | None = None,
+    ) -> ForecastReport:
+        """Retrieve PREVENTION forecast results, with a local series fallback.
+
+        Some PREVENTION deployments expose predictive analysis metadata but do
+        not yet return custom KPI forecasts through GraphQL. In that case we
+        still use the same explainable linear method over the live series that
+        AVAROS collected for the request, and clearly label the method as a
+        fallback rather than pretending it was a full provider-side prediction.
+        """
+        category = _get_category_for_metric(metric)
+        goal = _CATEGORY_TO_FORECAST_GOAL.get(category)
+        if goal is None:
+            return _no_forecast_result(
+                metric,
+                asset_id,
+                horizon_periods,
+                f"No forecast analysis configured for {category} metrics.",
+            )
+
+        try:
+            results = await self._fetch_results(goal)
+        except ConnectionError as exc:
+            logger.warning(
+                "PREVENTION forecast results unavailable for %s; "
+                "falling back to local linear forecast: %s",
+                goal,
+                exc,
+            )
+            return _fallback_forecast_result_from_series(
+                metric,
+                data_points,
+                horizon_periods,
+                asset_id=asset_id,
+            )
+        except Exception as exc:
+            logger.error("Forecast query failed for %s: %s", goal, exc)
+            raise ConnectionError(
+                f"Failed to query PREVENTION for {goal}",
+            ) from exc
+
+        parsed = _parse_forecast_results(
+            results,
+            metric,
+            horizon_periods,
+            asset_id=asset_id,
+        )
+        if parsed.available or results:
+            return parsed
+
+        logger.info(
+            "PREVENTION returned no forecast rows for %s; "
+            "using local linear forecast fallback.",
+            goal,
+        )
+        return _fallback_forecast_result_from_series(
+            metric,
+            data_points,
+            horizon_periods,
+            asset_id=asset_id,
+        )
+
+    # =====================================================================
     # GraphQL Communication
     # =====================================================================
 
@@ -275,11 +396,8 @@ class HttpPreventionClient(PreventionClient):
         )
         owns_session = self._session is None
 
-        headers: dict[str, str] = {"Content-Type": "application/json"}
-        if self._auth_token:
-            headers["Authorization"] = f"Bearer {self._auth_token}"
-
         try:
+            headers = await self._build_headers(session)
             async with session.post(
                 self._graphql_url,
                 json={"query": query_str},
@@ -304,6 +422,90 @@ class HttpPreventionClient(PreventionClient):
             raise ConnectionError(f"GraphQL error: {error_msg}")
 
         return payload.get("data", {})
+
+    async def _build_headers(
+        self,
+        session: aiohttp.ClientSession,
+    ) -> dict[str, str]:
+        """Build GraphQL request headers, including optional auth."""
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        token = await self._resolve_bearer_token(session)
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        return headers
+
+    async def _resolve_bearer_token(
+        self,
+        session: aiohttp.ClientSession,
+    ) -> str:
+        """Return a static token or fetch one via Keycloak/OIDC."""
+        if self._auth_token:
+            return self._auth_token
+        if not self._has_keycloak_credentials:
+            return ""
+        return await self._fetch_keycloak_access_token(session)
+
+    @property
+    def _has_keycloak_credentials(self) -> bool:
+        """Whether enough Keycloak/OIDC client-credentials config exists."""
+        return bool(
+            self._keycloak_token_url
+            and self._keycloak_client_id
+            and self._keycloak_client_secret
+        )
+
+    async def _fetch_keycloak_access_token(
+        self,
+        session: aiohttp.ClientSession,
+    ) -> str:
+        """Fetch/cache a Keycloak/OIDC access token using client credentials."""
+        now = time.monotonic()
+        if (
+            self._keycloak_access_token
+            and now < self._keycloak_token_expires_at - 30
+        ):
+            return self._keycloak_access_token
+
+        form = {
+            "grant_type": "client_credentials",
+            "client_id": self._keycloak_client_id,
+            "client_secret": self._keycloak_client_secret,
+        }
+        if self._keycloak_scope:
+            form["scope"] = self._keycloak_scope
+
+        try:
+            async with session.post(
+                self._keycloak_token_url,
+                data=form,
+                headers={"Accept": "application/json"},
+            ) as resp:
+                if resp.status != 200:
+                    body = await resp.text()
+                    raise ConnectionError(
+                        "PREVENTION Keycloak token request returned "
+                        f"HTTP {resp.status}: {body[:200]}",
+                    )
+                payload = await resp.json()
+        except aiohttp.ClientError as exc:
+            raise ConnectionError(
+                "Cannot reach PREVENTION Keycloak token endpoint "
+                f"at {self._keycloak_token_url}",
+            ) from exc
+
+        token = str(payload.get("access_token", "")).strip()
+        if not token:
+            raise ConnectionError(
+                "PREVENTION Keycloak token response did not include access_token",
+            )
+
+        try:
+            expires_in = int(payload.get("expires_in", 300))
+        except (TypeError, ValueError):
+            expires_in = 300
+        self._keycloak_access_token = token
+        self._keycloak_token_expires_at = now + max(expires_in, 60)
+        return token
 
     async def _fetch_results(self, goal: str) -> list[dict]:
         """Fetch resultRequest for a specific analytics goal.
@@ -567,6 +769,229 @@ def _parse_drift_results(
         periods_analyzed=analyzed or periods,
         description=description,
     )
+
+
+def _parse_forecast_results(
+    results: list[dict],
+    metric: CanonicalMetric,
+    horizon_periods: int,
+    asset_id: str | None = None,
+) -> ForecastReport:
+    """Parse PREVENTION forecast rows into a domain forecast report."""
+    metric_name = metric.value
+    match = next(
+        (
+            r for r in results
+            if r.get("metric_name") == metric_name
+            and (asset_id is None or r.get("asset_id") == asset_id)
+        ),
+        None,
+    )
+
+    if match is None:
+        asset_text = f" for {asset_id}" if asset_id else ""
+        return _no_forecast_result(
+            metric,
+            asset_id,
+            horizon_periods,
+            (
+                f"No forecast data found for {metric.display_name}"
+                f"{asset_text} in PREVENTION results."
+            ),
+        )
+
+    available = _as_bool(match.get("available", True))
+    predicted_value = _optional_float(match.get("predicted_value"))
+    analyzed_horizon = _safe_int(match.get("horizon_periods"), horizon_periods)
+    description = str(match.get("description", "")).strip()
+    if not description:
+        description = f"Forecast generated for {metric.display_name}."
+
+    return ForecastReport(
+        metric=metric,
+        asset_id=str(match.get("asset_id") or asset_id or ""),
+        horizon_periods=analyzed_horizon,
+        predicted_value=predicted_value,
+        unit=metric.default_unit,
+        confidence=_bounded_float(match.get("confidence"), 0.0, 0.0, 1.0),
+        fit_quality=_bounded_float(match.get("fit_quality"), 0.0, 0.0, 1.0),
+        training_points=_safe_int(match.get("training_points"), 0),
+        method_name=str(match.get("method_name") or "linear_forecast"),
+        forecast_timestamp=str(match.get("forecast_timestamp") or ""),
+        description=description,
+        recommended_action=(
+            str(match.get("recommended_action")).strip()
+            if match.get("recommended_action") is not None
+            else None
+        ),
+        available=available and predicted_value is not None,
+    )
+
+
+def _fallback_forecast_result_from_series(
+    metric: CanonicalMetric,
+    data_points: list[DataPoint],
+    horizon_periods: int,
+    asset_id: str | None = None,
+    min_points: int = 10,
+) -> ForecastReport:
+    """Build an explainable forecast from caller-supplied live series data."""
+    points = sorted(data_points, key=lambda point: point.timestamp)
+    values = [float(point.value) for point in points]
+    training_points = len(values)
+    if training_points < min_points:
+        return ForecastReport(
+            metric=metric,
+            asset_id=asset_id or "",
+            horizon_periods=horizon_periods,
+            predicted_value=None,
+            unit=metric.default_unit,
+            confidence=0.0,
+            fit_quality=0.0,
+            training_points=training_points,
+            method_name="local_linear_forecast_fallback",
+            forecast_timestamp="",
+            description=(
+                f"Insufficient data for {metric.display_name}"
+                f"{f' on {asset_id}' if asset_id else ''}: "
+                f"{training_points} points available, {min_points} required."
+            ),
+            recommended_action="Collect more history before using this forecast.",
+            available=False,
+        )
+
+    x_values = list(range(training_points))
+    x_mean = statistics.fmean(x_values)
+    y_mean = statistics.fmean(values)
+    denominator = sum((x - x_mean) ** 2 for x in x_values)
+    slope = (
+        sum((x - x_mean) * (y - y_mean) for x, y in zip(x_values, values))
+        / denominator
+        if denominator
+        else 0.0
+    )
+    intercept = y_mean - slope * x_mean
+    predicted = max(0.0, slope * (training_points + horizon_periods) + intercept)
+
+    fitted = [slope * x + intercept for x in x_values]
+    ss_res = sum((actual - expected) ** 2 for actual, expected in zip(values, fitted))
+    ss_tot = sum((actual - y_mean) ** 2 for actual in values)
+    fit_quality = 1.0 if ss_tot == 0 else 1 - (ss_res / ss_tot)
+    fit_quality = max(0.0, min(1.0, fit_quality))
+    confidence = max(0.1, min(0.95, fit_quality * min(training_points / 30.0, 1.0)))
+
+    last_timestamp = points[-1].timestamp
+    forecast_timestamp = (
+        last_timestamp + timedelta(days=horizon_periods)
+    ).isoformat()
+
+    direction = "stable"
+    if abs(slope) > 0.001:
+        direction = "increasing" if slope > 0 else "decreasing"
+    action = _forecast_recommended_action(direction)
+    asset_text = f" on {asset_id}" if asset_id else ""
+
+    return ForecastReport(
+        metric=metric,
+        asset_id=asset_id or "",
+        horizon_periods=horizon_periods,
+        predicted_value=round(float(predicted), 6),
+        unit=metric.default_unit,
+        confidence=round(float(confidence), 4),
+        fit_quality=round(float(fit_quality), 4),
+        training_points=training_points,
+        method_name="local_linear_forecast_fallback",
+        forecast_timestamp=forecast_timestamp,
+        description=(
+            f"{metric.display_name}{asset_text}: {direction} forecast "
+            f"from live series fallback (slope={slope:.6f}, "
+            f"R2={fit_quality:.4f})."
+        ),
+        recommended_action=action,
+        available=True,
+    )
+
+
+def _no_forecast_result(
+    metric: CanonicalMetric,
+    asset_id: str | None,
+    horizon_periods: int,
+    description: str,
+) -> ForecastReport:
+    """Return a safe unavailable forecast report."""
+    return ForecastReport(
+        metric=metric,
+        asset_id=asset_id or "",
+        horizon_periods=horizon_periods,
+        predicted_value=None,
+        unit=metric.default_unit,
+        confidence=0.0,
+        fit_quality=0.0,
+        training_points=0,
+        method_name="unavailable",
+        forecast_timestamp="",
+        description=description,
+        recommended_action=None,
+        available=False,
+    )
+
+
+def _forecast_recommended_action(direction: str) -> str:
+    """Generate bounded decision support from a forecast direction."""
+    if direction == "increasing":
+        return (
+            "Review the main operational contributors before this increase "
+            "becomes material."
+        )
+    if direction == "decreasing":
+        return (
+            "Verify whether this decrease is expected and beneficial for the "
+            "process."
+        )
+    return "Monitor this KPI and review operational drivers if the trend changes."
+
+
+def _optional_float(value: Any) -> float | None:
+    """Parse a float, treating missing/NaN values as unavailable."""
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed != parsed:
+        return None
+    return parsed
+
+
+def _bounded_float(
+    value: Any,
+    default: float,
+    minimum: float,
+    maximum: float,
+) -> float:
+    """Parse and clamp a float."""
+    parsed = _optional_float(value)
+    if parsed is None:
+        return default
+    return max(minimum, min(maximum, parsed))
+
+
+def _safe_int(value: Any, default: int) -> int:
+    """Parse an int with a default."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_bool(value: Any) -> bool:
+    """Parse bool-like result values from PREVENTION output."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() not in {"false", "0", "no", "none", ""}
+    return bool(value)
 
 
 def _normalize_drift_direction(

@@ -1,2 +1,2 @@
-# Generated data — regenerate with: python3 tools/prevention-data-sync/exporter.py --platform mock
+# Generated data — regenerate with: python3 tools/prevention-data-sync/exporter.py --platform generic_rest
 *.json

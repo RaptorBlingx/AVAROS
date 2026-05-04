@@ -98,3 +98,23 @@ class SystemStatusResponse(BaseModel):
         default=None,
         description="Record count from the latest PREVENTION export manifest.",
     )
+    prevention_analytics_goals: list[str] = Field(
+        default_factory=list,
+        description="Configured PREVENTION analytics goal identifiers.",
+    )
+    prevention_analytics_types: list[str] = Field(
+        default_factory=list,
+        description="Configured PREVENTION analytics types.",
+    )
+    prevention_descriptive_state: str = Field(
+        default="unknown",
+        description="Capability state for descriptive anomaly/drift analytics.",
+    )
+    prevention_predictive_state: str = Field(
+        default="unknown",
+        description="Capability state for predictive forecasting analytics.",
+    )
+    prevention_prescriptive_state: str = Field(
+        default="not_available",
+        description="Capability state for full prescriptive optimization.",
+    )

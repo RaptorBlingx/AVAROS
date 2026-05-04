@@ -26,6 +26,7 @@ from skill.domain.models import (
     DataPoint,
     TimePeriod,
 )
+from skill.domain.anomaly_models import ForecastReport
 from skill.domain.results import (
     AnomalyResult,
     AnomalyScanResult,
@@ -780,7 +781,115 @@ class TestFormatAnomalyScanResult:
 
 
 # ══════════════════════════════════════════════════════════
-# 6. format_whatif_result
+# 6. format_forecast_result
+# ══════════════════════════════════════════════════════════
+
+
+class TestFormatForecastResult:
+    """Tests for bounded predictive forecast responses."""
+
+    def test_format_forecast_normal_includes_value_and_confidence(
+        self,
+        builder: ResponseBuilder,
+    ) -> None:
+        result_obj = ForecastReport(
+            metric=CanonicalMetric.ENERGY_PER_UNIT,
+            asset_id="Line-1",
+            horizon_periods=7,
+            predicted_value=2.75,
+            unit="kWh/unit",
+            confidence=0.82,
+            fit_quality=0.74,
+            training_points=30,
+            method_name="linear_forecast",
+            forecast_timestamp="2026-05-06T00:00:00",
+            description="Forecast available.",
+            recommended_action="Review the main operational contributors.",
+        )
+
+        result = builder.format_forecast_result(result_obj)
+
+        assert "7-period forecast" in result
+        assert "energy per unit" in result.lower()
+        assert "2.8" in result
+        assert "82 percent confidence" in result
+
+    def test_format_forecast_low_confidence_uses_plain_language(
+        self,
+        builder: ResponseBuilder,
+    ) -> None:
+        result_obj = ForecastReport(
+            metric=CanonicalMetric.ENERGY_PER_UNIT,
+            asset_id="Line-1",
+            horizon_periods=7,
+            predicted_value=1.7,
+            unit="kWh/unit",
+            confidence=0.1,
+            fit_quality=0.02,
+            training_points=14,
+            method_name="local_linear_forecast_fallback",
+            forecast_timestamp="2026-05-06T00:00:00",
+            description="Forecast available.",
+            recommended_action=None,
+        )
+
+        result = builder.format_forecast_result(result_obj)
+
+        assert "Confidence is low" in result
+        assert "10 percent confidence" not in result
+
+    def test_format_forecast_detailed_labels_decision_support(
+        self,
+        detailed_builder: ResponseBuilder,
+    ) -> None:
+        result_obj = ForecastReport(
+            metric=CanonicalMetric.SCRAP_RATE,
+            asset_id="Line-1",
+            horizon_periods=7,
+            predicted_value=4.2,
+            unit="%",
+            confidence=0.7,
+            fit_quality=0.6,
+            training_points=24,
+            method_name="linear_forecast",
+            forecast_timestamp="2026-05-06T00:00:00",
+            description="Forecast available.",
+            recommended_action="Review scrap contributors.",
+        )
+
+        result = detailed_builder.format_forecast_result(result_obj)
+
+        assert "Method: linear_forecast" in result
+        assert "fit quality 0.60" in result
+        assert "Decision support: Review scrap contributors." in result
+
+    def test_format_forecast_unavailable_returns_description(
+        self,
+        builder: ResponseBuilder,
+    ) -> None:
+        result_obj = ForecastReport(
+            metric=CanonicalMetric.OEE,
+            asset_id="Line-1",
+            horizon_periods=7,
+            predicted_value=None,
+            unit="%",
+            confidence=0.0,
+            fit_quality=0.0,
+            training_points=2,
+            method_name="unavailable",
+            forecast_timestamp="",
+            description="Insufficient data for forecast.",
+            available=False,
+        )
+
+        assert (
+            builder.format_forecast_result(result_obj)
+            == "Insufficient data for forecast."
+        )
+
+
+# ══════════════════════════════════════════════════════════
+# 7. format_whatif_result
 # ══════════════════════════════════════════════════════════
 
 

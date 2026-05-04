@@ -829,6 +829,33 @@ class TestMetricFallback:
         skill.dispatcher.get_kpi.assert_called_once()
         skill.speak.assert_called_once_with("peak demand response")
 
+    def test_metric_query_fallback_routes_forecast_energy(self):
+        """Fallback should not answer forecast phrases as current KPI values."""
+        skill = _initialized_skill()
+        skill._check_profile_mismatch = Mock()
+        skill._resolve_asset_id = Mock(return_value="Line-1")
+        skill.dispatcher = Mock()
+        skill.dispatcher.forecast_metric.return_value = Mock()
+        skill.response_builder = Mock()
+        skill.response_builder.format_forecast_result.return_value = (
+            "forecast response"
+        )
+        skill.speak = Mock()
+
+        msg = Mock()
+        msg.data = {"utterance": "forecast energy for Line 1"}
+
+        handled = skill.handle_metric_query_fallback(msg)
+
+        assert handled is True
+        skill.dispatcher.forecast_metric.assert_called_once_with(
+            metric=CanonicalMetric.ENERGY_PER_UNIT,
+            asset_id="Line-1",
+            horizon_periods=7,
+        )
+        skill.dispatcher.get_kpi.assert_not_called()
+        skill.speak.assert_called_once_with("forecast response")
+
     def test_metric_query_fallback_ignores_non_metric_utterance(self):
         """Fallback returns False for unrelated utterances."""
         skill = _initialized_skill()
@@ -1200,6 +1227,14 @@ class TestFallbackEligibility:
         skill = _make_skill()
         msg = Mock()
         msg.data = {"utterances": ["check anomalies"]}
+
+        assert skill.can_answer(msg) is True
+
+    def test_can_answer_true_for_forecast_utterance(self):
+        """Fallback ping should claim forecast phrases for AVAROS routing."""
+        skill = _make_skill()
+        msg = Mock()
+        msg.data = {"utterances": ["forecast energy for Line 1"]}
 
         assert skill.can_answer(msg) is True
 

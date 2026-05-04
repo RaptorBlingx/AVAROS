@@ -79,8 +79,8 @@ describe("PlatformSetupStep", () => {
     expect(screen.getByRole("button", { name: "Test Connection" })).toBeTruthy();
   });
 
-  it("renders the + New Profile button", () => {
+  it("renders the + New Profile button", async () => {
     renderStep();
-    expect(screen.getByRole("button", { name: "+ New Profile" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "+ New Profile" })).toBeTruthy();
   });
 });

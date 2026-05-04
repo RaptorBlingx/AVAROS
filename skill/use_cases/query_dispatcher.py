@@ -34,7 +34,7 @@ from skill.services.audit import AuditLogger
 if TYPE_CHECKING:
     from skill.adapters.base import ManufacturingAdapter
     from skill.clients.prevention import PreventionClient
-    from skill.domain.anomaly_models import DriftReport
+    from skill.domain.anomaly_models import DriftReport, ForecastReport
     from skill.domain.models import TimePeriod, WhatIfScenario
     from skill.domain.production import ProductionSummary
     from skill.domain.results import ComparisonResult, TrendResult, WhatIfResult
@@ -465,6 +465,7 @@ class QueryDispatcher:
     # (e.g. RENERYO only records weekdays).
     _ANOMALY_LOOKBACK_DAYS = 30
     _DRIFT_LOOKBACK_DAYS = 30
+    _FORECAST_LOOKBACK_DAYS = 30
 
     async def _check_pair_async(
         self,
@@ -809,6 +810,46 @@ class QueryDispatcher:
         )
         self._log_audit(
             "check_drift", query_id, metric.value, asset_id, result,
+        )
+        return result
+
+    def forecast_metric(
+        self,
+        metric: CanonicalMetric,
+        asset_id: str,
+        horizon_periods: int = 7,
+    ) -> ForecastReport:
+        """Forecast a KPI using configured PREVENTION predictive analytics."""
+        query_id = self._generate_query_id()
+
+        logger.info(
+            "[%s] forecast_metric: metric=%s, asset=%s, horizon=%d",
+            query_id, metric.value, asset_id, horizon_periods,
+        )
+
+        if self._prevention_client is None:
+            raise AVAROSError(
+                message="Forecasting requires a prevention client",
+                code="FORECAST_NOT_CONFIGURED",
+                user_message=(
+                    "Forecasting is not configured. "
+                    "Please check the PREVENTION setup."
+                ),
+            )
+
+        data_points = self._collect_analysis_series(
+            metric, asset_id, days=self._FORECAST_LOOKBACK_DAYS,
+        )
+        result = self._run_async(
+            self._prevention_client.forecast_metric(
+                metric,
+                data_points,
+                horizon_periods,
+                asset_id=asset_id,
+            ),
+        )
+        self._log_audit(
+            "forecast_metric", query_id, metric.value, asset_id, result,
         )
         return result
     

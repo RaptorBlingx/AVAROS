@@ -150,14 +150,14 @@ class TestGetVoiceConfigFromSettings:
         response = client.get(
             "/api/v1/voice/config",
             headers={
-                "Host": "avaros.intel50001.com",
+                "Host": "avaros.reneryo.com",
                 "X-Forwarded-Proto": "https",
             },
         )
 
         assert response.status_code == 200
         data = response.json()
-        assert data["hivemind_url"] == "wss://avaros.intel50001.com/hivemind/"
+        assert data["hivemind_url"] == "wss://avaros.reneryo.com/hivemind/"
 
     def test_returns_configured_key(
         self,

@@ -27,7 +27,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
-    from skill.domain.anomaly_models import DriftReport
+    from skill.domain.anomaly_models import DriftReport, ForecastReport
     from skill.domain.models import Anomaly, CanonicalMetric
     from skill.domain.results import (
         KPIResult,
@@ -332,6 +332,43 @@ class ResponseBuilder:
             f"{metric_name} is {direction}, "
             f"changing at {rate} per day over {periods} data points. "
             f"{result.description}"
+        )
+
+    def format_forecast_result(self, result: ForecastReport) -> str:
+        """Format a predictive KPI forecast without overclaiming optimization."""
+        metric_name = result.metric.display_name
+        asset_text = f" on {result.asset_id}" if result.asset_id else ""
+
+        if not result.available or result.predicted_value is None:
+            return result.description
+
+        value = self._format_value(result.predicted_value, result.unit)
+        confidence_pct = int(result.confidence * 100)
+        if result.confidence < 0.2:
+            confidence_text = (
+                "Confidence is low because the recent trend is weak or noisy."
+            )
+        else:
+            confidence_text = f"with {confidence_pct} percent confidence."
+
+        if self.verbosity == "brief":
+            return f"{metric_name}: forecast {value}"
+
+        base = (
+            f"The {result.horizon_periods}-period forecast for "
+            f"{metric_name}{asset_text} is {value}. "
+            f"{confidence_text}"
+        )
+        if self.verbosity == "normal":
+            return base
+
+        action = ""
+        if result.recommended_action:
+            action = f" Decision support: {result.recommended_action}"
+        return (
+            f"{base} Method: {result.method_name}; "
+            f"fit quality {result.fit_quality:.2f}; "
+            f"training points {result.training_points}.{action}"
         )
     
     # =========================================================================

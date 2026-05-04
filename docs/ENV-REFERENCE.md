@@ -42,9 +42,18 @@ Platform connection is configured from the Web UI wizard and stored per profile 
 
 | Variable | Required | Default | Used By | Description |
 |----------|----------|---------|---------|-------------|
-| `PREVENTION_URL` | No | *(empty)* | Skill, Web UI | Base URL of the PREVENTION GraphQL endpoint. Leave empty to disable anomaly and drift analytics. |
-| `PREVENTION_AUTH_TOKEN` | No | *(empty)* | Skill, Web UI | Optional bearer token for authenticated PREVENTION deployments. |
+| `PREVENTION_URL` | No | *(empty)* | Skill, Web UI | Base URL of the PREVENTION GraphQL endpoint. Leave empty when no PREVENTION runtime is available. Use `http://prevention:8081` when PREVENTION runs on the same Docker network. |
+| `PREVENTION_AUTH_MODE` | No | `none` | Skill, Web UI | PREVENTION authentication mode: `none`, `bearer`, or `keycloak_client_credentials`. |
+| `PREVENTION_AUTH_TOKEN` | No | *(empty)* | Skill, Web UI | Optional pre-issued bearer token for authenticated PREVENTION deployments when `PREVENTION_AUTH_MODE=bearer`. |
+| `PREVENTION_KEYCLOAK_TOKEN_URL` | No | *(empty)* | Skill, Web UI | Optional Keycloak/OIDC token endpoint for PREVENTION client-credentials authentication. |
+| `PREVENTION_KEYCLOAK_CLIENT_ID` | No | *(empty)* | Skill, Web UI | Optional Keycloak/OIDC client ID supplied by the PREVENTION/platform administrator. |
+| `PREVENTION_KEYCLOAK_CLIENT_SECRET` | No | *(empty)* | Skill, Web UI | Optional Keycloak/OIDC client secret supplied by the PREVENTION/platform administrator. |
+| `PREVENTION_KEYCLOAK_SCOPE` | No | *(empty)* | Skill, Web UI | Optional OAuth scope for PREVENTION token requests, for example `openid`. |
 | `PREVENTION_DATA_MAX_AGE_MINUTES` | No | `1440` | Skill, Web UI | Maximum age of the PREVENTION export manifest before AVAROS marks analytics input data as stale. |
+| `PREVENTION_EXPORT_ENABLED` | No | `true` | Exporter | Enables the continuous AVAROS profile to PREVENTION data export service. Set to `false` when PREVENTION is not used or exports are scheduled externally. |
+| `PREVENTION_EXPORT_INTERVAL_SECONDS` | No | `900` | Exporter | Seconds between automatic export cycles. |
+| `PREVENTION_EXPORT_DAYS` | No | `30` | Exporter | Historical lookback window exported into PREVENTION input files. |
+| `PREVENTION_EXPORT_PROFILE` | No | *(active profile)* | Exporter | Optional AVAROS profile name to export. Empty means use the currently active profile. |
 | `PREVENTION_PORT` | No | `8082` | PREVENTION Compose | Host port published by `docker/docker-compose.prevention.yml`. |
 | `PREVENTION_MONGO_USER` | No | `prevention` | PREVENTION Compose | MongoDB username for the PREVENTION development stack. |
 | `PREVENTION_MONGO_PASS` | No | `prevention` | PREVENTION Compose | MongoDB password for the PREVENTION development stack. |
@@ -126,6 +135,7 @@ AVAROS_WEB_API_KEY=your-secure-32-char-hex-key-here
 
 # Enable PREVENTION only when the analytics stack is running
 PREVENTION_URL=http://prevention:8081
+PREVENTION_EXPORT_ENABLED=true
 ```
 
 All other variables have sensible defaults for Docker Compose deployment.

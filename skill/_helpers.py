@@ -254,6 +254,26 @@ def is_drift_query(self, utterance: str) -> bool:
     return any(pattern in normalized for pattern in drift_patterns)
 
 
+def is_forecast_query(self, utterance: str) -> bool:
+    """Return True when utterance asks for a predictive forecast."""
+    if not utterance:
+        return False
+
+    normalized = re.sub(r"[^a-z0-9\s]", " ", utterance.lower())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    forecast_patterns = (
+        "forecast",
+        "predict",
+        "prediction",
+        "expected",
+        "what is expected",
+        "next week",
+        "next month",
+        "in the next",
+    )
+    return any(pattern in normalized for pattern in forecast_patterns)
+
+
 def extract_intent_name(self, message: Message) -> str:
     """Extract normalized KPI intent name from bus message payload."""
     return _resolve_intent_name(message)

@@ -55,25 +55,24 @@ describe("MetricMappingsSection profile refresh", () => {
     });
   });
 
-  it("test_unconfigured_profile_shows_read_only_hint_and_disables_save_buttons", async () => {
+  it("test_unconfigured_profile_stays_editable_without_demo_hint", async () => {
     render(
       <MetricMappingsSection onNotify={vi.fn()} refreshKey={0} activeProfile="unconfigured" />,
     );
 
     await waitFor(() => {
-      expect(
-        screen.getByText(
-          "Unconfigured profile uses built-in demo data. Metric mappings are not configurable.",
-        ),
-      ).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Add Mapping" })).toBeTruthy();
     });
 
     const addButton = screen.getByRole("button", { name: "Add Mapping" });
-    expect(addButton.hasAttribute("disabled")).toBe(true);
+    expect(addButton.hasAttribute("disabled")).toBe(false);
 
     const saveCreateButtons = screen.getAllByRole("button", {
       name: /Save|Create/i,
     });
-    expect(saveCreateButtons.every((button) => button.hasAttribute("disabled"))).toBe(true);
+    expect(saveCreateButtons.every((button) => button.hasAttribute("disabled"))).toBe(false);
+    expect(
+      screen.queryByText(/built-in demo data/i),
+    ).toBeNull();
   });
 });

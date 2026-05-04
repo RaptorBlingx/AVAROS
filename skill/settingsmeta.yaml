@@ -78,7 +78,48 @@ sections:
         label: PREVENTION Auth Token
         value: ""
         placeholder: "Bearer token for protected PREVENTION deployments"
-        helpText: Optional bearer token for authenticated PREVENTION deployments.
+        helpText: Optional pre-issued bearer token for protected PREVENTION deployments.
+
+      - name: prevention_auth_mode
+        type: select
+        label: PREVENTION Auth Mode
+        value: "none"
+        options:
+          - value: none
+            label: No authentication
+          - value: bearer
+            label: Bearer token
+          - value: keycloak_client_credentials
+            label: Keycloak/OIDC client credentials
+        helpText: Authentication mode for PREVENTION. Local development deployments commonly use no authentication.
+
+      - name: prevention_keycloak_token_url
+        type: text
+        label: PREVENTION Keycloak Token URL
+        value: ""
+        placeholder: "https://keycloak.example.com/realms/wasabi/protocol/openid-connect/token"
+        helpText: Token endpoint for Keycloak/OIDC client-credentials authentication.
+
+      - name: prevention_keycloak_client_id
+        type: text
+        label: PREVENTION Keycloak Client ID
+        value: ""
+        placeholder: "avaros-prevention-client"
+        helpText: Client ID assigned by the PREVENTION or Keycloak administrator.
+
+      - name: prevention_keycloak_client_secret
+        type: password
+        label: PREVENTION Keycloak Client Secret
+        value: ""
+        placeholder: "Client secret"
+        helpText: Client secret assigned by the PREVENTION or Keycloak administrator.
+
+      - name: prevention_keycloak_scope
+        type: text
+        label: PREVENTION Keycloak Scope
+        value: ""
+        placeholder: "openid"
+        helpText: Optional OAuth scope for PREVENTION token requests.
 
       - name: prevention_data_max_age_minutes
         type: number

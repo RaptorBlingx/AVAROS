@@ -57,7 +57,7 @@ export default function SystemInfoSection({ onNotify }: SystemInfoSectionProps) 
           onRetry={() => void loadStatus()}
         />
       ) : status ? (
-        <div className="reveal-in reveal-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="reveal-in reveal-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <div className="brand-surface rounded-xl p-4">
             <p className="m-0 text-xs font-semibold uppercase text-slate-500">Active Adapter</p>
             <p className="m-0 mt-2 text-base font-semibold text-slate-900">{status.active_adapter}</p>
@@ -81,6 +81,26 @@ export default function SystemInfoSection({ onNotify }: SystemInfoSectionProps) 
           <div className="brand-surface rounded-xl p-4">
             <p className="m-0 text-xs font-semibold uppercase text-slate-500">Version</p>
             <p className="m-0 mt-2 text-base font-semibold text-slate-900">{status.version}</p>
+          </div>
+          <div className="brand-surface rounded-xl p-4">
+            <p className="m-0 text-xs font-semibold uppercase text-slate-500">PREVENTION</p>
+            <p className="m-0 mt-2 text-base font-semibold capitalize text-slate-900">
+              {(status.prevention_state ?? "unknown").replace(/_/g, " ")}
+            </p>
+            {status.prevention_data_state && (
+              <p className="m-0 mt-1 text-xs capitalize text-slate-500">
+                Data: {status.prevention_data_state.replace(/_/g, " ")}
+              </p>
+            )}
+            <p className="m-0 mt-2 text-xs text-slate-500">
+              Descriptive: {(status.prevention_descriptive_state ?? "unknown").replace(/_/g, " ")}
+            </p>
+            <p className="m-0 mt-1 text-xs text-slate-500">
+              Predictive: {(status.prevention_predictive_state ?? "unknown").replace(/_/g, " ")}
+            </p>
+            <p className="m-0 mt-1 text-xs text-slate-500">
+              Prescriptive: {(status.prevention_prescriptive_state ?? "not available").replace(/_/g, " ")}
+            </p>
           </div>
         </div>
       ) : (

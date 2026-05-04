@@ -32,6 +32,11 @@ class PreventionConfig:
 
     url: str
     auth_token: str
+    auth_mode: str
+    keycloak_token_url: str
+    keycloak_client_id: str
+    keycloak_client_secret: str
+    keycloak_scope: str
     mode: str
     mode_reason: str
     endpoint_source: str
@@ -45,6 +50,11 @@ class PreventionProbeStatus:
     verified: bool
     message: str
     checked_at: str | None
+    analytics_goals: tuple[str, ...] = ()
+    analytics_types: tuple[str, ...] = ()
+    descriptive_state: str = "unknown"
+    predictive_state: str = "unknown"
+    prescriptive_state: str = "not_available"
 
 
 @dataclass(frozen=True)
@@ -84,11 +94,43 @@ def resolve_prevention_config(
         auth_token = str(
             _read_setting(settings_service, "prevention_auth_token", ""),
         ).strip()
+    keycloak_token_url = _read_prevention_auth_setting(
+        settings_service,
+        env_key="PREVENTION_KEYCLOAK_TOKEN_URL",
+        setting_key="prevention_keycloak_token_url",
+    )
+    keycloak_client_id = _read_prevention_auth_setting(
+        settings_service,
+        env_key="PREVENTION_KEYCLOAK_CLIENT_ID",
+        setting_key="prevention_keycloak_client_id",
+    )
+    keycloak_client_secret = _read_prevention_auth_setting(
+        settings_service,
+        env_key="PREVENTION_KEYCLOAK_CLIENT_SECRET",
+        setting_key="prevention_keycloak_client_secret",
+    )
+    keycloak_scope = _read_prevention_auth_setting(
+        settings_service,
+        env_key="PREVENTION_KEYCLOAK_SCOPE",
+        setting_key="prevention_keycloak_scope",
+    )
+    auth_mode = _resolve_prevention_auth_mode(
+        settings_service,
+        auth_token=auth_token,
+        keycloak_token_url=keycloak_token_url,
+        keycloak_client_id=keycloak_client_id,
+        keycloak_client_secret=keycloak_client_secret,
+    )
 
     if env_url:
         return PreventionConfig(
             url=env_url,
             auth_token=auth_token,
+            auth_mode=auth_mode,
+            keycloak_token_url=keycloak_token_url,
+            keycloak_client_id=keycloak_client_id,
+            keycloak_client_secret=keycloak_client_secret,
+            keycloak_scope=keycloak_scope,
             mode="http",
             mode_reason="env_prevention_url",
             endpoint_source="env",
@@ -98,6 +140,11 @@ def resolve_prevention_config(
         return PreventionConfig(
             url=settings_url,
             auth_token=auth_token,
+            auth_mode=auth_mode,
+            keycloak_token_url=keycloak_token_url,
+            keycloak_client_id=keycloak_client_id,
+            keycloak_client_secret=keycloak_client_secret,
+            keycloak_scope=keycloak_scope,
             mode="http",
             mode_reason="settings_prevention_url",
             endpoint_source="settings",
@@ -106,10 +153,53 @@ def resolve_prevention_config(
     return PreventionConfig(
         url="",
         auth_token=auth_token,
+        auth_mode=auth_mode,
+        keycloak_token_url=keycloak_token_url,
+        keycloak_client_id=keycloak_client_id,
+        keycloak_client_secret=keycloak_client_secret,
+        keycloak_scope=keycloak_scope,
         mode="disabled",
         mode_reason="prevention_url_missing",
         endpoint_source="none",
     )
+
+
+def _read_prevention_auth_setting(
+    settings_service: SettingsService | None,
+    *,
+    env_key: str,
+    setting_key: str,
+) -> str:
+    """Read a PREVENTION auth setting, with env taking precedence."""
+    env_value = os.environ.get(env_key, "").strip()
+    if env_value:
+        return env_value
+    return str(_read_setting(settings_service, setting_key, "")).strip()
+
+
+def _resolve_prevention_auth_mode(
+    settings_service: SettingsService | None,
+    *,
+    auth_token: str,
+    keycloak_token_url: str,
+    keycloak_client_id: str,
+    keycloak_client_secret: str,
+) -> str:
+    """Resolve PREVENTION auth mode without requiring auth for local dev."""
+    raw_mode = os.environ.get("PREVENTION_AUTH_MODE", "").strip().lower()
+    if not raw_mode:
+        raw_mode = str(
+            _read_setting(settings_service, "prevention_auth_mode", ""),
+        ).strip().lower()
+
+    if raw_mode in {"none", "bearer", "keycloak_client_credentials"}:
+        return raw_mode
+
+    if keycloak_token_url and keycloak_client_id and keycloak_client_secret:
+        return "keycloak_client_credentials"
+    if auth_token:
+        return "bearer"
+    return "none"
 
 
 async def probe_prevention_status(
@@ -124,6 +214,8 @@ async def probe_prevention_status(
             verified=False,
             message="PREVENTION is disabled until a URL is configured.",
             checked_at=None,
+            descriptive_state="disabled",
+            predictive_state="disabled",
         )
 
     if not config.url.startswith(("http://", "https://")):
@@ -132,26 +224,73 @@ async def probe_prevention_status(
             verified=False,
             message="PREVENTION URL must start with http:// or https://.",
             checked_at=checked_at,
+            descriptive_state="unknown",
+            predictive_state="unknown",
+        )
+
+    if config.auth_mode == "keycloak_client_credentials" and not (
+        config.keycloak_token_url
+        and config.keycloak_client_id
+        and config.keycloak_client_secret
+    ):
+        return PreventionProbeStatus(
+            state="misconfigured",
+            verified=False,
+            message=(
+                "Keycloak auth requires token URL, client ID, and client secret."
+            ),
+            checked_at=checked_at,
+            descriptive_state="unknown",
+            predictive_state="unknown",
         )
 
     client = HttpPreventionClient(
         url=config.url,
-        auth_token=config.auth_token,
+        auth_token=config.auth_token if config.auth_mode == "bearer" else "",
+        keycloak_token_url=(
+            config.keycloak_token_url
+            if config.auth_mode == "keycloak_client_credentials"
+            else ""
+        ),
+        keycloak_client_id=(
+            config.keycloak_client_id
+            if config.auth_mode == "keycloak_client_credentials"
+            else ""
+        ),
+        keycloak_client_secret=(
+            config.keycloak_client_secret
+            if config.auth_mode == "keycloak_client_credentials"
+            else ""
+        ),
+        keycloak_scope=(
+            config.keycloak_scope
+            if config.auth_mode == "keycloak_client_credentials"
+            else ""
+        ),
     )
     try:
         await client.initialize()
         if client.is_connected:
+            analytics = await client.list_analytics()
+            capability = _summarize_prevention_capabilities(analytics)
             return PreventionProbeStatus(
                 state="healthy",
                 verified=True,
                 message="PREVENTION endpoint is reachable and analytics are loaded.",
                 checked_at=checked_at,
+                analytics_goals=capability["goals"],
+                analytics_types=capability["types"],
+                descriptive_state=capability["descriptive_state"],
+                predictive_state=capability["predictive_state"],
+                prescriptive_state="not_available",
             )
         return PreventionProbeStatus(
             state="unreachable",
             verified=False,
             message="PREVENTION endpoint is configured but did not pass health checks.",
             checked_at=checked_at,
+            descriptive_state="unknown",
+            predictive_state="unknown",
         )
     except Exception as exc:
         return PreventionProbeStatus(
@@ -159,9 +298,60 @@ async def probe_prevention_status(
             verified=False,
             message=str(exc),
             checked_at=checked_at,
+            descriptive_state="unknown",
+            predictive_state="unknown",
         )
     finally:
         await client.shutdown()
+
+
+def _summarize_prevention_capabilities(
+    analytics: list[dict[str, str]],
+) -> dict[str, tuple[str, ...] | str]:
+    """Summarize PREVENTION analytics capability states from allAnalysis."""
+    goals = tuple(
+        sorted({
+            str(item.get("analytics_goal", "")).strip()
+            for item in analytics
+            if str(item.get("analytics_goal", "")).strip()
+        }),
+    )
+    types = tuple(
+        sorted({
+            str(item.get("analytics_type", "")).strip().upper()
+            for item in analytics
+            if str(item.get("analytics_type", "")).strip()
+        }),
+    )
+    descriptive_goals = {
+        "ENERGY_ANOMALY_CHECK",
+        "PRODUCTION_ANOMALY_CHECK",
+        "MATERIAL_ANOMALY_CHECK",
+        "CO2_ANOMALY_CHECK",
+        "SUPPLIER_ANOMALY_CHECK",
+        "ENERGY_DRIFT_CHECK",
+        "PRODUCTION_DRIFT_CHECK",
+        "MATERIAL_DRIFT_CHECK",
+        "CO2_DRIFT_CHECK",
+        "SUPPLIER_DRIFT_CHECK",
+    }
+    predictive_goals = {
+        "ENERGY_FORECAST",
+        "PRODUCTION_FORECAST",
+        "MATERIAL_FORECAST",
+        "CO2_FORECAST",
+        "SUPPLIER_FORECAST",
+    }
+    return {
+        "goals": goals,
+        "types": types,
+        "descriptive_state": (
+            "active" if descriptive_goals.intersection(goals) else "not_configured"
+        ),
+        "predictive_state": (
+            "active" if predictive_goals.intersection(goals) else "not_configured"
+        ),
+    }
 
 
 def resolve_prevention_data_max_age_minutes(

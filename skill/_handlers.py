@@ -8,6 +8,7 @@ from skill._metric_handlers import _format_anomaly_query_response
 from skill._metric_handlers import _resolve_anomaly_query_scope
 from skill._metric_handlers import _resolve_default_metric
 from skill._metric_handlers import _resolve_drift_asset
+from skill._metric_handlers import _resolve_forecast_horizon
 from skill._metric_handlers import _resolve_kpi_period as _resolve_kpi_period_impl
 from skill.domain.models import CanonicalMetric
 from skill.domain.results import KPIResult
@@ -26,6 +27,9 @@ def handle_metric_query_fallback(skill: "AVAROSSkill", message: Message) -> bool
 
     if skill._is_drift_query(utterance):
         return _fallback_drift(skill, message, utterance)
+
+    if skill._is_forecast_query(utterance):
+        return _fallback_forecast(skill, message, utterance)
 
     metric = skill._resolve_metric_from_utterance(utterance)
     if metric is None:
@@ -96,6 +100,30 @@ def _fallback_drift(
     return bool(handled)
 
 
+def _fallback_forecast(
+    skill: "AVAROSSkill",
+    message: "Message",
+    utterance: str,
+) -> bool:
+    """Execute forecast requests missed by strict intent parsing."""
+
+    def _execute() -> bool:
+        asset_id = _resolve_drift_asset(skill, message)
+        metric = _resolve_default_metric(skill, utterance)
+        horizon = _resolve_forecast_horizon(message)
+        result = skill.dispatcher.forecast_metric(
+            metric=metric,
+            asset_id=asset_id,
+            horizon_periods=horizon,
+        )
+        response = skill.response_builder.format_forecast_result(result)
+        skill.speak(response)
+        return True
+
+    handled = skill._safe_dispatch("fallback_forecast", _execute)
+    return bool(handled)
+
+
 def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
     """Recover KPI queries from global intent-failure events."""
     utterance = skill._extract_utterance_text(message).lower()
@@ -106,6 +134,10 @@ def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
 
     if skill._is_drift_query(utterance):
         _fallback_drift(skill, message, utterance)
+        return
+
+    if skill._is_forecast_query(utterance):
+        _fallback_forecast(skill, message, utterance)
         return
 
     metric = skill._resolve_metric_from_utterance(utterance)
@@ -147,4 +179,5 @@ def can_answer(skill: "AVAROSSkill", message: Message) -> bool:
         skill._resolve_metric_from_utterance(text) is not None
         or skill._is_anomaly_query(text)
         or skill._is_drift_query(text)
+        or skill._is_forecast_query(text)
     )

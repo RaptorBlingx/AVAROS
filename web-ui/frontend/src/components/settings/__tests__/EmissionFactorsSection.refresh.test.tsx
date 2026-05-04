@@ -69,31 +69,28 @@ describe("EmissionFactorsSection profile refresh", () => {
     });
   });
 
-  it("test_unconfigured_profile_shows_read_only_hint_and_disables_save_buttons", async () => {
+  it("test_unconfigured_profile_stays_editable_without_demo_hint", async () => {
     render(
       <EmissionFactorsSection onNotify={vi.fn()} refreshKey={0} activeProfile="unconfigured" />,
     );
 
     await waitFor(() => {
-      expect(
-        screen.getByText(
-          "Unconfigured profile uses built-in demo data. Emission factors are not configurable.",
-        ),
-      ).toBeTruthy();
+      expect(screen.getByRole("button", { name: /Apply TR Preset/i })).toBeTruthy();
     });
 
     expect(
       screen.getByRole("button", { name: /Apply TR Preset/i }).hasAttribute(
         "disabled",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       screen
         .getByRole("button", { name: /Add Custom Factor/i })
         .hasAttribute("disabled"),
-    ).toBe(true);
+    ).toBe(false);
 
     const deleteButtons = screen.getAllByRole("button", { name: "Delete" });
-    expect(deleteButtons.every((button) => button.hasAttribute("disabled"))).toBe(true);
+    expect(deleteButtons.every((button) => button.hasAttribute("disabled"))).toBe(false);
+    expect(screen.queryByText(/built-in demo data/i)).toBeNull();
   });
 });

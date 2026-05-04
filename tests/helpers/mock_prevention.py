@@ -20,7 +20,11 @@ from skill.clients.prevention import (
     _get_category_for_metric,
     _get_recommended_action,
 )
-from skill.domain.anomaly_models import AnomalyDetectionResult, DriftReport
+from skill.domain.anomaly_models import (
+    AnomalyDetectionResult,
+    DriftReport,
+    ForecastReport,
+)
 
 if TYPE_CHECKING:
     from skill.domain.models import CanonicalMetric, DataPoint
@@ -130,4 +134,32 @@ class MockPreventionClient(PreventionClient):
             drift_rate=profile["rate"],
             periods_analyzed=periods,
             description=profile["description"],
+        )
+
+    async def forecast_metric(
+        self,
+        metric: CanonicalMetric,
+        data_points: list[DataPoint],
+        horizon_periods: int = 7,
+        asset_id: str | None = None,
+    ) -> ForecastReport:
+        """Return a deterministic forecast for integration tests."""
+        latest = float(data_points[-1].value) if data_points else 100.0
+        predicted = latest * 1.02
+        return ForecastReport(
+            metric=metric,
+            asset_id=asset_id or "",
+            horizon_periods=horizon_periods,
+            predicted_value=predicted,
+            unit=metric.default_unit,
+            confidence=0.7,
+            fit_quality=0.7,
+            training_points=len(data_points),
+            method_name="mock_forecast",
+            forecast_timestamp=datetime.now(tz=timezone.utc).isoformat(),
+            description=(
+                f"Mock forecast for {metric.display_name}: "
+                f"{predicted:.2f} {metric.default_unit}."
+            ),
+            recommended_action="Use this mock forecast only in tests.",
         )

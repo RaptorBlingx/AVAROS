@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from routers.config import _create_adapter_from_config
 from schemas.config import PlatformConfigRequest
 from skill.domain.results import ConnectionTestResult
+from skill.services.prevention_runtime import PreventionProbeStatus
 from skill.services.settings import PlatformConfig, SettingsService
 
 
@@ -229,6 +230,163 @@ class TestCreatePlatformConfigValidation:
         )
 
         assert response.status_code == 422
+
+
+# ══════════════════════════════════════════════════════════
+# PREVENTION analytics config
+# ══════════════════════════════════════════════════════════
+
+
+class TestPreventionConfig:
+    """Tests for PREVENTION analytics configuration endpoints."""
+
+    def test_get_prevention_config_returns_disabled_defaults(
+        self,
+        client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Unset PREVENTION config should be reported as disabled."""
+        monkeypatch.delenv("PREVENTION_URL", raising=False)
+        monkeypatch.delenv("PREVENTION_AUTH_TOKEN", raising=False)
+
+        response = client.get("/api/v1/config/prevention")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["enabled"] is False
+        assert body["endpoint_url"] == ""
+        assert body["endpoint_source"] == "none"
+        assert body["data_max_age_minutes"] == 1440
+
+    def test_save_prevention_config_persists_endpoint_and_token(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Saving PREVENTION config stores URL, encrypted token, and freshness."""
+        monkeypatch.delenv("PREVENTION_URL", raising=False)
+        monkeypatch.delenv("PREVENTION_AUTH_TOKEN", raising=False)
+        probe = PreventionProbeStatus(
+            state="healthy",
+            verified=True,
+            message="ok",
+            checked_at="2026-04-29T00:00:00+00:00",
+        )
+
+        with patch("routers.config.probe_prevention_status", AsyncMock(return_value=probe)):
+            response = client.post(
+                "/api/v1/config/prevention",
+                json={
+                    "enabled": True,
+                    "endpoint_url": "http://prevention:8081",
+                    "auth_token": "secret-token",
+                    "data_max_age_minutes": 30,
+                },
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["enabled"] is True
+        assert body["endpoint_url"] == "http://prevention:8081"
+        assert body["auth_token_configured"] is True
+        assert body["auth_token_masked"] == "****oken"
+        assert body["data_max_age_minutes"] == 30
+        assert settings_service.get_setting("prevention_url") == "http://prevention:8081"
+        assert settings_service.get_setting("prevention_auth_token") == "secret-token"
+
+    def test_disable_prevention_clears_active_endpoint(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Disabled PREVENTION should clear the saved endpoint URL."""
+        monkeypatch.delenv("PREVENTION_URL", raising=False)
+        settings_service.set_setting("prevention_url", "http://prevention:8081")
+
+        response = client.post(
+            "/api/v1/config/prevention",
+            json={
+                "enabled": False,
+                "endpoint_url": "",
+                "data_max_age_minutes": 1440,
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["enabled"] is False
+        assert settings_service.get_setting("prevention_url") == ""
+
+    def test_prevention_env_override_is_reported(
+        self,
+        client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Runtime env PREVENTION_URL should be visible as the active source."""
+        monkeypatch.setenv("PREVENTION_URL", "http://env-prevention:8081")
+        probe = PreventionProbeStatus(
+            state="healthy",
+            verified=True,
+            message="ok",
+            checked_at="2026-04-29T00:00:00+00:00",
+        )
+
+        with patch("routers.config.probe_prevention_status", AsyncMock(return_value=probe)):
+            response = client.get("/api/v1/config/prevention")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["enabled"] is True
+        assert body["endpoint_url"] == "http://env-prevention:8081"
+        assert body["endpoint_source"] == "env"
+        assert body["env_override"] is True
+
+    def test_prevention_test_does_not_save_payload(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """Connection test probes the supplied endpoint without persisting it."""
+        probe = PreventionProbeStatus(
+            state="healthy",
+            verified=True,
+            message="ok",
+            checked_at="2026-04-29T00:00:00+00:00",
+        )
+
+        with patch("routers.config.probe_prevention_status", AsyncMock(return_value=probe)):
+            response = client.post(
+                "/api/v1/config/prevention/test",
+                json={
+                    "endpoint_url": "http://prevention:8081",
+                    "auth_token": "secret-token",
+                },
+            )
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+        assert settings_service.get_setting("prevention_url", "") == ""
+
+    def test_prevention_rejects_enabled_config_without_valid_url(
+        self,
+        client: TestClient,
+    ) -> None:
+        """Enabled PREVENTION requires a valid HTTP(S) URL."""
+        response = client.post(
+            "/api/v1/config/prevention",
+            json={
+                "enabled": True,
+                "endpoint_url": "prevention:8081",
+                "data_max_age_minutes": 1440,
+            },
+        )
+
+        assert response.status_code == 422
+
+
+class TestCreatePlatformConfigValidationContinued:
+    """Additional validation error tests for platform config creation."""
 
     def test_reject_configured_platform_without_api_key(
         self,

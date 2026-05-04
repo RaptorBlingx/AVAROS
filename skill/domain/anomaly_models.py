@@ -95,3 +95,28 @@ class DriftReport:
     drift_rate: float
     periods_analyzed: int
     description: str
+
+
+@dataclass(frozen=True)
+class ForecastReport:
+    """
+    Result from an explainable KPI forecast.
+
+    Forecasts are predictive analytics outputs. They are not full
+    prescriptive optimization. Any recommended action should be treated as
+    decision support derived from the forecast, not as an optimized plan.
+    """
+
+    metric: CanonicalMetric
+    asset_id: str
+    horizon_periods: int
+    predicted_value: float | None
+    unit: str
+    confidence: float
+    fit_quality: float
+    training_points: int
+    method_name: str
+    forecast_timestamp: str
+    description: str
+    recommended_action: str | None = None
+    available: bool = True

@@ -9,6 +9,7 @@ const mockApi = vi.hoisted(() => ({
   updateMetricMapping: vi.fn(),
   deleteMetricMapping: vi.fn(),
   getPlatformConfig: vi.fn(),
+  getConfiguredAssets: vi.fn(),
   testMetricMapping: vi.fn(),
   toFriendlyErrorMessage: vi.fn(() => "error"),
 }));
@@ -28,6 +29,7 @@ describe("MetricMappingsSection mapping test action", () => {
     mockApi.updateMetricMapping.mockReset();
     mockApi.deleteMetricMapping.mockReset();
     mockApi.getPlatformConfig.mockReset();
+    mockApi.getConfiguredAssets.mockReset();
     mockApi.testMetricMapping.mockReset();
 
     mockApi.listMetricMappings.mockResolvedValue([
@@ -45,6 +47,9 @@ describe("MetricMappingsSection mapping test action", () => {
       api_url: "https://api.example.com",
       api_key: "****1234",
       extra_settings: { auth_type: "bearer" },
+    });
+    mockApi.getConfiguredAssets.mockResolvedValue({
+      asset_mappings: {},
     });
   });
 

@@ -197,6 +197,50 @@ services:
       start_period: 10s
       retries: 3
 
+  avaros-prevention-exporter:
+    container_name: avaros-prevention-exporter
+    hostname: avaros-prevention-exporter
+    build:
+      context: ..
+      dockerfile: tools/prevention-data-sync/Dockerfile
+    restart: unless-stopped
+    user: "${AVAROS_SHARED_DB_UID:-1000}:${AVAROS_SHARED_DB_GID:-1000}"
+
+    depends_on:
+      avaros_db:
+        condition: service_healthy
+
+    networks:
+      - ovos
+
+    env_file:
+      - ../.env
+
+    environment:
+      - AVAROS_DATABASE_URL=postgresql://${POSTGRES_USER:-avaros}:${POSTGRES_PASSWORD:-avaros}@avaros_db:5432/avaros
+      - PREVENTION_EXPORT_OUTPUT=/opt/avaros/tools/prevention-addon/data
+      - PREVENTION_EXPORT_DAYS=${PREVENTION_EXPORT_DAYS:-30}
+      - PREVENTION_EXPORT_INTERVAL_SECONDS=${PREVENTION_EXPORT_INTERVAL_SECONDS:-900}
+      - PREVENTION_EXPORT_PROFILE=${PREVENTION_EXPORT_PROFILE:-}
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+
+    command:
+      [
+        "sh",
+        "-c",
+        "case \"$${PREVENTION_EXPORT_ENABLED:-true}\" in false|False|0|no|NO) echo 'PREVENTION exporter disabled'; tail -f /dev/null ;; *) python /opt/avaros/tools/prevention-data-sync/exporter.py --daemon --platform generic_rest --days \"$${PREVENTION_EXPORT_DAYS:-30}\" --interval \"$${PREVENTION_EXPORT_INTERVAL_SECONDS:-900}\" --output \"$${PREVENTION_EXPORT_OUTPUT:-/opt/avaros/tools/prevention-addon/data}\" ;; esac",
+      ]
+
+    volumes:
+      - ../tools/prevention-addon/data:/opt/avaros/tools/prevention-addon/data:rw
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+
   avaros-wakeword:
     container_name: avaros-wakeword
     hostname: avaros-wakeword

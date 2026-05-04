@@ -14,11 +14,18 @@ from skill.clients.prevention_http import (
     HttpPreventionClient,
     _CATEGORY_TO_ANOMALY_GOAL,
     _CATEGORY_TO_DRIFT_GOAL,
+    _CATEGORY_TO_FORECAST_GOAL,
+    _fallback_forecast_result_from_series,
     _parse_anomaly_results,
     _parse_drift_results,
+    _parse_forecast_results,
 )
 from skill.clients._prevention_demo_data import METRIC_CATEGORY_MAP
-from skill.domain.anomaly_models import AnomalyDetectionResult, DriftReport
+from skill.domain.anomaly_models import (
+    AnomalyDetectionResult,
+    DriftReport,
+    ForecastReport,
+)
 from skill.domain.models import CanonicalMetric, DataPoint
 
 
@@ -114,6 +121,23 @@ MOCK_DRIFT_RESULTS = [
     },
 ]
 
+MOCK_FORECAST_RESULTS = [
+    {
+        "metric_name": "energy_per_unit",
+        "asset_id": "Line-1",
+        "horizon_periods": 7,
+        "predicted_value": 2.75,
+        "confidence": 0.82,
+        "fit_quality": 0.74,
+        "training_points": 30,
+        "method_name": "linear_forecast",
+        "forecast_timestamp": "2026-05-06T00:00:00",
+        "available": True,
+        "description": "energy_per_unit on Line-1: increasing forecast",
+        "recommended_action": "Review the main operational contributors.",
+    },
+]
+
 
 def _graphql_response(data: dict) -> dict:
     """Wrap data in a standard GraphQL response envelope."""
@@ -126,6 +150,35 @@ def _result_request_response(results: list, reason: list | None = None) -> dict:
     if reason is not None:
         entry["reason"] = reason
     return _graphql_response({"resultRequest": [entry]})
+
+
+class _FakeTokenResponse:
+    """Minimal async context manager response for token endpoint tests."""
+
+    status = 200
+
+    async def __aenter__(self) -> _FakeTokenResponse:
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    async def json(self) -> dict:
+        return {"access_token": "kc-access-token", "expires_in": 300}
+
+    async def text(self) -> str:
+        return ""
+
+
+class _FakeTokenSession:
+    """Capture POST form payloads for Keycloak token tests."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+
+    def post(self, url: str, **kwargs) -> _FakeTokenResponse:
+        self.calls.append((url, kwargs))
+        return _FakeTokenResponse()
 
 
 # =========================================================================
@@ -158,6 +211,20 @@ class TestHttpClientInit:
 
     def test_auth_token_stored(self, client_with_auth: HttpPreventionClient) -> None:
         assert client_with_auth._auth_token == "test-token-123"
+
+    def test_keycloak_config_stored(self) -> None:
+        c = HttpPreventionClient(
+            url=PREVENTION_URL,
+            keycloak_token_url="http://keycloak/token",
+            keycloak_client_id="avaros",
+            keycloak_client_secret="secret",
+            keycloak_scope="openid",
+        )
+
+        assert c._keycloak_token_url == "http://keycloak/token"
+        assert c._keycloak_client_id == "avaros"
+        assert c._keycloak_client_secret == "secret"
+        assert c._keycloak_scope == "openid"
 
     def test_default_not_connected(self, client: HttpPreventionClient) -> None:
         assert not client.is_connected
@@ -235,6 +302,43 @@ class TestHttpClientLifecycle:
         with patch.object(client, "_query", new_callable=AsyncMock) as mock_q:
             mock_q.side_effect = ConnectionError("boom")
             assert await client.health_check() is False
+
+    @pytest.mark.asyncio
+    async def test_build_headers_uses_static_bearer_token(
+        self, client_with_auth: HttpPreventionClient,
+    ) -> None:
+        headers = await client_with_auth._build_headers(MagicMock())
+
+        assert headers["Authorization"] == "Bearer test-token-123"
+
+    @pytest.mark.asyncio
+    async def test_build_headers_fetches_keycloak_client_credentials(self) -> None:
+        c = HttpPreventionClient(
+            url=PREVENTION_URL,
+            keycloak_token_url="http://keycloak/token",
+            keycloak_client_id="avaros",
+            keycloak_client_secret="secret",
+            keycloak_scope="openid",
+        )
+        session = _FakeTokenSession()
+
+        headers = await c._build_headers(session)  # type: ignore[arg-type]
+
+        assert headers["Authorization"] == "Bearer kc-access-token"
+        assert session.calls == [
+            (
+                "http://keycloak/token",
+                {
+                    "data": {
+                        "grant_type": "client_credentials",
+                        "client_id": "avaros",
+                        "client_secret": "secret",
+                        "scope": "openid",
+                    },
+                    "headers": {"Accept": "application/json"},
+                },
+            ),
+        ]
 
 
 # =========================================================================
@@ -513,6 +617,99 @@ class TestHttpClientDriftDetection:
 
 
 # =========================================================================
+# Forecast Tests
+# =========================================================================
+
+
+class TestHttpClientForecast:
+    """Test forecast_metric with mocked GraphQL responses."""
+
+    @pytest.mark.asyncio
+    async def test_forecast_metric_returns_report_type(
+        self, client: HttpPreventionClient, sample_data: list[DataPoint],
+    ) -> None:
+        with patch.object(client, "_fetch_results", new_callable=AsyncMock) as mock_f:
+            mock_f.return_value = MOCK_FORECAST_RESULTS
+            result = await client.forecast_metric(
+                CanonicalMetric.ENERGY_PER_UNIT,
+                sample_data,
+                horizon_periods=7,
+                asset_id="Line-1",
+            )
+
+        assert isinstance(result, ForecastReport)
+        assert result.available is True
+        assert result.predicted_value == 2.75
+
+    @pytest.mark.asyncio
+    async def test_forecast_metric_queries_correct_goal(
+        self, client: HttpPreventionClient, sample_data: list[DataPoint],
+    ) -> None:
+        with patch.object(client, "_fetch_results", new_callable=AsyncMock) as mock_f:
+            mock_f.return_value = []
+            await client.forecast_metric(
+                CanonicalMetric.ENERGY_PER_UNIT,
+                sample_data,
+            )
+
+        mock_f.assert_called_once_with("ENERGY_FORECAST")
+
+    @pytest.mark.asyncio
+    async def test_forecast_metric_falls_back_when_prevention_returns_no_rows(
+        self, client: HttpPreventionClient,
+    ) -> None:
+        data_points = _make_data_points(
+            [10.0, 10.5, 10.8, 11.1, 11.5, 11.8, 12.0, 12.4, 12.9, 13.1],
+        )
+        with patch.object(client, "_fetch_results", new_callable=AsyncMock) as mock_f:
+            mock_f.return_value = []
+            result = await client.forecast_metric(
+                CanonicalMetric.ENERGY_PER_UNIT,
+                data_points,
+                horizon_periods=7,
+                asset_id="Line-1",
+            )
+
+        assert result.available is True
+        assert result.method_name == "local_linear_forecast_fallback"
+        assert result.predicted_value is not None
+        assert result.training_points == 10
+
+    @pytest.mark.asyncio
+    async def test_forecast_metric_falls_back_when_prevention_unreachable(
+        self, client: HttpPreventionClient,
+    ) -> None:
+        data_points = _make_data_points([float(v) for v in range(10, 22)])
+        with patch.object(client, "_fetch_results", new_callable=AsyncMock) as mock_f:
+            mock_f.side_effect = ConnectionError("unreachable")
+            result = await client.forecast_metric(
+                CanonicalMetric.SCRAP_RATE,
+                data_points,
+                horizon_periods=7,
+                asset_id="Line-1",
+            )
+
+        assert result.available is True
+        assert result.method_name == "local_linear_forecast_fallback"
+
+    @pytest.mark.asyncio
+    async def test_forecast_metric_missing_row_returns_unavailable(
+        self, client: HttpPreventionClient, sample_data: list[DataPoint],
+    ) -> None:
+        with patch.object(client, "_fetch_results", new_callable=AsyncMock) as mock_f:
+            mock_f.return_value = MOCK_FORECAST_RESULTS
+            result = await client.forecast_metric(
+                CanonicalMetric.ENERGY_PER_UNIT,
+                sample_data,
+                asset_id="Line-2",
+            )
+
+        assert result.available is False
+        assert result.predicted_value is None
+        assert "No forecast data found" in result.description
+
+
+# =========================================================================
 # Metric-to-Goal Mapping Tests
 # =========================================================================
 
@@ -534,11 +731,19 @@ class TestMetricToGoalMapping:
                 f"Category '{cat}' has no drift goal"
             )
 
+    def test_all_forecast_categories_covered(self) -> None:
+        forecast_categories = {"energy", "production", "material", "carbon", "supplier"}
+        for cat in forecast_categories:
+            assert cat in _CATEGORY_TO_FORECAST_GOAL, (
+                f"Category '{cat}' has no forecast goal"
+            )
+
     def test_energy_metrics_map_to_energy_goals(self) -> None:
         energy_metrics = [k for k, v in METRIC_CATEGORY_MAP.items() if v == "energy"]
         assert len(energy_metrics) >= 3
         assert _CATEGORY_TO_ANOMALY_GOAL["energy"] == "ENERGY_ANOMALY_CHECK"
         assert _CATEGORY_TO_DRIFT_GOAL["energy"] == "ENERGY_DRIFT_CHECK"
+        assert _CATEGORY_TO_FORECAST_GOAL["energy"] == "ENERGY_FORECAST"
 
     def test_carbon_has_drift_goal(self) -> None:
         assert _CATEGORY_TO_DRIFT_GOAL["carbon"] == "CO2_DRIFT_CHECK"
@@ -653,6 +858,91 @@ class TestDriftResultParsing:
         )
         with pytest.raises(AttributeError):
             result.drift_rate = 0.0  # type: ignore[misc]
+
+
+class TestForecastResultParsing:
+    """Test _parse_forecast_results function."""
+
+    def test_parses_forecast_result_for_asset(self) -> None:
+        result = _parse_forecast_results(
+            MOCK_FORECAST_RESULTS,
+            CanonicalMetric.ENERGY_PER_UNIT,
+            7,
+            asset_id="Line-1",
+        )
+
+        assert result.available is True
+        assert result.asset_id == "Line-1"
+        assert result.predicted_value == 2.75
+        assert result.confidence == 0.82
+        assert result.fit_quality == 0.74
+        assert result.training_points == 30
+        assert result.method_name == "linear_forecast"
+        assert result.recommended_action is not None
+
+    def test_returns_unavailable_when_no_match(self) -> None:
+        result = _parse_forecast_results(
+            MOCK_FORECAST_RESULTS,
+            CanonicalMetric.OEE,
+            7,
+        )
+
+        assert result.available is False
+        assert result.predicted_value is None
+        assert "No forecast data found" in result.description
+
+    def test_returns_unavailable_when_prediction_missing(self) -> None:
+        results = [
+            {
+                **MOCK_FORECAST_RESULTS[0],
+                "predicted_value": None,
+                "available": True,
+            }
+        ]
+
+        result = _parse_forecast_results(
+            results,
+            CanonicalMetric.ENERGY_PER_UNIT,
+            7,
+            asset_id="Line-1",
+        )
+
+        assert result.available is False
+        assert result.predicted_value is None
+
+    def test_local_forecast_fallback_reports_insufficient_data(self) -> None:
+        result = _fallback_forecast_result_from_series(
+            CanonicalMetric.ENERGY_PER_UNIT,
+            _make_data_points([2.5, 2.6, 2.4]),
+            horizon_periods=7,
+            asset_id="Line-1",
+        )
+
+        assert result.available is False
+        assert result.training_points == 3
+        assert result.method_name == "local_linear_forecast_fallback"
+
+    def test_local_forecast_fallback_handles_flat_data(self) -> None:
+        result = _fallback_forecast_result_from_series(
+            CanonicalMetric.OEE,
+            _make_data_points([90.0] * 10, unit="%"),
+            horizon_periods=7,
+            asset_id="Line-1",
+        )
+
+        assert result.available is True
+        assert result.predicted_value == 90.0
+        assert result.fit_quality == 1.0
+
+    def test_frozen_result(self) -> None:
+        result = _parse_forecast_results(
+            MOCK_FORECAST_RESULTS,
+            CanonicalMetric.ENERGY_PER_UNIT,
+            7,
+            asset_id="Line-1",
+        )
+        with pytest.raises(AttributeError):
+            result.predicted_value = 3.0  # type: ignore[misc]
 
 
 # =========================================================================

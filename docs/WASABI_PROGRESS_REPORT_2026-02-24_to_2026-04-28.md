@@ -106,8 +106,8 @@ A PrestaShop-based WASABI White Label Shop instance has been cloned and deployed
 Current shop access:
 
 ```text
-Storefront: http://avaros.int.arti.ac:8083/
-Back office: http://avaros.int.arti.ac:8083/wasabiSHOP/
+Storefront: https://shop.reneryo.com/
+Back office: https://shop.reneryo.com/wasabiSHOP/
 ```
 
 Current status:

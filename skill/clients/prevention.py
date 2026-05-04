@@ -20,7 +20,11 @@ from skill.clients._prevention_demo_data import (
     METRIC_CATEGORY_MAP,
 )
 from skill.clients.base import ExternalServiceClient
-from skill.domain.anomaly_models import AnomalyDetectionResult, DriftReport
+from skill.domain.anomaly_models import (
+    AnomalyDetectionResult,
+    DriftReport,
+    ForecastReport,
+)
 
 if TYPE_CHECKING:
     from skill.domain.models import CanonicalMetric, DataPoint
@@ -63,6 +67,31 @@ class PreventionClient(ExternalServiceClient):
 
         Raises:
             ConnectionError: If the detection service is unavailable
+        """
+
+    @abstractmethod
+    async def forecast_metric(
+        self,
+        metric: CanonicalMetric,
+        data_points: list[DataPoint],
+        horizon_periods: int = 7,
+        asset_id: str | None = None,
+    ) -> ForecastReport:
+        """
+        Forecast a metric using configured predictive analytics.
+
+        Args:
+            metric: The canonical metric to forecast.
+            data_points: Time-series data points to evaluate. PREVENTION-backed
+                clients may accept this for interface compatibility only.
+            horizon_periods: Number of future periods to forecast.
+            asset_id: Optional asset identifier for asset-scoped forecasts.
+
+        Returns:
+            ForecastReport with prediction metadata and decision support text.
+
+        Raises:
+            ConnectionError: If the predictive service is unavailable.
         """
 
     @abstractmethod

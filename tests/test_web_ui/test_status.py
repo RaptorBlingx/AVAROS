@@ -163,6 +163,11 @@ class TestStatusResponseShape:
         "prevention_data_message",
         "prevention_data_updated_at",
         "prevention_data_record_count",
+        "prevention_analytics_goals",
+        "prevention_analytics_types",
+        "prevention_descriptive_state",
+        "prevention_predictive_state",
+        "prevention_prescriptive_state",
     }
 
     def test_status_response_keys(self, client: TestClient) -> None:
@@ -170,3 +175,20 @@ class TestStatusResponseShape:
         body = client.get("/api/v1/status").json()
 
         assert set(body.keys()) == self.EXPECTED_KEYS
+
+    def test_status_response_includes_prevention_capability_states(
+        self,
+        client: TestClient,
+    ) -> None:
+        """Response exposes honest PREVENTION analytics capability labels."""
+        body = client.get("/api/v1/status").json()
+
+        assert isinstance(body["prevention_analytics_goals"], list)
+        assert isinstance(body["prevention_analytics_types"], list)
+        assert body["prevention_descriptive_state"] in {
+            "active", "not_configured", "disabled", "unknown",
+        }
+        assert body["prevention_predictive_state"] in {
+            "active", "not_configured", "disabled", "unknown",
+        }
+        assert body["prevention_prescriptive_state"] == "not_available"

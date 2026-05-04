@@ -30,7 +30,7 @@ _live_status_cache: dict[str, tuple[float, dict[str, str | bool | None]]] = {}
 _PREVENTION_STATUS_TTL_SECONDS = 20.0
 _prevention_status_cache: dict[
     str,
-    tuple[float, dict[str, str | bool | int | None]],
+    tuple[float, dict[str, str | bool | int | list[str] | None]],
 ] = {}
 
 
@@ -66,7 +66,7 @@ def _live_state_from_error_code(
 
 async def _resolve_prevention_status(
     settings_service: SettingsService,
-) -> dict[str, str | bool | int | None]:
+) -> dict[str, str | bool | int | list[str] | None]:
     """Resolve PREVENTION runtime and data freshness state."""
     config = resolve_prevention_config(settings_service)
     data_status = resolve_prevention_data_status(settings_service)
@@ -87,6 +87,15 @@ async def _resolve_prevention_status(
         "prevention_data_message": data_status.message,
         "prevention_data_updated_at": data_status.updated_at,
         "prevention_data_record_count": data_status.record_count,
+        "prevention_analytics_goals": [],
+        "prevention_analytics_types": [],
+        "prevention_descriptive_state": (
+            "disabled" if config.mode != "http" else "unknown"
+        ),
+        "prevention_predictive_state": (
+            "disabled" if config.mode != "http" else "unknown"
+        ),
+        "prevention_prescriptive_state": "not_available",
     }
 
     if config.mode != "http" or not config.url:
@@ -110,6 +119,11 @@ async def _resolve_prevention_status(
         "prevention_verified": probe.verified,
         "prevention_message": probe.message,
         "prevention_checked_at": probe.checked_at,
+        "prevention_analytics_goals": list(probe.analytics_goals),
+        "prevention_analytics_types": list(probe.analytics_types),
+        "prevention_descriptive_state": probe.descriptive_state,
+        "prevention_predictive_state": probe.predictive_state,
+        "prevention_prescriptive_state": probe.prescriptive_state,
     }
     _prevention_status_cache[cache_key] = (
         now + _PREVENTION_STATUS_TTL_SECONDS,
@@ -164,7 +178,7 @@ async def get_system_status(
 ) -> SystemStatusResponse:
     """Return current AVAROS configuration and readiness status."""
     loaded_intents = _intent_count()
-    prevention_status: dict[str, str | bool | int | None] = {
+    prevention_status: dict[str, str | bool | int | list[str] | None] = {
         "prevention_mode": "unknown",
         "prevention_mode_reason": "",
         "prevention_state": "unknown",
@@ -176,6 +190,11 @@ async def get_system_status(
         "prevention_data_message": "",
         "prevention_data_updated_at": None,
         "prevention_data_record_count": None,
+        "prevention_analytics_goals": [],
+        "prevention_analytics_types": [],
+        "prevention_descriptive_state": "unknown",
+        "prevention_predictive_state": "unknown",
+        "prevention_prescriptive_state": "not_available",
     }
 
     defaults = SystemStatusResponse(
@@ -196,6 +215,17 @@ async def get_system_status(
         prevention_data_message=str(prevention_status["prevention_data_message"]),
         prevention_data_updated_at=None,
         prevention_data_record_count=None,
+        prevention_analytics_goals=[],
+        prevention_analytics_types=[],
+        prevention_descriptive_state=str(
+            prevention_status["prevention_descriptive_state"],
+        ),
+        prevention_predictive_state=str(
+            prevention_status["prevention_predictive_state"],
+        ),
+        prevention_prescriptive_state=str(
+            prevention_status["prevention_prescriptive_state"],
+        ),
     )
 
     try:
@@ -276,6 +306,22 @@ async def get_system_status(
                 int(prevention_status["prevention_data_record_count"])
                 if prevention_status["prevention_data_record_count"] is not None
                 else None
+            ),
+            prevention_analytics_goals=list(
+                prevention_status["prevention_analytics_goals"] or [],
+            ),
+            prevention_analytics_types=list(
+                prevention_status["prevention_analytics_types"] or [],
+            ),
+            prevention_descriptive_state=str(
+                prevention_status["prevention_descriptive_state"] or "unknown",
+            ),
+            prevention_predictive_state=str(
+                prevention_status["prevention_predictive_state"] or "unknown",
+            ),
+            prevention_prescriptive_state=str(
+                prevention_status["prevention_prescriptive_state"]
+                or "not_available",
             ),
         )
     except Exception as exc:

@@ -99,6 +99,7 @@ def test_init_data_builds_all_goals_when_records_exist(monkeypatch) -> None:
     chain_calls: list[dict] = []
 
     monkeypatch.setattr(init, "_count_source_records", lambda: 3)
+    monkeypatch.setattr(init, "_get_or_create_dataset", lambda: {"_id": "dataset-id"})
     monkeypatch.setattr(
         init,
         "_create_analysis_chain",
@@ -107,4 +108,125 @@ def test_init_data_builds_all_goals_when_records_exist(monkeypatch) -> None:
 
     init.init_data()
 
-    assert len(chain_calls) == len(module.ANOMALY_GOALS) + len(module.DRIFT_GOALS)
+    assert len(chain_calls) == (
+        len(module.ANOMALY_GOALS)
+        + len(module.DRIFT_GOALS)
+        + len(module.FORECAST_GOALS)
+    )
+    assert {call["analytics_type"] for call in chain_calls} == {
+        "DESCRIPTIVE",
+        "PREDICTIVE",
+    }
+
+
+def test_create_analysis_chain_reuses_existing_analysis(monkeypatch) -> None:
+    module = _load_prevention_init_data_module()
+
+    init = module.AvarosInit()
+    build_calls: list[tuple[str, str]] = []
+
+    class BuildAnalysis:
+        def build(self, analysis_id, results_type):
+            build_calls.append((analysis_id, results_type))
+
+    monkeypatch.setattr(
+        init,
+        "_find_existing_analysis",
+        lambda goal_key: {"_id": "existing-analysis-id"},
+    )
+    monkeypatch.setattr(module, "AvarosBuildAnalysis", BuildAnalysis)
+    monkeypatch.setattr(
+        module.mongo_utils,
+        "create_model",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("create_model should not be called"),
+        ),
+    )
+    monkeypatch.setattr(
+        module.mongo_utils,
+        "create_analysis",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("create_analysis should not be called"),
+        ),
+    )
+
+    init._create_analysis_chain(
+        dataset={"_id": "dataset-id"},
+        name="Energy Anomaly Check",
+        goal_key="ENERGY_ANOMALY_CHECK",
+        model_type="ZSCORE_ANOMALY",
+        config={},
+        analytics_type="DESCRIPTIVE",
+    )
+
+    assert build_calls == [("existing-analysis-id", module.RESULTS_TYPE)]
+
+
+def test_create_analysis_chain_creates_missing_analysis(monkeypatch) -> None:
+    module = _load_prevention_init_data_module()
+
+    init = module.AvarosInit()
+    model_calls: list[dict] = []
+    analysis_calls: list[dict] = []
+    build_calls: list[tuple[str, str]] = []
+
+    class BuildAnalysis:
+        def build(self, analysis_id, results_type):
+            build_calls.append((analysis_id, results_type))
+
+    def create_model(**kwargs):
+        model_calls.append(kwargs)
+        return types.SimpleNamespace(inserted_id="model-id")
+
+    def create_analysis(**kwargs):
+        analysis_calls.append(kwargs)
+        return types.SimpleNamespace(inserted_id="analysis-id")
+
+    monkeypatch.setattr(init, "_find_existing_analysis", lambda goal_key: None)
+    monkeypatch.setattr(module, "AvarosBuildAnalysis", BuildAnalysis)
+    monkeypatch.setattr(module.mongo_utils, "create_model", create_model)
+    monkeypatch.setattr(module.mongo_utils, "create_analysis", create_analysis)
+
+    init._create_analysis_chain(
+        dataset={"_id": "dataset-id"},
+        name="Energy Anomaly Check",
+        goal_key="ENERGY_ANOMALY_CHECK",
+        model_type="ZSCORE_ANOMALY",
+        config={"z_score_threshold": 1.0},
+        analytics_type="DESCRIPTIVE",
+    )
+
+    assert model_calls[0]["model_type"] == "ZSCORE_ANOMALY"
+    assert analysis_calls[0]["analytics_goal"] == "ENERGY_ANOMALY_CHECK"
+    assert analysis_calls[0]["analytics_type"] == "DESCRIPTIVE"
+    assert analysis_calls[0]["dataset"] == "dataset-id"
+    assert build_calls == [("analysis-id", module.RESULTS_TYPE)]
+
+
+def test_create_analysis_chain_creates_predictive_analysis(monkeypatch) -> None:
+    module = _load_prevention_init_data_module()
+
+    init = module.AvarosInit()
+    analysis_calls: list[dict] = []
+
+    monkeypatch.setattr(init, "_find_existing_analysis", lambda goal_key: None)
+    monkeypatch.setattr(
+        module.mongo_utils,
+        "create_analysis",
+        lambda **kwargs: (
+            analysis_calls.append(kwargs)
+            or types.SimpleNamespace(inserted_id="analysis-id")
+        ),
+    )
+
+    init._create_analysis_chain(
+        dataset={"_id": "dataset-id"},
+        name="Energy Forecast",
+        goal_key="ENERGY_FORECAST",
+        model_type="LINEAR_FORECAST",
+        config={"horizon_periods": 7},
+        analytics_type="PREDICTIVE",
+    )
+
+    assert analysis_calls[0]["analytics_goal"] == "ENERGY_FORECAST"
+    assert analysis_calls[0]["analytics_type"] == "PREDICTIVE"

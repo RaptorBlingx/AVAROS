@@ -30,6 +30,10 @@ import type {
   PlatformConfigRequest,
   PlatformConfigResponse,
   PlatformResetResponse,
+  PreventionConfigRequest,
+  PreventionConfigResponse,
+  PreventionTestRequest,
+  PreventionTestResponse,
   ProductionRecordListResponse,
   ProductionRecordRequest,
   ProductionRecordResponse,
@@ -182,6 +186,28 @@ export function testConnection(
   payload: PlatformConfigRequest,
 ): Promise<ConnectionTestResponse> {
   return request<ConnectionTestResponse>("/api/v1/config/platform/test", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function getPreventionConfig(): Promise<PreventionConfigResponse> {
+  return request<PreventionConfigResponse>("/api/v1/config/prevention");
+}
+
+export function savePreventionConfig(
+  payload: PreventionConfigRequest,
+): Promise<PreventionConfigResponse> {
+  return request<PreventionConfigResponse>("/api/v1/config/prevention", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function testPreventionConnection(
+  payload: PreventionTestRequest,
+): Promise<PreventionTestResponse> {
+  return request<PreventionTestResponse>("/api/v1/config/prevention/test", {
     method: "POST",
     body: payload,
   });

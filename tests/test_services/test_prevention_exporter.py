@@ -28,6 +28,8 @@ from exporter import (  # noqa: E402
     _MANIFEST_FILENAME,
     _collect_data,
     _create_adapter,
+    _has_metric_resource,
+    _requires_metric_resource,
     _write_files,
 )
 
@@ -187,6 +189,58 @@ class TestCollectData:
         assert len(buckets["energy"]) == 2
         asset_ids = {r["asset_id"] for r in buckets["energy"]}
         assert asset_ids == {"L-1", "L-2"}
+
+    @pytest.mark.asyncio
+    async def test_skips_assets_without_metric_resource_for_resource_templates(self) -> None:
+        adapter = _make_adapter(
+            assets=[
+                Asset(asset_id="Line-1", display_name="Line 1", asset_type="line"),
+                Asset(asset_id="Meter-1", display_name="Meter 1", asset_type="sensor"),
+            ],
+            points=[
+                DataPoint(
+                    timestamp=datetime(2026, 4, 1, 10, 0, tzinfo=timezone.utc),
+                    value=5.0,
+                ),
+            ],
+        )
+        adapter._lookup_metric_mapping_by_name.return_value = {
+            "endpoint": "/api/resource/{resource_id}/values",
+        }
+        adapter._resolve_metric_resource_id.side_effect = (
+            lambda metric, asset_id: "rid-line-1" if asset_id == "Line-1" else ""
+        )
+
+        buckets = await _collect_data(adapter, days=7)
+
+        assert len(buckets["energy"]) == 1
+        assert buckets["energy"][0]["asset_id"] == "Line-1"
+
+
+class TestResourceLinkHelpers:
+    """Tests for exporter asset/metric link filtering."""
+
+    def test_requires_metric_resource_detects_endpoint_placeholder(self) -> None:
+        adapter = MagicMock()
+        adapter._lookup_metric_mapping_by_name.return_value = {
+            "endpoint": "/api/resource/{resource_id}/values",
+        }
+
+        assert _requires_metric_resource(adapter, "energy_per_unit") is True
+
+    def test_requires_metric_resource_ignores_non_resource_template(self) -> None:
+        adapter = MagicMock()
+        adapter._lookup_metric_mapping_by_name.return_value = {
+            "endpoint": "/api/assets/{asset_id}/values",
+        }
+
+        assert _requires_metric_resource(adapter, "energy_per_unit") is False
+
+    def test_has_metric_resource_uses_adapter_resolver(self) -> None:
+        adapter = MagicMock()
+        adapter._resolve_metric_resource_id.return_value = "rid-123"
+
+        assert _has_metric_resource(adapter, "energy_per_unit", "Line-1") is True
 
 # ── File Writing Tests ───────────────────────────────
 

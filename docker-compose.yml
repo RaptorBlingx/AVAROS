@@ -139,6 +139,39 @@ services:
       avaros-wakeword:
         condition: service_healthy
 
+  avaros-prevention-exporter:
+    build:
+      context: .
+      dockerfile: tools/prevention-data-sync/Dockerfile
+    container_name: avaros-prevention-exporter
+    restart: unless-stopped
+    user: "${AVAROS_SHARED_DB_UID:-1000}:${AVAROS_SHARED_DB_GID:-1000}"
+    env_file:
+      - .env
+    environment:
+      - AVAROS_DATABASE_URL=sqlite:////data/avaros.db
+      - PREVENTION_EXPORT_OUTPUT=/opt/avaros/tools/prevention-addon/data
+      - PREVENTION_EXPORT_DAYS=${PREVENTION_EXPORT_DAYS:-30}
+      - PREVENTION_EXPORT_INTERVAL_SECONDS=${PREVENTION_EXPORT_INTERVAL_SECONDS:-900}
+      - PREVENTION_EXPORT_PROFILE=${PREVENTION_EXPORT_PROFILE:-}
+    command:
+      [
+        "sh",
+        "-c",
+        "case \"$${PREVENTION_EXPORT_ENABLED:-true}\" in false|False|0|no|NO) echo 'PREVENTION exporter disabled'; tail -f /dev/null ;; *) python /opt/avaros/tools/prevention-data-sync/exporter.py --daemon --platform generic_rest --days \"$${PREVENTION_EXPORT_DAYS:-30}\" --interval \"$${PREVENTION_EXPORT_INTERVAL_SECONDS:-900}\" --output \"$${PREVENTION_EXPORT_OUTPUT:-/opt/avaros/tools/prevention-addon/data}\" ;; esac",
+      ]
+    volumes:
+      - avaros-data:/data
+      - ./tools/prevention-addon/data:/opt/avaros/tools/prevention-addon/data:rw
+    networks:
+      - avaros-network
+    depends_on:
+      avaros-web-ui:
+        condition: service_started
+    labels:
+      - "com.avaros.service=prevention-exporter"
+      - "com.avaros.description=Continuous platform-to-PREVENTION data export"
+
   # =========================================================================
   # Wake-word Detection Service (Web UI voice wake trigger)
   # =========================================================================

@@ -1,8 +1,8 @@
 """
 AVAROS addon build analysis.
 
-Implements z-score anomaly detection and linear drift monitoring
-as PREVENTION DESCRIPTIVE algorithms.
+Implements z-score anomaly detection, linear drift monitoring, and a modest
+linear KPI forecast for PREVENTION analytics.
 """
 
 import numpy as np
@@ -36,6 +36,8 @@ class AvarosBuildAnalysis(BuildAnalysis):
             return _zscore_anomaly_detect(data_df, config)
         if model_type == "LINEAR_DRIFT":
             return _linear_drift_detect(data_df, config)
+        if model_type == "LINEAR_FORECAST":
+            return _linear_forecast(data_df, config)
 
         raise PreventionError(
             f"Unknown AVAROS model type: {model_type}",
@@ -151,6 +153,101 @@ def _linear_drift_detect(data_df, config):
             "has_drift": False, "drift_direction": "stable",
             "drift_rate": 0, "r_squared": 0,
             "periods_analyzed": 0, "description": "No data",
+        })
+
+    return pd.DataFrame(results)
+
+
+def _linear_forecast(data_df, config):
+    """Explainable linear KPI forecast per metric+asset group."""
+    horizon_periods = int(config.get("horizon_periods", 7))
+    min_points = int(config.get("min_points", 10))
+    results = []
+
+    for (metric, asset), group in data_df.groupby(["metric_name", "asset_id"]):
+        group = group.sort_values("timestamp")
+        values = group["value"].astype(float).values
+        training_points = len(values)
+        if training_points < min_points:
+            results.append({
+                "metric_name": str(metric),
+                "asset_id": str(asset),
+                "horizon_periods": horizon_periods,
+                "predicted_value": None,
+                "confidence": 0.0,
+                "fit_quality": 0.0,
+                "training_points": training_points,
+                "method_name": "linear_forecast",
+                "forecast_timestamp": "",
+                "available": False,
+                "description": (
+                    f"Insufficient data for {metric} on {asset}: "
+                    f"{training_points} points available, {min_points} required."
+                ),
+                "recommended_action": "Collect more history before using this forecast.",
+            })
+            continue
+
+        x = np.arange(training_points, dtype=float)
+        a_matrix = np.vstack([x, np.ones(training_points)]).T
+        slope, intercept = np.linalg.lstsq(a_matrix, values, rcond=None)[0]
+        predicted = float(slope * (training_points + horizon_periods) + intercept)
+        predicted = max(predicted, 0.0)
+
+        fitted = slope * x + intercept
+        ss_res = np.sum((values - fitted) ** 2)
+        ss_tot = np.sum((values - np.mean(values)) ** 2)
+        r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 1.0
+        fit_quality = max(0.0, min(1.0, float(r_squared)))
+        confidence = max(0.1, min(0.95, fit_quality * min(training_points / 30.0, 1.0)))
+        last_timestamp = group["timestamp"].iloc[-1]
+        forecast_timestamp = last_timestamp + pd.to_timedelta(
+            horizon_periods,
+            unit="D",
+        )
+
+        direction = "stable"
+        if abs(slope) > 0.001:
+            direction = "increasing" if slope > 0 else "decreasing"
+
+        action = "Monitor this KPI and review operational drivers if the trend continues."
+        if direction == "increasing":
+            action = "Review the main operational contributors before this increase becomes material."
+        elif direction == "decreasing":
+            action = "Verify whether this decrease is expected and beneficial for the process."
+
+        results.append({
+            "metric_name": str(metric),
+            "asset_id": str(asset),
+            "horizon_periods": horizon_periods,
+            "predicted_value": round(predicted, 6),
+            "confidence": round(float(confidence), 4),
+            "fit_quality": round(float(fit_quality), 4),
+            "training_points": training_points,
+            "method_name": "linear_forecast",
+            "forecast_timestamp": str(forecast_timestamp),
+            "available": True,
+            "description": (
+                f"{metric} on {asset}: {direction} forecast "
+                f"(slope={slope:.6f}, R²={fit_quality:.4f})"
+            ),
+            "recommended_action": action,
+        })
+
+    if not results:
+        results.append({
+            "metric_name": "",
+            "asset_id": "",
+            "horizon_periods": horizon_periods,
+            "predicted_value": None,
+            "confidence": 0.0,
+            "fit_quality": 0.0,
+            "training_points": 0,
+            "method_name": "linear_forecast",
+            "forecast_timestamp": "",
+            "available": False,
+            "description": "No forecast data",
+            "recommended_action": None,
         })
 
     return pd.DataFrame(results)

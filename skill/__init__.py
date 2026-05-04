@@ -39,6 +39,7 @@ from skill._metric_handlers import (
     handle_compare_energy as _handle_compare_energy_impl,
     handle_compare_metric as _handle_compare_metric_impl,
     handle_drift_check as _handle_drift_check_impl,
+    handle_forecast_metric as _handle_forecast_metric_impl,
     handle_trend_energy as _handle_trend_energy_impl,
     handle_trend_metric as _handle_trend_metric_impl,
     handle_trend_scrap as _handle_trend_scrap_impl,
@@ -53,6 +54,7 @@ from skill._helpers import (
     get_power_state as _get_power_state_impl,
     is_anomaly_query as _is_anomaly_query_impl,
     is_drift_query as _is_drift_query_impl,
+    is_forecast_query as _is_forecast_query_impl,
     has_configured_profile as _has_configured_profile_impl,
     parse_numeric_amount as _parse_numeric_amount_impl,
     parse_period as _parse_period_impl,
@@ -97,6 +99,7 @@ class AVAROSSkill(FallbackSkill):
     _resolve_compare_assets = _resolve_compare_assets_impl
     _is_anomaly_query = _is_anomaly_query_impl
     _is_drift_query = _is_drift_query_impl
+    _is_forecast_query = _is_forecast_query_impl
     _extract_intent_name = _extract_intent_name_impl
 
     handle_greeting = _handle_greeting_impl
@@ -108,6 +111,7 @@ class AVAROSSkill(FallbackSkill):
     handle_trend_energy = _handle_trend_energy_impl
     handle_anomaly_check = _handle_anomaly_check_impl
     handle_drift_check = _handle_drift_check_impl
+    handle_forecast_metric = _handle_forecast_metric_impl
     handle_control_turn_on = _handle_control_turn_on_impl
     handle_control_turn_off = _handle_control_turn_off_impl
     handle_status_system_show = _handle_status_system_show_impl
@@ -284,7 +288,7 @@ class AVAROSSkill(FallbackSkill):
     def _handle_generic_kpi(self, message: Message) -> None:
         """Generic KPI handler that maps intent name to canonical metric.
 
-        Includes utterance-based guards to redirect trend/compare/anomaly/drift
+        Includes utterance-based guards to redirect trend/compare/anomaly/drift/forecast
         queries that Padatious mis-routed to a KPI intent.
         """
         utterance = self._extract_utterance_text(message).lower()
@@ -295,6 +299,10 @@ class AVAROSSkill(FallbackSkill):
 
         if self._is_drift_query(utterance):
             self.handle_drift_check(message)
+            return
+
+        if self._is_forecast_query(utterance):
+            self.handle_forecast_metric(message)
             return
 
         if "trend" in utterance:
@@ -358,7 +366,27 @@ class AVAROSSkill(FallbackSkill):
         self._prevention_state_reason = "prevention_not_initialized"
         return HttpPreventionClient(
             url=config.url,
-            auth_token=config.auth_token,
+            auth_token=config.auth_token if config.auth_mode == "bearer" else "",
+            keycloak_token_url=(
+                config.keycloak_token_url
+                if config.auth_mode == "keycloak_client_credentials"
+                else ""
+            ),
+            keycloak_client_id=(
+                config.keycloak_client_id
+                if config.auth_mode == "keycloak_client_credentials"
+                else ""
+            ),
+            keycloak_client_secret=(
+                config.keycloak_client_secret
+                if config.auth_mode == "keycloak_client_credentials"
+                else ""
+            ),
+            keycloak_scope=(
+                config.keycloak_scope
+                if config.auth_mode == "keycloak_client_credentials"
+                else ""
+            ),
         )
 
     def _initialize_prevention_client(

@@ -721,3 +721,39 @@ def handle_drift_check(skill: "AVAROSSkill", message) -> None:
 
     skill._safe_dispatch("handle_drift_check", _execute)
 
+
+def _resolve_forecast_horizon(message) -> int:
+    """Resolve forecast horizon from slots/utterance with safe defaults."""
+    data = getattr(message, "data", {}) or {}
+    raw_horizon = str(data.get("horizon", "") or data.get("period", "")).lower()
+    utterance = str(data.get("utterance", "") or "").lower()
+    text = f"{raw_horizon} {utterance}"
+    if "month" in text:
+        return 30
+    if "week" in text:
+        return 7
+    match = re.search(r"\bnext\s+(\d+)\s+(day|days|period|periods)\b", text)
+    if match:
+        return max(1, min(90, int(match.group(1))))
+    return 7
+
+
+def handle_forecast_metric(skill: "AVAROSSkill", message) -> None:
+    """Handle: 'Forecast energy for Line 1 next week'."""
+
+    def _execute() -> None:
+        asset_id = _resolve_drift_asset(skill, message)
+        text = skill._extract_utterance_text(message)
+        metric = _resolve_default_metric(skill, text)
+        horizon = _resolve_forecast_horizon(message)
+
+        result = skill.dispatcher.forecast_metric(
+            metric=metric,
+            asset_id=asset_id,
+            horizon_periods=horizon,
+        )
+
+        response = skill.response_builder.format_forecast_result(result)
+        skill.speak(response)
+
+    skill._safe_dispatch("handle_forecast_metric", _execute)

@@ -37,7 +37,7 @@ from skill.domain.results import (
     WhatIfResult,
 )
 from skill.domain.exceptions import AVAROSError, MetricNotSupportedError
-from skill.domain.anomaly_models import AnomalyDetectionResult
+from skill.domain.anomaly_models import AnomalyDetectionResult, ForecastReport
 from skill.services.audit import AuditLogger
 from skill.services.co2_service import CO2DerivationService
 from skill.services.models import PlatformConfig
@@ -314,6 +314,7 @@ class _SyntheticPreventionClient:
 
     def __init__(self) -> None:
         self.calls: list[tuple[CanonicalMetric, str | None, float]] = []
+        self.forecast_calls: list[tuple[CanonicalMetric, str | None, int, int]] = []
 
     async def detect_anomaly(
         self,
@@ -337,6 +338,31 @@ class _SyntheticPreventionClient:
             expected_value=100.0,
             actual_value=130.0 if is_anomalous else 99.5,
             deviation=3.1 if is_anomalous else 0.4,
+        )
+
+    async def forecast_metric(
+        self,
+        metric: CanonicalMetric,
+        data_points,
+        horizon_periods: int = 7,
+        asset_id: str | None = None,
+    ) -> ForecastReport:
+        self.forecast_calls.append(
+            (metric, asset_id, horizon_periods, len(data_points)),
+        )
+        return ForecastReport(
+            metric=metric,
+            asset_id=asset_id or "",
+            horizon_periods=horizon_periods,
+            predicted_value=88.5,
+            unit=metric.default_unit,
+            confidence=0.82,
+            fit_quality=0.76,
+            training_points=len(data_points),
+            method_name="linear_forecast",
+            forecast_timestamp=datetime.now(timezone.utc).isoformat(),
+            description="synthetic forecast",
+            recommended_action="Review forecast drivers.",
         )
 
 
@@ -433,6 +459,53 @@ class TestScanAnomalies:
 
         assert result.checked_pairs == 2
         assert all(call[1] == "Line-2" for call in prevention.calls)
+
+
+# ══════════════════════════════════════════════════════════
+# 7. forecast_metric
+# ══════════════════════════════════════════════════════════
+
+
+class TestForecastMetric:
+    """Tests for PREVENTION forecast query behavior."""
+
+    def test_forecast_metric_raises_when_no_client(
+        self,
+        dispatcher: QueryDispatcher,
+    ) -> None:
+        """Forecasting fails honestly when PREVENTION is not configured."""
+        with pytest.raises(AVAROSError) as exc_info:
+            dispatcher.forecast_metric(CanonicalMetric.OEE, "Line-1")
+
+        assert exc_info.value.code == "FORECAST_NOT_CONFIGURED"
+        assert "Forecasting is not configured" in exc_info.value.user_message
+
+    def test_forecast_metric_passes_asset_and_horizon_to_client(self) -> None:
+        """Dispatcher forwards forecast scope into the PREVENTION client."""
+        adapter = StubAdapter()
+        prevention = _SyntheticPreventionClient()
+        dispatcher = QueryDispatcher(
+            adapter=adapter,
+            prevention_client=prevention,
+        )
+        dispatcher._collect_analysis_series = MagicMock(
+            return_value=[
+                SimpleNamespace(value=80.0, unit="%"),
+                SimpleNamespace(value=82.0, unit="%"),
+            ],
+        )
+
+        result = dispatcher.forecast_metric(
+            CanonicalMetric.OEE,
+            "Line-1",
+            horizon_periods=14,
+        )
+
+        assert isinstance(result, ForecastReport)
+        assert result.predicted_value == 88.5
+        assert prevention.forecast_calls == [
+            (CanonicalMetric.OEE, "Line-1", 14, 2),
+        ]
 
 
 # ══════════════════════════════════════════════════════════

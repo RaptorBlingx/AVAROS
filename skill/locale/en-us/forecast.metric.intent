@@ -1,0 +1,9 @@
+forecast {metric} for {asset}
+predict {metric} for {asset}
+what is expected for {metric} on {asset}
+what is the expected {metric} for {asset}
+forecast {metric} next week
+predict {metric} next week
+what is expected for {metric} next week
+forecast energy for {asset}
+predict scrap rate for {asset}

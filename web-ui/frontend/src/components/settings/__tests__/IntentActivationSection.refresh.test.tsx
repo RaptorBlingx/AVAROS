@@ -77,24 +77,21 @@ describe("IntentActivationSection profile refresh", () => {
     });
   });
 
-  it("test_unconfigured_profile_shows_read_only_hint_and_disables_save_buttons", async () => {
+  it("test_unconfigured_profile_stays_editable_without_demo_hint", async () => {
     render(
       <IntentActivationSection onNotify={vi.fn()} refreshKey={0} activeProfile="unconfigured" />,
     );
 
     await waitFor(() => {
-      expect(
-        screen.getByText(
-          "Unconfigured profile uses built-in demo data. Intent activation is not configurable.",
-        ),
-      ).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Enable All" })).toBeTruthy();
     });
 
-    expect(screen.getByRole("button", { name: "Enable All" }).hasAttribute("disabled")).toBe(true);
-    expect(screen.getByRole("button", { name: "Disable All" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Enable All" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Disable All" }).hasAttribute("disabled")).toBe(false);
 
     const switchButton = screen.getByRole("switch");
-    expect(switchButton.hasAttribute("disabled")).toBe(true);
+    expect(switchButton.hasAttribute("disabled")).toBe(false);
+    expect(screen.queryByText(/built-in demo data/i)).toBeNull();
   });
 
   it("test_enable_all_skips_unmapped_kpi_intents", async () => {

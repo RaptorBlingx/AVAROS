@@ -264,7 +264,7 @@ export default function AssetMetricLinkingStep({
       {mode === "wizard" && (
       <div className="card-brand rounded-xl p-6">
         <p className="brand-step-label mb-1 text-xs font-bold uppercase tracking-wider">
-          Step 4 of 6
+          Step 4 of 7
         </p>
         <h2 className="brand-heading m-0 text-2xl font-bold">
           Asset–Metric Linking{" "}

@@ -18,11 +18,22 @@ from schemas.config import (
     ConnectionTestResponse,
     PlatformConfigRequest,
     PlatformConfigResponse,
+    PreventionConfigRequest,
+    PreventionConfigResponse,
+    PreventionTestRequest,
+    PreventionTestResponse,
     ResetResponse,
     sanitize_extra_settings,
 )
 from skill.adapters.base import ManufacturingAdapter
 from skill.adapters.factory import AdapterFactory
+from skill.services.prevention_runtime import (
+    PreventionConfig,
+    probe_prevention_status,
+    resolve_prevention_config,
+    resolve_prevention_data_max_age_minutes,
+    resolve_prevention_data_status,
+)
 from skill.services.settings import PlatformConfig, SettingsService
 
 
@@ -73,6 +84,94 @@ def _mask_api_key(api_key: str) -> str:
     if len(api_key) <= 4:
         return "****"
     return f"****{api_key[-4:]}"
+
+
+def _mask_secret(value: str) -> str:
+    """Mask sensitive tokens while preserving enough suffix for recognition."""
+    normalized = value.strip()
+    if not normalized:
+        return ""
+    if len(normalized) <= 4:
+        return "****"
+    return f"****{normalized[-4:]}"
+
+
+def _token_is_configured(settings_service: SettingsService) -> tuple[bool, str]:
+    """Return whether PREVENTION auth is configured and the masked value."""
+    env_token = os.environ.get("PREVENTION_AUTH_TOKEN", "").strip()
+    if env_token:
+        return True, _mask_secret(env_token)
+    saved_token = str(
+        settings_service.get_setting("prevention_auth_token", ""),
+    ).strip()
+    if saved_token:
+        return True, _mask_secret(saved_token)
+    return False, ""
+
+
+def _keycloak_secret_is_configured(
+    settings_service: SettingsService,
+) -> tuple[bool, str]:
+    """Return whether a PREVENTION Keycloak secret is configured."""
+    env_secret = os.environ.get("PREVENTION_KEYCLOAK_CLIENT_SECRET", "").strip()
+    if env_secret:
+        return True, _mask_secret(env_secret)
+    saved_secret = str(
+        settings_service.get_setting("prevention_keycloak_client_secret", ""),
+    ).strip()
+    if saved_secret:
+        return True, _mask_secret(saved_secret)
+    return False, ""
+
+
+async def _build_prevention_response(
+    settings_service: SettingsService,
+) -> PreventionConfigResponse:
+    """Resolve saved/effective PREVENTION configuration for the Web UI."""
+    config = resolve_prevention_config(settings_service)
+    data_status = resolve_prevention_data_status(settings_service)
+    token_configured, token_masked = _token_is_configured(settings_service)
+    keycloak_secret_configured, keycloak_secret_masked = (
+        _keycloak_secret_is_configured(settings_service)
+    )
+
+    if config.mode == "http" and config.url:
+        probe = await probe_prevention_status(config)
+        state = probe.state
+        verified = probe.verified
+        message = probe.message
+        checked_at = probe.checked_at
+    else:
+        state = "disabled"
+        verified = False
+        message = "PREVENTION is disabled until a URL is configured."
+        checked_at = None
+
+    return PreventionConfigResponse(
+        enabled=config.mode == "http",
+        endpoint_url=config.url,
+        endpoint_source=config.endpoint_source,
+        env_override=config.endpoint_source == "env",
+        auth_token_configured=token_configured,
+        auth_token_masked=token_masked,
+        auth_mode=config.auth_mode,
+        keycloak_token_url=config.keycloak_token_url,
+        keycloak_client_id=config.keycloak_client_id,
+        keycloak_client_secret_configured=keycloak_secret_configured,
+        keycloak_client_secret_masked=keycloak_secret_masked,
+        keycloak_scope=config.keycloak_scope,
+        data_max_age_minutes=resolve_prevention_data_max_age_minutes(
+            settings_service,
+        ),
+        state=state,
+        verified=verified,
+        message=message,
+        checked_at=checked_at,
+        data_state=data_status.state,
+        data_message=data_status.message,
+        data_updated_at=data_status.updated_at,
+        data_record_count=data_status.record_count,
+    )
 
 
 def _to_response(config: PlatformConfig) -> PlatformConfigResponse:
@@ -204,3 +303,107 @@ def _create_adapter_from_config(
         )
 
     raise ValueError(f"Unknown platform type: {payload.platform_type}")
+
+
+@router.get("/prevention", response_model=PreventionConfigResponse)
+async def get_prevention_config(
+    settings_service: SettingsService = Depends(get_settings_service),
+) -> PreventionConfigResponse:
+    """Return PREVENTION analytics configuration and live status."""
+    return await _build_prevention_response(settings_service)
+
+
+@router.post("/prevention", response_model=PreventionConfigResponse)
+async def upsert_prevention_config(
+    payload: PreventionConfigRequest,
+    settings_service: SettingsService = Depends(get_settings_service),
+) -> PreventionConfigResponse:
+    """Create or update PREVENTION analytics configuration."""
+    endpoint_url = payload.endpoint_url.strip() if payload.enabled else ""
+    settings_service.set_setting("prevention_url", endpoint_url)
+    settings_service.set_setting(
+        "prevention_data_max_age_minutes",
+        payload.data_max_age_minutes,
+    )
+    settings_service.set_setting("prevention_auth_mode", payload.auth_mode)
+
+    if payload.auth_mode != "bearer":
+        settings_service.delete_setting("prevention_auth_token")
+    elif payload.clear_auth_token:
+        settings_service.delete_setting("prevention_auth_token")
+    elif "auth_token" in payload.model_fields_set:
+        token = (payload.auth_token or "").strip()
+        if token:
+            settings_service.set_setting(
+                "prevention_auth_token",
+                token,
+                encrypt=True,
+            )
+        else:
+            settings_service.delete_setting("prevention_auth_token")
+
+    if payload.auth_mode != "keycloak_client_credentials":
+        settings_service.delete_setting("prevention_keycloak_token_url")
+        settings_service.delete_setting("prevention_keycloak_client_id")
+        settings_service.delete_setting("prevention_keycloak_client_secret")
+        settings_service.delete_setting("prevention_keycloak_scope")
+    else:
+        settings_service.set_setting(
+            "prevention_keycloak_token_url",
+            payload.keycloak_token_url.strip(),
+        )
+        settings_service.set_setting(
+            "prevention_keycloak_client_id",
+            payload.keycloak_client_id.strip(),
+        )
+        settings_service.set_setting(
+            "prevention_keycloak_scope",
+            payload.keycloak_scope.strip(),
+        )
+        if payload.clear_keycloak_client_secret:
+            settings_service.delete_setting("prevention_keycloak_client_secret")
+        elif "keycloak_client_secret" in payload.model_fields_set:
+            secret = (payload.keycloak_client_secret or "").strip()
+            if secret:
+                settings_service.set_setting(
+                    "prevention_keycloak_client_secret",
+                    secret,
+                    encrypt=True,
+                )
+            else:
+                settings_service.delete_setting(
+                    "prevention_keycloak_client_secret",
+                )
+
+    return await _build_prevention_response(settings_service)
+
+
+@router.post("/prevention/test", response_model=PreventionTestResponse)
+async def test_prevention_connection(
+    payload: PreventionTestRequest,
+) -> PreventionTestResponse:
+    """Probe a PREVENTION endpoint without saving it."""
+    probe = await probe_prevention_status(
+        PreventionConfig(
+            url=payload.endpoint_url,
+            auth_token=(
+                payload.auth_token.strip()
+                if payload.auth_mode == "bearer"
+                else ""
+            ),
+            auth_mode=payload.auth_mode,
+            keycloak_token_url=payload.keycloak_token_url.strip(),
+            keycloak_client_id=payload.keycloak_client_id.strip(),
+            keycloak_client_secret=payload.keycloak_client_secret.strip(),
+            keycloak_scope=payload.keycloak_scope.strip(),
+            mode="http",
+            mode_reason="request_payload",
+            endpoint_source="request",
+        ),
+    )
+    return PreventionTestResponse(
+        success=probe.verified,
+        state=probe.state,
+        message=probe.message,
+        checked_at=probe.checked_at,
+    )

@@ -22,6 +22,91 @@ export type SystemStatusResponse = {
   live_connection_message?: string;
   live_connection_error_code?: string;
   live_connection_checked_at?: string | null;
+  prevention_mode?: "http" | "disabled" | "unknown" | string;
+  prevention_mode_reason?: string;
+  prevention_state?:
+    | "healthy"
+    | "unreachable"
+    | "misconfigured"
+    | "disabled"
+    | "unknown"
+    | string;
+  prevention_verified?: boolean;
+  prevention_message?: string;
+  prevention_checked_at?: string | null;
+  prevention_endpoint?: string | null;
+  prevention_data_state?: "fresh" | "stale" | "missing" | "invalid" | "unknown" | string;
+  prevention_data_message?: string;
+  prevention_data_updated_at?: string | null;
+  prevention_data_record_count?: number | null;
+  prevention_analytics_goals?: string[];
+  prevention_analytics_types?: string[];
+  prevention_descriptive_state?: "active" | "not_configured" | "disabled" | "unknown" | string;
+  prevention_predictive_state?: "active" | "not_configured" | "disabled" | "unknown" | string;
+  prevention_prescriptive_state?: "not_available" | "active" | "unknown" | string;
+};
+
+export type PreventionState =
+  | "healthy"
+  | "unreachable"
+  | "misconfigured"
+  | "disabled"
+  | "unknown"
+  | string;
+
+export type PreventionConfigRequest = {
+  enabled: boolean;
+  endpoint_url: string;
+  auth_mode?: "none" | "bearer" | "keycloak_client_credentials";
+  auth_token?: string | null;
+  clear_auth_token?: boolean;
+  keycloak_token_url?: string;
+  keycloak_client_id?: string;
+  keycloak_client_secret?: string | null;
+  clear_keycloak_client_secret?: boolean;
+  keycloak_scope?: string;
+  data_max_age_minutes: number;
+};
+
+export type PreventionConfigResponse = {
+  enabled: boolean;
+  endpoint_url: string;
+  endpoint_source: "env" | "settings" | "none" | string;
+  env_override: boolean;
+  auth_token_configured: boolean;
+  auth_token_masked: string;
+  auth_mode: "none" | "bearer" | "keycloak_client_credentials" | string;
+  keycloak_token_url: string;
+  keycloak_client_id: string;
+  keycloak_client_secret_configured: boolean;
+  keycloak_client_secret_masked: string;
+  keycloak_scope: string;
+  data_max_age_minutes: number;
+  state: PreventionState;
+  verified: boolean;
+  message: string;
+  checked_at: string | null;
+  data_state: "fresh" | "stale" | "missing" | "invalid" | "unknown" | string;
+  data_message: string;
+  data_updated_at: string | null;
+  data_record_count: number | null;
+};
+
+export type PreventionTestRequest = {
+  endpoint_url: string;
+  auth_mode?: "none" | "bearer" | "keycloak_client_credentials";
+  auth_token?: string;
+  keycloak_token_url?: string;
+  keycloak_client_id?: string;
+  keycloak_client_secret?: string;
+  keycloak_scope?: string;
+};
+
+export type PreventionTestResponse = {
+  success: boolean;
+  state: PreventionState;
+  message: string;
+  checked_at: string | null;
 };
 
 export type PlatformType = "unconfigured" | "custom_rest";

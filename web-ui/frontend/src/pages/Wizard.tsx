@@ -18,6 +18,7 @@ import AssetRegistrationStep from "../components/wizard/AssetRegistrationStep";
 import IntentActivationStep from "../components/wizard/IntentActivationStep";
 import MetricMappingStep from "../components/wizard/MetricMappingStep";
 import PlatformSetupStep from "../components/wizard/PlatformSetupStep";
+import PreventionAnalyticsStep from "../components/wizard/PreventionAnalyticsStep";
 import SuccessScreen from "../components/wizard/SuccessScreen";
 import OnboardingOverlay from "../components/common/OnboardingOverlay";
 import Tooltip from "../components/common/Tooltip";
@@ -27,7 +28,7 @@ import {
   type OnboardingRerunDetail,
 } from "../components/common/onboarding";
 
-type StepNumber = 1 | 2 | 3 | 4 | 5 | 6;
+type StepNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 type WizardState = {
   currentStep: StepNumber;
@@ -221,7 +222,8 @@ export default function Wizard() {
     if (state.currentStep === 2) return "Asset Registration";
     if (state.currentStep === 3) return "Metric Mapping";
     if (state.currentStep === 4) return "Asset-Metric Linking";
-    if (state.currentStep === 5) return "Intent Activation";
+    if (state.currentStep === 5) return "PREVENTION Analytics";
+    if (state.currentStep === 6) return "Intent Activation";
     return "Complete";
   }, [state.currentStep]);
 
@@ -231,6 +233,7 @@ export default function Wizard() {
       "Asset Registration",
       "Metric Mapping",
       "Asset-Metric Linking",
+      "PREVENTION Analytics",
       "Intent Activation",
       "Success",
     ],
@@ -248,7 +251,7 @@ export default function Wizard() {
   const goForwardStep = useCallback(() => {
     setHeaderError("");
 
-    if (state.currentStep === 6) {
+    if (state.currentStep === 7) {
       return;
     }
 
@@ -273,6 +276,11 @@ export default function Wizard() {
     }
 
     if (state.currentStep === 5) {
+      triggerBlockedNext("Complete or skip PREVENTION analytics to continue.");
+      return;
+    }
+
+    if (state.currentStep === 6) {
       triggerBlockedNext("Complete or skip intent activation to continue.");
       return;
     }
@@ -350,6 +358,11 @@ export default function Wizard() {
     goToStep(5);
   }, [goToStep, markStepComplete]);
 
+  const handlePreventionStepComplete = useCallback(() => {
+    markStepComplete(5);
+    goToStep(6);
+  }, [goToStep, markStepComplete]);
+
   const finalizeWizard = useCallback(async () => {
     setHeaderError("");
     try {
@@ -358,8 +371,8 @@ export default function Wizard() {
         enableDashboardBypass();
       }
       setSuccessStatus(latestStatus);
-      markStepComplete(5);
-      goToStep(6);
+      markStepComplete(6);
+      goToStep(7);
     } catch (error: unknown) {
       setFormError(toFriendlyErrorMessage(error));
     }
@@ -432,6 +445,15 @@ export default function Wizard() {
 
     if (state.currentStep === 5) {
       return (
+        <PreventionAnalyticsStep
+          onComplete={handlePreventionStepComplete}
+          onSkip={handlePreventionStepComplete}
+        />
+      );
+    }
+
+    if (state.currentStep === 6) {
+      return (
         <IntentActivationStep
           onComplete={() => void finalizeWizard()}
           onSkip={() => void finalizeWizard()}
@@ -456,6 +478,7 @@ export default function Wizard() {
     handleAssetRegistrationStepComplete,
     handleLinkingStepComplete,
     handleMetricStepComplete,
+    handlePreventionStepComplete,
     handleSaveConnection,
     handleTestConnection,
     isSaving,
@@ -493,7 +516,7 @@ export default function Wizard() {
           </p>
           <div className="flex items-center gap-2">
             <p className="m-0 text-xs font-medium text-slate-500 dark:text-slate-400">
-              {state.currentStep} / 6
+              {state.currentStep} / 7
             </p>
             <button
               type="button"
@@ -507,7 +530,7 @@ export default function Wizard() {
               ref={nextButtonRef}
               type="button"
               onClick={goForwardStep}
-              disabled={state.currentStep === 6}
+              disabled={state.currentStep === 7}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
                 nextBlocked
                   ? "border border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-500 dark:bg-rose-900/40 dark:text-rose-200"
@@ -529,7 +552,7 @@ export default function Wizard() {
           className="mt-3 overflow-x-auto"
           data-onboarding-target="wizard-stepper"
         >
-          <div className="flex min-w-[640px] gap-2 sm:min-w-0 sm:grid sm:grid-cols-3 lg:grid-cols-5">
+          <div className="flex min-w-[760px] gap-2 sm:min-w-0 sm:grid sm:grid-cols-4 lg:grid-cols-7">
             {stepItems.map((item, index) => {
               const stepNumber = (index + 1) as StepNumber;
               const isActive = state.currentStep === stepNumber;
