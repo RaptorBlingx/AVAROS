@@ -63,6 +63,10 @@ vi.mock("../../components/settings/VoiceSettingsSection", () => ({
   default: () => <div data-testid="voice-settings" />,
 }));
 
+vi.mock("../../components/settings/EmbeddableWidgetSection", () => ({
+  default: () => <div data-testid="embeddable-widget" />,
+}));
+
 vi.mock("../../components/settings/PlatformConfigSection", () => ({
   default: ({
     onProfileSwitch,

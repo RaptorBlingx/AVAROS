@@ -783,7 +783,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
             }}
             onClear={() => setMessages([])}
             onStopSpeaking={() => setIsTtsSpeaking(false)}
-            brandLogoSrc="/widget-logo.svg"
+            brandLogoSrc={config.logoSrc}
             onModeChange={(nextMode) => {
               if (config.disabledModes.includes(nextMode)) return;
               setMode(nextMode);

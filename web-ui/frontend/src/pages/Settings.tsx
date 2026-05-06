@@ -9,6 +9,7 @@ import Tooltip from "../components/common/Tooltip";
 import IntentActivationSection from "../components/settings/IntentActivationSection";
 import IntentBindingsSection from "../components/settings/IntentBindingsSection";
 import EmissionFactorsSection from "../components/settings/EmissionFactorsSection";
+import EmbeddableWidgetSection from "../components/settings/EmbeddableWidgetSection";
 import AlertSettingsSection from "../components/settings/AlertSettingsSection";
 import AssetManagementSection from "../components/settings/AssetManagementSection";
 import MetricMappingsSection from "../components/settings/MetricMappingsSection";
@@ -101,6 +102,11 @@ export default function Settings() {
         title: "Voice & Audio",
         description: "Set interaction mode, wake-word behavior, and microphone/audio preferences.",
         selector: '[data-onboarding-target="settings-voice-audio"]',
+      },
+      {
+        title: "Embeddable Widget",
+        description: "Generate the trusted internal script tag for adding AVAROS to factory dashboards.",
+        selector: '[data-onboarding-target="settings-embeddable-widget"]',
       },
       {
         title: "Metric & Intent Bindings",
@@ -224,6 +230,14 @@ export default function Settings() {
         targetId="settings-voice-audio"
       >
         <VoiceSettingsSection onNotify={notify} />
+      </Section>
+
+      <Section
+        title="Embeddable Widget"
+        helpText="Generate a trusted internal script tag for embedding the AVAROS widget in factory dashboards."
+        targetId="settings-embeddable-widget"
+      >
+        <EmbeddableWidgetSection onNotify={notify} />
       </Section>
 
       <Section

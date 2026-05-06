@@ -42,6 +42,7 @@ export type WidgetConfig = {
   offsetY: number;
   label: string;
   disabledModes: WidgetMode[];
+  logoSrc: string;
 };
 
 export type WidgetPublicApi = {
