@@ -88,6 +88,10 @@ def test_linear_forecast_with_enough_data_predicts_future_value() -> None:
     assert row["predicted_value"] > 19
     assert row["training_points"] == 10
     assert row["method_name"] == "linear_forecast"
+    assert row["recent_value"] == 19.0
+    assert row["change_from_recent"] > 0
+    assert row["change_percent_from_recent"] > 0
+    assert row["trend_direction"] == "increasing"
 
 
 def test_linear_forecast_returns_unavailable_when_insufficient_data() -> None:

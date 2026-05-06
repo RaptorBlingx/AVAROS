@@ -825,6 +825,13 @@ def _parse_forecast_results(
             else None
         ),
         available=available and predicted_value is not None,
+        recent_value=_optional_float(match.get("recent_value")),
+        recent_average=_optional_float(match.get("recent_average")),
+        change_from_recent=_optional_float(match.get("change_from_recent")),
+        change_percent_from_recent=_optional_float(
+            match.get("change_percent_from_recent"),
+        ),
+        trend_direction=str(match.get("trend_direction") or "unknown"),
     )
 
 
@@ -884,10 +891,19 @@ def _fallback_forecast_result_from_series(
     forecast_timestamp = (
         last_timestamp + timedelta(days=horizon_periods)
     ).isoformat()
+    recent_value = values[-1]
+    recent_window = values[-min(7, training_points) :]
+    recent_average = statistics.fmean(recent_window)
+    change_from_recent = float(predicted) - recent_value
+    change_percent_from_recent = (
+        (change_from_recent / recent_value) * 100.0
+        if recent_value
+        else 0.0
+    )
 
     direction = "stable"
-    if abs(slope) > 0.001:
-        direction = "increasing" if slope > 0 else "decreasing"
+    if abs(change_percent_from_recent) >= 1.0:
+        direction = "increasing" if change_from_recent > 0 else "decreasing"
     action = _forecast_recommended_action(direction)
     asset_text = f" on {asset_id}" if asset_id else ""
 
@@ -909,6 +925,11 @@ def _fallback_forecast_result_from_series(
         ),
         recommended_action=action,
         available=True,
+        recent_value=round(float(recent_value), 6),
+        recent_average=round(float(recent_average), 6),
+        change_from_recent=round(float(change_from_recent), 6),
+        change_percent_from_recent=round(float(change_percent_from_recent), 4),
+        trend_direction=direction,
     )
 
 
@@ -1041,7 +1062,33 @@ def _log_prevention_reason(goal: str, reason: Any) -> None:
                 code = item.get("code", 0)
                 params = item.get("parameters", [])
                 if code:
-                    logger.warning(
+                    message_args = (
                         "PREVENTION %s reason code=%s: %s",
-                        goal, code, params,
+                        goal,
+                        code,
+                        params,
                     )
+                    if _is_predictive_viewer_limit_reason(goal, code, params):
+                        logger.info(*message_args)
+                    else:
+                        logger.warning(*message_args)
+
+
+def _is_predictive_viewer_limit_reason(
+    goal: str,
+    code: Any,
+    params: Any,
+) -> bool:
+    """Return True when PREVENTION cannot expose predictive rows via resultRequest."""
+    try:
+        code_int = int(code or 0)
+    except (TypeError, ValueError):
+        code_int = 0
+    if not str(goal).endswith("_FORECAST") or code_int != 400:
+        return False
+    joined = " ".join(str(param) for param in params)
+    return (
+        "DESCRIPTIVE" in joined
+        and "PREDICTIVE" in joined
+        and "analytics" in joined.lower()
+    )

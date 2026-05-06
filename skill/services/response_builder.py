@@ -343,30 +343,23 @@ class ResponseBuilder:
             return result.description
 
         value = self._format_value(result.predicted_value, result.unit)
-        confidence_pct = int(result.confidence * 100)
-        if result.confidence < 0.2:
-            confidence_text = (
-                "Confidence is low because the recent trend is weak or noisy."
-            )
-        else:
-            confidence_text = f"with {confidence_pct} percent confidence."
+        horizon = self._format_forecast_horizon(result.horizon_periods)
+        context = self._format_forecast_context(result)
+        confidence_text = self._format_forecast_confidence(result)
 
         if self.verbosity == "brief":
-            return f"{metric_name}: forecast {value}"
+            return f"{metric_name}: {value} {horizon}"
 
-        base = (
-            f"The {result.horizon_periods}-period forecast for "
-            f"{metric_name}{asset_text} is {value}. "
-            f"{confidence_text}"
-        )
+        base = f"{horizon.capitalize()}, {metric_name}{asset_text} is expected to be {value}."
         if self.verbosity == "normal":
-            return base
+            return f"{base} {context} {confidence_text}"
 
         action = ""
         if result.recommended_action:
             action = f" Decision support: {result.recommended_action}"
         return (
-            f"{base} Method: {result.method_name}; "
+            f"{base} {context} {confidence_text} "
+            f"Method: {result.method_name}; "
             f"fit quality {result.fit_quality:.2f}; "
             f"training points {result.training_points}.{action}"
         )
@@ -520,6 +513,73 @@ class ResponseBuilder:
         if abs_value >= 0.001:
             return f"{value:.4f}"
         return f"{value:.2e}"
+
+    @staticmethod
+    def _format_forecast_horizon(horizon_periods: int) -> str:
+        """Render forecast horizon in user language instead of model jargon."""
+        if horizon_periods == 1:
+            return "next period"
+        if horizon_periods == 7:
+            return "next week"
+        return f"in the next {horizon_periods} periods"
+
+    def _format_forecast_context(self, result: ForecastReport) -> str:
+        """Explain what the predicted value means relative to recent data."""
+        if (
+            result.recent_value is None
+            or result.change_from_recent is None
+            or result.change_percent_from_recent is None
+        ):
+            return (
+                "This is a predictive estimate for the selected KPI, "
+                "not a guaranteed target."
+            )
+
+        latest = self._format_value(result.recent_value, result.unit)
+        change_pct = abs(result.change_percent_from_recent)
+        if change_pct < 1.0:
+            return (
+                f"That is roughly unchanged from the latest observed value "
+                f"of {latest}."
+            )
+
+        direction = "higher" if result.change_from_recent > 0 else "lower"
+        meaning = self._forecast_change_meaning(result)
+        return (
+            f"That is {change_pct:.1f} percent {direction} than the latest "
+            f"observed value of {latest}. {meaning}"
+        )
+
+    def _forecast_change_meaning(self, result: ForecastReport) -> str:
+        """Explain whether the forecasted movement is good or risky."""
+        if result.change_from_recent is None:
+            return ""
+
+        lower_better = self._is_lower_better(result.metric)
+        moving_down = result.change_from_recent < 0
+        if moving_down == lower_better:
+            return "For this KPI, that points to a possible improvement."
+        return "For this KPI, that is a risk to watch."
+
+    @staticmethod
+    def _format_forecast_confidence(result: ForecastReport) -> str:
+        """Translate model confidence into operational language."""
+        confidence_pct = int(result.confidence * 100)
+        if result.confidence < 0.2:
+            return (
+                "Confidence is low because recent data is noisy or the trend "
+                "is weak, so treat this as an early warning and verify it "
+                "against live production data."
+            )
+        if result.confidence < 0.6:
+            return (
+                "Confidence is moderate, so use this for planning guidance, "
+                "not as a guaranteed outcome."
+            )
+        return (
+            f"Confidence is strong at {confidence_pct} percent, based on the "
+            "recent trend fit."
+        )
 
     def _format_whatif_assumptions(self, result: WhatIfResult) -> str:
         """Render what-if assumptions in operator-friendly language."""

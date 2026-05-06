@@ -205,10 +205,18 @@ def _linear_forecast(data_df, config):
             horizon_periods,
             unit="D",
         )
+        recent_value = float(values[-1])
+        recent_average = float(np.mean(values[-min(7, training_points):]))
+        change_from_recent = predicted - recent_value
+        change_percent_from_recent = (
+            (change_from_recent / recent_value) * 100.0
+            if recent_value
+            else 0.0
+        )
 
         direction = "stable"
-        if abs(slope) > 0.001:
-            direction = "increasing" if slope > 0 else "decreasing"
+        if abs(change_percent_from_recent) >= 1.0:
+            direction = "increasing" if change_from_recent > 0 else "decreasing"
 
         action = "Monitor this KPI and review operational drivers if the trend continues."
         if direction == "increasing":
@@ -227,6 +235,14 @@ def _linear_forecast(data_df, config):
             "method_name": "linear_forecast",
             "forecast_timestamp": str(forecast_timestamp),
             "available": True,
+            "recent_value": round(float(recent_value), 6),
+            "recent_average": round(float(recent_average), 6),
+            "change_from_recent": round(float(change_from_recent), 6),
+            "change_percent_from_recent": round(
+                float(change_percent_from_recent),
+                4,
+            ),
+            "trend_direction": direction,
             "description": (
                 f"{metric} on {asset}: {direction} forecast "
                 f"(slope={slope:.6f}, R²={fit_quality:.4f})"

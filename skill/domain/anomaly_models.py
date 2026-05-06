@@ -120,3 +120,8 @@ class ForecastReport:
     description: str
     recommended_action: str | None = None
     available: bool = True
+    recent_value: float | None = None
+    recent_average: float | None = None
+    change_from_recent: float | None = None
+    change_percent_from_recent: float | None = None
+    trend_direction: str = "unknown"

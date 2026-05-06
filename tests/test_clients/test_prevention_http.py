@@ -16,6 +16,7 @@ from skill.clients.prevention_http import (
     _CATEGORY_TO_DRIFT_GOAL,
     _CATEGORY_TO_FORECAST_GOAL,
     _fallback_forecast_result_from_series,
+    _is_predictive_viewer_limit_reason,
     _parse_anomaly_results,
     _parse_drift_results,
     _parse_forecast_results,
@@ -133,6 +134,11 @@ MOCK_FORECAST_RESULTS = [
         "method_name": "linear_forecast",
         "forecast_timestamp": "2026-05-06T00:00:00",
         "available": True,
+        "recent_value": 2.5,
+        "recent_average": 2.45,
+        "change_from_recent": 0.25,
+        "change_percent_from_recent": 10.0,
+        "trend_direction": "increasing",
         "description": "energy_per_unit on Line-1: increasing forecast",
         "recommended_action": "Review the main operational contributors.",
     },
@@ -878,6 +884,9 @@ class TestForecastResultParsing:
         assert result.fit_quality == 0.74
         assert result.training_points == 30
         assert result.method_name == "linear_forecast"
+        assert result.recent_value == 2.5
+        assert result.change_percent_from_recent == 10.0
+        assert result.trend_direction == "increasing"
         assert result.recommended_action is not None
 
     def test_returns_unavailable_when_no_match(self) -> None:
@@ -943,6 +952,31 @@ class TestForecastResultParsing:
         )
         with pytest.raises(AttributeError):
             result.predicted_value = 3.0  # type: ignore[misc]
+
+
+class TestPreventionReasonLogging:
+    """Classify expected PREVENTION viewer limitations for predictive goals."""
+
+    def test_predictive_viewer_limit_reason_is_expected_for_forecasts(self) -> None:
+        assert _is_predictive_viewer_limit_reason(
+            "ENERGY_FORECAST",
+            400,
+            [
+                {
+                    "message": (
+                        "This type of request is only for 'DESCRIPTIVE' analytics. "
+                        "The requested analysis is of type PREDICTIVE."
+                    ),
+                },
+            ],
+        )
+
+    def test_non_forecast_reason_stays_warning_worthy(self) -> None:
+        assert not _is_predictive_viewer_limit_reason(
+            "ENERGY_ANOMALY",
+            400,
+            [{"message": "Some other failure."}],
+        )
 
 
 # =========================================================================

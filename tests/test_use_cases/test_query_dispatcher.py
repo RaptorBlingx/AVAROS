@@ -503,6 +503,10 @@ class TestForecastMetric:
 
         assert isinstance(result, ForecastReport)
         assert result.predicted_value == 88.5
+        assert result.recent_value == 82.0
+        assert result.change_from_recent == 6.5
+        assert result.change_percent_from_recent == pytest.approx(7.9268)
+        assert result.trend_direction == "increasing"
         assert prevention.forecast_calls == [
             (CanonicalMetric.OEE, "Line-1", 14, 2),
         ]

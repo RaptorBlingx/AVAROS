@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 from collections import Counter
+from dataclasses import replace
 import logging
 from datetime import datetime, timedelta, timezone
 import re
@@ -860,10 +861,52 @@ class QueryDispatcher:
                 asset_id=asset_id,
             ),
         )
+        result = self._with_forecast_context(result, data_points)
         self._log_audit(
             "forecast_metric", query_id, metric.value, asset_id, result,
         )
         return result
+
+    @staticmethod
+    def _with_forecast_context(
+        result: "ForecastReport",
+        data_points: list[DataPoint],
+    ) -> "ForecastReport":
+        """Attach live-series context so forecasts explain what the number means."""
+        if not result.available or result.predicted_value is None:
+            return result
+
+        ordered_points = (
+            sorted(data_points, key=lambda point: point.timestamp)
+            if all(hasattr(point, "timestamp") for point in data_points)
+            else list(data_points)
+        )
+        values = [
+            float(point.value)
+            for point in ordered_points
+            if point.value is not None
+        ]
+        if not values:
+            return result
+
+        recent_value = values[-1]
+        recent_window = values[-min(7, len(values)) :]
+        recent_average = sum(recent_window) / len(recent_window)
+        change = float(result.predicted_value) - recent_value
+        change_percent = (change / recent_value) * 100.0 if recent_value else 0.0
+
+        direction = "stable"
+        if abs(change_percent) >= 1.0:
+            direction = "increasing" if change > 0 else "decreasing"
+
+        return replace(
+            result,
+            recent_value=round(recent_value, 6),
+            recent_average=round(recent_average, 6),
+            change_from_recent=round(change, 6),
+            change_percent_from_recent=round(change_percent, 4),
+            trend_direction=direction,
+        )
     
     # =========================================================================
     # Query Type 5: What-If Simulation (INTELLIGENCE - Phase 3)

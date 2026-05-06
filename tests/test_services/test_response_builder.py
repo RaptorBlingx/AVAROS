@@ -805,14 +805,20 @@ class TestFormatForecastResult:
             forecast_timestamp="2026-05-06T00:00:00",
             description="Forecast available.",
             recommended_action="Review the main operational contributors.",
+            recent_value=3.0,
+            change_from_recent=-0.25,
+            change_percent_from_recent=-8.3333,
+            trend_direction="decreasing",
         )
 
         result = builder.format_forecast_result(result_obj)
 
-        assert "7-period forecast" in result
+        assert "Next week" in result
         assert "energy per unit" in result.lower()
         assert "2.8" in result
-        assert "82 percent confidence" in result
+        assert "8.3 percent lower than the latest observed value" in result
+        assert "possible improvement" in result
+        assert "strong at 82 percent" in result
 
     def test_format_forecast_low_confidence_uses_plain_language(
         self,
@@ -831,12 +837,46 @@ class TestFormatForecastResult:
             forecast_timestamp="2026-05-06T00:00:00",
             description="Forecast available.",
             recommended_action=None,
+            recent_value=1.6,
+            change_from_recent=0.1,
+            change_percent_from_recent=6.25,
+            trend_direction="increasing",
         )
 
         result = builder.format_forecast_result(result_obj)
 
         assert "Confidence is low" in result
         assert "10 percent confidence" not in result
+        assert "verify it against live production data" in result
+
+    def test_format_forecast_oee_drop_explains_risk(
+        self,
+        builder: ResponseBuilder,
+    ) -> None:
+        result_obj = ForecastReport(
+            metric=CanonicalMetric.OEE,
+            asset_id="Line-2",
+            horizon_periods=7,
+            predicted_value=39.4,
+            unit="%",
+            confidence=0.1,
+            fit_quality=0.02,
+            training_points=30,
+            method_name="linear_forecast",
+            forecast_timestamp="2026-05-06T00:00:00",
+            description="Forecast available.",
+            recent_value=45.0,
+            change_from_recent=-5.6,
+            change_percent_from_recent=-12.4444,
+            trend_direction="decreasing",
+        )
+
+        result = builder.format_forecast_result(result_obj)
+
+        assert "overall equipment effectiveness on Line-2" in result
+        assert "39.4 percent" in result
+        assert "12.4 percent lower than the latest observed value" in result
+        assert "risk to watch" in result
 
     def test_format_forecast_detailed_labels_decision_support(
         self,
