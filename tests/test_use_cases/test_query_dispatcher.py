@@ -567,6 +567,31 @@ class TestSimulateWhatIf:
         assert result.projected == 89.25
         assert result.is_improvement is True
 
+    def test_simulate_whatif_supports_absolute_target_value(
+        self,
+        dispatcher: QueryDispatcher,
+    ) -> None:
+        scenario = WhatIfScenario(
+            name="oee_target_90",
+            asset_id="Line-2",
+            parameters=[
+                ScenarioParameter(
+                    name="target_value",
+                    baseline_value=0.0,
+                    proposed_value=90.0,
+                    unit="%",
+                ),
+            ],
+            target_metric=CanonicalMetric.OEE,
+        )
+
+        result = dispatcher.simulate_whatif(scenario)
+
+        assert result.baseline == 85.0
+        assert result.projected == 90.0
+        assert result.delta_percent == pytest.approx(5.8824)
+        assert result.factors["target_value"] == 90.0
+
     def test_simulate_whatif_rejects_empty_scenario(
         self,
         dispatcher: QueryDispatcher,

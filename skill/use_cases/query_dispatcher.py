@@ -903,17 +903,26 @@ class QueryDispatcher:
             asset_id=scenario.asset_id,
             period=TimePeriod.today(),
         )
+        target_value = self._scenario_target_value(scenario.parameters)
         change_percent = self._scenario_change_percent(scenario.parameters)
-        projected = max(0.0, baseline.value * (1 + change_percent / 100.0))
+        projected = (
+            max(0.0, target_value)
+            if target_value is not None
+            else max(0.0, baseline.value * (1 + change_percent / 100.0))
+        )
         delta = projected - baseline.value
         delta_percent = (
             (delta / baseline.value) * 100.0
             if baseline.value
             else change_percent
         )
-        confidence = self._whatif_confidence(scenario.parameters)
+        confidence = self._whatif_confidence_from_change(delta_percent)
         factors = {
-            parameter.name: self._parameter_change_percent(parameter)
+            parameter.name: (
+                parameter.proposed_value
+                if parameter.name == "target_value"
+                else self._parameter_change_percent(parameter)
+            )
             for parameter in scenario.parameters
         }
 
@@ -939,8 +948,20 @@ class QueryDispatcher:
         return result
 
     @staticmethod
+    def _scenario_target_value(
+        parameters: tuple[ScenarioParameter, ...],
+    ) -> float | None:
+        """Return an absolute target value if the scenario is target-based."""
+        for parameter in parameters:
+            if parameter.name == "target_value":
+                return parameter.proposed_value
+        return None
+
+    @staticmethod
     def _parameter_change_percent(parameter: ScenarioParameter) -> float:
         """Resolve a scenario parameter as a percentage change."""
+        if parameter.name == "target_value":
+            return 0.0
         if parameter.unit.strip() == "%" and parameter.baseline_value == 0:
             return parameter.proposed_value
         return parameter.delta_percent
@@ -964,6 +985,12 @@ class QueryDispatcher:
             abs(cls._parameter_change_percent(param))
             for param in parameters
         )
+        return cls._whatif_confidence_from_change(max_abs_change)
+
+    @staticmethod
+    def _whatif_confidence_from_change(change_percent: float) -> float:
+        """Confidence reflects scenario size, not causal proof."""
+        max_abs_change = abs(change_percent)
         if max_abs_change <= 10:
             return 0.65
         if max_abs_change <= 25:

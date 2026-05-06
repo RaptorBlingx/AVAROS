@@ -926,7 +926,7 @@ class TestFormatWhatIfResult:
         """Detailed includes confidence level."""
         result = detailed_builder.format_whatif_result(whatif_improvement)
         assert "Decision support only" in result
-        assert "Assumptions:" in result
+        assert "Assumption:" in result
         assert "high" in result.lower() or "85" in result
 
     def test_format_whatif_degradation_normal(
@@ -940,10 +940,11 @@ class TestFormatWhatIfResult:
     def test_format_whatif_under_30_words_normal(
         self, builder: ResponseBuilder, whatif_improvement: WhatIfResult
     ) -> None:
-        """Normal response stays under 30 words."""
+        """Normal response stays concise while showing assumptions."""
         result = builder.format_whatif_result(whatif_improvement)
         word_count = len(result.split())
-        assert word_count <= 30, f"Response has {word_count} words: {result}"
+        assert word_count <= 40, f"Response has {word_count} words: {result}"
+        assert "Assumption:" in result
 
     def test_format_whatif_zero_delta(
         self, builder: ResponseBuilder
@@ -985,6 +986,66 @@ class TestFormatWhatIfResult:
 
         assert "1.86 percent" in result
         assert "1.90 percent" in result
+
+    def test_format_whatif_target_value_assumption(self, builder: ResponseBuilder) -> None:
+        """Absolute-target scenarios should state the target assumption."""
+        result_obj = WhatIfResult(
+            scenario_name="oee_target_90",
+            target_metric=CanonicalMetric.OEE,
+            baseline=85.0,
+            projected=90.0,
+            delta=5.0,
+            delta_percent=5.8824,
+            confidence=0.65,
+            factors={"target_value": 90.0},
+            unit="%",
+        )
+
+        result = builder.format_whatif_result(result_obj)
+
+        assert "Assumption: target value is 90.0 percent" in result
+
+    def test_format_whatif_large_change_mentions_low_confidence(
+        self,
+        builder: ResponseBuilder,
+    ) -> None:
+        """Large what-if jumps should not sound as reliable as small changes."""
+        result_obj = WhatIfResult(
+            scenario_name="oee_target_90",
+            target_metric=CanonicalMetric.OEE,
+            baseline=57.2,
+            projected=90.0,
+            delta=32.8,
+            delta_percent=57.2,
+            confidence=0.45,
+            factors={"target_value": 90.0},
+            unit="%",
+        )
+
+        result = builder.format_whatif_result(result_obj)
+
+        assert "Confidence is low" in result
+
+    def test_format_whatif_formats_peak_demand_unit(
+        self, builder: ResponseBuilder,
+    ) -> None:
+        """Peak demand what-if output should say kilowatts, not raw kw."""
+        result_obj = WhatIfResult(
+            scenario_name="peak_demand_decrease",
+            target_metric=CanonicalMetric.PEAK_DEMAND,
+            baseline=381.8,
+            projected=362.7,
+            delta=-19.1,
+            delta_percent=-5.0,
+            confidence=0.65,
+            factors={"assumed_kpi_change_percent": -5.0},
+            unit="kW",
+        )
+
+        result = builder.format_whatif_result(result_obj)
+
+        assert "381.8 kilowatts" in result
+        assert "kw" not in result.lower()
 
 
 # ══════════════════════════════════════════════════════════

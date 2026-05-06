@@ -905,6 +905,29 @@ class TestMetricFallback:
         scenario = skill.dispatcher.simulate_whatif.call_args.args[0]
         assert scenario.parameters[0].proposed_value == -5.0
 
+    def test_metric_query_fallback_routes_whatif_absolute_target(self):
+        """Absolute target phrasing should not be treated as percent change."""
+        skill = _initialized_skill()
+        skill._check_profile_mismatch = Mock()
+        skill._resolve_asset_id = Mock(return_value="Line-2")
+        skill.dispatcher = Mock()
+        skill.dispatcher.simulate_whatif.return_value = Mock()
+        skill.response_builder = Mock()
+        skill.response_builder.format_whatif_result.return_value = "ok"
+        skill.speak = Mock()
+
+        msg = Mock()
+        msg.data = {"utterance": "what if OEE reaches 90 percent for Line 2"}
+
+        handled = skill.handle_metric_query_fallback(msg)
+
+        assert handled is True
+        scenario = skill.dispatcher.simulate_whatif.call_args.args[0]
+        assert scenario.target_metric == CanonicalMetric.OEE
+        assert scenario.asset_id == "Line-2"
+        assert scenario.parameters[0].name == "target_value"
+        assert scenario.parameters[0].proposed_value == 90.0
+
     def test_metric_query_fallback_ignores_non_metric_utterance(self):
         """Fallback returns False for unrelated utterances."""
         skill = _initialized_skill()

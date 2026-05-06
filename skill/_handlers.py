@@ -227,6 +227,21 @@ def _build_whatif_scenario(
         metric = CanonicalMetric.PEAK_DEMAND if "peak" in utterance else CanonicalMetric.ENERGY_PER_UNIT
 
     asset_id = _resolve_drift_asset(skill, message)
+    target_value = _resolve_whatif_target_value(utterance)
+    if target_value is not None:
+        parameter = ScenarioParameter(
+            name="target_value",
+            baseline_value=0.0,
+            proposed_value=target_value,
+            unit=metric.default_unit,
+        )
+        return WhatIfScenario(
+            name=f"{metric.value}_target_{target_value:g}",
+            asset_id=asset_id,
+            parameters=[parameter],
+            target_metric=metric,
+        )
+
     change_percent = _resolve_whatif_change_percent(skill, utterance, metric)
     parameter = ScenarioParameter(
         name="assumed_kpi_change_percent",
@@ -240,6 +255,20 @@ def _build_whatif_scenario(
         parameters=[parameter],
         target_metric=metric,
     )
+
+
+def _resolve_whatif_target_value(utterance: str) -> float | None:
+    """Resolve absolute target-value phrasing, e.g. 'OEE reaches 90 percent'."""
+    normalized = re.sub(r"[^a-z0-9.%\s-]", " ", utterance.lower())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    match = re.search(
+        (
+            r"\b(?:to|reach|reaches|reaching|become|becomes|at)\s+"
+            r"([-+]?\d+(?:\.\d+)?)\s*(?:%|percent)?\b"
+        ),
+        normalized,
+    )
+    return float(match.group(1)) if match else None
 
 
 def _resolve_whatif_change_percent(

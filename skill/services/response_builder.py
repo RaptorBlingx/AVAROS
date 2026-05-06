@@ -405,22 +405,26 @@ class ResponseBuilder:
         
         confidence_pct = int(result.confidence * 100)
         confidence_level = result.confidence_level
+        assumptions = self._format_whatif_assumptions(result)
         
         if self.verbosity == "brief":
             return f"{change:.1f} percent {change_word}"
         elif self.verbosity == "normal":
+            assumption_text = f" {assumptions}" if assumptions else ""
+            confidence_text = (
+                " Confidence is low because the scenario change is large."
+                if result.confidence < 0.6
+                else ""
+            )
             return (
                 f"Decision support scenario: {metric_name} would change "
                 f"from {baseline} to {projected}, about "
                 f"{change:.1f} percent {change_word}."
+                f"{assumption_text}{confidence_text}"
             )
         else:  # detailed
-            assumptions = ", ".join(
-                f"{name}={value:.1f}%"
-                for name, value in result.factors.items()
-            )
             if assumptions:
-                assumptions = f" Assumptions: {assumptions}."
+                assumptions = f" {assumptions}"
             return (
                 f"Decision support only: if the stated assumptions hold, "
                 f"{metric_name} would go from {baseline} to {projected}. "
@@ -486,6 +490,8 @@ class ResponseBuilder:
             return f"{formatted} percent"
         elif "kWh" in unit:
             return f"{formatted} kilowatt hours"
+        elif unit == "kW":
+            return f"{formatted} kilowatts"
         elif "kg" in unit:
             return f"{formatted} kilograms"
         elif "°C" in unit:
@@ -514,6 +520,32 @@ class ResponseBuilder:
         if abs_value >= 0.001:
             return f"{value:.4f}"
         return f"{value:.2e}"
+
+    def _format_whatif_assumptions(self, result: WhatIfResult) -> str:
+        """Render what-if assumptions in operator-friendly language."""
+        if not result.factors:
+            return ""
+
+        if "target_value" in result.factors:
+            target = self._format_value(result.factors["target_value"], result.unit)
+            return f"Assumption: target value is {target}."
+
+        if "assumed_kpi_change_percent" in result.factors:
+            change = result.factors["assumed_kpi_change_percent"]
+            direction = "increase" if change > 0 else "decrease"
+            if change == 0:
+                direction = "change"
+            return (
+                f"Assumption: {abs(change):.1f} percent {direction} "
+                "in the selected KPI."
+            )
+
+        parts = [
+            f"{name.replace('_', ' ')} changes by {value:.1f} percent"
+            for name, value in result.factors.items()
+        ]
+        label = "Assumption" if len(parts) == 1 else "Assumptions"
+        return f"{label}: {', '.join(parts)}."
     
     def _is_lower_better(self, metric: CanonicalMetric) -> bool:
         """Determine if lower values are better for this metric."""
