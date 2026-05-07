@@ -6,6 +6,7 @@ import {
   parseDisabledModes,
   readWidgetConfig,
   resolveWidgetAssetUrl,
+  resolveWidgetOriginUrl,
 } from "./config";
 
 function makeScript(src = "https://avaros.example.com/avaros-widget.js") {
@@ -31,6 +32,16 @@ describe("widget config", () => {
     expect(resolveWidgetAssetUrl(script, "widget-logo.svg")).toBe(
       "https://avaros.example.com/static/widget-logo.svg",
     );
+    expect(resolveWidgetOriginUrl(script)).toBe("https://avaros.example.com/");
+  });
+
+  it("uses an explicit AVAROS URL when provided", () => {
+    const script = makeScript();
+    script.dataset.avarosUrl = "https://assistant.example.com/";
+
+    const { config } = readWidgetConfig(script);
+
+    expect(config.avarosUrl).toBe("https://assistant.example.com/");
   });
 
   it("keeps explicit disabled modes from the host script", () => {

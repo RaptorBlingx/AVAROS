@@ -42,7 +42,7 @@ function getSpeechRecognitionCtor(): BrowserSpeechRecognitionCtor | null {
 }
 
 function pickInitialMode(disabledModes: WidgetMode[]): WidgetMode {
-  const preferredOrder: WidgetMode[] = ["wake-word", "push-to-talk", "text"];
+  const preferredOrder: WidgetMode[] = ["push-to-talk", "wake-word", "text"];
   const nextMode = preferredOrder.find((mode) => !disabledModes.includes(mode));
   return nextMode ?? "text";
 }
@@ -110,6 +110,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   >("prompt");
   const [micError, setMicError] = useState<string | null>(null);
   const [wakeWordArmed, setWakeWordArmed] = useState(false);
+  const [wakeWordLabel, setWakeWordLabel] = useState("Hey Avaros");
   const [ttsVoice, setTtsVoice] = useState<SpeechSynthesisVoice | null>(null);
 
   useEffect(() => {
@@ -461,6 +462,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
 
     // Wire onDetected BEFORE startListening to avoid losing events.
     const unsubDetected = bww.onDetected((_payload: DetectionPayload) => {
+      setWakeWordLabel(bww.getWakeWordLabel());
       // Cooldown: suppress re-triggers within a short window (e.g. TTS echo).
       if (Date.now() < wakeWordPromptCooldownRef.current) return;
       if (window.speechSynthesis.speaking) return;
@@ -485,6 +487,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     void (async () => {
       try {
         await bww.initialize();
+        setWakeWordLabel(await bww.refreshWakeWordLabel());
         await bww.startListening();
       } catch {
         // Backend unavailable — degrade to push-to-talk.
@@ -784,6 +787,8 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
             onClear={() => setMessages([])}
             onStopSpeaking={() => setIsTtsSpeaking(false)}
             brandLogoSrc={config.logoSrc}
+            wakeWordLabel={wakeWordLabel}
+            avarosUrl={config.avarosUrl}
             onModeChange={(nextMode) => {
               if (config.disabledModes.includes(nextMode)) return;
               setMode(nextMode);

@@ -159,6 +159,22 @@ class TestGetVoiceConfigFromSettings:
         data = response.json()
         assert data["hivemind_url"] == "wss://avaros.reneryo.com/hivemind/"
 
+    def test_auto_url_uses_direct_hivemind_for_local_compose(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """Local direct Web UI should point browsers to exposed HiveMind."""
+        settings_service.update_voice_config(VoiceConfig(hivemind_url="auto"))
+        response = client.get(
+            "/api/v1/voice/config",
+            headers={"Host": "localhost:8080"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["hivemind_url"] == "ws://localhost:5678/"
+
     def test_returns_configured_key(
         self,
         client: TestClient,

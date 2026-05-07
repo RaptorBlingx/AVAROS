@@ -44,16 +44,22 @@ function buildWidgetSnippet({
   label: string;
 }): string {
   const scriptSrc = `${origin.replace(/\/$/, "")}/avaros-widget.js`;
+  const avarosUrl = `${origin.replace(/\/$/, "")}/`;
   const hivemindUrl = voiceConfig?.hivemind_url ?? "";
   const clientName = voiceConfig?.hivemind_name || "avaros-web-client";
   const accessKey = voiceConfig?.hivemind_key ?? "";
+  const encryptionKey = voiceConfig?.hivemind_secret ?? "";
+  const encryptionAttribute = encryptionKey
+    ? `\n  data-encryption-key="${attr(encryptionKey)}"`
+    : "";
 
   return `<script
   async
   src="${attr(scriptSrc)}"
   data-host="${attr(hivemindUrl)}"
+  data-avaros-url="${attr(avarosUrl)}"
   data-client-name="${attr(clientName)}"
-  data-access-key="${attr(accessKey)}"
+  data-access-key="${attr(accessKey)}"${encryptionAttribute}
   data-position="${position}"
   data-theme="${theme}"
   data-size="${size}"
@@ -148,9 +154,9 @@ export default function EmbeddableWidgetSection({
             </h3>
             <p className="m-0 mt-2 max-w-3xl">
               Add this widget to a trusted factory dashboard or intranet page
-              after AVAROS voice/HiveMind is configured. The access key is
-              visible in browser HTML, so do not use this v1 snippet on public
-              internet pages.
+              after AVAROS voice/HiveMind is configured. The access and
+              encryption keys are visible in browser HTML, so do not use this
+              v1 snippet on public internet pages.
             </p>
           </div>
           <span
@@ -174,8 +180,9 @@ export default function EmbeddableWidgetSection({
       {!loading && !ready ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
           Widget embed is not ready because HiveMind voice access is not
-          configured. Set `HIVEMIND_CLIENT_KEY` and restart the Web UI stack,
-          then refresh this section.
+          configured. Set `HIVEMIND_CLIENT_KEY` and, when encrypted HiveMind
+          responses are enabled, `HIVEMIND_CLIENT_CRYPTO_KEY`; then restart the
+          Web UI stack and refresh this section.
         </p>
       ) : null}
 

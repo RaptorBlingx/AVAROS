@@ -43,6 +43,7 @@ export type WidgetConfig = {
   label: string;
   disabledModes: WidgetMode[];
   logoSrc: string;
+  avarosUrl: string;
 };
 
 export type WidgetPublicApi = {

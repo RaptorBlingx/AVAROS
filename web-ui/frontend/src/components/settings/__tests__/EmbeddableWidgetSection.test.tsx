@@ -45,8 +45,10 @@ describe("EmbeddableWidgetSection", () => {
     expect(snippet).toContain(
       'data-host="wss://avaros.example.com/hivemind/"',
     );
+    expect(snippet).toContain('data-avaros-url="http://localhost:3000/"');
     expect(snippet).toContain('data-client-name="avaros-web-client"');
     expect(snippet).toContain('data-access-key="widget-key"');
+    expect(snippet).toContain('data-encryption-key="widget-secret"');
     expect(snippet).toContain('data-disabled-modes="wake-word"');
   });
 
@@ -114,6 +116,7 @@ describe("buildWidgetSnippet", () => {
       voiceConfig: {
         ...readyConfig,
         hivemind_key: 'key"with&chars',
+        hivemind_secret: 'secret"with&chars',
       },
       position: "bottom-right",
       theme: "auto",
@@ -122,6 +125,7 @@ describe("buildWidgetSnippet", () => {
     });
 
     expect(snippet).toContain("key&quot;with&amp;chars");
+    expect(snippet).toContain("secret&quot;with&amp;chars");
     expect(snippet).toContain("Ask &quot;AVAROS&quot;");
   });
 });

@@ -22,6 +22,16 @@ type SpeakListener = (text: string) => void;
 type EventListener = (message: BusMessage) => void;
 
 const DEFAULT_SESSION_SITE = "default";
+const OVOS_INTENT_PIPELINE = [
+  "converse",
+  "padatious_high",
+  "adapt_high",
+  "fallback_high",
+  "adapt_medium",
+  "fallback_medium",
+  "adapt_low",
+  "fallback_low",
+] as const;
 const MAX_RECONNECT_DELAY_MS = 30000;
 
 function makeSessionId(): string {
@@ -66,7 +76,10 @@ function makePaddingSafeUserAgent(name: string, key: string): string {
 
 async function importSecretKey(rawKey: string): Promise<CryptoKey> {
   const encoded = new TextEncoder().encode(rawKey);
-  return crypto.subtle.importKey("raw", encoded, "AES-GCM", false, ["decrypt"]);
+  return crypto.subtle.importKey("raw", encoded, "AES-GCM", false, [
+    "encrypt",
+    "decrypt",
+  ]);
 }
 
 function hexToBytes(hex: string): Uint8Array {
@@ -101,6 +114,23 @@ async function decryptMessage(
     ciphertext,
   );
   return new TextDecoder().decode(decrypted);
+}
+
+async function encryptMessage(
+  text: string,
+  secretKey: string,
+): Promise<EncryptedEnvelope> {
+  const nonce = crypto.getRandomValues(new Uint8Array(16));
+  const key = await importSecretKey(secretKey);
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: nonce },
+    key,
+    new TextEncoder().encode(text),
+  );
+  return {
+    nonce: bytesToHex(nonce),
+    ciphertext: bytesToHex(new Uint8Array(ciphertext)),
+  };
 }
 
 function normalizeWsHost(rawHost: string): string {
@@ -320,6 +350,8 @@ export class ConnectionManager {
         session: {
           session_id: this.sessionId,
           site_id: DEFAULT_SESSION_SITE,
+          lang: "en-us",
+          pipeline: [...OVOS_INTENT_PIPELINE],
         },
       },
     };
@@ -328,7 +360,7 @@ export class ConnectionManager {
       msg_type: "bus",
       payload: busMessage,
     };
-    this.ws.send(JSON.stringify(envelope));
+    await this.sendEnvelope(envelope);
   }
 
   private sendHello(): void {
@@ -347,12 +379,36 @@ export class ConnectionManager {
           context: {},
           active_skills: [],
           utterance_states: {},
+          pipeline: [...OVOS_INTENT_PIPELINE],
         },
       },
     };
 
+    void this.sendEnvelope(envelope).then(() => {
+      this.helloSent = true;
+    });
+  }
+
+  private async sendEnvelope(envelope: HiveMindEnvelope): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error("WebSocket is not connected");
+    }
+
+    const configured = this.encryptionKey.trim();
+    if (
+      configured.length === 16 ||
+      configured.length === 24 ||
+      configured.length === 32
+    ) {
+      const encrypted = await encryptMessage(
+        JSON.stringify(envelope),
+        configured,
+      );
+      this.ws.send(JSON.stringify(encrypted));
+      return;
+    }
+
     this.ws.send(JSON.stringify(envelope));
-    this.helloSent = true;
   }
 
   private async handleMessage(raw: string): Promise<void> {
@@ -486,7 +542,11 @@ export class ConnectionManager {
       this.clientName,
       normalizedAccessKey,
     );
-    const userAgents = new Set<string>([preferredUserAgent, this.clientName, "widget"]);
+    const userAgents = new Set<string>([
+      this.clientName,
+      preferredUserAgent,
+      "widget",
+    ]);
 
     const urls = new Set<string>();
     baseUrls.forEach((url) => {

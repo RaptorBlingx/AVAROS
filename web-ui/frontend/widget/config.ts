@@ -64,6 +64,14 @@ export function resolveWidgetAssetUrl(
   }
 }
 
+export function resolveWidgetOriginUrl(script: HTMLScriptElement): string {
+  try {
+    return new URL("/", script.src || window.location.href).toString();
+  } catch {
+    return window.location.origin ? `${window.location.origin}/` : "/";
+  }
+}
+
 export function resolveScriptElement(): HTMLScriptElement | null {
   if (
     document.currentScript &&
@@ -98,6 +106,7 @@ export function readWidgetConfig(script: HTMLScriptElement): {
     script,
     script.dataset.logoSrc?.trim() || "widget-logo.svg",
   );
+  const avarosUrl = script.dataset.avarosUrl?.trim() || resolveWidgetOriginUrl(script);
 
   return {
     config: {
@@ -114,6 +123,7 @@ export function readWidgetConfig(script: HTMLScriptElement): {
       label: script.dataset.label?.trim() ?? "",
       disabledModes: parseDisabledModes(script.dataset.disabledModes),
       logoSrc,
+      avarosUrl,
     },
     configError,
   };

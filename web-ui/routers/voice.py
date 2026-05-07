@@ -25,6 +25,9 @@ def _request_hivemind_url(request: Request) -> str:
     forwarded_host = _first_header_value(request.headers.get("x-forwarded-host"))
     host = forwarded_host or request.headers.get("host") or request.url.netloc
     proto = forwarded_proto or request.url.scheme
+    parsed = urlparse(f"//{host}")
+    if parsed.hostname in {"localhost", "127.0.0.1"} and parsed.port == 8080:
+        return f"ws://{parsed.hostname}:5678/"
     ws_scheme = "wss" if proto in {"https", "wss"} else "ws"
     return f"{ws_scheme}://{host}/hivemind/"
 

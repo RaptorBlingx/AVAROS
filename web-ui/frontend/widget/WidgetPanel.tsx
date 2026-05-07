@@ -27,15 +27,9 @@ type WidgetPanelProps = {
   onClear: () => void;
   onStopSpeaking?: () => void;
   brandLogoSrc: string;
+  wakeWordLabel: string;
+  avarosUrl: string;
 };
-
-const MODE_LABEL: Record<WidgetMode, string> = {
-  "wake-word": "Wake Word",
-  "push-to-talk": "PTT",
-  text: "Text",
-};
-
-const MODE_ORDER: WidgetMode[] = ["wake-word", "push-to-talk", "text"];
 
 const STATE_LABEL: Record<WidgetVisualState, string> = {
   idle: "Ready",
@@ -63,10 +57,48 @@ function buildStateLabel(
   return STATE_LABEL[visualState];
 }
 
-function buildModeHint(mode: WidgetMode): string {
-  if (mode === "wake-word") return "Say 'Hey Avaros' to activate.";
-  if (mode === "push-to-talk") return "Press the mic button when speaking.";
-  return "Keyboard mode. Audio capture is stopped.";
+function buildModeHint(mode: WidgetMode, wakeWordLabel: string): string {
+  if (mode === "wake-word") {
+    return `Wake-word is on. Say "${wakeWordLabel}" to start a hands-free request.`;
+  }
+  if (mode === "push-to-talk") {
+    return "Push-to-talk is on. The microphone stays off until you press Start Listening.";
+  }
+  return "Type a question. No microphone needed.";
+}
+
+function getVoiceToggleTarget(mode: WidgetMode, disabledModes: WidgetMode[]): WidgetMode | null {
+  if (mode === "wake-word" && !disabledModes.includes("push-to-talk")) {
+    return "push-to-talk";
+  }
+  if (mode !== "wake-word" && !disabledModes.includes("wake-word")) {
+    return "wake-word";
+  }
+  return null;
+}
+
+function getVoiceToggleLabel(mode: WidgetMode): string {
+  if (mode === "wake-word") return "Wake-word on";
+  return "Push-to-talk on";
+}
+
+function getVoiceToggleDetail(mode: WidgetMode, wakeWordLabel: string): string {
+  if (mode === "wake-word") return `Listening for "${wakeWordLabel}"`;
+  return "Mic opens only when you ask";
+}
+
+function getVoiceToggleTooltip(
+  mode: WidgetMode,
+  targetMode: WidgetMode | null,
+  wakeWordLabel: string,
+): string {
+  if (!targetMode) {
+    return "Only one voice mode is enabled by this host page.";
+  }
+  if (targetMode === "wake-word") {
+    return `Switch to wake-word mode. On trusted HTTPS pages, AVAROS listens for "${wakeWordLabel}".`;
+  }
+  return "Switch to push-to-talk. The microphone stays off until you press Start Listening.";
 }
 
 function renderStateIcon(state: WidgetVisualState): React.ReactNode {
@@ -148,6 +180,8 @@ export function WidgetPanel({
   onClear,
   onStopSpeaking,
   brandLogoSrc,
+  wakeWordLabel,
+  avarosUrl,
 }: WidgetPanelProps) {
   const historyRef = useRef<HTMLDivElement | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -174,6 +208,8 @@ export function WidgetPanel({
     visualState === "disabled" ||
     connectionState === "error" ||
     connectionState === "disconnected";
+  const voiceToggleTarget = getVoiceToggleTarget(mode, disabledModes);
+  const voiceToggleDisabled = mode === "text" || voiceToggleTarget === null;
 
   const handlePrimaryAction = () => {
     if (visualState === "listening") {
@@ -224,38 +260,49 @@ export function WidgetPanel({
             className="voice-widget__header-logo"
           />
           <div className="voice-widget__header-left">
-            <p className="voice-widget__title">Voice Assistant</p>
+            <p className="voice-widget__title">AVAROS</p>
             <p className="voice-widget__state" aria-live="polite">
               {stateLabel}
             </p>
           </div>
         </div>
-        {mode !== "text" && (
-          <button
-            type="button"
-            className={`voice-widget__header-action voice-widget__header-action--${
-              visualState === "disabled" ? "disconnected" : visualState
-            }`}
-            onClick={handlePrimaryAction}
-            disabled={isDisabled}
-            title={
-              visualState === "processing"
-                ? "Cancel current request"
-                : getActionLabel(visualState)
-            }
-            aria-label={getActionLabel(visualState)}
+        <div className="voice-widget__header-actions">
+          <a
+            className="voice-widget__open-link"
+            href={avarosUrl}
+            target="_blank"
+            rel="noreferrer"
+            title="Open the full AVAROS assistant"
           >
-            <span
-              className="voice-widget__header-action__icon"
-              aria-hidden="true"
+            Open AVAROS
+          </a>
+          {mode !== "text" && (
+            <button
+              type="button"
+              className={`voice-widget__header-action voice-widget__header-action--${
+                visualState === "disabled" ? "disconnected" : visualState
+              }`}
+              onClick={handlePrimaryAction}
+              disabled={isDisabled}
+              title={
+                visualState === "processing"
+                  ? "Cancel current request"
+                  : getActionLabel(visualState)
+              }
+              aria-label={getActionLabel(visualState)}
             >
-              {renderStateIcon(visualState)}
-            </span>
-            <span className="voice-widget__header-action__label">
-              {getActionLabel(visualState)}
-            </span>
-          </button>
-        )}
+              <span
+                className="voice-widget__header-action__icon"
+                aria-hidden="true"
+              >
+                {renderStateIcon(visualState)}
+              </span>
+              <span className="voice-widget__header-action__label">
+                {getActionLabel(visualState)}
+              </span>
+            </button>
+          )}
+        </div>
       </header>
 
       {hasConnectionError ? (
@@ -267,37 +314,33 @@ export function WidgetPanel({
 
       <div className="voice-chat-panel">
         <div className="voice-chat-controls">
-          <div className="voice-chat-toggle-wrap">
-            <div
-              className="voice-chat-toggle"
-              role="tablist"
-              aria-label="Voice mode"
-            >
-              {MODE_ORDER.map((candidate) => {
-                const disabled = disabledModes.includes(candidate);
-                return (
-                  <button
-                    key={candidate}
-                    type="button"
-                    role="tab"
-                    aria-selected={mode === candidate}
-                    disabled={disabled}
-                    className={`voice-chat-toggle__button ${
-                      mode === candidate
-                        ? "voice-chat-toggle__button--active"
-                        : ""
-                    }`}
-                    onClick={() => onModeChange(candidate)}
-                    title={
-                      disabled ? "Disabled by host" : MODE_LABEL[candidate]
-                    }
-                  >
-                    {MODE_LABEL[candidate]}
-                  </button>
-                );
-              })}
+          <div className="voice-mode-card">
+            <div className="voice-mode-card__copy">
+              <span className="voice-mode-card__eyebrow">Voice preference</span>
+              <p className="voice-chat-toggle__hint">
+                {buildModeHint(mode, wakeWordLabel)}
+              </p>
             </div>
-            <p className="voice-chat-toggle__hint">{buildModeHint(mode)}</p>
+            <button
+              type="button"
+              className={`voice-mode-toggle voice-mode-toggle--${mode}`}
+              disabled={voiceToggleDisabled}
+              onClick={() => {
+                if (voiceToggleTarget) onModeChange(voiceToggleTarget);
+              }}
+              title={getVoiceToggleTooltip(mode, voiceToggleTarget, wakeWordLabel)}
+              aria-label={getVoiceToggleTooltip(mode, voiceToggleTarget, wakeWordLabel)}
+            >
+              <span className="voice-mode-toggle__status">
+                {getVoiceToggleLabel(mode)}
+              </span>
+              <span className="voice-mode-toggle__detail">
+                {getVoiceToggleDetail(mode, wakeWordLabel)}
+              </span>
+              <span className="voice-mode-toggle__affordance" aria-hidden="true">
+                Switch
+              </span>
+            </button>
           </div>
         </div>
 
@@ -378,7 +421,11 @@ export function WidgetPanel({
                 >
                   💬
                 </p>
-                <p>Say &quot;Hey Avaros&quot; or type a question below.</p>
+                <p>
+                  {mode === "wake-word"
+                    ? `Say "${wakeWordLabel}" or type below.`
+                    : "Press push-to-talk when you want voice, or type anytime."}
+                </p>
               </div>
             ) : (
               messages.map((message) => (
