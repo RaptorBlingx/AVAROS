@@ -1,0 +1,381 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [6 0 R 8 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Length 6295 >>
+stream
+0 0 0 rg
+BT /F2 18.00 Tf 42.00 781.89 Td (AVAROS D2.2 Beta Package Checklist) Tj ET
+0 0 0 RG 0.70 w 42.00 772.89 m 553.28 772.89 l S
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 750.69 Td (Date: 2026-07-01 Release: AVAROS DIA OVOS Manufacturing Assistant v0.1.1 WASABI) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 737.49 Td (deliverable: D2.2 Beta package + security checklist) Tj ET
+0 0 0 rg
+BT /F2 13.50 Tf 42.00 702.99 Td (Scope and Status) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 681.79 Td (The AVAROS/WASABI beta package is ready for evaluator review for the scoped v0.1.1) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 668.59 Td (package. The installable ZIP, checksum, quick-start material, shop listing, and public) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 655.39 Td (AVAROS access point have been prepared and verified.) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 635.19 Td (This checklist applies to the AVAROS v0.1.1 beta package and its configured demo) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 621.99 Td (deployment. It does not certify unrelated host services.) Tj ET
+0 0 0 rg
+BT /F2 13.50 Tf 42.00 587.49 Td (Evaluator Artifacts) Tj ET
+0.86 0.91 0.96 rg
+42.00 555.49 143.16 24.00 re B
+0 0 0 rg
+BT /F2 8.20 Tf 47.00 565.29 Td (Artifact) Tj ET
+0.86 0.91 0.96 rg
+185.16 555.49 291.43 24.00 re B
+0 0 0 rg
+BT /F2 8.20 Tf 190.16 565.29 Td (File or URL) Tj ET
+0.86 0.91 0.96 rg
+476.59 555.49 76.69 24.00 re B
+0 0 0 rg
+BT /F2 8.20 Tf 481.59 565.29 Td (Status) Tj ET
+0 0 0 RG
+42.00 531.49 143.16 24.00 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 541.29 Td (Release ZIP) Tj ET
+0 0 0 RG
+185.16 531.49 291.43 24.00 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 541.29 Td (avaros-dia-v0.1.1.zip) Tj ET
+0 0 0 RG
+476.59 531.49 76.69 24.00 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 541.29 Td (Ready) Tj ET
+0 0 0 RG
+42.00 507.49 143.16 24.00 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 517.29 Td (SHA-256 checksum) Tj ET
+0 0 0 RG
+185.16 507.49 291.43 24.00 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 517.29 Td (avaros-dia-v0.1.1.zip.sha256) Tj ET
+0 0 0 RG
+476.59 507.49 76.69 24.00 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 517.29 Td (Ready) Tj ET
+0 0 0 RG
+42.00 483.49 143.16 24.00 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 493.29 Td (Quick-start PDF) Tj ET
+0 0 0 RG
+185.16 483.49 291.43 24.00 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 493.29 Td (AVAROS-Quick-Start-v0.1.1.pdf) Tj ET
+0 0 0 RG
+476.59 483.49 76.69 24.00 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 493.29 Td (Ready) Tj ET
+0 0 0 RG
+42.00 459.49 143.16 24.00 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 469.29 Td (Security checklist PDF) Tj ET
+0 0 0 RG
+185.16 459.49 291.43 24.00 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 469.29 Td (AVAROS_D2.2_Security_Checklist_and_Evidence.pdf) Tj ET
+0 0 0 RG
+476.59 459.49 76.69 24.00 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 469.29 Td (Ready) Tj ET
+0 0 0 RG
+42.00 425.89 143.16 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 445.29 Td (WASABI Shop product) Tj ET
+0 0 0 RG
+185.16 425.89 291.43 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 445.29 Td (https://shop.reneryo.com/skills/38-avaros-dia-ovos-manufact) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 434.49 Td (uring-assistant.html) Tj ET
+0 0 0 RG
+476.59 425.89 76.69 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 445.29 Td (Live) Tj ET
+0 0 0 RG
+42.00 401.89 143.16 24.00 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 411.69 Td (AVAROS demo URL) Tj ET
+0 0 0 RG
+185.16 401.89 291.43 24.00 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 411.69 Td (https://avaros.reneryo.com) Tj ET
+0 0 0 RG
+476.59 401.89 76.69 24.00 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 411.69 Td (Live) Tj ET
+0 0 0 rg
+BT /F2 13.50 Tf 42.00 362.39 Td (Package Contents) Tj ET
+0.86 0.91 0.96 rg
+42.00 330.39 199.40 24.00 re B
+0 0 0 rg
+BT /F2 8.80 Tf 47.00 339.59 Td (Expected beta content) Tj ET
+0.86 0.91 0.96 rg
+241.40 330.39 311.88 24.00 re B
+0 0 0 rg
+BT /F2 8.80 Tf 246.40 339.59 Td (Evidence) Tj ET
+0 0 0 RG
+42.00 295.59 199.40 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 315.59 Td (Docker Compose standalone) Tj ET
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 304.19 Td (deployment) Tj ET
+0 0 0 RG
+241.40 295.59 311.88 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 315.59 Td (Packaged as docker-compose.yml inside the ZIP) Tj ET
+0 0 0 RG
+42.00 271.59 199.40 24.00 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 280.79 Td (OVOS skill) Tj ET
+0 0 0 RG
+241.40 271.59 311.88 24.00 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 280.79 Td (Packaged under skill/) Tj ET
+0 0 0 RG
+42.00 236.79 199.40 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 256.79 Td (Web UI and embedded widget source) Tj ET
+0 0 0 RG
+241.40 236.79 311.88 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 256.79 Td (Packaged under web-ui/; Docker build creates the UI and) Tj ET
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 245.39 Td (widget bundles) Tj ET
+0 0 0 RG
+42.00 201.99 199.40 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 221.99 Td (HiveMind WebSocket proxy) Tj ET
+0 0 0 RG
+241.40 201.99 311.88 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 221.99 Td (Packaged under docker/hivemind/ and composed as a private) Tj ET
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 210.59 Td (Docker-network service) Tj ET
+0 0 0 RG
+42.00 177.99 199.40 24.00 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 187.19 Td (Wake-word backend) Tj ET
+0 0 0 RG
+241.40 177.99 311.88 24.00 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 187.19 Td (Packaged under services/wakeword/) Tj ET
+0 0 0 RG
+42.00 143.19 199.40 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 163.19 Td (Deterministic demo data platform) Tj ET
+0 0 0 RG
+241.40 143.19 311.88 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 163.19 Td (Packaged under tools/reneryo-data-generator/ and enabled) Tj ET
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 151.79 Td (with --profile demo) Tj ET
+0 0 0 RG
+42.00 119.19 199.40 24.00 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 128.39 Td (User documentation) Tj ET
+0 0 0 RG
+241.40 119.19 311.88 24.00 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 128.39 Td (Packaged under user-docs/) Tj ET
+0 0 0 RG
+42.00 95.19 199.40 24.00 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 104.39 Td (Environment template) Tj ET
+0 0 0 RG
+241.40 95.19 311.88 24.00 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 104.39 Td (.env.example included; generated .env is not included) Tj ET
+0 0 0 RG
+42.00 71.19 199.40 24.00 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 80.39 Td (License and changelog) Tj ET
+0 0 0 RG
+241.40 71.19 311.88 24.00 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 80.39 Td (LICENSE and CHANGELOG.md included) Tj ET
+0.45 0.45 0.45 rg
+BT /F1 8.00 Tf 42.00 24.00 Td (AVAROS D2.2 Evidence - Page 1) Tj ET
+0 0 0 rg
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 5 0 R >>
+endobj
+7 0 obj
+<< /Length 3944 >>
+stream
+0 0 0 rg
+BT /F2 13.50 Tf 42.00 772.39 Td (Verification) Tj ET
+0.86 0.91 0.96 rg
+42.00 740.39 199.40 24.00 re B
+0 0 0 rg
+BT /F2 8.80 Tf 47.00 749.59 Td (Check) Tj ET
+0.86 0.91 0.96 rg
+241.40 740.39 311.88 24.00 re B
+0 0 0 rg
+BT /F2 8.80 Tf 246.40 749.59 Td (Result) Tj ET
+0 0 0 RG
+42.00 716.39 199.40 24.00 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 725.59 Td (Release ZIP rebuilt on 2026-07-01) Tj ET
+0 0 0 RG
+241.40 716.39 311.88 24.00 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 725.59 Td (Passed) Tj ET
+0 0 0 RG
+42.00 681.59 199.40 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 701.59 Td (SHA-256 generated) Tj ET
+0 0 0 RG
+241.40 681.59 311.88 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 701.59 Td (b17676a3972209ca75754139aa148a012230af6427bd942c813a) Tj ET
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 690.19 Td (fde24789199b) Tj ET
+0 0 0 RG
+42.00 646.79 199.40 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 666.79 Td (Archive forbidden-file scan) Tj ET
+0 0 0 RG
+241.40 646.79 311.88 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 666.79 Td (0 .env, key, log, database, TLS private key, or Git metadata) Tj ET
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 655.39 Td (entries) Tj ET
+0 0 0 RG
+42.00 622.79 199.40 24.00 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 631.99 Td (Packaged Compose validation) Tj ET
+0 0 0 RG
+241.40 622.79 311.88 24.00 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 631.99 Td (docker compose config --quiet passed) Tj ET
+0 0 0 RG
+42.00 587.99 199.40 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 607.99 Td (Fixed container names removed from) Tj ET
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 596.59 Td (packaged Compose) Tj ET
+0 0 0 RG
+241.40 587.99 311.88 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 607.99 Td (Passed) Tj ET
+0 0 0 RG
+42.00 553.19 199.40 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 573.19 Td (Global network/volume names removed) Tj ET
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 561.79 Td (from packaged Compose) Tj ET
+0 0 0 RG
+241.40 553.19 311.88 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 573.19 Td (Passed) Tj ET
+0 0 0 RG
+42.00 518.39 199.40 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 538.39 Td (Clean install from ZIP on alternate) Tj ET
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 526.99 Td (ports) Tj ET
+0 0 0 RG
+241.40 518.39 311.88 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 538.39 Td (Passed) Tj ET
+0 0 0 RG
+42.00 494.39 199.40 24.00 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 503.59 Td (Web UI health in clean install) Tj ET
+0 0 0 RG
+241.40 494.39 311.88 24.00 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 503.59 Td (HTTP 200) Tj ET
+0 0 0 RG
+42.00 459.59 199.40 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 479.59 Td (Same-origin HiveMind URL in clean) Tj ET
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 468.19 Td (install) Tj ET
+0 0 0 RG
+241.40 459.59 311.88 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 479.59 Td (ws://localhost:19180/hivemind/) Tj ET
+0 0 0 RG
+42.00 424.79 199.40 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 444.79 Td (Server-backed TTS response in clean) Tj ET
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 433.39 Td (install) Tj ET
+0 0 0 RG
+241.40 424.79 311.88 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 444.79 Td (audio/wav, WAV header RIFF) Tj ET
+0 0 0 RG
+42.00 389.99 199.40 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 409.99 Td (Server-backed TTS preflight in clean) Tj ET
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 398.59 Td (install) Tj ET
+0 0 0 RG
+241.40 389.99 311.88 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 409.99 Td (HTTP 204) Tj ET
+0 0 0 RG
+42.00 365.99 199.40 24.00 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 375.19 Td (Demo platform health in clean install) Tj ET
+0 0 0 RG
+241.40 365.99 311.88 24.00 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 375.19 Td (HTTP 200) Tj ET
+0 0 0 RG
+42.00 331.19 199.40 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 47.00 351.19 Td (Clean uninstall) Tj ET
+0 0 0 RG
+241.40 331.19 311.88 34.80 re S
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 351.19 Td (Removed clean-install containers, volumes, network, and local) Tj ET
+0 0 0 rg
+BT /F1 8.80 Tf 246.40 339.79 Td (images) Tj ET
+0.45 0.45 0.45 rg
+BT /F1 8.00 Tf 42.00 24.00 Td (AVAROS D2.2 Evidence - Page 2) Tj ET
+0 0 0 rg
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 7 0 R >>
+endobj
+xref
+0 9
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000127 00000 n 
+0000000224 00000 n 
+0000000326 00000 n 
+0000006673 00000 n 
+0000006815 00000 n 
+0000010811 00000 n 
+trailer
+<< /Size 9 /Root 1 0 R >>
+startxref
+10953
+%%EOF

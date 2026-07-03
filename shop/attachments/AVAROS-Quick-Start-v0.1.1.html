@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>AVAROS Quick Start 0.1.1</title>
+  <style>
+    @page { size: A4; margin: 18mm; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #172033;
+      font: 11pt/1.48 Arial, sans-serif;
+    }
+    header {
+      padding: 20px 24px;
+      color: white;
+      background: linear-gradient(135deg, #12314c, #007d77);
+      border-radius: 12px;
+    }
+    h1 { margin: 0 0 6px; font-size: 28pt; }
+    h2 { margin: 22px 0 8px; color: #0b5e62; font-size: 17pt; }
+    h3 { margin: 16px 0 6px; font-size: 12pt; }
+    p { margin: 6px 0; }
+    code, pre { font-family: "DejaVu Sans Mono", monospace; }
+    pre {
+      padding: 12px 14px;
+      overflow-wrap: anywhere;
+      color: #eaf7f6;
+      background: #142536;
+      border-radius: 8px;
+      font-size: 9.5pt;
+      white-space: pre-wrap;
+    }
+    .note {
+      margin: 12px 0;
+      padding: 10px 12px;
+      background: #eaf7f6;
+      border-left: 4px solid #00897f;
+    }
+    .page-break { break-before: page; }
+    table { width: 100%; border-collapse: collapse; }
+    td, th { padding: 7px; border: 1px solid #cad4df; text-align: left; }
+    th { background: #edf2f6; }
+    footer {
+      margin-top: 24px;
+      color: #58677a;
+      font-size: 9pt;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>AVAROS Quick Start</h1>
+    <div>OVOS Assistant for Sustainable Manufacturing · Version 0.1.1</div>
+  </header>
+
+  <h2>1. Requirements</h2>
+  <ul>
+    <li>Linux server or workstation</li>
+    <li>Docker Engine 26+ and Docker Compose v2</li>
+    <li>4 GB RAM minimum and 10 GB free disk space</li>
+    <li>One available host port for the Web UI</li>
+  </ul>
+
+  <h2>2. Install</h2>
+  <pre>unzip avaros-dia-v0.1.1.zip
+cd avaros-dia-v0.1.1
+bash scripts/prepare-env.sh
+docker compose up -d --build
+docker compose ps</pre>
+
+  <p>Open <strong>http://localhost:8080</strong> and enter the
+  <code>AVAROS_WEB_API_KEY</code> stored in the private <code>.env</code>
+  file.</p>
+
+  <h3>If port 8080 is occupied</h3>
+  <p>Edit <code>.env</code> before starting:</p>
+  <pre>AVAROS_WEB_PORT=9090
+HIVEMIND_WS_URL=auto</pre>
+  <p>Then open <strong>http://localhost:9090</strong>. Voice automatically
+  follows the selected Web UI port.</p>
+
+  <div class="note">
+    Do not set the browser HiveMind URL to a Docker service name.
+    Keep <code>HIVEMIND_WS_URL=auto</code> for local, LAN, and proxied
+    deployments.
+  </div>
+
+  <h2>3. Try the demo platform</h2>
+  <pre>docker compose --profile demo up -d</pre>
+  <table>
+    <tr><th>Wizard field</th><th>Value</th></tr>
+    <tr><td>Profile name</td><td><code>demo</code></td></tr>
+    <tr><td>API URL</td><td><code>http://demo-platform:8090</code></td></tr>
+    <tr><td>Authentication</td><td>Bearer token</td></tr>
+    <tr><td>Token</td><td>Any non-empty test value</td></tr>
+  </table>
+
+  <div class="page-break"></div>
+
+  <h2>4. Configure your platform</h2>
+  <p>The guided wizard covers:</p>
+  <ol>
+    <li>Platform endpoint and authentication</li>
+    <li>Connection testing</li>
+    <li>Asset registration and aliases</li>
+    <li>Platform resource linking</li>
+    <li>Metric mapping and validation</li>
+    <li>Voice-intent activation</li>
+    <li>Optional PREVENTION analytics</li>
+  </ol>
+  <p>Use a platform URL reachable from inside Docker. A service running in
+  another container must not be configured as <code>localhost</code>.</p>
+
+  <h2>5. Verify and troubleshoot</h2>
+  <pre>curl http://localhost:8080/health
+docker compose ps
+docker compose logs --tail=200 avaros-web-ui hivemind avaros</pre>
+  <p>Replace <code>8080</code> with your configured
+  <code>AVAROS_WEB_PORT</code>.</p>
+
+  <h2>6. Completely reset the test installation</h2>
+  <p>Remove AVAROS containers, networks, volumes, and locally built images:</p>
+  <pre>bash scripts/uninstall.sh</pre>
+  <p>On a disposable machine, also remove every image referenced by AVAROS and
+  delete the extracted release directory:</p>
+  <pre>bash scripts/uninstall.sh --all-images
+cd ..
+rm -rf avaros-dia-v0.1.1</pre>
+
+  <div class="note">
+    <code>--all-images</code> may remove images shared with another Docker
+    Compose project. Use it only on a dedicated test machine.
+  </div>
+
+  <h2>Documentation included in the ZIP</h2>
+  <p>See <code>README.md</code> and <code>user-docs/</code> for installation,
+  configuration, operations, security, troubleshooting, voice commands,
+  PREVENTION integration, and SME replication guidance.</p>
+
+  <footer>
+    AVAROS 0.1.1 · Apache-2.0 · Distributed through the WASABI Shop
+  </footer>
+</body>
+</html>

@@ -1,0 +1,397 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [6 0 R 8 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Length 7929 >>
+stream
+0 0 0 rg
+BT /F2 18.00 Tf 42.00 781.89 Td (AVAROS D2.2 Security Checklist and Evidence) Tj ET
+0 0 0 RG 0.70 w 42.00 772.89 m 553.28 772.89 l S
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 750.69 Td (Date: 2026-07-01 Scope: AVAROS/WASABI beta package and WASABI demo deployment path) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 737.49 Td (Release: AVAROS DIA OVOS Manufacturing Assistant v0.1.1) Tj ET
+0 0 0 rg
+BT /F2 13.50 Tf 42.00 702.99 Td (Scope and Status) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 681.79 Td (The AVAROS/WASABI beta security checklist is closed with evidence for the scoped) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 668.59 Td (v0.1.1 beta package and demo deployment path. The assessment scope is limited to the) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 655.39 Td (AVAROS release package, public AVAROS access point, WASABI Shop publication, and) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 642.19 Td (AVAROS-related supporting services verified for this delivery. It is not a host-wide) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 628.99 Td (production-security certification for unrelated services.) Tj ET
+0 0 0 rg
+BT /F2 13.50 Tf 42.00 594.49 Td (Checklist) Tj ET
+0.86 0.91 0.96 rg
+42.00 562.49 143.16 24.00 re B
+0 0 0 rg
+BT /F2 8.20 Tf 47.00 572.29 Td (Control) Tj ET
+0.86 0.91 0.96 rg
+185.16 562.49 291.43 24.00 re B
+0 0 0 rg
+BT /F2 8.20 Tf 190.16 572.29 Td (Evidence) Tj ET
+0.86 0.91 0.96 rg
+476.59 562.49 76.69 24.00 re B
+0 0 0 rg
+BT /F2 8.20 Tf 481.59 572.29 Td (Status) Tj ET
+0 0 0 RG
+42.00 528.89 143.16 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 548.29 Td (Release ZIP excludes) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 537.49 Td (secrets and runtime files) Tj ET
+0 0 0 RG
+185.16 528.89 291.43 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 548.29 Td (Archive scan found 384 entries and 0 forbidden .env, key,) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 537.49 Td (log, database, TLS private key, or Git metadata entries) Tj ET
+0 0 0 RG
+476.59 528.89 76.69 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 548.29 Td (Closed) Tj ET
+0 0 0 RG
+42.00 484.49 143.16 44.40 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 514.69 Td (Release ZIP has checksum) Tj ET
+0 0 0 RG
+185.16 484.49 291.43 44.40 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 514.69 Td (SHA-256:) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 503.89 Td (b17676a3972209ca75754139aa148a012230af6427bd942c813a) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 493.09 Td (fde24789199b) Tj ET
+0 0 0 RG
+476.59 484.49 76.69 44.40 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 514.69 Td (Closed) Tj ET
+0 0 0 RG
+42.00 450.89 143.16 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 470.29 Td (Generated environment uses) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 459.49 Td (private permissions) Tj ET
+0 0 0 RG
+185.16 450.89 291.43 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 470.29 Td (scripts/prepare-env.sh creates .env with mode 0600) Tj ET
+0 0 0 RG
+476.59 450.89 76.69 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 470.29 Td (Closed) Tj ET
+0 0 0 RG
+42.00 417.29 143.16 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 436.69 Td (Live AVAROS Web UI uses) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 425.89 Td (HTTPS) Tj ET
+0 0 0 RG
+185.16 417.29 291.43 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 436.69 Td (https://avaros.reneryo.com/health returned HTTP 200) Tj ET
+0 0 0 RG
+476.59 417.29 76.69 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 436.69 Td (Closed) Tj ET
+0 0 0 RG
+42.00 383.69 143.16 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 403.09 Td (WASABI Shop product is live) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 392.29 Td (over HTTPS) Tj ET
+0 0 0 RG
+185.16 383.69 291.43 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 403.09 Td (Product URL returned HTTP 200) Tj ET
+0 0 0 RG
+476.59 383.69 76.69 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 403.09 Td (Closed) Tj ET
+0 0 0 RG
+42.00 350.09 143.16 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 369.49 Td (PREVENTION health path) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 358.69 Td (verified) Tj ET
+0 0 0 RG
+185.16 350.09 291.43 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 369.49 Td (Local PREVENTION GraphQL health query returned HTTP) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 358.69 Td (200) Tj ET
+0 0 0 RG
+476.59 350.09 76.69 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 369.49 Td (Closed) Tj ET
+0 0 0 RG
+42.00 316.49 143.16 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 335.89 Td (HiveMind and wake-word are) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 325.09 Td (not directly host-published) Tj ET
+0 0 0 RG
+185.16 316.49 291.43 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 335.89 Td (Configured deployment exposes them only on Docker) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 325.09 Td (networks) Tj ET
+0 0 0 RG
+476.59 316.49 76.69 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 335.89 Td (Closed) Tj ET
+0 0 0 RG
+42.00 272.09 143.16 44.40 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 302.29 Td (AVAROS direct Web UI/demo) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 291.49 Td (host ports are) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 280.69 Td (loopback-only) Tj ET
+0 0 0 RG
+185.16 272.09 291.43 44.40 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 302.29 Td (Web UI 127.0.0.1:8080; demo platform 127.0.0.1:8090) Tj ET
+0 0 0 RG
+476.59 272.09 76.69 44.40 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 302.29 Td (Closed) Tj ET
+0 0 0 RG
+42.00 238.49 143.16 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 257.89 Td (PREVENTION direct host) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 247.09 Td (port is loopback-only) Tj ET
+0 0 0 RG
+185.16 238.49 291.43 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 257.89 Td (PREVENTION 127.0.0.1:8082) Tj ET
+0 0 0 RG
+476.59 238.49 76.69 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 257.89 Td (Closed) Tj ET
+0 0 0 RG
+42.00 204.89 143.16 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 224.29 Td (WASABI Shop origin port is) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 213.49 Td (restricted) Tj ET
+0 0 0 RG
+185.16 204.89 291.43 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 224.29 Td (Host firewall service restricts origin access to the) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 213.49 Td (approved proxy path) Tj ET
+0 0 0 RG
+476.59 204.89 76.69 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 224.29 Td (Closed) Tj ET
+0 0 0 RG
+42.00 171.29 143.16 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 190.69 Td (Default WASABI database) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 179.89 Td (password is blocked) Tj ET
+0 0 0 RG
+185.16 171.29 291.43 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 190.69 Td (Old root/root database login was tested and blocked) Tj ET
+0 0 0 RG
+476.59 171.29 76.69 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 190.69 Td (Closed) Tj ET
+0 0 0 RG
+42.00 137.69 143.16 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 157.09 Td (Current secrets absent) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 146.29 Td (from fresh logs) Tj ET
+0 0 0 RG
+185.16 137.69 291.43 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 157.09 Td (Fresh logs checked for AVAROS/HiveMind/WASABI current) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 146.29 Td (reusable secret values) Tj ET
+0 0 0 RG
+476.59 137.69 76.69 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 157.09 Td (Closed) Tj ET
+0 0 0 RG
+42.00 104.09 143.16 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 123.49 Td (HiveMind credential logging) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 112.69 Td (is redacted) Tj ET
+0 0 0 RG
+185.16 104.09 291.43 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 123.49 Td (HiveMind entrypoint patched to avoid printing reusable) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 112.69 Td (credentials) Tj ET
+0 0 0 RG
+476.59 104.09 76.69 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 123.49 Td (Closed) Tj ET
+0 0 0 RG
+42.00 70.49 143.16 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 89.89 Td (Browser audio playback uses) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 79.09 Td (page media) Tj ET
+0 0 0 RG
+185.16 70.49 291.43 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 89.89 Td (Server-backed TTS endpoint returns audio/wav; browser) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 79.09 Td (speech remains fallback) Tj ET
+0 0 0 RG
+476.59 70.49 76.69 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 89.89 Td (Closed) Tj ET
+0.45 0.45 0.45 rg
+BT /F1 8.00 Tf 42.00 24.00 Td (AVAROS D2.2 Evidence - Page 1) Tj ET
+0 0 0 rg
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 5 0 R >>
+endobj
+7 0 obj
+<< /Length 3761 >>
+stream
+0.86 0.91 0.96 rg
+42.00 775.89 143.16 24.00 re B
+0 0 0 rg
+BT /F2 8.20 Tf 47.00 785.69 Td (Control) Tj ET
+0.86 0.91 0.96 rg
+185.16 775.89 291.43 24.00 re B
+0 0 0 rg
+BT /F2 8.20 Tf 190.16 785.69 Td (Evidence) Tj ET
+0.86 0.91 0.96 rg
+476.59 775.89 76.69 24.00 re B
+0 0 0 rg
+BT /F2 8.20 Tf 481.59 785.69 Td (Status) Tj ET
+0 0 0 RG
+42.00 742.29 143.16 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 761.69 Td (Clean install/uninstall) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 47.00 750.89 Td (verified) Tj ET
+0 0 0 RG
+185.16 742.29 291.43 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 761.69 Td (ZIP install, health checks, TTS WAV, demo platform, and) Tj ET
+0 0 0 rg
+BT /F1 8.20 Tf 190.16 750.89 Td (uninstall passed in clean project) Tj ET
+0 0 0 RG
+476.59 742.29 76.69 33.60 re S
+0 0 0 rg
+BT /F1 8.20 Tf 481.59 761.69 Td (Closed) Tj ET
+0 0 0 rg
+BT /F2 13.50 Tf 42.00 702.79 Td (Evidence Summary) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 42.00 681.99 Td (-) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 56.00 681.99 Td (AVAROS live health: HTTP 200 at https://avaros.reneryo.com/health.) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 42.00 665.19 Td (-) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 56.00 665.19 Td (WASABI Shop product: HTTP 200 at the public product URL.) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 42.00 648.39 Td (-) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 56.00 648.39 Td (PREVENTION local GraphQL health query: HTTP 200.) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 42.00 631.59 Td (-) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 56.00 631.59 Td (Clean install test used alternate ports 19180 and 19190 and verified) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 614.39 Td (same-origin HiveMind URL resolution.) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 42.00 594.59 Td (-) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 56.00 594.59 Td (Clean install server TTS returned audio/wav with a WAV RIFF header.) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 42.00 577.79 Td (-) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 56.00 577.79 Td (Clean install server TTS preflight returned HTTP 204.) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 42.00 560.99 Td (-) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 56.00 560.99 Td (Clean uninstall removed the clean-install containers, volumes, network, and) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 543.79 Td (local images.) Tj ET
+0 0 0 rg
+BT /F2 13.50 Tf 42.00 509.29 Td (Exclusions) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 488.09 Td (The checklist does not certify unrelated host services such as separate RENERYO) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 474.89 Td (database ports or non-AVAROS services. Those require their own deployment-owner) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 461.69 Td (review if they are included in a broader production audit.) Tj ET
+0 0 0 rg
+BT /F2 13.50 Tf 42.00 427.19 Td (Submitted Artifacts) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 405.99 Td (The D2.2 evidence set consists of:) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 42.00 386.19 Td (-) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 56.00 386.19 Td (AVAROS_D2.2_Beta_Package_Checklist.pdf) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 42.00 369.39 Td (-) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 56.00 369.39 Td (AVAROS_D2.2_Security_Checklist_and_Evidence.pdf) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 42.00 352.59 Td (-) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 56.00 352.59 Td (avaros-dia-v0.1.1.zip) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 42.00 335.79 Td (-) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 56.00 335.79 Td (avaros-dia-v0.1.1.zip.sha256) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 42.00 318.99 Td (-) Tj ET
+0 0 0 rg
+BT /F1 10.00 Tf 56.00 318.99 Td (AVAROS-Quick-Start-v0.1.1.pdf) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 301.79 Td (The evidence set excludes raw .env files, credential-transfer files, runtime logs,) Tj ET
+0 0 0 rg
+BT /F1 10.20 Tf 42.00 288.59 Td (database backups, private keys, and screenshots containing credentials.) Tj ET
+0.45 0.45 0.45 rg
+BT /F1 8.00 Tf 42.00 24.00 Td (AVAROS D2.2 Evidence - Page 2) Tj ET
+0 0 0 rg
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 7 0 R >>
+endobj
+xref
+0 9
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000127 00000 n 
+0000000224 00000 n 
+0000000326 00000 n 
+0000008307 00000 n 
+0000008449 00000 n 
+0000012262 00000 n 
+trailer
+<< /Size 9 /Root 1 0 R >>
+startxref
+12404
+%%EOF
