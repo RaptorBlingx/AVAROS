@@ -124,7 +124,44 @@ find "${PACKAGE_DIR}" -type f \
 
 (
     cd "${STAGE_DIR}"
-    python3 -m zipfile -c "${ARCHIVE}" "${PACKAGE_NAME}"
+    python3 - "${ARCHIVE}" "${PACKAGE_NAME}" <<'PY'
+import stat
+import sys
+from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
+
+archive = Path(sys.argv[1])
+root = Path(sys.argv[2])
+fixed_date = (2026, 7, 1, 0, 0, 0)
+
+
+def archive_name(path: Path) -> str:
+    return path.as_posix()
+
+
+def add_directory(zip_file: ZipFile, path: Path) -> None:
+    info = ZipInfo(f"{archive_name(path).rstrip('/')}/", fixed_date)
+    info.external_attr = (0o755 << 16) | 0x10
+    zip_file.writestr(info, b"")
+
+
+def add_file(zip_file: ZipFile, path: Path) -> None:
+    mode = path.stat().st_mode
+    permissions = 0o755 if mode & stat.S_IXUSR else 0o644
+    info = ZipInfo(archive_name(path), fixed_date)
+    info.external_attr = permissions << 16
+    with path.open("rb") as handle:
+        zip_file.writestr(info, handle.read())
+
+
+with ZipFile(archive, "w", compression=ZIP_DEFLATED) as zip_file:
+    add_directory(zip_file, root)
+    for path in sorted(root.rglob("*"), key=lambda item: archive_name(item)):
+        if path.is_dir():
+            add_directory(zip_file, path)
+        else:
+            add_file(zip_file, path)
+PY
 )
 
 (

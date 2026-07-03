@@ -57,7 +57,7 @@ BT /F1 8.20 Tf 47.00 537.49 Td (secrets and runtime files) Tj ET
 0 0 0 RG
 185.16 528.89 291.43 33.60 re S
 0 0 0 rg
-BT /F1 8.20 Tf 190.16 548.29 Td (Archive scan found 384 entries and 0 forbidden .env, key,) Tj ET
+BT /F1 8.20 Tf 190.16 548.29 Td (Archive scan found 385 entries and 0 forbidden .env, key,) Tj ET
 0 0 0 rg
 BT /F1 8.20 Tf 190.16 537.49 Td (log, database, TLS private key, or Git metadata entries) Tj ET
 0 0 0 RG
@@ -73,9 +73,9 @@ BT /F1 8.20 Tf 47.00 514.69 Td (Release ZIP has checksum) Tj ET
 0 0 0 rg
 BT /F1 8.20 Tf 190.16 514.69 Td (SHA-256:) Tj ET
 0 0 0 rg
-BT /F1 8.20 Tf 190.16 503.89 Td (7d3d71293c8cefe586667e021e3fceeee3b9df183a683679) Tj ET
+BT /F1 8.20 Tf 190.16 503.89 Td (ea46f1b47b1a60a9eadb672524c3fa082474d78f2a27cf81) Tj ET
 0 0 0 rg
-BT /F1 8.20 Tf 190.16 493.09 Td (597a6e3ed5dfb3ff) Tj ET
+BT /F1 8.20 Tf 190.16 493.09 Td (382aebb1069dfd34) Tj ET
 0 0 0 RG
 476.59 484.49 76.69 44.40 re S
 0 0 0 rg
