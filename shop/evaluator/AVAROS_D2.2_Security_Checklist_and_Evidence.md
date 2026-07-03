@@ -17,7 +17,7 @@ host-wide production-security certification for unrelated services.
 | Control | Evidence | Status |
 |---|---|---|
 | Release ZIP excludes secrets and runtime files | Archive scan found 384 entries and 0 forbidden `.env`, key, log, database, TLS private key, or Git metadata entries | Closed |
-| Release ZIP has checksum | SHA-256: `b17676a3972209ca75754139aa148a012230af6427bd942c813afde24789199b` | Closed |
+| Release ZIP has checksum | SHA-256: `7d3d71293c8cefe586667e021e3fceeee3b9df183a683679597a6e3ed5dfb3ff` | Closed |
 | Generated environment uses private permissions | `scripts/prepare-env.sh` creates `.env` with mode `0600` | Closed |
 | Live AVAROS Web UI uses HTTPS | `https://avaros.reneryo.com/health` returned HTTP 200 | Closed |
 | WASABI Shop product is live over HTTPS | Product URL returned HTTP 200 | Closed |

@@ -43,7 +43,7 @@ demo deployment. It does not certify unrelated host services.
 | Check | Result |
 |---|---|
 | Release ZIP rebuilt on 2026-07-01 | Passed |
-| SHA-256 generated | `b17676a3972209ca75754139aa148a012230af6427bd942c813afde24789199b` |
+| SHA-256 generated | `7d3d71293c8cefe586667e021e3fceeee3b9df183a683679597a6e3ed5dfb3ff` |
 | Archive forbidden-file scan | 0 `.env`, key, log, database, TLS private key, or Git metadata entries |
 | Packaged Compose validation | `docker compose config --quiet` passed |
 | Fixed container names removed from packaged Compose | Passed |

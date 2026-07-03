@@ -1,51 +1,149 @@
 {
   "_description": "AVAROS Wizard Preset — RENERYO instance at deploys.int.arti.ac:30377. Auto-fills Steps 1-4. Edit this file to update values without changing source code.",
   "_updated": "2026-06-23",
-
   "platform": {
     "api_url": "http://deploys.int.arti.ac:30377",
     "auth_type": "cookie",
     "credential": ""
   },
-
   "assets": [
-    { "asset_id": "Electric-Main-Meter", "display_name": "Electric Main Meter", "asset_type": "machine", "aliases": "electric meter, main electric, electricity" },
-    { "asset_id": "Gas-Main-Meter", "display_name": "Gas Main Meter", "asset_type": "machine", "aliases": "gas meter, main gas, natural gas" },
-    { "asset_id": "Water-Main-Meter", "display_name": "Water Main Meter", "asset_type": "machine", "aliases": "water meter, main water" },
-    { "asset_id": "Meter-1", "display_name": "Meter 1", "asset_type": "sensor", "aliases": "meter one, first meter, m1" },
-    { "asset_id": "Meter-2", "display_name": "Meter 2 Boiler Room Temperature", "asset_type": "sensor", "aliases": "meter two, boiler room, m2, temperature" },
-    { "asset_id": "Meter-3", "display_name": "Meter 3 Diesel Engine Pressure", "asset_type": "sensor", "aliases": "meter three, diesel engine, m3, pressure" },
-    { "asset_id": "Line-1", "display_name": "Line 1", "asset_type": "line", "aliases": "line one, first line, l1, production line 1" },
-    { "asset_id": "Line-2", "display_name": "Line 2", "asset_type": "line", "aliases": "line two, second line, l2, production line 2" },
-    { "asset_id": "Line-3", "display_name": "Line 3", "asset_type": "line", "aliases": "line three, third line, l3, production line 3" }
+    {
+      "asset_id": "Electric-Main-Meter",
+      "display_name": "Electric Main Meter",
+      "asset_type": "machine",
+      "aliases": "electric meter, main electric, electricity"
+    },
+    {
+      "asset_id": "Gas-Main-Meter",
+      "display_name": "Gas Main Meter",
+      "asset_type": "machine",
+      "aliases": "gas meter, main gas, natural gas"
+    },
+    {
+      "asset_id": "Water-Main-Meter",
+      "display_name": "Water Main Meter",
+      "asset_type": "machine",
+      "aliases": "water meter, main water"
+    },
+    {
+      "asset_id": "Meter-1",
+      "display_name": "Meter 1",
+      "asset_type": "sensor",
+      "aliases": "meter one, first meter, m1"
+    },
+    {
+      "asset_id": "Meter-2",
+      "display_name": "Meter 2 Boiler Room Temperature",
+      "asset_type": "sensor",
+      "aliases": "meter two, boiler room, m2, temperature"
+    },
+    {
+      "asset_id": "Meter-3",
+      "display_name": "Meter 3 Diesel Engine Pressure",
+      "asset_type": "sensor",
+      "aliases": "meter three, diesel engine, m3, pressure"
+    },
+    {
+      "asset_id": "Line-1",
+      "display_name": "Line 1",
+      "asset_type": "line",
+      "aliases": "line one, first line, l1, production line 1"
+    },
+    {
+      "asset_id": "Line-2",
+      "display_name": "Line 2",
+      "asset_type": "line",
+      "aliases": "line two, second line, l2, production line 2"
+    },
+    {
+      "asset_id": "Line-3",
+      "display_name": "Line 3",
+      "asset_type": "line",
+      "aliases": "line three, third line, l3, production line 3"
+    }
   ],
-
   "metrics": {
     "endpoint": "/api/u/measurement/metric/resource/{resource_id}/values?period=RAW&datetimeMin={start_date}&datetimeMax={end_date}&count=1&page=1",
     "json_path": "$.records[0].value",
     "mappings": [
-      { "canonical_metric": "energy_per_unit", "unit": "kWh/unit" },
-      { "canonical_metric": "energy_total", "unit": "kWh" },
-      { "canonical_metric": "peak_demand", "unit": "kW" },
-      { "canonical_metric": "peak_tariff_exposure", "unit": "%" },
-      { "canonical_metric": "scrap_rate", "unit": "%" },
-      { "canonical_metric": "rework_rate", "unit": "%" },
-      { "canonical_metric": "material_efficiency", "unit": "%" },
-      { "canonical_metric": "recycled_content", "unit": "%" },
-      { "canonical_metric": "oee", "unit": "%" },
-      { "canonical_metric": "throughput", "unit": "units/hr" },
-      { "canonical_metric": "cycle_time", "unit": "sec" },
-      { "canonical_metric": "changeover_time", "unit": "min" },
-      { "canonical_metric": "co2_per_unit", "unit": "kg CO₂/unit" },
-      { "canonical_metric": "co2_total", "unit": "kg CO₂" },
-      { "canonical_metric": "co2_per_batch", "unit": "kg CO₂/batch" },
-      { "canonical_metric": "supplier_lead_time", "unit": "days" },
-      { "canonical_metric": "supplier_defect_rate", "unit": "%" },
-      { "canonical_metric": "supplier_on_time", "unit": "%" },
-      { "canonical_metric": "supplier_co2_per_kg", "unit": "kg CO₂/kg" }
+      {
+        "canonical_metric": "energy_per_unit",
+        "unit": "kWh/unit"
+      },
+      {
+        "canonical_metric": "energy_total",
+        "unit": "kWh"
+      },
+      {
+        "canonical_metric": "peak_demand",
+        "unit": "kW"
+      },
+      {
+        "canonical_metric": "peak_tariff_exposure",
+        "unit": "%"
+      },
+      {
+        "canonical_metric": "scrap_rate",
+        "unit": "%"
+      },
+      {
+        "canonical_metric": "rework_rate",
+        "unit": "%"
+      },
+      {
+        "canonical_metric": "material_efficiency",
+        "unit": "%"
+      },
+      {
+        "canonical_metric": "recycled_content",
+        "unit": "%"
+      },
+      {
+        "canonical_metric": "oee",
+        "unit": "%"
+      },
+      {
+        "canonical_metric": "throughput",
+        "unit": "units/hr"
+      },
+      {
+        "canonical_metric": "cycle_time",
+        "unit": "sec"
+      },
+      {
+        "canonical_metric": "changeover_time",
+        "unit": "min"
+      },
+      {
+        "canonical_metric": "co2_per_unit",
+        "unit": "kg CO₂/unit"
+      },
+      {
+        "canonical_metric": "co2_total",
+        "unit": "kg CO₂"
+      },
+      {
+        "canonical_metric": "co2_per_batch",
+        "unit": "kg CO₂/batch"
+      },
+      {
+        "canonical_metric": "supplier_lead_time",
+        "unit": "days"
+      },
+      {
+        "canonical_metric": "supplier_defect_rate",
+        "unit": "%"
+      },
+      {
+        "canonical_metric": "supplier_on_time",
+        "unit": "%"
+      },
+      {
+        "canonical_metric": "supplier_co2_per_kg",
+        "unit": "kg CO₂/kg"
+      }
     ]
   },
-
   "linking": {
     "Electric-Main-Meter": {
       "energy_total": "525c5133-80eb-4c95-8f0c-06e56d2854fe"
@@ -60,67 +158,67 @@
       "energy_total": "7f235669-bd99-4b72-94b2-e3b290d34ac9"
     },
     "Line-1": {
-      "changeover_time": "5d2ded67-6962-4884-b5d6-a127c520c2d6",
-      "co2_per_batch": "40b9a133-6c4c-4206-830e-f43552afb072",
-      "co2_per_unit": "5df8a02c-3ca7-429d-9309-f3d2c8415df4",
-      "co2_total": "f4104cc2-791d-4b00-a3a0-3e7187a7d113",
-      "cycle_time": "5b1a14d3-b239-4bdd-873a-2cdb84def478",
-      "energy_per_unit": "bb06d751-e4f2-420b-b627-f0cbab762e44",
-      "energy_total": "ae88a52d-d443-470d-a549-062322544f2d",
-      "material_efficiency": "17c46c6f-06af-4018-9cb7-fbe3b63da8fa",
-      "oee": "4ab750ed-599d-4f42-a52e-4f12ceb74ccd",
-      "peak_demand": "828ad9b8-a90e-4693-afe3-370118c6ff6d",
-      "peak_tariff_exposure": "fb09e6a2-3bbd-4e06-9699-c6e8c79f03a1",
-      "recycled_content": "68bd01c8-d525-4759-8a78-d1f6537e9e0e",
-      "rework_rate": "5a464701-5ebd-4028-b2c9-7fded1e60749",
-      "scrap_rate": "2dc0f1d9-5d2c-442d-b632-ccc61d001d7a",
-      "supplier_co2_per_kg": "78cf992e-6faf-4c2f-9cf8-a162f97cd32f",
-      "supplier_defect_rate": "607ab3b5-3309-4dde-a8ed-c2b288ed1862",
-      "supplier_lead_time": "0894688f-e9c8-43cc-9ac4-28b5da883796",
-      "supplier_on_time": "6703d4ed-a930-4ca4-bbe1-c37a60aa95b7",
-      "throughput": "0bbd7a37-5029-4b3e-8c44-97baffb4bd52"
+      "changeover_time": "66b7b592-0915-4bf5-954e-8ce683b98266",
+      "co2_per_batch": "92976caa-e456-475b-8a83-d756f6d475d0",
+      "co2_per_unit": "942f6a13-a459-4205-a3c8-435fce3354ab",
+      "co2_total": "739812de-ad73-4d2d-953c-e3db1220a0cf",
+      "cycle_time": "b4193fa4-8d0a-4973-b790-3bc1ad354187",
+      "energy_per_unit": "9f504fe1-dd13-405b-845c-d7dad619d60b",
+      "energy_total": "25354256-66e1-46dd-9c6a-5f9552cd26ff",
+      "material_efficiency": "1c86f4e7-f588-4389-9248-3786b42b3116",
+      "oee": "af85dc17-3ca2-4906-ab15-803a21f5f6ab",
+      "peak_demand": "9c47fa01-5e57-4f4d-b96f-543ad9009dec",
+      "peak_tariff_exposure": "e00cda2d-9d75-4574-a44e-acedb6b9abf1",
+      "recycled_content": "7cc17d68-725a-4253-90b5-e283209d2aae",
+      "rework_rate": "e70a9080-9c4e-4a1b-a937-913b4c1319ce",
+      "scrap_rate": "e74b0e74-381c-4930-affd-e4ab282ae319",
+      "supplier_co2_per_kg": "60389579-ec1f-42bf-a501-e203f5396636",
+      "supplier_defect_rate": "39f1e373-4af0-48c2-aaff-dbcefd9f38c6",
+      "supplier_lead_time": "3936946d-3069-4f45-9e3e-13c06c299e15",
+      "supplier_on_time": "512b8a97-2155-4ebd-98b0-4163203d4f04",
+      "throughput": "c72cfef6-8467-4167-82fc-e1e2dc18e63c"
     },
     "Line-2": {
-      "changeover_time": "d78900fe-bb66-4a9a-ac51-556be7834364",
-      "co2_per_batch": "a134e83e-8031-4eb2-8276-bf653000a8eb",
-      "co2_per_unit": "51f03365-15e9-44c6-9ab9-adb788b80911",
-      "co2_total": "a182727f-cfc2-40f9-8e68-9f2eb3f651ed",
-      "cycle_time": "ffd1ed18-ad6c-489c-8d62-ba9674254c7c",
-      "energy_per_unit": "b838397a-09b8-42fd-b4b2-7d93f20f586e",
-      "energy_total": "195cbb62-8b0f-45e7-97d3-7d11876dd3ca",
-      "material_efficiency": "7555a7f0-da90-4163-965e-365ef305c4e6",
-      "oee": "d920b80d-5d48-4565-aed6-6c203fe3b8fe",
-      "peak_demand": "a075318f-ad50-4310-8c24-3a0ea2d23e49",
-      "peak_tariff_exposure": "7a837869-3ba9-401b-a993-0bdf632141f3",
-      "recycled_content": "36c63954-ad44-4a57-a3d4-aa5046bdfb4e",
-      "rework_rate": "1ccbb6df-80c0-49d7-b9e7-cc0db7980610",
-      "scrap_rate": "21560938-7252-49c9-bf59-3dc527b5ae78",
-      "supplier_co2_per_kg": "a9f58ebc-44da-4933-a5d2-93ce14acfde1",
-      "supplier_defect_rate": "960c9464-c774-4f04-895a-83dfa3ded768",
-      "supplier_lead_time": "c3b013af-6d2b-49db-8303-db2c9637be5b",
-      "supplier_on_time": "6ca016a7-1717-46d6-915c-ab13ebd1a46e",
-      "throughput": "b3e11a2c-01d9-4e6e-b70f-3e01cc239d29"
+      "changeover_time": "2a09528c-5d3c-47c8-baf6-97aa04b8bf7d",
+      "co2_per_batch": "91354ea4-5413-420b-9188-9b3fb0b9dd4e",
+      "co2_per_unit": "d8a23c66-237b-40c7-b673-25adea30ddd3",
+      "co2_total": "964f1a78-3d1c-43e6-b287-efb261edc043",
+      "cycle_time": "8166a22c-300f-44b3-ba11-4dae1204ba10",
+      "energy_per_unit": "185c1530-b79d-4e80-9649-4cf947eb27dd",
+      "energy_total": "049aac77-5d7c-47a7-adcd-c2d9e635cc9d",
+      "material_efficiency": "f232430e-dfb3-41be-8fd6-6e7ac421500d",
+      "oee": "931a58f8-46f4-4d74-b02a-6af156635163",
+      "peak_demand": "2780cdd4-34b5-4f06-9384-e6dd4fc6582a",
+      "peak_tariff_exposure": "dddebfac-3b8a-46e4-9e30-f5365bd7c0df",
+      "recycled_content": "347a5125-c77e-48fe-b739-3175dbd60bea",
+      "rework_rate": "5ae760e6-60d3-4f8b-952d-e1f5c111bb3f",
+      "scrap_rate": "cfdc6da3-2664-46eb-9b44-aa6b38401233",
+      "supplier_co2_per_kg": "5909b67a-bf52-4cd3-b249-6f6469a29e37",
+      "supplier_defect_rate": "fbf0dcf1-5b04-4192-aee0-109dbddd3b87",
+      "supplier_lead_time": "c26a8748-9167-4a67-8473-9cce6a6de708",
+      "supplier_on_time": "1ef70aa5-cbb2-4ca4-97b0-ef479ac72dcb",
+      "throughput": "6f846158-6140-4c88-8810-5f62be6540da"
     },
     "Line-3": {
-      "changeover_time": "b39b4875-48df-45fe-9de6-9f7229a8ecfb",
-      "co2_per_batch": "5abe3f9f-7f9a-4f3c-9406-590acca87c17",
-      "co2_per_unit": "749c1dae-b8a1-4347-a3a0-148ca4a6c881",
-      "co2_total": "e7c7bb53-27d7-4efd-a7aa-436bcd85502e",
-      "cycle_time": "eec1348d-2d53-49b8-a532-ff6c4150cdbd",
-      "energy_per_unit": "a0b3bb70-947e-4d22-a3cf-8bfb1f23cc50",
-      "energy_total": "f550590b-2ee2-48c0-b144-f4e7235b1712",
-      "material_efficiency": "5385f4ea-e550-4e31-a068-a31729d892ae",
-      "oee": "e3a73da7-01ec-4bdf-a21b-e8f534ff5225",
-      "peak_demand": "e596d7e7-2bab-4ee8-aba0-cbf7c910b280",
-      "peak_tariff_exposure": "921d1453-fe92-4556-b34a-60617ca272c7",
-      "recycled_content": "7e1871bc-4546-44a5-b120-c06da5b61a43",
-      "rework_rate": "2f1c0315-baae-4ee9-8a84-1bccb9d747b7",
-      "scrap_rate": "68cb53aa-e270-4c56-9201-9e94523d979f",
-      "supplier_co2_per_kg": "468b5a55-f31d-4a90-8e34-506c0446e1d9",
-      "supplier_defect_rate": "67c08c0c-c9af-4b2c-93ac-8922f64cdfea",
-      "supplier_lead_time": "91e85a31-7d24-4eba-8704-bb73dd085fe3",
-      "supplier_on_time": "1b31b589-bc30-4975-8632-8de35136f293",
-      "throughput": "c3f488d7-3e65-418a-b6e8-5bd57f7fabf6"
+      "changeover_time": "252eee9c-6398-461e-b8be-7718466e45cc",
+      "co2_per_batch": "5fb5cfff-466a-4708-99e9-162814f060a7",
+      "co2_per_unit": "1feb1a17-025e-4d29-b061-5a0c7a10b907",
+      "co2_total": "f06b58a6-fbe6-464c-8461-83fad555c109",
+      "cycle_time": "d758d280-c186-4911-bb63-3c5997d992d9",
+      "energy_per_unit": "1a55cfb2-9b3d-4062-8ec7-5492c0d3ecd4",
+      "energy_total": "21f58089-973d-4428-bba7-41a8f18d49e8",
+      "material_efficiency": "4737114e-0b6e-497f-a80f-56baab599e45",
+      "oee": "f6f0761a-1359-4913-a496-5ef9e70f3973",
+      "peak_demand": "4094cdff-1667-4c91-8c62-a762b5cef796",
+      "peak_tariff_exposure": "db2944f0-3818-4497-9865-40fe71e8e2d9",
+      "recycled_content": "818edfbf-28a2-474c-872e-8cecc324171f",
+      "rework_rate": "9aa4df47-807b-4e22-84be-05c6ee5d0fc5",
+      "scrap_rate": "7b89e068-bea4-465b-828a-d95822b1466f",
+      "supplier_co2_per_kg": "e6894f65-148d-4289-8c99-aeee0c077ef1",
+      "supplier_defect_rate": "2b8e6429-1dac-40aa-bc40-4e7691be01f1",
+      "supplier_lead_time": "17d82c0e-da16-4396-ab57-9232fe992042",
+      "supplier_on_time": "0fac089f-ae5e-4432-996f-16ec89131d33",
+      "throughput": "14fd0cd3-940b-47b7-9739-54ab6956cc37"
     }
   }
 }
