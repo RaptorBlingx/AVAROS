@@ -10,12 +10,13 @@ import type {
   AssetMappingItem,
   CanonicalMetricName,
   MetricMapping,
+  NativeMetricBindings,
 } from "../../api/types";
 import ErrorMessage from "../common/ErrorMessage";
 import LoadingSpinner from "../common/LoadingSpinner";
 import Tooltip from "../common/Tooltip";
 import { METRIC_OPTIONS } from "../common/metricMapping";
-import { loadWizardPreset } from "./wizardPreset";
+import { hasWizardPreset, loadWizardPreset } from "./wizardPreset";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -35,6 +36,52 @@ type AssetLinkRow = {
   /** metric_name → resource_id  (editable by user) */
   resources: Record<string, string>;
 };
+
+export function applyPresetLinking(
+  rows: AssetLinkRow[],
+  linking: Record<string, Record<string, string>>,
+): AssetLinkRow[] {
+  return rows.map((row) => {
+    const presetLinking = linking[row.assetId] ?? {};
+    const resources: Record<string, string> = {};
+    for (const metric of Object.keys(row.resources)) {
+      resources[metric] = presetLinking[metric] ?? "";
+    }
+    return { ...row, resources };
+  });
+}
+
+export function mergeNativeBindingsForMetricResources(
+  _assetId: string,
+  mapping: AssetMappingItem,
+  _metricResources: Record<string, string>,
+): NativeMetricBindings | undefined {
+  const current =
+    mapping.native_metric_bindings &&
+    typeof mapping.native_metric_bindings === "object"
+      ? mapping.native_metric_bindings
+      : {};
+  return Object.keys(current).length > 0 ? current : undefined;
+}
+
+function applyNativeBindingsForMetricResources(
+  assetId: string,
+  mapping: AssetMappingItem,
+  metricResources: Record<string, string>,
+): AssetMappingItem {
+  const nativeMetricBindings = mergeNativeBindingsForMetricResources(
+    assetId,
+    mapping,
+    metricResources,
+  );
+  if (!nativeMetricBindings) {
+    return mapping;
+  }
+  return {
+    ...mapping,
+    native_metric_bindings: nativeMetricBindings,
+  };
+}
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -159,25 +206,28 @@ export default function AssetMetricLinkingStep({
 
   const [presetLoading, setPresetLoading] = useState(false);
   const [presetError, setPresetError] = useState("");
+  const [presetAvailable, setPresetAvailable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPresetAvailable(null);
+    setPresetError("");
+    void hasWizardPreset(profileName).then((available) => {
+      if (!cancelled) {
+        setPresetAvailable(available);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [profileName]);
 
   const loadPreset = useCallback(async () => {
     setPresetLoading(true);
     setPresetError("");
     try {
       const preset = await loadWizardPreset(profileName);
-      setRows((prev) =>
-        prev.map((row) => {
-          const presetLinking = preset.linking[row.assetId];
-          if (!presetLinking) {
-            return row;
-          }
-          const filled: Record<string, string> = {};
-          for (const metric of Object.keys(row.resources)) {
-            filled[metric] = presetLinking[metric] ?? row.resources[metric] ?? "";
-          }
-          return { ...row, resources: filled };
-        }),
-      );
+      setRows((prev) => applyPresetLinking(prev, preset.linking));
     } catch (err: unknown) {
       setPresetError(err instanceof Error ? err.message : "Failed to load preset.");
     } finally {
@@ -200,10 +250,15 @@ export default function AssetMetricLinkingStep({
             cleanResources[metric] = trimmed;
           }
         }
-        merged[row.assetId] = {
+        const nextMapping = {
           ...existing,
           metric_resources: cleanResources,
         };
+        merged[row.assetId] = applyNativeBindingsForMetricResources(
+          row.assetId,
+          nextMapping,
+          cleanResources,
+        );
       }
       // Include any assets that aren't in rows (shouldn't happen, but safe)
       for (const [assetId, mapping] of Object.entries(assets)) {
@@ -330,15 +385,17 @@ export default function AssetMetricLinkingStep({
               <span className="text-xs text-slate-400">
                 {linkingStats.filled} / {linkingStats.total} linked
               </span>
-              <button
-                type="button"
-                onClick={() => void loadPreset()}
-                disabled={presetLoading}
-                className="btn-brand-primary rounded-lg px-3 py-1.5 text-xs font-semibold"
-                title="Load all resource IDs from preset file (wizard-preset-reneryo.json)"
-              >
-                {presetLoading ? "Loading…" : "Load Preset"}
-              </button>
+              {presetAvailable === true && (
+                <button
+                  type="button"
+                  onClick={() => void loadPreset()}
+                  disabled={presetLoading}
+                  className="btn-brand-primary rounded-lg px-3 py-1.5 text-xs font-semibold"
+                  title={`Load all resource IDs from the ${profileName ?? "selected"} preset file`}
+                >
+                  {presetLoading ? "Loading…" : "Load Preset"}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={autoFillAssetId}

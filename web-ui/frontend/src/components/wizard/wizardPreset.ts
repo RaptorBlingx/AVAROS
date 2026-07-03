@@ -1,7 +1,7 @@
 import type { CanonicalMetricName } from "../../api/types";
 
 /* ------------------------------------------------------------------ */
-/*  Preset JSON shape (matches public/wizard-preset-reneryo.json)      */
+/*  Preset JSON shape (matches public/wizard-preset-<profile>.json)    */
 /* ------------------------------------------------------------------ */
 
 export type PresetAsset = {
@@ -43,28 +43,66 @@ export type WizardPreset = {
 
 const _cache: Record<string, WizardPreset> = {};
 
+function presetUrl(key: string): string {
+  return `/wizard-preset-${encodeURIComponent(key)}.json`;
+}
+
+function isWizardPreset(value: unknown): value is WizardPreset {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Partial<WizardPreset>;
+  return (
+    Array.isArray(candidate.assets) &&
+    Boolean(candidate.metrics) &&
+    typeof candidate.metrics === "object" &&
+    Array.isArray(candidate.metrics.mappings) &&
+    Boolean(candidate.linking) &&
+    typeof candidate.linking === "object"
+  );
+}
+
 export async function loadWizardPreset(profileName?: string): Promise<WizardPreset> {
-  const key = profileName ?? "reneryo";
+  const key = profileName ?? "demo";
   if (_cache[key]) {
     return _cache[key];
   }
-  const response = await fetch(`/wizard-preset-${key}.json`);
+  const response = await fetch(presetUrl(key), {
+    headers: { Accept: "application/json" },
+  });
   if (!response.ok) {
     throw new Error(`No preset file found for profile "${key}" (HTTP ${response.status})`);
   }
-  const data = (await response.json()) as WizardPreset;
+
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  if (!contentType.includes("application/json")) {
+    throw new Error(
+      `No bundled preset is available for profile "${key}". Register the assets manually or provide a wizard-preset-${key}.json file.`,
+    );
+  }
+
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error(`The preset file for profile "${key}" is not valid JSON.`);
+  }
+  if (!isWizardPreset(data)) {
+    throw new Error(`The preset file for profile "${key}" has an invalid structure.`);
+  }
+
   _cache[key] = data;
   return data;
 }
 
 export async function hasWizardPreset(profileName?: string): Promise<boolean> {
-  const key = profileName ?? "reneryo";
+  const key = profileName ?? "demo";
   if (_cache[key]) {
     return true;
   }
   try {
-    const response = await fetch(`/wizard-preset-${key}.json`, { method: "HEAD" });
-    return response.ok;
+    await loadWizardPreset(key);
+    return true;
   } catch {
     return false;
   }

@@ -28,7 +28,7 @@ import {
   EMPTY_WIZARD_ROW_DEFAULTS,
   toMappingRequestPayload,
 } from "./metricMappingStep.helpers";
-import { loadWizardPreset } from "./wizardPreset";
+import { hasWizardPreset, loadWizardPreset } from "./wizardPreset";
 
 type MetricMappingStepProps = {
   integrationPreset?: "reneryo" | "mock" | null;
@@ -362,6 +362,21 @@ export default function MetricMappingStep({
 
   const [presetLoading, setPresetLoading] = useState(false);
   const [presetError, setPresetError] = useState("");
+  const [presetAvailable, setPresetAvailable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPresetAvailable(null);
+    setPresetError("");
+    void hasWizardPreset(profileName).then((available) => {
+      if (!cancelled) {
+        setPresetAvailable(available);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [profileName]);
 
   const loadPreset = useCallback(async () => {
     setPresetLoading(true);
@@ -607,6 +622,7 @@ export default function MetricMappingStep({
               </div>
             )}
 
+            {presetAvailable === true && (
             <div className="mb-4 rounded-xl border border-cyan-200 bg-cyan-50/60 p-3 dark:border-cyan-700/40 dark:bg-cyan-900/20">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -630,6 +646,13 @@ export default function MetricMappingStep({
                 <p className="m-0 mt-2 text-xs text-rose-700 dark:text-rose-300">{presetError}</p>
               )}
             </div>
+            )}
+
+            {presetAvailable === false && (
+              <p className="m-0 mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400">
+                No bundled metric preset is available for this profile. Define the mappings for your platform API below.
+              </p>
+            )}
 
             <MetricMappingsTable
               rows={rows}

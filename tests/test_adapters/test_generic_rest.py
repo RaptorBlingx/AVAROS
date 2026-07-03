@@ -61,6 +61,34 @@ def _build_asset_adapter(asset_mappings: dict[str, dict]) -> GenericRestAdapter:
     )
 
 
+def test_build_request_url_deduplicates_base_api_path() -> None:
+    """A base URL ending in /api must not produce /api/api endpoints."""
+    adapter = GenericRestAdapter(
+        api_url="https://api.example.com/api",
+        api_key="secret-token",
+    )
+
+    assert (
+        adapter._build_request_url(
+            "/api/u/measurement/metric/resource/resource-1/values",
+        )
+        == "https://api.example.com/api/u/measurement/metric/resource/resource-1/values"
+    )
+
+
+def test_build_request_url_preserves_distinct_base_path() -> None:
+    """Unrelated endpoint paths should still be appended to the configured base."""
+    adapter = GenericRestAdapter(
+        api_url="https://api.example.com/platform",
+        api_key="secret-token",
+    )
+
+    assert (
+        adapter._build_request_url("/api/metrics")
+        == "https://api.example.com/platform/api/metrics"
+    )
+
+
 @pytest.mark.asyncio
 async def test_get_kpi_valid_mapping_returns_kpi_result(period: TimePeriod) -> None:
     """Mapped KPI endpoint/json_path returns KPIResult."""
@@ -174,6 +202,52 @@ async def test_get_kpi_energy_total_uses_native_seu_binding(period: TimePeriod) 
     assert result.unit == "kWh"
     call_endpoint = adapter._retry_fetch.await_args.args[0]
     assert call_endpoint == "/api/u/measurement/seu/item"
+
+
+@pytest.mark.asyncio
+async def test_get_kpi_energy_total_uses_native_metric_item_last_value(
+    period: TimePeriod,
+) -> None:
+    """Counter meter assets can resolve energy_total from metric item lastValue."""
+    resource_id = "525c5133-80eb-4c95-8f0c-06e56d2854fe"
+    adapter = _build_asset_adapter(
+        {
+            "Electric-Main-Meter": {
+                "display_name": "Electric Main Meter",
+                "asset_type": "machine",
+                "metric_resources": {"energy_total": resource_id},
+                "native_metric_bindings": {
+                    "energy_total": {
+                        "strategy": "metric_item_last_value",
+                        "unit": "kWh",
+                    },
+                },
+            },
+        },
+    )
+    adapter._session = object()
+    adapter._retry_fetch = AsyncMock(
+        return_value={
+            "lastValue": 86761.2343174361,
+            "name": "Main Electric Metric",
+        },
+    )
+
+    result = await adapter.get_kpi(
+        metric=CanonicalMetric.ENERGY_TOTAL,
+        asset_id="Electric Main Meter",
+        period=period,
+    )
+
+    assert result.metric == CanonicalMetric.ENERGY_TOTAL
+    assert result.value == pytest.approx(86761.2343174361)
+    assert result.unit == "kWh"
+    call_endpoint = adapter._retry_fetch.await_args.args[0]
+    assert call_endpoint == (
+        "/api/u/measurement/metric/item/"
+        "525c5133-80eb-4c95-8f0c-06e56d2854fe"
+    )
+    assert adapter._retry_fetch.await_args.args[1] is None
 
 
 @pytest.mark.asyncio

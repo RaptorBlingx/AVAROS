@@ -272,7 +272,7 @@ export default function ProductionData() {
         <p className="m-0 mt-2 text-sm text-slate-600 dark:text-slate-300">
           Upload CSV exports or add production records manually for KPI
           calculations. This page uses supplementary manual data, not live
-          RENERYO telemetry.
+          platform telemetry.
         </p>
       </header>
 

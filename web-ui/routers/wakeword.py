@@ -2,8 +2,8 @@
 
 The frontend connects to ``/wakeword/ws/detect`` on the same origin as
 the Web UI. Nginx exposes that route in HTTPS deployments, but users
-also access the FastAPI Web UI directly on port 8080 during demos and
-development. These routes make both entry points behave the same.
+also access the FastAPI Web UI directly on a configurable host port during
+demos and development. These routes make both entry points behave the same.
 """
 
 from __future__ import annotations
@@ -123,4 +123,3 @@ async def _bridge_websockets(
     for task in pending:
         task.cancel()
     await asyncio.gather(*done, *pending, return_exceptions=True)
-

@@ -69,6 +69,10 @@ class GenericRestAdapter(
         "/api/u/measurement/seu/item",
         "/u/measurement/seu/item",
     )
+    _METRIC_ITEM_ENDPOINTS: tuple[str, ...] = (
+        "/api/u/measurement/metric/item/{resource_id}",
+        "/u/measurement/metric/item/{resource_id}",
+    )
 
     def __init__(
         self,
@@ -679,10 +683,91 @@ class GenericRestAdapter(
         strategy = str(binding.get("strategy", "")).strip().lower()
         if strategy == "asset_consumption_total":
             return await self._query_seu_energy_total(asset_id=asset_id, period=period)
+        if strategy == "metric_item_last_value":
+            return await self._query_metric_item_last_value(
+                metric=metric,
+                asset_id=asset_id,
+                period=period,
+                binding=binding,
+            )
         raise AdapterError(
             message=f"Unsupported native binding strategy '{strategy}' for {metric.value}",
             code="GENERIC_REST_NATIVE_BINDING_INVALID",
             platform="generic_rest",
+        )
+
+    async def _query_metric_item_last_value(
+        self,
+        *,
+        metric: CanonicalMetric,
+        asset_id: str,
+        period: TimePeriod,
+        binding: dict[str, Any],
+    ) -> KPIResult:
+        """Fetch a Reneryo metric item counter and read its latest value."""
+        resource_id = str(
+            binding.get("resource_id")
+            or binding.get("resource_uuid")
+            or binding.get("metric_id")
+            or binding.get("item_id")
+            or self._resolve_metric_resource_id(metric.value, asset_id)
+            or "",
+        ).strip()
+        if not resource_id:
+            raise AdapterError(
+                message=f"Native metric item binding for {asset_id}/{metric.value} has no resource_id",
+                code="GENERIC_REST_NATIVE_BINDING_INVALID",
+                platform="generic_rest",
+            )
+
+        endpoint_templates: tuple[str, ...]
+        configured_endpoint = str(binding.get("endpoint", "") or "").strip()
+        if configured_endpoint:
+            endpoint_templates = (configured_endpoint,)
+        else:
+            endpoint_templates = self._METRIC_ITEM_ENDPOINTS
+
+        payload: dict | list | None = None
+        for template in endpoint_templates:
+            endpoint = template.format(
+                resource_id=resource_id,
+                resource_uuid=resource_id,
+                metric_id=resource_id,
+                item_id=resource_id,
+            )
+            try:
+                payload = await self._retry_fetch(endpoint, None)
+            except AdapterError as exc:
+                if exc.code in {"GENERIC_REST_ENDPOINT_NOT_FOUND", "GENERIC_REST_UNEXPECTED_STATUS"}:
+                    continue
+                raise
+            else:
+                break
+
+        if not isinstance(payload, dict):
+            raise AdapterError(
+                message=f"Metric item endpoint returned invalid payload for '{asset_id}'",
+                code="GENERIC_REST_MAPPING_INVALID",
+                platform="generic_rest",
+            )
+
+        value_key = str(binding.get("value_key", "lastValue") or "lastValue").strip()
+        try:
+            value = float(payload.get(value_key))
+        except (TypeError, ValueError) as exc:
+            raise AdapterError(
+                message=f"Metric item '{resource_id}' has non-numeric {value_key}",
+                code="GENERIC_REST_MAPPING_INVALID",
+                platform="generic_rest",
+            ) from exc
+
+        return KPIResult(
+            metric=metric,
+            value=value,
+            unit=str(binding.get("unit") or metric.default_unit),
+            asset_id=asset_id,
+            period=period,
+            timestamp=datetime.now(tz=timezone.utc),
         )
 
     async def _query_seu_energy_total(self, *, asset_id: str, period: TimePeriod) -> KPIResult:

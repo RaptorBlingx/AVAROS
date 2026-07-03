@@ -24,7 +24,7 @@ class GenericRestSettingsMixin:
     )
     _AUTO_TREND_ENDPOINT_TEMPLATE = (
         "/api/u/measurement/metric/resource/{resource_id}/values"
-        "?period=DAILY&datetimeMin={start_date}&datetimeMax={end_date}&count=31&page=1"
+        "?period=RAW&datetimeMin={start_date}&datetimeMax={end_date}&count=100&page=1"
     )
 
     _GRANULARITY_TO_RENERYO_PERIOD = {
@@ -67,10 +67,9 @@ class GenericRestSettingsMixin:
 
         current_period = params.get("period", "")
         if current_period.upper() in {"RAW", "HOURLY", "DAILY"}:
-            reneryo_period = self._GRANULARITY_TO_RENERYO_PERIOD.get(
-                granularity, "DAILY",
-            )
-            params["period"] = reneryo_period
+            # RENERYO's aggregate periods can return sparse/empty windows for
+            # generated demo resources. Raw points are reliable for trend math.
+            params["period"] = "RAW"
             params["count"] = self._RENERYO_TREND_COUNT
         else:
             start_iso = period.start.strftime("%Y-%m-%dT%H:%M:%SZ")

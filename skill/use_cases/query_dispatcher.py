@@ -941,10 +941,9 @@ class QueryDispatcher:
                 ),
             )
 
-        baseline = self.get_kpi(
+        baseline = self._get_whatif_baseline(
             metric=scenario.target_metric,
             asset_id=scenario.asset_id,
-            period=TimePeriod.today(),
         )
         target_value = self._scenario_target_value(scenario.parameters)
         change_percent = self._scenario_change_percent(scenario.parameters)
@@ -989,6 +988,51 @@ class QueryDispatcher:
             result,
         )
         return result
+
+    def _get_whatif_baseline(
+        self,
+        metric: CanonicalMetric,
+        asset_id: str,
+    ) -> KPIResult:
+        """Resolve a live baseline for what-if simulations.
+
+        The current-day window can be empty on demo/live profiles that are
+        seeded with historical measurements. Keep the preferred current value,
+        then fall back to recent windows so bounded what-if scenarios remain
+        usable without requiring operators to say a period.
+        """
+        periods = (
+            TimePeriod.today(),
+            TimePeriod.last_week(),
+            TimePeriod.last_month(),
+        )
+        last_error: Exception | None = None
+        for period in periods:
+            try:
+                return self.get_kpi(
+                    metric=metric,
+                    asset_id=asset_id,
+                    period=period,
+                )
+            except Exception as exc:  # noqa: BLE001 - preserve final adapter error
+                last_error = exc
+                logger.debug(
+                    "What-if baseline unavailable for %s/%s over %s: %s",
+                    metric.value,
+                    asset_id,
+                    period.display_name,
+                    exc,
+                )
+        if last_error is not None:
+            raise last_error
+        raise AVAROSError(
+            message="What-if baseline could not be resolved",
+            code="WHATIF_BASELINE_UNAVAILABLE",
+            user_message=(
+                "I couldn't find a baseline for that scenario. "
+                "Try a different asset or metric."
+            ),
+        )
 
     @staticmethod
     def _scenario_target_value(

@@ -1,0 +1,92 @@
+{
+  "_description": "Public AVAROS demo preset for the bundled deterministic manufacturing API.",
+  "_updated": "2026-06-22",
+  "platform": {
+    "api_url": "http://demo-platform:8090",
+    "auth_type": "bearer",
+    "credential": "demo"
+  },
+  "assets": [
+    {
+      "asset_id": "Line-1",
+      "display_name": "Line 1",
+      "asset_type": "line",
+      "aliases": "line one, first line, production line one"
+    },
+    {
+      "asset_id": "Line-2",
+      "display_name": "Line 2",
+      "asset_type": "line",
+      "aliases": "line two, second line, production line two"
+    }
+  ],
+  "metrics": {
+    "endpoint": "/api/v1/kpis/energy/per-unit?asset_id={resource_id}&period={period}",
+    "json_path": "$.value",
+    "mappings": [
+      { "canonical_metric": "energy_per_unit", "unit": "kWh/unit", "endpoint": "/api/v1/kpis/energy/per-unit?asset_id={resource_id}&period={period}" },
+      { "canonical_metric": "energy_total", "unit": "kWh", "endpoint": "/api/v1/kpis/energy/total?asset_id={resource_id}&period={period}" },
+      { "canonical_metric": "peak_demand", "unit": "kW", "endpoint": "/api/v1/kpis/energy/peak-demand?asset_id={resource_id}&period={period}" },
+      { "canonical_metric": "peak_tariff_exposure", "unit": "%", "endpoint": "/api/v1/kpis/energy/tariff-exposure?asset_id={resource_id}&period={period}" },
+      { "canonical_metric": "scrap_rate", "unit": "%", "endpoint": "/api/v1/kpis/material/scrap-rate?asset_id={resource_id}&period={period}" },
+      { "canonical_metric": "rework_rate", "unit": "%", "endpoint": "/api/v1/kpis/material/rework-rate?asset_id={resource_id}&period={period}" },
+      { "canonical_metric": "material_efficiency", "unit": "%", "endpoint": "/api/v1/kpis/material/efficiency?asset_id={resource_id}&period={period}" },
+      { "canonical_metric": "recycled_content", "unit": "%", "endpoint": "/api/v1/kpis/material/recycled-content?asset_id={resource_id}&period={period}" },
+      { "canonical_metric": "oee", "unit": "%", "endpoint": "/api/v1/kpis/production/oee?asset_id={resource_id}&period={period}" },
+      { "canonical_metric": "throughput", "unit": "units/hour", "endpoint": "/api/v1/kpis/production/throughput?asset_id={resource_id}&period={period}" },
+      { "canonical_metric": "cycle_time", "unit": "seconds", "endpoint": "/api/v1/kpis/production/cycle-time?asset_id={resource_id}&period={period}" },
+      { "canonical_metric": "changeover_time", "unit": "minutes", "endpoint": "/api/v1/kpis/production/changeover-time?asset_id={resource_id}&period={period}" },
+      { "canonical_metric": "co2_per_unit", "unit": "kg CO2/unit", "endpoint": "/api/v1/kpis/carbon/per-unit?asset_id={resource_id}&period={period}" },
+      { "canonical_metric": "co2_total", "unit": "kg CO2", "endpoint": "/api/v1/kpis/carbon/total?asset_id={resource_id}&period={period}" },
+      { "canonical_metric": "co2_per_batch", "unit": "kg CO2/batch", "endpoint": "/api/v1/kpis/carbon/per-batch?asset_id={resource_id}&period={period}" },
+      { "canonical_metric": "supplier_lead_time", "unit": "days", "endpoint": "/api/v1/kpis/supplier/lead-time?asset_id={resource_id}&period={period}" },
+      { "canonical_metric": "supplier_defect_rate", "unit": "%", "endpoint": "/api/v1/kpis/supplier/defect-rate?asset_id={resource_id}&period={period}" },
+      { "canonical_metric": "supplier_on_time", "unit": "%", "endpoint": "/api/v1/kpis/supplier/on-time?asset_id={resource_id}&period={period}" },
+      { "canonical_metric": "supplier_co2_per_kg", "unit": "kg CO2/kg", "endpoint": "/api/v1/kpis/supplier/co2-per-kg?asset_id={resource_id}&period={period}" }
+    ]
+  },
+  "linking": {
+    "Line-1": {
+      "energy_per_unit": "Line-1",
+      "energy_total": "Line-1",
+      "peak_demand": "Line-1",
+      "peak_tariff_exposure": "Line-1",
+      "scrap_rate": "Line-1",
+      "rework_rate": "Line-1",
+      "material_efficiency": "Line-1",
+      "recycled_content": "Line-1",
+      "oee": "Line-1",
+      "throughput": "Line-1",
+      "cycle_time": "Line-1",
+      "changeover_time": "Line-1",
+      "co2_per_unit": "Line-1",
+      "co2_total": "Line-1",
+      "co2_per_batch": "Line-1",
+      "supplier_lead_time": "Line-1",
+      "supplier_defect_rate": "Line-1",
+      "supplier_on_time": "Line-1",
+      "supplier_co2_per_kg": "Line-1"
+    },
+    "Line-2": {
+      "energy_per_unit": "Line-2",
+      "energy_total": "Line-2",
+      "peak_demand": "Line-2",
+      "peak_tariff_exposure": "Line-2",
+      "scrap_rate": "Line-2",
+      "rework_rate": "Line-2",
+      "material_efficiency": "Line-2",
+      "recycled_content": "Line-2",
+      "oee": "Line-2",
+      "throughput": "Line-2",
+      "cycle_time": "Line-2",
+      "changeover_time": "Line-2",
+      "co2_per_unit": "Line-2",
+      "co2_total": "Line-2",
+      "co2_per_batch": "Line-2",
+      "supplier_lead_time": "Line-2",
+      "supplier_defect_rate": "Line-2",
+      "supplier_on_time": "Line-2",
+      "supplier_co2_per_kg": "Line-2"
+    }
+  }
+}

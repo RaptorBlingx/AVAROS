@@ -127,7 +127,7 @@ export default function PlatformSetupStep({
     }
     if (!PROFILE_NAME_RE.test(name)) {
       setProfileError(
-        "Profile name must be lowercase alphanumeric with hyphens, at least 2 characters (e.g. 'reneryo', 'humanenerdia').",
+        "Profile name must be lowercase alphanumeric with hyphens, at least 2 characters (e.g. 'demo', 'factory-site').",
       );
       return;
     }

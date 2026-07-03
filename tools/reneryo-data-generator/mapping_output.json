@@ -1,97 +1,97 @@
 {
   "changeover_time": {
-    "Line-1": "c0aad49b-c8e1-4465-b86a-ceb93ab44da2",
-    "Line-2": "1a4a4432-442e-4d3d-88bf-440015ecd900",
-    "Line-3": "43bb43b8-3a7e-48a8-91dc-ff3cc98a19ff"
+    "Line-1": "66b7b592-0915-4bf5-954e-8ce683b98266",
+    "Line-2": "2a09528c-5d3c-47c8-baf6-97aa04b8bf7d",
+    "Line-3": "252eee9c-6398-461e-b8be-7718466e45cc"
   },
   "co2_per_batch": {
-    "Line-1": "389be9c6-d9cd-4630-9d94-6df842618b1c",
-    "Line-2": "f5f0a056-a54b-484f-9d74-5f01099aa068",
-    "Line-3": "5de5830a-2bc0-4f3b-a876-6c40e1e23985"
+    "Line-1": "92976caa-e456-475b-8a83-d756f6d475d0",
+    "Line-2": "91354ea4-5413-420b-9188-9b3fb0b9dd4e",
+    "Line-3": "5fb5cfff-466a-4708-99e9-162814f060a7"
   },
   "co2_per_unit": {
-    "Line-1": "851d75b6-a6b7-4e61-84e7-2ece4d6b3a9b",
-    "Line-2": "6c2fb96b-ead0-4369-a7d9-fe215efc13cb",
-    "Line-3": "51097dda-e41a-4366-a454-08169ef7afe9"
+    "Line-1": "942f6a13-a459-4205-a3c8-435fce3354ab",
+    "Line-2": "d8a23c66-237b-40c7-b673-25adea30ddd3",
+    "Line-3": "1feb1a17-025e-4d29-b061-5a0c7a10b907"
   },
   "co2_total": {
-    "Line-1": "029b5bc2-83ac-46e7-8097-916d3bcc8c71",
-    "Line-2": "b98bfe6f-e69d-4751-83f1-e53536610ba4",
-    "Line-3": "e6384367-6b89-4789-bae7-ce3cf2e3713b"
+    "Line-1": "739812de-ad73-4d2d-953c-e3db1220a0cf",
+    "Line-2": "964f1a78-3d1c-43e6-b287-efb261edc043",
+    "Line-3": "f06b58a6-fbe6-464c-8461-83fad555c109"
   },
   "cycle_time": {
-    "Line-1": "3e3e8e14-317b-4549-9c54-b27122882c07",
-    "Line-2": "56df344c-9ed7-4c56-b203-c8aa7cf64fbb",
-    "Line-3": "82f0b333-d917-413d-b0e4-a1f052fca315"
+    "Line-1": "b4193fa4-8d0a-4973-b790-3bc1ad354187",
+    "Line-2": "8166a22c-300f-44b3-ba11-4dae1204ba10",
+    "Line-3": "d758d280-c186-4911-bb63-3c5997d992d9"
   },
   "energy_per_unit": {
-    "Line-1": "16fa8587-7d6a-4830-83c7-3c595f30cc26",
-    "Line-2": "6a3d1fb7-8338-4d33-ab9d-72e48523753f",
-    "Line-3": "cc037918-8c95-4771-998b-a9f37ff76be4"
+    "Line-1": "9f504fe1-dd13-405b-845c-d7dad619d60b",
+    "Line-2": "185c1530-b79d-4e80-9649-4cf947eb27dd",
+    "Line-3": "1a55cfb2-9b3d-4062-8ec7-5492c0d3ecd4"
   },
   "energy_total": {
-    "Line-1": "c3d08713-2764-4dd1-b9ec-8a6d6f7d0e41",
-    "Line-2": "97e33ba1-6b85-4c3f-b944-1217c80358e8",
-    "Line-3": "b656f2f7-e9dd-4477-8299-86e4964d5067"
+    "Line-1": "25354256-66e1-46dd-9c6a-5f9552cd26ff",
+    "Line-2": "049aac77-5d7c-47a7-adcd-c2d9e635cc9d",
+    "Line-3": "21f58089-973d-4428-bba7-41a8f18d49e8"
   },
   "material_efficiency": {
-    "Line-1": "b715894b-9196-43f2-8972-f89a3299f706",
-    "Line-2": "760fdb51-ceea-432b-87d6-8d8ad64e0df5",
-    "Line-3": "ab477fc9-8f99-49bf-ac8e-a74c8e5ce33d"
+    "Line-1": "1c86f4e7-f588-4389-9248-3786b42b3116",
+    "Line-2": "f232430e-dfb3-41be-8fd6-6e7ac421500d",
+    "Line-3": "4737114e-0b6e-497f-a80f-56baab599e45"
   },
   "oee": {
-    "Line-1": "f1b1acb5-3dba-4a94-9cc8-aa55734ea991",
-    "Line-2": "81d338e2-ede6-4c34-976d-954d46ba93e9",
-    "Line-3": "a46edf13-eab4-4538-bf1d-71161e32d675"
+    "Line-1": "af85dc17-3ca2-4906-ab15-803a21f5f6ab",
+    "Line-2": "931a58f8-46f4-4d74-b02a-6af156635163",
+    "Line-3": "f6f0761a-1359-4913-a496-5ef9e70f3973"
   },
   "peak_demand": {
-    "Line-1": "83ab21fe-1d4b-4ec2-ab2c-eaca60b09fd7",
-    "Line-2": "22c7c166-046a-4988-b612-335c60af03f2",
-    "Line-3": "e9da4237-2212-49c1-9ad8-275c38cbb296"
+    "Line-1": "9c47fa01-5e57-4f4d-b96f-543ad9009dec",
+    "Line-2": "2780cdd4-34b5-4f06-9384-e6dd4fc6582a",
+    "Line-3": "4094cdff-1667-4c91-8c62-a762b5cef796"
   },
   "peak_tariff_exposure": {
-    "Line-1": "6b2b45fd-e30b-48f2-95c7-be530784bb1a",
-    "Line-2": "e22f64fa-68a4-43fa-8571-8f52ce3d0e97",
-    "Line-3": "5acc94a7-d089-426d-b2c9-d04e841e7476"
+    "Line-1": "e00cda2d-9d75-4574-a44e-acedb6b9abf1",
+    "Line-2": "dddebfac-3b8a-46e4-9e30-f5365bd7c0df",
+    "Line-3": "db2944f0-3818-4497-9865-40fe71e8e2d9"
   },
   "recycled_content": {
-    "Line-1": "812ac4be-5bdb-4677-a41e-a3f52b878254",
-    "Line-2": "d2bc6ff2-60c6-4688-87da-507cd873d098",
-    "Line-3": "19b9cd41-2e28-459c-bc38-bbe68b381c02"
+    "Line-1": "7cc17d68-725a-4253-90b5-e283209d2aae",
+    "Line-2": "347a5125-c77e-48fe-b739-3175dbd60bea",
+    "Line-3": "818edfbf-28a2-474c-872e-8cecc324171f"
   },
   "rework_rate": {
-    "Line-1": "d0a19a1e-3b76-440b-a88a-eb1410396921",
-    "Line-2": "ecb45b7c-3fc5-4d51-9d27-13cd57248046",
-    "Line-3": "89596ece-4596-4d14-b165-38899d2d0b46"
+    "Line-1": "e70a9080-9c4e-4a1b-a937-913b4c1319ce",
+    "Line-2": "5ae760e6-60d3-4f8b-952d-e1f5c111bb3f",
+    "Line-3": "9aa4df47-807b-4e22-84be-05c6ee5d0fc5"
   },
   "scrap_rate": {
-    "Line-1": "aa6a90f9-d75b-4b20-86ab-b41303acf765",
-    "Line-2": "338d153c-c5bc-40eb-8613-19f659d1df05",
-    "Line-3": "2bbc30fe-fa8d-432d-8729-f884ee58693a"
+    "Line-1": "e74b0e74-381c-4930-affd-e4ab282ae319",
+    "Line-2": "cfdc6da3-2664-46eb-9b44-aa6b38401233",
+    "Line-3": "7b89e068-bea4-465b-828a-d95822b1466f"
   },
   "supplier_co2_per_kg": {
-    "Line-1": "5255432d-e2f7-40e7-85fd-b62759ef83a7",
-    "Line-2": "2003e8c7-6a9d-4a85-83b6-166a5030f285",
-    "Line-3": "1a36a960-37ff-4177-a7d8-162ffd3d03fc"
+    "Line-1": "60389579-ec1f-42bf-a501-e203f5396636",
+    "Line-2": "5909b67a-bf52-4cd3-b249-6f6469a29e37",
+    "Line-3": "e6894f65-148d-4289-8c99-aeee0c077ef1"
   },
   "supplier_defect_rate": {
-    "Line-1": "c4007178-f60a-4f32-8e5d-841f2cfdf226",
-    "Line-2": "66562b04-b004-46e7-a9f9-6e699a16e92d",
-    "Line-3": "6b7d8938-cff9-499d-b58d-7c2317e31476"
+    "Line-1": "39f1e373-4af0-48c2-aaff-dbcefd9f38c6",
+    "Line-2": "fbf0dcf1-5b04-4192-aee0-109dbddd3b87",
+    "Line-3": "2b8e6429-1dac-40aa-bc40-4e7691be01f1"
   },
   "supplier_lead_time": {
-    "Line-1": "f2ba406e-277d-4586-aeac-dc2b3df7aeb6",
-    "Line-2": "c4ec996c-545d-4f3f-b3af-7d06608ab373",
-    "Line-3": "1516b83e-e6f6-4fbd-8315-db2add0f898d"
+    "Line-1": "3936946d-3069-4f45-9e3e-13c06c299e15",
+    "Line-2": "c26a8748-9167-4a67-8473-9cce6a6de708",
+    "Line-3": "17d82c0e-da16-4396-ab57-9232fe992042"
   },
   "supplier_on_time": {
-    "Line-1": "9caa2399-9f69-403e-99eb-96c36f34a9a4",
-    "Line-2": "f103a5bd-402e-47c8-acf2-1c55a81ccd28",
-    "Line-3": "d246e4de-9069-468e-986f-efe0eebb800b"
+    "Line-1": "512b8a97-2155-4ebd-98b0-4163203d4f04",
+    "Line-2": "1ef70aa5-cbb2-4ca4-97b0-ef479ac72dcb",
+    "Line-3": "0fac089f-ae5e-4432-996f-16ec89131d33"
   },
   "throughput": {
-    "Line-1": "9fcfd093-e749-4b84-bfb5-6d2d8e43c2ec",
-    "Line-2": "1d692958-712f-4c3b-917c-da6606fb222e",
-    "Line-3": "69ee1d57-e10e-44cf-b021-169486b6a636"
+    "Line-1": "c72cfef6-8467-4167-82fc-e1e2dc18e63c",
+    "Line-2": "6f846158-6140-4c88-8810-5f62be6540da",
+    "Line-3": "14fd0cd3-940b-47b7-9739-54ab6956cc37"
   }
 }

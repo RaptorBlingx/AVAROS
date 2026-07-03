@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from urllib.parse import urlsplit, urlunsplit
 
 try:
     import aiohttp
@@ -261,6 +262,21 @@ class GenericRestHttpMixin:
             return endpoint
 
         if endpoint.startswith("/"):
+            parsed_base = urlsplit(self._api_url)
+            base_path = parsed_base.path.rstrip("/")
+            if base_path and (
+                endpoint == base_path or endpoint.startswith(f"{base_path}/")
+            ):
+                origin = urlunsplit(
+                    (
+                        parsed_base.scheme,
+                        parsed_base.netloc,
+                        "",
+                        "",
+                        "",
+                    ),
+                )
+                return f"{origin}{endpoint}"
             return f"{self._api_url}{endpoint}"
         return f"{self._api_url}/{endpoint}"
 

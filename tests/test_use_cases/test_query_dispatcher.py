@@ -596,6 +596,52 @@ class TestSimulateWhatIf:
         assert result.delta_percent == pytest.approx(5.8824)
         assert result.factors["target_value"] == 90.0
 
+    def test_simulate_whatif_falls_back_to_recent_baseline(
+        self,
+        audit_logger: AuditLogger,
+    ) -> None:
+        """What-if should work when today's live KPI window is empty."""
+        adapter = MagicMock()
+
+        async def get_kpi(metric, asset_id, period):
+            if period.display_name == "today":
+                raise AVAROSError(
+                    message="No data for today",
+                    code="NO_DATA",
+                    user_message="No data for today",
+                )
+            return KPIResult(
+                metric=metric,
+                value=2.0,
+                unit="kWh/unit",
+                asset_id=asset_id,
+                period=period,
+                timestamp=datetime.now(tz=timezone.utc),
+            )
+
+        adapter.get_kpi = get_kpi
+        adapter.get_supported_metrics.return_value = [CanonicalMetric.ENERGY_PER_UNIT]
+        dispatcher = QueryDispatcher(adapter=adapter, audit_logger=audit_logger)
+        scenario = WhatIfScenario(
+            name="energy_decrease_5_percent",
+            asset_id="Line-1",
+            parameters=[
+                ScenarioParameter(
+                    name="assumed_kpi_change_percent",
+                    baseline_value=0.0,
+                    proposed_value=-5.0,
+                    unit="%",
+                ),
+            ],
+            target_metric=CanonicalMetric.ENERGY_PER_UNIT,
+        )
+
+        result = dispatcher.simulate_whatif(scenario)
+
+        assert result.baseline == 2.0
+        assert result.projected == 1.9
+        assert result.is_improvement is True
+
     def test_simulate_whatif_rejects_empty_scenario(
         self,
         dispatcher: QueryDispatcher,

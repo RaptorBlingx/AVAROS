@@ -18,7 +18,7 @@ import {
   toAssetId,
 } from "../settings/assetManagementSection.helpers";
 import Tooltip from "../common/Tooltip";
-import { loadWizardPreset } from "./wizardPreset";
+import { hasWizardPreset, loadWizardPreset } from "./wizardPreset";
 
 type RegistrationRow = {
   rowId: string;
@@ -545,6 +545,21 @@ export default function AssetRegistrationStep({
 
   const [presetLoading, setPresetLoading] = useState(false);
   const [presetError, setPresetError] = useState("");
+  const [presetAvailable, setPresetAvailable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPresetAvailable(null);
+    setPresetError("");
+    void hasWizardPreset(profileName).then((available) => {
+      if (!cancelled) {
+        setPresetAvailable(available);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [profileName]);
 
   const loadPreset = useCallback(async () => {
     setPresetLoading(true);
@@ -616,6 +631,7 @@ export default function AssetRegistrationStep({
               Existing Asset IDs are immutable. Add a new row to register a new asset ID.
             </p>
 
+            {presetAvailable === true && (
             <div className="rounded-xl border border-cyan-200 bg-cyan-50/60 p-3 dark:border-cyan-700/40 dark:bg-cyan-900/20">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -623,7 +639,7 @@ export default function AssetRegistrationStep({
                     Quick Fill
                   </p>
                   <p className="m-0 mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Load all 9 RENERYO assets (6 meters + 3 lines) from preset file.
+                    Load assets from the {profileName ? `"${profileName}"` : "selected"} preset file.
                   </p>
                 </div>
                 <button
@@ -639,6 +655,13 @@ export default function AssetRegistrationStep({
                 <p className="m-0 mt-2 text-xs text-rose-700 dark:text-rose-300">{presetError}</p>
               )}
             </div>
+            )}
+
+            {presetAvailable === false && (
+              <p className="m-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400">
+                No bundled preset is available for this profile. Register assets manually or use platform discovery when supported.
+              </p>
+            )}
 
             {shouldLoadGeneratorPreview && (
               <div className="rounded-xl border border-slate-300 bg-white/90 p-3 dark:border-slate-600 dark:bg-slate-800/80">
