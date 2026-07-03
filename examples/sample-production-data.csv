@@ -1,0 +1,6 @@
+date,asset_id,production_count,good_count,material_consumed_kg,shift,batch_id,notes
+2026-06-01,Line-1,500,488,1275.5,morning,BATCH-001,Sample data
+2026-06-01,Line-2,460,451,1168.0,morning,BATCH-002,Sample data
+2026-06-02,Line-1,515,506,1301.2,afternoon,BATCH-003,Sample data
+2026-06-02,Line-2,472,465,1195.4,afternoon,BATCH-004,Sample data
+2026-06-03,Line-1,508,499,1288.7,morning,BATCH-005,Sample data

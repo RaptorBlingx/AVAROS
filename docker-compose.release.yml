@@ -1,0 +1,267 @@
+# AVAROS Docker Compose - STANDALONE release package
+#
+# This file is copied into the WASABI/evaluator ZIP as docker-compose.yml.
+# It intentionally uses Compose-managed container, network, and volume names so
+# a fresh evaluator install does not collide with an existing AVAROS instance.
+
+services:
+  avaros:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    environment:
+      - AVAROS_LOG_LEVEL=${AVAROS_LOG_LEVEL:-INFO}
+      - AVAROS_DATA_PATH=/data
+      - AVAROS_DATABASE_URL=sqlite:////data/avaros.db
+      - MESSAGEBUS_HOST=ovos_messagebus
+      - MESSAGEBUS_PORT=8181
+      - PREVENTION_URL=${PREVENTION_URL:-}
+      - PREVENTION_AUTH_TOKEN=${PREVENTION_AUTH_TOKEN:-}
+      - PREVENTION_DATA_MAX_AGE_MINUTES=${PREVENTION_DATA_MAX_AGE_MINUTES:-1440}
+      - PREVENTION_EXPORT_MANIFEST_PATH=/opt/avaros/tools/prevention-addon/data/export_manifest.json
+      - WAKEWORD_BACKEND_URL=${WAKEWORD_BACKEND_URL:-http://avaros-wakeword:9999}
+    volumes:
+      - avaros-data:/data
+      - ./tools/prevention-addon/data:/opt/avaros/tools/prevention-addon/data:ro
+    networks:
+      - avaros-network
+    depends_on:
+      ovos_messagebus:
+        condition: service_healthy
+      ovos-core:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import skill; print('healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    labels:
+      - "com.avaros.service=skill"
+      - "com.avaros.description=Manufacturing KPI Voice Assistant"
+
+  ovos_messagebus:
+    image: smartgic/ovos-messagebus@sha256:9ecdeb5cd0dafeb0b71db0f1587265da4db3f8e1906d454fa6279556b8f780e2
+    restart: unless-stopped
+    volumes:
+      - ./docker/ovos-messagebus.standalone.conf:/etc/xdg/mycroft/mycroft.conf:ro
+    networks:
+      - avaros-network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python3 -c \"import socket; s=socket.create_connection(('127.0.0.1',8181), timeout=2); s.close()\" || exit 1",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    labels:
+      - "com.avaros.service=ovos-messagebus"
+
+  ovos-core:
+    image: smartgic/ovos-core@sha256:45fa6b3942334e2e4ff90d7e0e5fdfb2415812df10c238f7a31e347f96fcd6f2
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-UTC}
+      - MESSAGEBUS_HOST=ovos_messagebus
+      - MESSAGEBUS_PORT=8181
+    volumes:
+      - ovos-config:/home/ovos/.config/mycroft
+      - ./docker/ovos-core.standalone.conf:/etc/xdg/mycroft/mycroft.conf:ro
+    networks:
+      - avaros-network
+    depends_on:
+      ovos_messagebus:
+        condition: service_healthy
+    labels:
+      - "com.avaros.service=ovos-core"
+
+  avaros-web-ui:
+    build:
+      context: .
+      dockerfile: web-ui/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - AVAROS_DATABASE_URL=sqlite:////data/avaros.db
+      - HIVEMIND_WS_URL=${HIVEMIND_WS_URL:-auto}
+      - HIVEMIND_BACKEND_URL=ws://hivemind:5678/
+      - HIVEMIND_CLIENT_NAME=${HIVEMIND_CLIENT_NAME:-avaros-web-client}
+      - HIVEMIND_CLIENT_KEY=${HIVEMIND_CLIENT_KEY:-}
+      - HIVEMIND_CLIENT_SECRET=${HIVEMIND_CLIENT_SECRET:-}
+      - AVAROS_GENERATOR_MAPPING_FILE=/opt/avaros/tools/reneryo-data-generator/mapping_output.json
+      - PREVENTION_URL=${PREVENTION_URL:-}
+      - PREVENTION_AUTH_TOKEN=${PREVENTION_AUTH_TOKEN:-}
+      - PREVENTION_DATA_MAX_AGE_MINUTES=${PREVENTION_DATA_MAX_AGE_MINUTES:-1440}
+      - PREVENTION_EXPORT_MANIFEST_PATH=/opt/avaros/tools/prevention-addon/data/export_manifest.json
+    volumes:
+      - avaros-data:/data
+      - ./skill:/opt/avaros/skill:ro
+      - ./tools/prevention-addon/data:/opt/avaros/tools/prevention-addon/data:ro
+      - ./tools/reneryo-data-generator:/opt/avaros/tools/reneryo-data-generator:ro
+    ports:
+      - "${AVAROS_WEB_BIND_ADDRESS:-0.0.0.0}:${AVAROS_WEB_PORT:-8080}:8080"
+    networks:
+      - avaros-network
+    depends_on:
+      avaros:
+        condition: service_healthy
+      avaros-wakeword:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    labels:
+      - "com.avaros.service=web-ui"
+      - "com.avaros.description=Configuration dashboard and same-origin voice proxy"
+
+  avaros-prevention-exporter:
+    build:
+      context: .
+      dockerfile: tools/prevention-data-sync/Dockerfile
+    restart: unless-stopped
+    user: "${AVAROS_SHARED_DB_UID:-1000}:${AVAROS_SHARED_DB_GID:-1000}"
+    env_file:
+      - .env
+    environment:
+      - AVAROS_DATABASE_URL=sqlite:////data/avaros.db
+      - PREVENTION_EXPORT_OUTPUT=/opt/avaros/tools/prevention-addon/data
+      - PREVENTION_EXPORT_DAYS=${PREVENTION_EXPORT_DAYS:-30}
+      - PREVENTION_EXPORT_INTERVAL_SECONDS=${PREVENTION_EXPORT_INTERVAL_SECONDS:-900}
+      - PREVENTION_EXPORT_PROFILE=${PREVENTION_EXPORT_PROFILE:-}
+    command:
+      [
+        "sh",
+        "-c",
+        "case \"$${PREVENTION_EXPORT_ENABLED:-true}\" in false|False|0|no|NO) echo 'PREVENTION exporter disabled'; tail -f /dev/null ;; *) python /opt/avaros/tools/prevention-data-sync/exporter.py --daemon --platform generic_rest --days \"$${PREVENTION_EXPORT_DAYS:-30}\" --interval \"$${PREVENTION_EXPORT_INTERVAL_SECONDS:-900}\" --output \"$${PREVENTION_EXPORT_OUTPUT:-/opt/avaros/tools/prevention-addon/data}\" ;; esac",
+      ]
+    volumes:
+      - avaros-data:/data
+      - ./tools/prevention-addon/data:/opt/avaros/tools/prevention-addon/data:rw
+    networks:
+      - avaros-network
+    depends_on:
+      avaros-web-ui:
+        condition: service_started
+    labels:
+      - "com.avaros.service=prevention-exporter"
+      - "com.avaros.description=Continuous platform-to-PREVENTION data export"
+
+  avaros-wakeword:
+    build:
+      context: ./services/wakeword
+    restart: unless-stopped
+    environment:
+      - WAKEWORD_MODEL=${WAKEWORD_MODEL:-hey_jarvis}
+      - WAKEWORD_MODEL_PATH=${WAKEWORD_MODEL_PATH:-}
+      - WAKEWORD_MODEL_LABEL=${WAKEWORD_MODEL_LABEL:-hey_jarvis}
+      - WAKEWORD_PRELOAD_MODELS=${WAKEWORD_PRELOAD_MODELS:-1}
+      - WAKEWORD_THRESHOLD=${WAKEWORD_THRESHOLD:-0.25}
+      - WAKEWORD_CONFIRMATION_FRAMES=${WAKEWORD_CONFIRMATION_FRAMES:-1}
+      - WAKEWORD_DETECTION_COOLDOWN_SECONDS=${WAKEWORD_DETECTION_COOLDOWN_SECONDS:-1.2}
+    volumes:
+      - ${WAKEWORD_MODELS_DIR:-./services/wakeword/models}:/app/models
+    networks:
+      - avaros-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:9999/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    labels:
+      - "com.avaros.service=wakeword"
+      - "com.avaros.description=Browser wake-word detection backend"
+
+  hivemind:
+    build:
+      context: ./docker/hivemind
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - OVOS_BUS_HOST=ovos_messagebus
+      - OVOS_BUS_PORT=8181
+      - HIVEMIND_WS_PORT=5678
+    volumes:
+      - hivemind-data:/home/hivemind/.config/hivemind-core
+    networks:
+      - avaros-network
+    depends_on:
+      ovos-core:
+        condition: service_started
+      ovos_messagebus:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1',5678)); s.close(); print('OK')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      - "com.avaros.service=hivemind"
+      - "com.avaros.description=WebSocket proxy for browser voice clients"
+
+  demo-platform:
+    profiles: ["demo"]
+    build:
+      context: ./tools/reneryo-data-generator
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${AVAROS_DEMO_BIND_ADDRESS:-0.0.0.0}:${AVAROS_DEMO_PORT:-8090}:8090"
+    networks:
+      - avaros-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    labels:
+      - "com.avaros.service=demo-platform"
+      - "com.avaros.description=Deterministic sample manufacturing API"
+
+networks:
+  avaros-network:
+    driver: bridge
+
+volumes:
+  avaros-data:
+    driver: local
+  ovos-config:
+    driver: local
+  hivemind-data:
+    driver: local

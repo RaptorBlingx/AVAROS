@@ -71,6 +71,22 @@ test_hivemind.py
 test_messagebus.py
 web-ui/frontend/test_ws.py
 
+# Local operations/runbook material (not source release content)
+ops/live-server/
+ops/docker-storage-cleanup.*
+
+# WASABI shop host/admin material and generated evidence snapshots
+shop/A-Z-RELEASE-TRACE.md
+shop/SECURITY-CHECKLIST-EVIDENCE-*.md
+shop/publish-wasabi-product.php
+shop/update-wasabi-release.php
+shop/screenshots/
+shop/attachments/AVAROS-Quick-Start-v0.1.0.pdf
+shop/attachments/AVAROS-v0.1.0-SHA256.txt
+
+# Historical generated mappings
+*.before-seed-*.json
+
 # Lead-only local files (not pushed to repo)
 # Agents, instructions, and docs are local workflow tools for the Lead developer.
 # Emre receives tasks via Forgejo issues, not via files in these folders.
