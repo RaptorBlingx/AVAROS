@@ -46,6 +46,8 @@ import type {
   SystemStatusResponse,
   UpdateProfileRequest,
   VoiceConfigResponse,
+  VoicePreferencesRequest,
+  VoicePreferencesResponse,
 } from "./types";
 
 const API_BASE_URL = "";
@@ -470,6 +472,19 @@ export function listEmissionFactorPresets(): Promise<EmissionFactorPresetRespons
 
 export function getVoiceConfig(): Promise<VoiceConfigResponse> {
   return request<VoiceConfigResponse>("/api/v1/voice/config");
+}
+
+export function getVoicePreferences(): Promise<VoicePreferencesResponse> {
+  return request<VoicePreferencesResponse>("/api/v1/voice/preferences");
+}
+
+export function updateVoicePreferences(
+  payload: VoicePreferencesRequest,
+): Promise<VoicePreferencesResponse> {
+  return request<VoicePreferencesResponse>("/api/v1/voice/preferences", {
+    method: "PUT",
+    body: payload,
+  });
 }
 
 // ── Profile API ────────────────────────────────────────

@@ -198,7 +198,7 @@ describe("BackendWakeWordService", () => {
 
       const label = await localService.refreshWakeWordLabel();
       expect(fetchMock).not.toHaveBeenCalled();
-      expect(label).toBe("Hey Avaros");
+      expect(label).toBe("Hey Jarvis");
 
       localService.dispose();
     });

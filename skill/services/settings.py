@@ -998,7 +998,7 @@ class SettingsService(ProfileMixin):
         """
         self._ensure_initialized()
 
-        env_url = os.environ.get("HIVEMIND_WS_URL", "ws://localhost:5678")
+        env_url = os.environ.get("HIVEMIND_WS_URL", "auto")
         env_name = os.environ.get("HIVEMIND_CLIENT_NAME", "avaros-web-client")
         env_key = os.environ.get("HIVEMIND_CLIENT_KEY", "")
         env_secret = os.environ.get("HIVEMIND_CLIENT_SECRET", "")

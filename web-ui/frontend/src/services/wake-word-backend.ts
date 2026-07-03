@@ -154,7 +154,7 @@ function toDisplayWakeWordLabel(raw: string): string {
     .replace(/^hey[\s_-]+/i, "")
     .replace(/[_-]+/g, " ");
   if (!cleaned) {
-    return "Hey Avaros";
+    return "Hey Jarvis";
   }
   const title = cleaned
     .split(/\s+/)
@@ -195,7 +195,7 @@ export class BackendWakeWordService {
   private _spResampleRatio = 1;
   private _spBuffer: Int16Array = new Int16Array(0);
   private _spOffset = 0;
-  private wakeWordLabel = "Hey Avaros";
+  private wakeWordLabel = "Hey Jarvis";
 
   constructor(config?: Partial<BackendWakeWordConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };

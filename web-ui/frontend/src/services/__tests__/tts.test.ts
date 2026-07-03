@@ -180,6 +180,109 @@ describe("TTSService", () => {
       const tts = new TTSService();
       await expect(tts.speak("test")).rejects.toThrow("not supported");
     });
+
+    it("test_server_audio_is_preferred_when_enabled", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(new Blob(["wav"], { type: "audio/wav" }), {
+          status: 200,
+        }),
+      );
+      const createObjectURL = vi.fn(() => "blob:avaros-tts");
+      const revokeObjectURL = vi.fn();
+
+      class MockAudioElement {
+        src: string;
+        volume = 1;
+        onended: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+        pause = vi.fn();
+
+        constructor(src = "") {
+          this.src = src;
+        }
+
+        play = vi.fn().mockImplementation(() => {
+          setTimeout(() => this.onended?.(), 0);
+          return Promise.resolve();
+        });
+      }
+
+      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("Audio", MockAudioElement);
+      vi.stubGlobal("URL", {
+        createObjectURL,
+        revokeObjectURL,
+      });
+
+      const tts = new TTSService({ serverAudio: true });
+      await tts.speak("Hello, meeting audio");
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/voice/tts",
+        expect.objectContaining({
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      expect(speakCalled).toBe(false);
+      expect(createObjectURL).toHaveBeenCalled();
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:avaros-tts");
+    });
+
+    it("test_server_audio_splits_long_responses", async () => {
+      const spokenChunks: string[] = [];
+      const fetchMock = vi.fn().mockImplementation((_, init: RequestInit) => {
+        spokenChunks.push(JSON.parse(init.body as string).text);
+        return Promise.resolve(
+          new Response(new Blob(["wav"], { type: "audio/wav" }), {
+            status: 200,
+          }),
+        );
+      });
+      const createObjectURL = vi
+        .fn()
+        .mockImplementation(() => `blob:avaros-tts-${spokenChunks.length}`);
+      const revokeObjectURL = vi.fn();
+
+      class MockAudioElement {
+        src: string;
+        volume = 1;
+        onended: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+        pause = vi.fn();
+        load = vi.fn();
+
+        constructor(src = "") {
+          this.src = src;
+        }
+
+        play = vi.fn().mockImplementation(() => {
+          setTimeout(() => this.onended?.(), 0);
+          return Promise.resolve();
+        });
+      }
+
+      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("Audio", MockAudioElement);
+      vi.stubGlobal("URL", {
+        createObjectURL,
+        revokeObjectURL,
+      });
+
+      const tts = new TTSService({ serverAudio: true });
+      await tts.speak(
+        "Next week, energy per unit on Line-1 is expected to be 1.7 kilowatt hours. " +
+          "That is 20.5 percent lower than the latest observed value of 2.1 kilowatt hours. " +
+          "Confidence is low because recent data is noisy, so treat this as an early warning.",
+      );
+
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+      expect(spokenChunks.every((chunk) => chunk.length <= 170)).toBe(true);
+      expect(spokenChunks.join(" ")).toContain("1.7 kilowatt hours");
+      expect(spokenChunks.join(" ")).toContain("20.5 percent");
+      expect(spokenChunks.join(" ")).toContain("Confidence is low");
+      expect(revokeObjectURL).toHaveBeenCalledTimes(fetchMock.mock.calls.length);
+    });
   });
 
   describe("stop and cancel", () => {
@@ -190,6 +293,52 @@ describe("TTSService", () => {
       tts.stop();
 
       expect(cancelCalled).toBe(true);
+      expect(tts.getState()).toBe("idle");
+    });
+
+    it("test_stop_cleans_up_server_audio", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(new Blob(["wav"], { type: "audio/wav" }), {
+          status: 200,
+        }),
+      );
+      const createObjectURL = vi.fn(() => "blob:avaros-tts-active");
+      const revokeObjectURL = vi.fn();
+      const pauseMock = vi.fn();
+      const loadMock = vi.fn();
+
+      class MockAudioElement {
+        src: string;
+        volume = 1;
+        onended: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+        pause = pauseMock;
+        load = loadMock;
+
+        constructor(src = "") {
+          this.src = src;
+        }
+
+        play = vi.fn().mockResolvedValue(undefined);
+      }
+
+      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("Audio", MockAudioElement);
+      vi.stubGlobal("URL", {
+        createObjectURL,
+        revokeObjectURL,
+      });
+
+      const tts = new TTSService({ serverAudio: true });
+      void tts.speak("A long running page media response.").catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      tts.stop();
+
+      expect(pauseMock).toHaveBeenCalled();
+      expect(loadMock).toHaveBeenCalled();
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:avaros-tts-active");
       expect(tts.getState()).toBe("idle");
     });
   });

@@ -17,6 +17,10 @@ import {
   useState,
 } from "react";
 
+import {
+  getVoicePreferences,
+  updateVoicePreferences,
+} from "../api/client";
 import { BackendWakeWordService } from "../services/wake-word-backend";
 import type {
   BackendWakeWordState,
@@ -121,7 +125,7 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
     initialWakeWordSensitivity,
   );
   const [isModelLoading, setIsModelLoading] = useState(false);
-  const [wakeWordLabel, setWakeWordLabel] = useState("Hey Avaros");
+  const [wakeWordLabel, setWakeWordLabel] = useState("Hey Jarvis");
   const [voiceMode, setVoiceModeState] = useState<VoiceMode>(getInitialVoiceMode);
   const [isBackendWakeWord, setIsBackendWakeWord] = useState(false);
 
@@ -222,9 +226,32 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
         window.localStorage.setItem(VOICE_MODE_STORAGE_KEY, effectiveMode);
         window.localStorage.setItem(LEGACY_VOICE_MODE_STORAGE_KEY, effectiveMode);
       }
+      void updateVoicePreferences({ voice_mode: effectiveMode }).catch(
+        () => undefined,
+      );
     },
     [ensureVoiceModeService, sttRef],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void getVoicePreferences()
+      .then((preferences) => {
+        if (cancelled) return;
+        const mode = preferences.voice_mode;
+        if (mode !== "wake-word" && mode !== "push-to-talk" && mode !== "text") {
+          return;
+        }
+        if (mode === voiceMode) return;
+        void setVoiceMode(mode).catch(() => undefined);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [setVoiceMode, voiceMode]);
 
   const setWakeWordSensitivity = useCallback((value: number) => {
     const normalized = Math.max(0, Math.min(1, value));

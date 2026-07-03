@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+VoiceModeValue = str
 
 
 class VoiceConfigResponse(BaseModel):
@@ -27,4 +30,29 @@ class VoiceConfigResponse(BaseModel):
     voice_enabled: bool = Field(
         ...,
         description="Whether voice features are enabled (key configured).",
+    )
+
+
+class VoicePreferencesRequest(BaseModel):
+    """Persisted browser voice preference shared by AVAROS embeds."""
+
+    voice_mode: VoiceModeValue = Field(
+        ...,
+        description="Preferred AVAROS voice mode.",
+    )
+
+    @field_validator("voice_mode")
+    @classmethod
+    def validate_voice_mode(cls, value: str) -> str:
+        if value not in {"wake-word", "push-to-talk", "text"}:
+            raise ValueError("voice_mode must be wake-word, push-to-talk, or text")
+        return value
+
+
+class VoicePreferencesResponse(BaseModel):
+    """Persisted browser voice preference shared by AVAROS embeds."""
+
+    voice_mode: VoiceModeValue = Field(
+        ...,
+        description="Preferred AVAROS voice mode.",
     )

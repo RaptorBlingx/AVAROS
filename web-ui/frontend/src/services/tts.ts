@@ -1,5 +1,6 @@
 /**
- * Browser Text-to-Speech service using the speechSynthesis API.
+ * Text-to-Speech service using server-backed media playback when enabled,
+ * with browser speechSynthesis as the fallback.
  *
  * Provides queued speech output with voice selection, rate/pitch/volume
  * control, and word-boundary events.  Works in all modern browsers.
@@ -20,6 +21,10 @@ export interface TTSConfig {
   pitch: number;
   /** Volume, 0–1 (default 1.0) */
   volume: number;
+  /** Prefer same-origin server-generated WAV audio before browser TTS */
+  serverAudio: boolean;
+  /** Server TTS endpoint returning audio/wav */
+  serverEndpoint: string;
 }
 
 type StateCallback = (state: TTSState) => void;
@@ -34,7 +39,12 @@ const DEFAULT_CONFIG: TTSConfig = {
   rate: 1.0,
   pitch: 1.0,
   volume: 1.0,
+  serverAudio: false,
+  serverEndpoint: "/voice/tts",
 };
+
+const SERVER_TTS_CHUNK_MAX_CHARS = 170;
+const SERVER_TTS_FETCH_TIMEOUT_MS = 15000;
 
 // ── Service ────────────────────────────────────────────
 
@@ -43,8 +53,12 @@ export class TTSService {
   private config: TTSConfig;
   private state: TTSState;
   private currentUtterance: SpeechSynthesisUtterance | null = null;
+  private currentAudio: HTMLAudioElement | null = null;
+  private currentAudioObjectUrl = "";
+  private currentFetchController: AbortController | null = null;
   private queue: string[] = [];
   private voicesLoaded = false;
+  private stopToken = 0;
 
   private stateCallbacks: StateCallback[] = [];
   private wordBoundaryCallbacks: WordBoundaryCallback[] = [];
@@ -53,7 +67,9 @@ export class TTSService {
     this.config = { ...DEFAULT_CONFIG, ...config };
 
     if (this.isSupported()) {
-      this.synth = window.speechSynthesis;
+      this.synth = this.isSpeechSynthesisSupported()
+        ? window.speechSynthesis
+        : null;
       this.state = "idle";
       this.loadVoices();
     } else {
@@ -73,39 +89,65 @@ export class TTSService {
    * @param text - The text to speak.
    */
   async speak(text: string): Promise<void> {
-    if (!this.synth) {
-      throw new Error("SpeechSynthesis is not supported in this browser");
+    if (!this.isSupported()) {
+      throw new Error("Text-to-speech is not supported in this browser");
     }
     console.trace(`[AVAROS-DEBUG] TTS.speak called: "${text.slice(0, 60)}"`);
+    const utterances = this.splitForPlayback(text);
+    if (utterances.length === 0) return;
 
     if (this.state === "speaking") {
-      this.queue.push(text);
+      this.queue.push(...utterances);
       return;
     }
 
-    return this.speakImmediate(text);
+    const [first, ...rest] = utterances;
+    this.queue.push(...rest);
+    return this.speakImmediate(first);
   }
 
   /** Cancel current speech and clear the queue. */
   stop(): void {
+    this.stopToken += 1;
     this.queue = [];
     this.currentUtterance = null;
+    this.currentFetchController?.abort();
+    this.currentFetchController = null;
+    if (this.currentAudio) {
+      this.currentAudio.onended = null;
+      this.currentAudio.onerror = null;
+      this.currentAudio.pause();
+      this.currentAudio.src = "";
+      this.currentAudio.load?.();
+      this.currentAudio = null;
+    }
+    if (this.currentAudioObjectUrl && typeof URL !== "undefined") {
+      URL.revokeObjectURL(this.currentAudioObjectUrl);
+      this.currentAudioObjectUrl = "";
+    }
     this.synth?.cancel();
     this.setState("idle");
   }
 
   /** Pause current speech. */
   pause(): void {
+    this.currentAudio?.pause();
     this.synth?.pause();
   }
 
   /** Resume paused speech. */
   resume(): void {
+    void this.currentAudio?.play().catch(() => undefined);
     this.synth?.resume();
   }
 
-  /** True when the speechSynthesis API is available. */
+  /** True when any TTS playback path is available. */
   isSupported(): boolean {
+    return this.canUseServerAudio() || this.isSpeechSynthesisSupported();
+  }
+
+  /** True when the speechSynthesis API is available. */
+  private isSpeechSynthesisSupported(): boolean {
     return (
       typeof window !== "undefined" && "speechSynthesis" in window
     );
@@ -199,6 +241,123 @@ export class TTSService {
   // ── Internal ───────────────────────────────────────
 
   private speakImmediate(text: string): Promise<void> {
+    if (this.canUseServerAudio()) {
+      return this.speakWithServerAudio(text).catch((error: unknown) => {
+        if (!this.synth) throw error;
+        return this.speakWithSpeechSynthesis(text);
+      });
+    }
+    return this.speakWithSpeechSynthesis(text);
+  }
+
+  private canUseServerAudio(): boolean {
+    return (
+      this.config.serverAudio &&
+      typeof window !== "undefined" &&
+      typeof fetch !== "undefined" &&
+      typeof Audio !== "undefined" &&
+      typeof URL !== "undefined" &&
+      typeof URL.createObjectURL === "function"
+    );
+  }
+
+  private speakWithServerAudio(text: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const token = this.stopToken;
+      this.setState("speaking");
+
+      void (async () => {
+        let objectUrl = "";
+        const controller =
+          typeof AbortController !== "undefined"
+            ? new AbortController()
+            : null;
+        const fetchTimeout = window.setTimeout(() => {
+          controller?.abort();
+        }, SERVER_TTS_FETCH_TIMEOUT_MS);
+        this.currentFetchController = controller;
+        try {
+          const response = await fetch(this.config.serverEndpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: controller?.signal,
+            body: JSON.stringify({
+              text,
+              language: this.config.language,
+              rate: this.config.rate,
+              pitch: this.config.pitch,
+              volume: this.config.volume,
+            }),
+          });
+          if (!response.ok) {
+            throw new Error(`Server TTS failed: ${response.status}`);
+          }
+          if (token !== this.stopToken) {
+            if (this.currentFetchController === controller) {
+              this.currentFetchController = null;
+            }
+            resolve();
+            return;
+          }
+          const blob = await response.blob();
+          objectUrl = URL.createObjectURL(blob);
+          this.currentAudioObjectUrl = objectUrl;
+          const audio = new Audio(objectUrl);
+          audio.volume = this.config.volume;
+          this.currentAudio = audio;
+
+          const cleanup = () => {
+            const urlToRevoke = objectUrl;
+            objectUrl = "";
+            if (this.currentAudio === audio) {
+              this.currentAudio = null;
+            }
+            if (this.currentAudioObjectUrl === urlToRevoke) {
+              this.currentAudioObjectUrl = "";
+            }
+            if (this.currentFetchController === controller) {
+              this.currentFetchController = null;
+            }
+            if (urlToRevoke) {
+              URL.revokeObjectURL(urlToRevoke);
+            }
+          };
+
+          audio.onended = () => {
+            cleanup();
+            this.processQueue(resolve);
+          };
+          audio.onerror = () => {
+            cleanup();
+            this.setState("error");
+            reject(new Error("Server TTS playback failed"));
+          };
+          await audio.play();
+        } catch (error) {
+          if (objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+          }
+          if (this.currentAudioObjectUrl === objectUrl) {
+            this.currentAudioObjectUrl = "";
+          }
+          this.currentAudio = null;
+          if (this.currentFetchController === controller) {
+            this.currentFetchController = null;
+          }
+          if (token !== this.stopToken) {
+            resolve();
+            return;
+          }
+          this.setState("idle");
+          reject(error instanceof Error ? error : new Error("Server TTS failed"));
+        } finally {
+          window.clearTimeout(fetchTimeout);
+        }
+      })();
+    });
+  }
+
+  private speakWithSpeechSynthesis(text: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       if (!this.synth) {
         reject(new Error("SpeechSynthesis not available"));
@@ -256,6 +415,86 @@ export class TTSService {
       this.setState("idle");
       resolve();
     }
+  }
+
+  private splitForPlayback(text: string): string[] {
+    const normalized = text.replace(/\s+/g, " ").trim();
+    if (!normalized) return [];
+    if (
+      !this.canUseServerAudio() ||
+      normalized.length <= SERVER_TTS_CHUNK_MAX_CHARS
+    ) {
+      return [normalized];
+    }
+
+    const sentences = this.splitIntoSentences(normalized);
+    const chunks: string[] = [];
+    let current = "";
+
+    for (const sentence of sentences) {
+      if (!sentence) continue;
+      if (sentence.length > SERVER_TTS_CHUNK_MAX_CHARS) {
+        if (current) {
+          chunks.push(current);
+          current = "";
+        }
+        chunks.push(...this.splitLongSentence(sentence));
+        continue;
+      }
+
+      const next = current ? `${current} ${sentence}` : sentence;
+      if (next.length > SERVER_TTS_CHUNK_MAX_CHARS && current) {
+        chunks.push(current);
+        current = sentence;
+      } else {
+        current = next;
+      }
+    }
+
+    if (current) chunks.push(current);
+    return chunks;
+  }
+
+  private splitLongSentence(sentence: string): string[] {
+    const chunks: string[] = [];
+    let current = "";
+    for (const word of sentence.split(/\s+/)) {
+      const next = current ? `${current} ${word}` : word;
+      if (next.length > SERVER_TTS_CHUNK_MAX_CHARS && current) {
+        chunks.push(current);
+        current = word;
+      } else {
+        current = next;
+      }
+    }
+    if (current) chunks.push(current);
+    return chunks;
+  }
+
+  private splitIntoSentences(text: string): string[] {
+    const sentences: string[] = [];
+    let start = 0;
+
+    for (let index = 0; index < text.length; index += 1) {
+      const char = text[index];
+      if (!".!?;".includes(char)) continue;
+
+      const prev = text[index - 1] ?? "";
+      const next = text[index + 1] ?? "";
+      if (char === "." && /\d/.test(prev) && /\d/.test(next)) continue;
+
+      if (next && !/\s/.test(next)) continue;
+
+      const sentence = text.slice(start, index + 1).trim();
+      if (sentence) sentences.push(sentence);
+      start = index + 1;
+      while (start < text.length && /\s/.test(text[start])) start += 1;
+      index = start - 1;
+    }
+
+    const rest = text.slice(start).trim();
+    if (rest) sentences.push(rest);
+    return sentences.length > 0 ? sentences : [text];
   }
 
   private findVoice(): SpeechSynthesisVoice | null {

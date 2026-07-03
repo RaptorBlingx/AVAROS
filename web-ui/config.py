@@ -8,7 +8,7 @@ import secrets
 
 logger = logging.getLogger("uvicorn.error")
 
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.1"
 APP_HOST = "0.0.0.0"
 APP_PORT = int(os.environ.get("AVAROS_WEB_UI_PORT", "8080"))
 DATABASE_URL = os.environ.get("AVAROS_DATABASE_URL", "")
@@ -42,3 +42,25 @@ def _resolve_api_key() -> str:
 
 WEB_API_KEY: str = _resolve_api_key()
 
+SERVER_TTS_ENABLED = os.environ.get("AVAROS_SERVER_TTS_ENABLED", "true").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+SERVER_TTS_MAX_CHARS = int(os.environ.get("AVAROS_SERVER_TTS_MAX_CHARS", "500"))
+SERVER_TTS_TIMEOUT_SECONDS = float(
+    os.environ.get("AVAROS_SERVER_TTS_TIMEOUT_SECONDS", "10")
+)
+SERVER_TTS_ENGINE = os.environ.get("AVAROS_SERVER_TTS_ENGINE", "auto").strip().lower()
+PIPER_MODEL_PATH = os.environ.get(
+    "AVAROS_PIPER_MODEL_PATH",
+    "/opt/avaros/tts/piper/en_US-lessac-medium.onnx",
+)
+PIPER_CONFIG_PATH = os.environ.get(
+    "AVAROS_PIPER_CONFIG_PATH",
+    "/opt/avaros/tts/piper/en_US-lessac-medium.onnx.json",
+)
+PIPER_LENGTH_SCALE = float(os.environ.get("AVAROS_PIPER_LENGTH_SCALE", "1.0"))
+PIPER_NOISE_SCALE = float(os.environ.get("AVAROS_PIPER_NOISE_SCALE", "0.667"))
+PIPER_NOISE_W_SCALE = float(os.environ.get("AVAROS_PIPER_NOISE_W_SCALE", "0.8"))

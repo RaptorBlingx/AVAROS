@@ -7,6 +7,8 @@ export type WidgetPosition =
 export type WidgetTheme = "light" | "dark" | "auto";
 export type WidgetSize = "small" | "medium" | "large";
 export type WidgetMode = "wake-word" | "push-to-talk" | "text";
+export type WidgetDefaultMode = WidgetMode | "inherit";
+export type WidgetTtsEngine = "browser" | "server";
 
 export type WidgetConnectionState =
   | "disconnected"
@@ -42,8 +44,11 @@ export type WidgetConfig = {
   offsetY: number;
   label: string;
   disabledModes: WidgetMode[];
+  defaultMode?: WidgetDefaultMode;
   logoSrc: string;
   avarosUrl: string;
+  wakeWordUrl: string;
+  ttsEngine: WidgetTtsEngine;
 };
 
 export type WidgetPublicApi = {

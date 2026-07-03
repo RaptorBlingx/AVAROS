@@ -184,10 +184,13 @@ class TestNginxHiveMindProxy:
 class TestEnvExample:
     """Verify .env.example documents HiveMind configuration."""
 
-    def test_env_example_has_hivemind_port(self) -> None:
-        """.env.example documents HIVEMIND_PORT."""
+    def test_standalone_hivemind_is_not_published_to_host(self) -> None:
+        """Browser voice uses the same-origin Web UI proxy."""
         content = ENV_EXAMPLE.read_text()
-        assert "HIVEMIND_PORT" in content
+        assert "HIVEMIND_PORT" not in content
+
+        compose = STANDALONE_COMPOSE.read_text()
+        assert '"${HIVEMIND_PORT:-5678}:5678"' not in compose
 
     def test_env_example_has_hivemind_client_name(self) -> None:
         """.env.example documents HIVEMIND_CLIENT_NAME."""

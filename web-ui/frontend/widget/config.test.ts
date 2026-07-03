@@ -4,9 +4,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   parseDisabledModes,
+  parseTtsEngine,
   readWidgetConfig,
   resolveWidgetAssetUrl,
   resolveWidgetOriginUrl,
+  resolveWakeWordUrl,
 } from "./config";
 
 function makeScript(src = "https://avaros.example.com/avaros-widget.js") {
@@ -42,6 +44,9 @@ describe("widget config", () => {
     const { config } = readWidgetConfig(script);
 
     expect(config.avarosUrl).toBe("https://assistant.example.com/");
+    expect(config.wakeWordUrl).toBe(
+      "wss://assistant.example.com/wakeword/ws/detect",
+    );
   });
 
   it("keeps explicit disabled modes from the host script", () => {
@@ -51,5 +56,73 @@ describe("widget config", () => {
     const { config } = readWidgetConfig(script);
 
     expect(config.disabledModes).toEqual(["wake-word", "text"]);
+  });
+
+  it("allows embeds to enable every mode explicitly", () => {
+    const script = makeScript();
+    script.dataset.disabledModes = "none";
+
+    const { config } = readWidgetConfig(script);
+
+    expect(config.disabledModes).toEqual([]);
+  });
+
+  it("keeps an explicit default mode from the host script", () => {
+    const script = makeScript();
+    script.dataset.defaultMode = "wake-word";
+
+    const { config } = readWidgetConfig(script);
+
+    expect(config.defaultMode).toBe("wake-word");
+  });
+
+  it("allows embeds to inherit the AVAROS voice mode", () => {
+    const script = makeScript();
+    script.dataset.defaultMode = "inherit";
+
+    const { config } = readWidgetConfig(script);
+
+    expect(config.defaultMode).toBe("inherit");
+  });
+
+  it("uses an explicit wake-word URL when provided", () => {
+    const script = makeScript();
+    script.dataset.wakeWordUrl = "wss://wakeword.example.com/ws/detect";
+
+    expect(resolveWakeWordUrl(script, "https://assistant.example.com/")).toBe(
+      "wss://wakeword.example.com/ws/detect",
+    );
+  });
+
+  it("defaults to server TTS for meeting-safe playback", () => {
+    expect(parseTtsEngine(undefined, undefined)).toBe("server");
+
+    const { config } = readWidgetConfig(makeScript());
+
+    expect(config.ttsEngine).toBe("server");
+  });
+
+  it("allows meeting audio to opt into server TTS explicitly", () => {
+    expect(parseTtsEngine("server", undefined)).toBe("server");
+    expect(parseTtsEngine("meeting", undefined)).toBe("server");
+    expect(parseTtsEngine(undefined, "true")).toBe("server");
+
+    const script = makeScript();
+    script.dataset.ttsEngine = "server";
+
+    const { config } = readWidgetConfig(script);
+
+    expect(config.ttsEngine).toBe("server");
+  });
+
+  it("allows embeds to opt back into browser TTS explicitly", () => {
+    expect(parseTtsEngine("browser", undefined)).toBe("browser");
+
+    const script = makeScript();
+    script.dataset.ttsEngine = "browser";
+
+    const { config } = readWidgetConfig(script);
+
+    expect(config.ttsEngine).toBe("browser");
   });
 });

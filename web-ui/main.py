@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from config import APP_VERSION, CORS_ORIGINS, DATABASE_URL, WEB_API_KEY
 from dependencies import get_kpi_scheduler, get_settings_service
@@ -18,11 +18,14 @@ from routers.config import router as config_router
 from routers.emission_factors import router as emission_factors_router
 from routers.intents import router as intents_router
 from routers.intent_bindings import router as intent_bindings_router
+from routers.hivemind import router as hivemind_router
 from routers.metrics import router as metrics_router
 from routers.kpi_progress import router as kpi_progress_router
 from routers.production_data import router as production_data_router
 from routers.profiles import router as profiles_router
 from routers.status import router as status_router
+from routers.voice import public_router as public_voice_router
+from routers.voice import preload_server_tts
 from routers.voice import router as voice_router
 from routers.wakeword import router as wakeword_router
 
@@ -88,6 +91,26 @@ async def api_key_auth_middleware(request: Request, call_next):  # type: ignore[
     ``/health``, ``/docs``, ``/openapi.json``, and SPA static assets
     are excluded — they remain publicly accessible.
     """
+    if request.method == "OPTIONS" and request.url.path == "/voice/tts":
+        return Response(
+            status_code=204,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type",
+                "Access-Control-Max-Age": "86400",
+            },
+        )
+    if request.method == "OPTIONS" and request.url.path == "/voice/preferences":
+        return Response(
+            status_code=204,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type",
+                "Access-Control-Max-Age": "86400",
+            },
+        )
     if request.url.path.startswith("/api/v1/"):
         key = request.headers.get("X-API-Key", "")
         if key != WEB_API_KEY:
@@ -109,6 +132,7 @@ async def startup_check() -> None:
         settings_service.__class__.__name__,
         bool(DATABASE_URL),
     )
+    preload_server_tts()
     scheduler = get_kpi_scheduler()
     try:
         await scheduler.start()
@@ -133,6 +157,7 @@ def health() -> dict[str, str]:
 
 
 app.include_router(status_router)
+app.include_router(hivemind_router)
 app.include_router(wakeword_router)
 app.include_router(assets_router)
 app.include_router(config_router)
@@ -144,6 +169,7 @@ app.include_router(metrics_router)
 app.include_router(production_data_router)
 app.include_router(kpi_progress_router)
 app.include_router(voice_router)
+app.include_router(public_voice_router)
 app.include_router(alerts_router)
 
 

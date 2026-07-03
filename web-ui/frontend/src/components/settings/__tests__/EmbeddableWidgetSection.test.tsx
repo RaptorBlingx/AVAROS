@@ -49,7 +49,11 @@ describe("EmbeddableWidgetSection", () => {
     expect(snippet).toContain('data-client-name="avaros-web-client"');
     expect(snippet).toContain('data-access-key="widget-key"');
     expect(snippet).toContain('data-encryption-key="widget-secret"');
-    expect(snippet).toContain('data-disabled-modes="wake-word"');
+    expect(snippet).toContain(
+      'data-wake-word-url="ws://localhost:3000/wakeword/ws/detect"',
+    );
+    expect(snippet).toContain('data-disabled-modes="none"');
+    expect(snippet).toContain('data-default-mode="inherit"');
   });
 
   it("shows not ready when voice access is not configured", async () => {
@@ -75,7 +79,7 @@ describe("EmbeddableWidgetSection", () => {
 
     await waitFor(() => {
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-        expect.stringContaining('data-disabled-modes="wake-word"'),
+        expect.stringContaining('data-default-mode="inherit"'),
       );
     });
     expect(notify).toHaveBeenCalledWith(
@@ -106,6 +110,24 @@ describe("EmbeddableWidgetSection", () => {
     expect(snippet).toContain('data-theme="dark"');
     expect(snippet).toContain('data-size="large"');
     expect(snippet).toContain('data-label="Factory assistant"');
+    expect(snippet).toContain('data-tts-engine="server"');
+    expect(snippet).toContain('data-meeting-audio="true"');
+
+    fireEvent.change(screen.getByLabelText("Voice Mode"), {
+      target: { value: "push-to-talk" },
+    });
+
+    const pushToTalkSnippet = screen.getByText(/data-host=/).textContent ?? "";
+    expect(pushToTalkSnippet).toContain('data-disabled-modes="wake-word"');
+    expect(pushToTalkSnippet).toContain('data-default-mode="push-to-talk"');
+
+    fireEvent.change(screen.getByLabelText("Voice Mode"), {
+      target: { value: "wake-word" },
+    });
+
+    const wakeWordSnippet = screen.getByText(/data-host=/).textContent ?? "";
+    expect(wakeWordSnippet).toContain('data-disabled-modes="none"');
+    expect(wakeWordSnippet).toContain('data-default-mode="wake-word"');
   });
 });
 
@@ -122,6 +144,7 @@ describe("buildWidgetSnippet", () => {
       theme: "auto",
       size: "medium",
       label: 'Ask "AVAROS"',
+      voiceMode: "inherit",
     });
 
     expect(snippet).toContain("key&quot;with&amp;chars");

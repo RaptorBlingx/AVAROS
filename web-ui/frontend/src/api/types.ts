@@ -363,6 +363,14 @@ export type VoiceConfigResponse = {
   voice_enabled: boolean;
 };
 
+export type VoicePreferenceMode = "wake-word" | "push-to-talk" | "text";
+
+export type VoicePreferencesResponse = {
+  voice_mode: VoicePreferenceMode;
+};
+
+export type VoicePreferencesRequest = VoicePreferencesResponse;
+
 // ── Profile Types ──────────────────────────────────────
 
 export type ProfileMetadata = {

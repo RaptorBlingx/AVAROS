@@ -10,8 +10,8 @@ const mockState = vi.hoisted(() => {
     onStateChange: vi.fn().mockReturnValue(() => {}),
     onDetected: vi.fn().mockReturnValue(() => {}),
     setSensitivity: vi.fn(),
-    refreshWakeWordLabel: vi.fn().mockResolvedValue("Hey Avaros"),
-    getWakeWordLabel: vi.fn().mockReturnValue("Hey Avaros"),
+    refreshWakeWordLabel: vi.fn().mockResolvedValue("Hey Jarvis"),
+    getWakeWordLabel: vi.fn().mockReturnValue("Hey Jarvis"),
     dispose: vi.fn(),
   };
 

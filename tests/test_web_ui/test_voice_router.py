@@ -20,6 +20,7 @@ if _WEB_UI_DIR not in sys.path:
 
 from config import WEB_API_KEY as TEST_API_KEY  # noqa: E402
 from skill.services.settings import SettingsService, VoiceConfig  # noqa: E402
+import routers.voice as voice_router  # noqa: E402
 
 
 # ══════════════════════════════════════════════════════════
@@ -35,7 +36,7 @@ class TestGetVoiceConfigDefaults:
         client: TestClient,
         settings_service: SettingsService,
     ) -> None:
-        """Default hivemind_url is ws://localhost:5678."""
+        """Default HiveMind URL follows the current Web UI origin."""
         settings_service.delete_setting(SettingsService.VOICE_WS_URL_KEY)
         settings_service.delete_setting(SettingsService.VOICE_CLIENT_NAME)
         settings_service.delete_setting(SettingsService.VOICE_CLIENT_KEY)
@@ -45,7 +46,7 @@ class TestGetVoiceConfigDefaults:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["hivemind_url"] == "ws://localhost:5678"
+        assert data["hivemind_url"] == "ws://testserver/hivemind/"
 
     def test_returns_default_name(
         self,
@@ -159,12 +160,12 @@ class TestGetVoiceConfigFromSettings:
         data = response.json()
         assert data["hivemind_url"] == "wss://avaros.reneryo.com/hivemind/"
 
-    def test_auto_url_uses_direct_hivemind_for_local_compose(
+    def test_auto_url_uses_same_origin_for_local_compose(
         self,
         client: TestClient,
         settings_service: SettingsService,
     ) -> None:
-        """Local direct Web UI should point browsers to exposed HiveMind."""
+        """Local Web UI proxies HiveMind on the current browser origin."""
         settings_service.update_voice_config(VoiceConfig(hivemind_url="auto"))
         response = client.get(
             "/api/v1/voice/config",
@@ -173,7 +174,23 @@ class TestGetVoiceConfigFromSettings:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["hivemind_url"] == "ws://localhost:5678/"
+        assert data["hivemind_url"] == "ws://localhost:8080/hivemind/"
+
+    def test_auto_url_tracks_custom_web_port(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        """Changing AVAROS_WEB_PORT requires no HiveMind URL override."""
+        settings_service.update_voice_config(VoiceConfig(hivemind_url="auto"))
+        response = client.get(
+            "/api/v1/voice/config",
+            headers={"Host": "localhost:9090"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["hivemind_url"] == "ws://localhost:9090/hivemind/"
 
     def test_returns_configured_key(
         self,
@@ -294,3 +311,180 @@ class TestVoiceConfigAuth:
             headers={"X-API-Key": TEST_API_KEY},
         )
         assert response.status_code == 200
+
+
+class TestVoiceTTS:
+    """Verify server-backed TTS endpoints."""
+
+    def test_tts_endpoint_requires_api_key(
+        self, client_no_auth: TestClient
+    ) -> None:
+        response = client_no_auth.post(
+            "/api/v1/voice/tts",
+            json={"text": "Hello from AVAROS"},
+        )
+        assert response.status_code == 401
+
+    def test_tts_endpoint_returns_wav(
+        self, client: TestClient, monkeypatch
+    ) -> None:
+        def fake_run(command, **_kwargs):
+            wav_path = Path(command[command.index("-w") + 1])
+            wav_path.write_bytes(b"RIFF----WAVEfmt ")
+
+        monkeypatch.setattr(voice_router.shutil, "which", lambda _name: "/usr/bin/espeak-ng")
+        monkeypatch.setattr(voice_router.subprocess, "run", fake_run)
+
+        response = client.post(
+            "/api/v1/voice/tts",
+            json={"text": "Hello from AVAROS", "rate": 1.1},
+        )
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "audio/wav"
+        assert response.content.startswith(b"RIFF")
+
+    def test_tts_endpoint_prefers_piper_when_model_available(
+        self, client: TestClient, monkeypatch, tmp_path: Path
+    ) -> None:
+        model_path = tmp_path / "voice.onnx"
+        config_path = tmp_path / "voice.onnx.json"
+        model_path.write_bytes(b"model")
+        config_path.write_text("{}", encoding="utf-8")
+        commands: list[list[str]] = []
+
+        def fake_which(name: str) -> str | None:
+            if name == "piper":
+                return "/usr/bin/piper"
+            if name == "espeak-ng":
+                return "/usr/bin/espeak-ng"
+            return None
+
+        def fake_run(command, **_kwargs):
+            commands.append(command)
+            wav_path = Path(command[command.index("-f") + 1])
+            wav_path.write_bytes(b"RIFF----WAVEfmt ")
+
+        monkeypatch.setattr(voice_router, "PIPER_MODEL_PATH", str(model_path))
+        monkeypatch.setattr(voice_router, "PIPER_CONFIG_PATH", str(config_path))
+        monkeypatch.setattr(voice_router, "SERVER_TTS_ENGINE", "auto")
+        monkeypatch.setattr(voice_router.shutil, "which", fake_which)
+        monkeypatch.setattr(voice_router.subprocess, "run", fake_run)
+
+        response = client.post(
+            "/api/v1/voice/tts",
+            json={"text": "Hello from AVAROS", "rate": 1.1},
+        )
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "audio/wav"
+        assert response.content.startswith(b"RIFF")
+        assert commands[0][0] == "/usr/bin/piper"
+
+    def test_public_tts_endpoint_accepts_plain_text(
+        self, client_no_auth: TestClient, monkeypatch
+    ) -> None:
+        def fake_run(command, **_kwargs):
+            wav_path = Path(command[command.index("-w") + 1])
+            wav_path.write_bytes(b"RIFF----WAVEfmt ")
+
+        monkeypatch.setattr(voice_router.shutil, "which", lambda _name: "/usr/bin/espeak-ng")
+        monkeypatch.setattr(voice_router.subprocess, "run", fake_run)
+
+        response = client_no_auth.post(
+            "/voice/tts",
+            content="Hello from the embedded widget",
+            headers={"Content-Type": "text/plain;charset=utf-8"},
+        )
+
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == "*"
+        assert response.headers["content-type"] == "audio/wav"
+
+    def test_public_tts_preflight_allows_widget_origin(
+        self, client_no_auth: TestClient
+    ) -> None:
+        response = client_no_auth.options(
+            "/voice/tts",
+            headers={
+                "Origin": "https://preview.example.test",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+
+        assert response.status_code == 204
+        assert response.headers["access-control-allow-origin"] == "*"
+        assert "POST" in response.headers["access-control-allow-methods"]
+
+
+class TestVoicePreferences:
+    """Verify shared voice mode preferences for UI and embeds."""
+
+    def test_get_preferences_returns_saved_mode(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        settings_service.set_setting("voice_mode", "wake-word")
+
+        response = client.get("/api/v1/voice/preferences")
+
+        assert response.status_code == 200
+        assert response.json() == {"voice_mode": "wake-word"}
+
+    def test_put_preferences_persists_mode(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        response = client.put(
+            "/api/v1/voice/preferences",
+            json={"voice_mode": "push-to-talk"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"voice_mode": "push-to-talk"}
+        assert settings_service.get_setting("voice_mode") == "push-to-talk"
+
+    def test_put_preferences_rejects_unknown_mode(
+        self,
+        client: TestClient,
+    ) -> None:
+        response = client.put(
+            "/api/v1/voice/preferences",
+            json={"voice_mode": "always-on"},
+        )
+
+        assert response.status_code == 422
+
+    def test_public_preferences_returns_saved_mode_with_cors(
+        self,
+        client_no_auth: TestClient,
+        settings_service: SettingsService,
+    ) -> None:
+        settings_service.set_setting("voice_mode", "wake-word")
+
+        response = client_no_auth.get(
+            "/voice/preferences",
+            headers={"Origin": "https://preview.example.test"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"voice_mode": "wake-word"}
+        assert response.headers["access-control-allow-origin"] == "*"
+
+    def test_public_preferences_preflight_allows_widget_origin(
+        self,
+        client_no_auth: TestClient,
+    ) -> None:
+        response = client_no_auth.options(
+            "/voice/preferences",
+            headers={
+                "Origin": "https://preview.example.test",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+
+        assert response.status_code == 204
+        assert response.headers["access-control-allow-origin"] == "*"
+        assert "GET" in response.headers["access-control-allow-methods"]

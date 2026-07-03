@@ -13,10 +13,12 @@ import type { DetectionPayload } from "../src/services/wake-word-backend";
 import { ConnectionManager } from "./ConnectionManager";
 import { WidgetButton } from "./WidgetButton";
 import { WidgetPanel } from "./WidgetPanel";
+import { resolveServerTtsUrl, splitWidgetTtsText } from "./tts";
 import type {
   ChatMessage,
   WidgetConfig,
   WidgetConnectionState,
+  WidgetDefaultMode,
   WidgetMode,
   WidgetPublicApi,
   WidgetTheme,
@@ -33,6 +35,10 @@ type BrowserSpeechRecognitionCtor = {
   new (): SpeechRecognition;
 };
 
+type BrowserAudioContextCtor = {
+  new (): AudioContext;
+};
+
 function getSpeechRecognitionCtor(): BrowserSpeechRecognitionCtor | null {
   const speechWindow = window as typeof window & {
     SpeechRecognition?: BrowserSpeechRecognitionCtor;
@@ -41,14 +47,48 @@ function getSpeechRecognitionCtor(): BrowserSpeechRecognitionCtor | null {
   return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
 }
 
-function pickInitialMode(disabledModes: WidgetMode[]): WidgetMode {
-  const preferredOrder: WidgetMode[] = ["push-to-talk", "wake-word", "text"];
+function getAudioContextCtor(): BrowserAudioContextCtor | null {
+  const audioWindow = window as typeof window & {
+    AudioContext?: BrowserAudioContextCtor;
+    webkitAudioContext?: BrowserAudioContextCtor;
+  };
+  return audioWindow.AudioContext ?? audioWindow.webkitAudioContext ?? null;
+}
+
+function pickInitialMode(
+  disabledModes: WidgetMode[],
+  defaultMode?: WidgetDefaultMode,
+): WidgetMode {
+  const explicitDefault = defaultMode === "inherit" ? undefined : defaultMode;
+  const preferredOrder: WidgetMode[] = explicitDefault
+    ? [explicitDefault, "push-to-talk", "wake-word", "text"]
+    : ["push-to-talk", "wake-word", "text"];
   const nextMode = preferredOrder.find((mode) => !disabledModes.includes(mode));
   return nextMode ?? "text";
 }
 
+function isWidgetMode(value: unknown): value is WidgetMode {
+  return value === "wake-word" || value === "push-to-talk" || value === "text";
+}
+
+async function fetchInheritedVoiceMode(avarosUrl: string): Promise<WidgetMode | null> {
+  try {
+    const response = await fetch(new URL("/voice/preferences", avarosUrl), {
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { voice_mode?: unknown };
+    return isWidgetMode(data.voice_mode) ? data.voice_mode : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Cooldown to avoid re-prompting "How can I help you?" from TTS echo. */
 const WAKE_WORD_PROMPT_COOLDOWN_MS = 3000;
+const RESPONSE_FALLBACK_TIMEOUT_MS = 25000;
+const SPEECH_EVENT_DEDUP_MS = 1200;
+const SERVER_TTS_FETCH_TIMEOUT_MS = 15000;
 
 function makeMessage(source: "user" | "avaros", text: string): ChatMessage {
   return {
@@ -83,35 +123,73 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const managerRef = useRef<ConnectionManager | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const activeTtsAudioRef = useRef<HTMLAudioElement | null>(null);
+  const activeTtsAudioContextRef = useRef<AudioContext | null>(null);
+  const activeTtsSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const activeTtsGainRef = useRef<GainNode | null>(null);
+  const activeTtsPlaybackCancelRef = useRef<(() => void) | null>(null);
+  const activeTtsObjectUrlsRef = useRef<Set<string>>(new Set());
+  const activeTtsAbortControllersRef = useRef<Set<AbortController>>(new Set());
+  const ttsPlaybackTokenRef = useRef(0);
   const fallbackTimerRef = useRef<number | null>(null);
   const completionTimerRef = useRef<number | null>(null);
-  const modeRef = useRef<WidgetMode>(pickInitialMode(config.disabledModes));
+  const modeRef = useRef<WidgetMode>(
+    pickInitialMode(config.disabledModes, config.defaultMode),
+  );
   const wakeWordArmedRef = useRef(false);
   const responseResolvedRef = useRef(true);
   const ttsVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const backendWakeWordRef = useRef<BackendWakeWordService | null>(null);
   const wakeWordPromptCooldownRef = useRef(0);
+  const lastAssistantSpeechRef = useRef<{ text: string; at: number }>({
+    text: "",
+    at: 0,
+  });
   const appendMessageRef = useRef<(msg: ChatMessage) => void>(() => {});
-  const speakAssistantTextRef = useRef<(text: string) => void>(() => {});
+  const speakAssistantTextRef = useRef<(text: string) => Promise<void>>(
+    async () => {},
+  );
 
   const [panelOpen, setPanelOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [processing, setProcessing] = useState(false);
   const [connectionState, setConnectionState] = useState<WidgetConnectionState>("disconnected");
-  const [mode, setMode] = useState<WidgetMode>(pickInitialMode(config.disabledModes));
+  const [mode, setMode] = useState<WidgetMode>(
+    pickInitialMode(config.disabledModes, config.defaultMode),
+  );
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">(deriveTheme(config.theme));
   const [isTtsSpeaking, setIsTtsSpeaking] = useState(false);
+  const isTtsSpeakingRef = useRef(false);
   const setTtsSpeakingRef = useRef<(v: boolean) => void>(() => {});
-  setTtsSpeakingRef.current = setIsTtsSpeaking;
+  setTtsSpeakingRef.current = (value: boolean) => {
+    isTtsSpeakingRef.current = value;
+    setIsTtsSpeaking(value);
+  };
   const [micActive, setMicActive] = useState(false);
   const [micPermission, setMicPermission] = useState<
     "prompt" | "granted" | "denied" | "unsupported"
   >("prompt");
   const [micError, setMicError] = useState<string | null>(null);
   const [wakeWordArmed, setWakeWordArmed] = useState(false);
-  const [wakeWordLabel, setWakeWordLabel] = useState("Hey Avaros");
+  const [wakeWordLabel, setWakeWordLabel] = useState("Hey Jarvis");
   const [ttsVoice, setTtsVoice] = useState<SpeechSynthesisVoice | null>(null);
+
+  useEffect(() => {
+    if (config.defaultMode !== "inherit") return;
+    let cancelled = false;
+
+    void fetchInheritedVoiceMode(config.avarosUrl).then((inheritedMode) => {
+      if (cancelled || !inheritedMode) return;
+      if (config.disabledModes.includes(inheritedMode)) return;
+      modeRef.current = inheritedMode;
+      setMode(inheritedMode);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [config.avarosUrl, config.defaultMode, config.disabledModes]);
 
   useEffect(() => {
     ttsVoiceRef.current = ttsVoice;
@@ -128,44 +206,364 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     }
   }, []);
 
+  const cleanupServerTtsAudio = useCallback(() => {
+    const cancelPlayback = activeTtsPlaybackCancelRef.current;
+    activeTtsPlaybackCancelRef.current = null;
+    if (cancelPlayback) {
+      cancelPlayback();
+    }
+
+    const source = activeTtsSourceRef.current;
+    if (source) {
+      source.onended = null;
+      try { source.stop(); } catch { /* source may already be stopped */ }
+      try { source.disconnect(); } catch { /* already disconnected */ }
+      activeTtsSourceRef.current = null;
+    }
+
+    const gain = activeTtsGainRef.current;
+    if (gain) {
+      try { gain.disconnect(); } catch { /* already disconnected */ }
+      activeTtsGainRef.current = null;
+    }
+
+    const audio = activeTtsAudioRef.current;
+    if (audio) {
+      audio.onended = null;
+      audio.onerror = null;
+      audio.pause();
+      audio.src = "";
+      audio.load?.();
+      activeTtsAudioRef.current = null;
+    }
+    for (const objectUrl of activeTtsObjectUrlsRef.current) {
+      URL.revokeObjectURL(objectUrl);
+    }
+    activeTtsObjectUrlsRef.current.clear();
+  }, []);
+
+  const stopAssistantSpeech = useCallback(() => {
+    ttsPlaybackTokenRef.current += 1;
+    clearTtsWatcher();
+    for (const controller of activeTtsAbortControllersRef.current) {
+      controller.abort();
+    }
+    activeTtsAbortControllersRef.current.clear();
+    cleanupServerTtsAudio();
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    setTtsSpeakingRef.current?.(false);
+  }, [cleanupServerTtsAudio, clearTtsWatcher]);
+
   const speakAssistantText = useCallback(
-    (text: string) => {
-      if (!("speechSynthesis" in window)) return;
+    async (text: string): Promise<void> => {
       const cleaned = text.trim();
       if (!cleaned) return;
 
-      clearTtsWatcher();
+      stopAssistantSpeech();
+      const playbackToken = ttsPlaybackTokenRef.current;
+      setTtsSpeakingRef.current?.(true);
 
       // Pause browser STT during TTS to avoid echo pickup.
       if (recognitionRef.current) {
         try { recognitionRef.current.stop(); } catch { /* already stopped */ }
       }
 
-      const utterance = new SpeechSynthesisUtterance(cleaned);
-      utterance.lang = "en-US";
-      const voice = ttsVoiceRef.current;
-      if (voice) {
-        utterance.voice = voice;
-      }
-
-      const onTtsDone = () => {
+      const finishCurrentSpeech = () => {
+        if (playbackToken !== ttsPlaybackTokenRef.current) return;
         clearTtsWatcher();
+        cleanupServerTtsAudio();
         setTtsSpeakingRef.current?.(false);
       };
 
-      utterance.onend = onTtsDone;
+      const playBrowserSpeech = (): Promise<boolean> => {
+        if (!("speechSynthesis" in window)) return Promise.resolve(false);
+        if (playbackToken !== ttsPlaybackTokenRef.current) return Promise.resolve(true);
 
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utterance);
-      setTtsSpeakingRef.current?.(true);
+        return new Promise<boolean>((resolve) => {
+          let settled = false;
+          const finish = (played: boolean) => {
+            if (settled) return;
+            settled = true;
+            finishCurrentSpeech();
+            resolve(played);
+          };
 
-      ttsWatcherRef.current = setInterval(() => {
-        if (!window.speechSynthesis.speaking) {
-          onTtsDone();
+          const utterance = new SpeechSynthesisUtterance(cleaned);
+          utterance.lang = "en-US";
+          const voice = ttsVoiceRef.current;
+          if (voice) {
+            utterance.voice = voice;
+          }
+
+          utterance.onend = () => finish(true);
+          utterance.onerror = () => finish(false);
+
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(utterance);
+
+          ttsWatcherRef.current = setInterval(() => {
+            if (!window.speechSynthesis.speaking) {
+              finish(true);
+            }
+          }, 200);
+        });
+      };
+
+      const abortServerFetches = () => {
+        for (const controller of activeTtsAbortControllersRef.current) {
+          controller.abort();
         }
-      }, 200);
+        activeTtsAbortControllersRef.current.clear();
+      };
+
+      const fetchServerClip = async (
+        chunk: string,
+      ): Promise<{ blob: Blob } | null> => {
+        const controller = new AbortController();
+        activeTtsAbortControllersRef.current.add(controller);
+        const timeout = window.setTimeout(() => {
+          controller.abort();
+        }, SERVER_TTS_FETCH_TIMEOUT_MS);
+        try {
+          const response = await fetch(resolveServerTtsUrl(config.avarosUrl), {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: chunk,
+            signal: controller.signal,
+          });
+          if (!response.ok || playbackToken !== ttsPlaybackTokenRef.current) {
+            return null;
+          }
+          const blob = await response.blob();
+          if (playbackToken !== ttsPlaybackTokenRef.current) return null;
+          return { blob };
+        } catch {
+          return null;
+        } finally {
+          window.clearTimeout(timeout);
+          activeTtsAbortControllersRef.current.delete(controller);
+        }
+      };
+
+      const cleanupHtmlAudioClip = (
+        audio: HTMLAudioElement,
+        objectUrl: string,
+      ) => {
+        audio.onended = null;
+        audio.onerror = null;
+        if (activeTtsAudioRef.current === audio) {
+          activeTtsAudioRef.current = null;
+        }
+        if (activeTtsObjectUrlsRef.current.has(objectUrl)) {
+          URL.revokeObjectURL(objectUrl);
+          activeTtsObjectUrlsRef.current.delete(objectUrl);
+        }
+      };
+
+      const cleanupWebAudioClip = (
+        source: AudioBufferSourceNode,
+        gain: GainNode,
+      ) => {
+        source.onended = null;
+        if (activeTtsSourceRef.current === source) {
+          activeTtsSourceRef.current = null;
+        }
+        if (activeTtsGainRef.current === gain) {
+          activeTtsGainRef.current = null;
+        }
+        try { source.disconnect(); } catch { /* already disconnected */ }
+        try { gain.disconnect(); } catch { /* already disconnected */ }
+      };
+
+      const playServerClipWithAudioElement = (blob: Blob): Promise<void> => {
+        return new Promise<void>((resolve, reject) => {
+          if (
+            typeof Audio === "undefined" ||
+            typeof URL === "undefined" ||
+            typeof URL.createObjectURL !== "function"
+          ) {
+            reject(new Error("HTMLAudioElement playback unavailable"));
+            return;
+          }
+
+          const objectUrl = URL.createObjectURL(blob);
+          activeTtsObjectUrlsRef.current.add(objectUrl);
+          const audio = new Audio(objectUrl);
+          audio.preload = "auto";
+          activeTtsAudioRef.current = audio;
+
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            if (activeTtsPlaybackCancelRef.current === finish) {
+              activeTtsPlaybackCancelRef.current = null;
+            }
+            cleanupHtmlAudioClip(audio, objectUrl);
+            resolve();
+          };
+          activeTtsPlaybackCancelRef.current = finish;
+
+          audio.onended = finish;
+          audio.onerror = () => {
+            if (activeTtsPlaybackCancelRef.current === finish) {
+              activeTtsPlaybackCancelRef.current = null;
+            }
+            cleanupHtmlAudioClip(audio, objectUrl);
+            reject(new Error("Server TTS playback failed"));
+          };
+          void audio.play().catch((error) => {
+            if (activeTtsPlaybackCancelRef.current === finish) {
+              activeTtsPlaybackCancelRef.current = null;
+            }
+            cleanupHtmlAudioClip(audio, objectUrl);
+            reject(error);
+          });
+        });
+      };
+
+      const playServerClipWithWebAudio = async (blob: Blob): Promise<boolean> => {
+        const AudioContextCtor = getAudioContextCtor();
+        if (!AudioContextCtor) return false;
+        if (playbackToken !== ttsPlaybackTokenRef.current) return true;
+
+        let context = activeTtsAudioContextRef.current;
+        if (!context || context.state === "closed") {
+          context = new AudioContextCtor();
+          activeTtsAudioContextRef.current = context;
+        }
+        if (context.state === "suspended") {
+          await context.resume();
+        }
+        if (playbackToken !== ttsPlaybackTokenRef.current) return true;
+
+        let buffer: AudioBuffer;
+        try {
+          const arrayBuffer = await blob.arrayBuffer();
+          if (playbackToken !== ttsPlaybackTokenRef.current) return true;
+          buffer = await context.decodeAudioData(arrayBuffer);
+        } catch {
+          return false;
+        }
+        if (playbackToken !== ttsPlaybackTokenRef.current) return true;
+
+        await new Promise<void>((resolve, reject) => {
+          const source = context.createBufferSource();
+          const gain = context.createGain();
+          source.buffer = buffer;
+          source.connect(gain);
+          gain.connect(context.destination);
+
+          activeTtsSourceRef.current = source;
+          activeTtsGainRef.current = gain;
+
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            if (activeTtsPlaybackCancelRef.current === finish) {
+              activeTtsPlaybackCancelRef.current = null;
+            }
+            cleanupWebAudioClip(source, gain);
+            resolve();
+          };
+          activeTtsPlaybackCancelRef.current = finish;
+
+          source.onended = finish;
+
+          try {
+            const startAt = context.currentTime + 0.015;
+            const duration = Math.max(0, buffer.duration);
+            const fadeSeconds = Math.min(0.025, Math.max(0.005, duration / 8));
+            gain.gain.cancelScheduledValues(startAt);
+            gain.gain.setValueAtTime(0, startAt);
+            gain.gain.linearRampToValueAtTime(1, startAt + fadeSeconds);
+            if (duration > fadeSeconds * 3) {
+              gain.gain.setValueAtTime(1, startAt + duration - fadeSeconds);
+              gain.gain.linearRampToValueAtTime(0, startAt + duration);
+            }
+            source.start(startAt);
+          } catch (error) {
+            if (activeTtsPlaybackCancelRef.current === finish) {
+              activeTtsPlaybackCancelRef.current = null;
+            }
+            cleanupWebAudioClip(source, gain);
+            reject(error);
+          }
+        });
+        return true;
+      };
+
+      const playServerClip = async (blob: Blob): Promise<void> => {
+        const playedWithWebAudio = await playServerClipWithWebAudio(blob);
+        if (playedWithWebAudio) return;
+        await playServerClipWithAudioElement(blob);
+      };
+
+      const playServerSpeech = async (): Promise<boolean> => {
+        if (typeof fetch === "undefined") {
+          return false;
+        }
+
+        const chunks = splitWidgetTtsText(cleaned);
+        if (chunks.length === 0) return false;
+        let nextClipPromise: Promise<{ blob: Blob } | null> | null =
+          fetchServerClip(chunks[0]);
+        let playedAny = false;
+
+        try {
+          for (let index = 0; index < chunks.length; index += 1) {
+            if (playbackToken !== ttsPlaybackTokenRef.current) return true;
+            const clip = await nextClipPromise;
+            nextClipPromise =
+              index + 1 < chunks.length
+                ? fetchServerClip(chunks[index + 1])
+                : null;
+            if (!clip) {
+              if (!playedAny) {
+                abortServerFetches();
+                return false;
+              }
+              return true;
+            }
+            if (playbackToken !== ttsPlaybackTokenRef.current) {
+              return true;
+            }
+            await playServerClip(clip.blob);
+            playedAny = true;
+          }
+          return playedAny;
+        } catch {
+          abortServerFetches();
+          return playedAny;
+        }
+      };
+
+      try {
+        if (config.ttsEngine === "server") {
+          const played = await playServerSpeech();
+          if (!played) {
+            await playBrowserSpeech();
+          }
+        } else {
+          const played = await playBrowserSpeech();
+          if (!played) {
+            await playServerSpeech();
+          }
+        }
+      } finally {
+        finishCurrentSpeech();
+      }
     },
-    [clearTtsWatcher],
+    [
+      cleanupServerTtsAudio,
+      clearTtsWatcher,
+      config.avarosUrl,
+      config.ttsEngine,
+      stopAssistantSpeech,
+    ],
   );
 
   // ── Backend Wake Word lifecycle ────────────────────
@@ -246,7 +644,14 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       clearCompletionTimer();
       setProcessing(false);
       appendMessage(makeMessage("avaros", cleaned));
-      speakAssistantText(cleaned);
+      const now = Date.now();
+      const isDuplicateSpeech =
+        lastAssistantSpeechRef.current.text === cleaned &&
+        now - lastAssistantSpeechRef.current.at < SPEECH_EVENT_DEDUP_MS;
+      lastAssistantSpeechRef.current = { text: cleaned, at: now };
+      if (!isDuplicateSpeech) {
+        void speakAssistantText(cleaned);
+      }
     },
     [appendMessage, clearCompletionTimer, clearFallbackTimer, speakAssistantText],
   );
@@ -306,7 +711,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
             "No response from AVAROS for this command. Check platform connectivity.",
           ),
         );
-      }, 8000);
+      }, RESPONSE_FALLBACK_TIMEOUT_MS);
 
       try {
         await manager.sendUtterance(toSend);
@@ -457,7 +862,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     }
 
     if (backendWakeWordRef.current) return;
-    const bww = new BackendWakeWordService();
+    const bww = new BackendWakeWordService({ wsUrl: config.wakeWordUrl });
     backendWakeWordRef.current = bww;
 
     // Wire onDetected BEFORE startListening to avoid losing events.
@@ -465,22 +870,21 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       setWakeWordLabel(bww.getWakeWordLabel());
       // Cooldown: suppress re-triggers within a short window (e.g. TTS echo).
       if (Date.now() < wakeWordPromptCooldownRef.current) return;
-      if (window.speechSynthesis.speaking) return;
+      if (
+        isTtsSpeakingRef.current ||
+        ("speechSynthesis" in window && window.speechSynthesis.speaking)
+      ) return;
 
       wakeWordPromptCooldownRef.current = Date.now() + WAKE_WORD_PROMPT_COOLDOWN_MS;
       setPanelOpen(true);
       wakeWordArmedRef.current = true;
       setWakeWordArmed(true);
       appendMessageRef.current(makeMessage("avaros", "How can I help you?"));
-      speakAssistantTextRef.current("How can I help you?");
-
-      // After TTS finishes, start single-shot browser STT for command capture.
-      const captureDelay = 1800; // rough TTS duration for "How can I help you?"
-      setTimeout(() => {
+      void speakAssistantTextRef.current("How can I help you?").finally(() => {
         if (modeRef.current !== "wake-word") return;
         if (!wakeWordArmedRef.current) return;
         restartRecognitionRef.current?.();
-      }, captureDelay);
+      });
     });
 
     // Initialize and start listening after handler is wired.
@@ -503,7 +907,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       bww.dispose();
       backendWakeWordRef.current = null;
     };
-  }, [mode]);
+  }, [config.wakeWordUrl, mode]);
 
   useEffect(() => {
     if (!("speechSynthesis" in window)) return;
@@ -601,6 +1005,10 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       clearCompletionTimer();
       stopListening();
       disposeBackendWakeWord();
+      stopAssistantSpeech();
+      const ttsAudioContext = activeTtsAudioContextRef.current;
+      activeTtsAudioContextRef.current = null;
+      void ttsAudioContext?.close().catch(() => undefined);
       responseResolvedRef.current = true;
       setWakeWordArmed(false);
     };
@@ -616,6 +1024,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     configError,
     disposeBackendWakeWord,
     resolveAssistantMessage,
+    stopAssistantSpeech,
     stopListening,
   ]);
 
@@ -785,7 +1194,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
               void sendText(toSend);
             }}
             onClear={() => setMessages([])}
-            onStopSpeaking={() => setIsTtsSpeaking(false)}
+            onStopSpeaking={stopAssistantSpeech}
             brandLogoSrc={config.logoSrc}
             wakeWordLabel={wakeWordLabel}
             avarosUrl={config.avarosUrl}

@@ -46,12 +46,37 @@ const SPEAK_EVENT_DEDUP_MS = 1200;
 const VOICE_DEBUG_BUILD_TAG = "voice-debug-2026-04-28-r5";
 const WAKE_WORD_POST_RESUME_DETECTION_SUPPRESSION_MS = 1500;
 /** Safety net: force-finish any wake-word session stuck longer than this. */
-const WAKE_WORD_SESSION_SAFETY_TIMEOUT_MS = 30000;
+const WAKE_WORD_SESSION_SAFETY_TIMEOUT_MS = 70000;
 /** If no speak event arrives within this time after entering awaiting_response, finish the session. */
-const WAKE_WORD_RESPONSE_TIMEOUT_MS = 10000;
-const WAKE_WORD_TTS_WATCHDOG_MIN_MS = 8000;
-const WAKE_WORD_TTS_WATCHDOG_MAX_MS = 30000;
-const WAKE_WORD_TTS_WATCHDOG_MS_PER_CHAR = 90;
+const WAKE_WORD_RESPONSE_TIMEOUT_MS = 25000;
+const WAKE_WORD_TTS_WATCHDOG_MIN_MS = 10000;
+const WAKE_WORD_TTS_WATCHDOG_MAX_MS = 60000;
+const WAKE_WORD_TTS_WATCHDOG_MS_PER_CHAR = 110;
+
+function isServerTtsRequested(): boolean {
+  if (typeof window === "undefined") return true;
+
+  const params = new URLSearchParams(window.location.search);
+  const requested =
+    params.get("ttsEngine") ??
+    params.get("tts") ??
+    params.get("audioMode") ??
+    "";
+  const normalized = requested.trim().toLowerCase();
+  if (["server", "meeting", "page-media"].includes(normalized)) return true;
+  if (normalized === "browser") return false;
+
+  try {
+    const storedEngine = window.localStorage
+      ?.getItem("avaros_tts_engine")
+      ?.trim()
+      .toLowerCase();
+    if (storedEngine === "browser") return false;
+  } catch {
+    return true;
+  }
+  return true;
+}
 
 type WakeInteractionPhase =
   | "idle"
@@ -103,7 +128,13 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   });
 
   const sttSupported = isSpeechRecognitionSupported();
-  const ttsSupported = isSpeechSynthesisSupported();
+  const serverTtsRequested = isServerTtsRequested();
+  const ttsSupported =
+    isSpeechSynthesisSupported() ||
+    (serverTtsRequested &&
+      typeof window !== "undefined" &&
+      typeof fetch !== "undefined" &&
+      typeof Audio !== "undefined");
   const interimTranscriptRef = useRef("");
   const finalTranscriptRef = useRef("");
   const wakeWordArmedUntilRef = useRef(0);
@@ -433,7 +464,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
   // ── Initialize STT / TTS ───────────────────────────
   useEffect(() => {
     if (ttsSupported && !ttsRef.current) {
-      ttsRef.current = new TTSService();
+      ttsRef.current = new TTSService({ serverAudio: serverTtsRequested });
       // Voice UX baseline: keep AVAROS replies in clear English.
       ttsRef.current.setLanguage("en-US");
       const loadVoices = () => {
@@ -486,7 +517,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
         );
       }
     };
-  }, [sttSupported, ttsSupported]);
+  }, [sttSupported, ttsSupported, serverTtsRequested]);
 
   // ── Wire STT events ────────────────────────────────
   useEffect(() => {

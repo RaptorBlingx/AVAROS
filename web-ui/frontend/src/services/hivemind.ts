@@ -18,7 +18,7 @@ export type ConnectionState =
   | "error";
 
 export interface HiveMindConfig {
-  /** WebSocket URL, e.g. ws://localhost:5678 or wss://host/hivemind */
+  /** WebSocket URL, e.g. ws://localhost:9090/hivemind/ or wss://host/hivemind/ */
   url: string;
   /** Client name from HiveMind credential store */
   clientName?: string;

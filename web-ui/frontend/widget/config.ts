@@ -1,4 +1,9 @@
-import type { WidgetConfig, WidgetMode } from "./types";
+import type {
+  WidgetConfig,
+  WidgetDefaultMode,
+  WidgetMode,
+  WidgetTtsEngine,
+} from "./types";
 
 export const DEFAULT_DISABLED_MODES: WidgetMode[] = ["wake-word"];
 
@@ -41,6 +46,7 @@ export function parseDisabledModes(value: string | undefined): WidgetMode[] {
     .split(",")
     .map((part) => part.trim())
     .filter(Boolean);
+  if (parts.some((part) => part.toLowerCase() === "none")) return [];
   const modes = new Set<WidgetMode>();
   parts.forEach((part) => {
     if (part === "wake-word" || part === "push-to-talk" || part === "text") {
@@ -48,6 +54,27 @@ export function parseDisabledModes(value: string | undefined): WidgetMode[] {
     }
   });
   return Array.from(modes);
+}
+
+export function parseDefaultMode(
+  value: string | undefined,
+): WidgetDefaultMode | undefined {
+  if (value === "inherit") return value;
+  if (value === "wake-word" || value === "push-to-talk" || value === "text") {
+    return value;
+  }
+  return undefined;
+}
+
+export function parseTtsEngine(
+  value: string | undefined,
+  meetingAudio: string | undefined,
+): WidgetTtsEngine {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "server" || normalized === "meeting") return "server";
+  if (normalized === "browser") return "browser";
+  if (meetingAudio?.trim().toLowerCase() === "true") return "server";
+  return "server";
 }
 
 export function resolveWidgetAssetUrl(
@@ -69,6 +96,35 @@ export function resolveWidgetOriginUrl(script: HTMLScriptElement): string {
     return new URL("/", script.src || window.location.href).toString();
   } catch {
     return window.location.origin ? `${window.location.origin}/` : "/";
+  }
+}
+
+function toWebSocketUrl(httpUrl: string): string {
+  const parsed = new URL(httpUrl);
+  if (parsed.protocol === "https:") parsed.protocol = "wss:";
+  if (parsed.protocol === "http:") parsed.protocol = "ws:";
+  return parsed.toString();
+}
+
+export function resolveWakeWordUrl(
+  script: HTMLScriptElement,
+  avarosUrl: string,
+): string {
+  const explicit = script.dataset.wakeWordUrl?.trim();
+  if (explicit) {
+    try {
+      return new URL(explicit, window.location.href).toString();
+    } catch {
+      return explicit;
+    }
+  }
+
+  try {
+    return toWebSocketUrl(new URL("/wakeword/ws/detect", avarosUrl).toString());
+  } catch {
+    return toWebSocketUrl(
+      new URL("/wakeword/ws/detect", resolveWidgetOriginUrl(script)).toString(),
+    );
   }
 }
 
@@ -107,6 +163,9 @@ export function readWidgetConfig(script: HTMLScriptElement): {
     script.dataset.logoSrc?.trim() || "widget-logo.svg",
   );
   const avarosUrl = script.dataset.avarosUrl?.trim() || resolveWidgetOriginUrl(script);
+  const defaultMode = parseDefaultMode(
+    script.dataset.defaultMode?.trim() || script.dataset.voiceMode?.trim(),
+  );
 
   return {
     config: {
@@ -122,8 +181,14 @@ export function readWidgetConfig(script: HTMLScriptElement): {
       offsetY: parseOffset(script.dataset.offsetY, 20),
       label: script.dataset.label?.trim() ?? "",
       disabledModes: parseDisabledModes(script.dataset.disabledModes),
+      defaultMode,
       logoSrc,
       avarosUrl,
+      wakeWordUrl: resolveWakeWordUrl(script, avarosUrl),
+      ttsEngine: parseTtsEngine(
+        script.dataset.ttsEngine,
+        script.dataset.meetingAudio,
+      ),
     },
     configError,
   };

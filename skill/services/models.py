@@ -57,7 +57,7 @@ class VoiceConfig:
         hivemind_secret: Client secret/password.
     """
 
-    hivemind_url: str = "ws://localhost:5678"
+    hivemind_url: str = "auto"
     hivemind_name: str = "avaros-web-client"
     hivemind_key: str = ""
     hivemind_secret: str = ""

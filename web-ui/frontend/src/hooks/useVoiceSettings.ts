@@ -1,5 +1,9 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  getVoicePreferences,
+  updateVoicePreferences,
+} from "../api/client";
 import type { VoiceMode } from "../contexts/voice-types";
 
 export type STTEngine = "browser" | "server";
@@ -37,7 +41,7 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettingsState = {
   wakeWordSensitivity: 0.75,
   wakeWordUrl: "",
   sttEngine: "browser",
-  ttsEngine: "browser",
+  ttsEngine: "server",
   language: "en-US",
   ttsVoice: "",
   ttsRate: 1,
@@ -145,6 +149,18 @@ function persistSetting<K extends keyof VoiceSettingsState>(
   localStorage.setItem(storageKey, String(value));
 }
 
+function persistSettingsToLocalStorage(settings: VoiceSettingsState): void {
+  (Object.keys(STORAGE_KEYS) as Array<keyof typeof STORAGE_KEYS>).forEach(
+    (storageField) => {
+      persistSetting(storageField, settings[storageField]);
+    },
+  );
+}
+
+function persistSharedVoiceMode(mode: VoiceMode): void {
+  void updateVoicePreferences({ voice_mode: mode }).catch(() => undefined);
+}
+
 export function useVoiceSettings(): {
   voiceMode: VoiceMode;
   wakeWordEnabled: boolean;
@@ -163,7 +179,35 @@ export function useVoiceSettings(): {
     readInitialSettings(),
   );
 
+  useEffect(() => {
+    let cancelled = false;
+
+    void getVoicePreferences()
+      .then((preferences) => {
+        if (cancelled || !isVoiceMode(preferences.voice_mode)) return;
+        setSettings((prev) => {
+          const next = {
+            ...prev,
+            voiceMode: preferences.voice_mode,
+            wakeWordEnabled:
+              preferences.voice_mode === "wake-word"
+                ? true
+                : prev.wakeWordEnabled,
+          };
+          persistSettingsToLocalStorage(next);
+          return next;
+        });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const updateSetting = useCallback((key: string, value: unknown) => {
+    let sharedVoiceMode: VoiceMode | null = null;
+
     setSettings((prev) => {
       const next = { ...prev };
 
@@ -171,6 +215,9 @@ export function useVoiceSettings(): {
         case "voiceMode":
           if (typeof value === "string" && isVoiceMode(value)) {
             next.voiceMode = value;
+            if (value === "wake-word") {
+              next.wakeWordEnabled = true;
+            }
           }
           break;
         case "wakeWordEnabled":
@@ -214,14 +261,17 @@ export function useVoiceSettings(): {
         next.voiceMode = "push-to-talk";
       }
 
-      (Object.keys(STORAGE_KEYS) as Array<keyof typeof STORAGE_KEYS>).forEach(
-        (storageField) => {
-          persistSetting(storageField, next[storageField]);
-        },
-      );
+      persistSettingsToLocalStorage(next);
+      if (next.voiceMode !== prev.voiceMode) {
+        sharedVoiceMode = next.voiceMode;
+      }
 
       return next;
     });
+
+    if (sharedVoiceMode) {
+      persistSharedVoiceMode(sharedVoiceMode);
+    }
   }, []);
 
   const resetDefaults = useCallback(() => {
@@ -237,6 +287,7 @@ export function useVoiceSettings(): {
         localStorage.removeItem(key);
       }
     });
+    persistSharedVoiceMode(DEFAULT_VOICE_SETTINGS.voiceMode);
   }, []);
 
   return useMemo(

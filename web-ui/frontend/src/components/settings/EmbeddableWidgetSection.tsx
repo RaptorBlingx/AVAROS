@@ -14,6 +14,7 @@ type WidgetPosition =
   | "top-left";
 type WidgetTheme = "auto" | "light" | "dark";
 type WidgetSize = "small" | "medium" | "large";
+type WidgetVoiceMode = "inherit" | "push-to-talk" | "wake-word";
 
 function attr(value: string): string {
   return value
@@ -35,6 +36,7 @@ function buildWidgetSnippet({
   theme,
   size,
   label,
+  voiceMode,
 }: {
   origin: string;
   voiceConfig: VoiceConfigResponse | null;
@@ -42,13 +44,16 @@ function buildWidgetSnippet({
   theme: WidgetTheme;
   size: WidgetSize;
   label: string;
+  voiceMode: WidgetVoiceMode;
 }): string {
   const scriptSrc = `${origin.replace(/\/$/, "")}/avaros-widget.js`;
   const avarosUrl = `${origin.replace(/\/$/, "")}/`;
+  const wakeWordUrl = `${origin.replace(/^http/, "ws").replace(/\/$/, "")}/wakeword/ws/detect`;
   const hivemindUrl = voiceConfig?.hivemind_url ?? "";
   const clientName = voiceConfig?.hivemind_name || "avaros-web-client";
   const accessKey = voiceConfig?.hivemind_key ?? "";
   const encryptionKey = voiceConfig?.hivemind_secret ?? "";
+  const disabledModes = voiceMode === "push-to-talk" ? "wake-word" : "none";
   const encryptionAttribute = encryptionKey
     ? `\n  data-encryption-key="${attr(encryptionKey)}"`
     : "";
@@ -64,7 +69,11 @@ function buildWidgetSnippet({
   data-theme="${theme}"
   data-size="${size}"
   data-label="${attr(label)}"
-  data-disabled-modes="wake-word">
+  data-tts-engine="server"
+  data-meeting-audio="true"
+  data-wake-word-url="${attr(wakeWordUrl)}"
+  data-disabled-modes="${disabledModes}"
+  data-default-mode="${voiceMode}">
 </script>`;
 }
 
@@ -98,6 +107,7 @@ export default function EmbeddableWidgetSection({
   const [theme, setTheme] = useState<WidgetTheme>("auto");
   const [size, setSize] = useState<WidgetSize>("medium");
   const [label, setLabel] = useState("Ask AVAROS");
+  const [voiceMode, setVoiceMode] = useState<WidgetVoiceMode>("inherit");
 
   const loadConfig = useCallback(async () => {
     setLoading(true);
@@ -126,8 +136,9 @@ export default function EmbeddableWidgetSection({
         theme,
         size,
         label,
+        voiceMode,
       }),
-    [label, position, size, theme, voiceConfig],
+    [label, position, size, theme, voiceConfig, voiceMode],
   );
 
   const ready = Boolean(voiceConfig?.voice_enabled && voiceConfig.hivemind_key);
@@ -186,7 +197,7 @@ export default function EmbeddableWidgetSection({
         </p>
       ) : null}
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-5">
         <label className="space-y-1 text-sm font-medium text-slate-700 dark:text-slate-200">
           Position
           <select
@@ -233,6 +244,20 @@ export default function EmbeddableWidgetSection({
             onChange={(event) => setLabel(event.target.value)}
           />
         </label>
+        <label className="space-y-1 text-sm font-medium text-slate-700 dark:text-slate-200">
+          Voice Mode
+          <select
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+            value={voiceMode}
+            onChange={(event) =>
+              setVoiceMode(event.target.value as WidgetVoiceMode)
+            }
+          >
+            <option value="inherit">Inherit AVAROS setting</option>
+            <option value="push-to-talk">Push-to-talk</option>
+            <option value="wake-word">Wake-word</option>
+          </select>
+        </label>
       </div>
 
       <div className="space-y-2">
@@ -264,8 +289,8 @@ export default function EmbeddableWidgetSection({
       </div>
 
       <p className="m-0 text-xs text-slate-500 dark:text-slate-400">
-        Voice capture requires HTTPS or localhost. Wake-word mode is disabled
-        by default for embedded v1; users can still type or use push-to-talk.
+        Voice capture requires HTTPS or localhost. Wake-word mode needs browser
+        microphone permission on the embedded page.
       </p>
     </div>
   );

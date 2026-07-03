@@ -33,6 +33,7 @@ const OVOS_INTENT_PIPELINE = [
   "fallback_low",
 ] as const;
 const MAX_RECONNECT_DELAY_MS = 30000;
+const SEND_CONNECT_TIMEOUT_MS = 5000;
 
 function makeSessionId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -74,7 +75,28 @@ function makePaddingSafeUserAgent(name: string, key: string): string {
   return `${baseName}${"x".repeat(3 - remainder)}`;
 }
 
+function hasWebCrypto(): boolean {
+  return (
+    typeof crypto !== "undefined" &&
+    typeof crypto.getRandomValues === "function" &&
+    Boolean(crypto.subtle) &&
+    typeof crypto.subtle.importKey === "function" &&
+    typeof crypto.subtle.encrypt === "function" &&
+    typeof crypto.subtle.decrypt === "function" &&
+    typeof crypto.subtle.digest === "function"
+  );
+}
+
+function isAesKeyLength(value: string): boolean {
+  return value.length === 16 || value.length === 24 || value.length === 32;
+}
+
 async function importSecretKey(rawKey: string): Promise<CryptoKey> {
+  if (!hasWebCrypto()) {
+    throw new Error(
+      "Encrypted HiveMind connections require WebCrypto. Serve the host page over HTTPS or localhost.",
+    );
+  }
   const encoded = new TextEncoder().encode(rawKey);
   return crypto.subtle.importKey("raw", encoded, "AES-GCM", false, [
     "encrypt",
@@ -222,6 +244,11 @@ export class ConnectionManager {
 
   connect(): void {
     if (this.disposed) return;
+    if (isAesKeyLength(this.encryptionKey.trim()) && !hasWebCrypto()) {
+      this.ws = null;
+      this.setState("error");
+      return;
+    }
     if (
       this.ws &&
       (this.ws.readyState === WebSocket.OPEN ||
@@ -335,7 +362,8 @@ export class ConnectionManager {
     const cleaned = text.trim();
     if (!cleaned) return;
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error("WebSocket is not connected");
+      this.connect();
+      await this.waitUntilConnected(SEND_CONNECT_TIMEOUT_MS);
     }
 
     const busMessage: BusMessage = {
@@ -363,6 +391,39 @@ export class ConnectionManager {
     await this.sendEnvelope(envelope);
   }
 
+  private waitUntilConnected(timeoutMs: number): Promise<void> {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve, reject) => {
+      let unsubscribe = () => {};
+      let settled = false;
+
+      const finish = (callback: () => void): void => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        unsubscribe();
+        callback();
+      };
+
+      const timeout = window.setTimeout(() => {
+        finish(() => reject(new Error("WebSocket connection timed out")));
+      }, timeoutMs);
+
+      unsubscribe = this.onState((state) => {
+        if (state === "connected") {
+          finish(resolve);
+          return;
+        }
+        if (state === "error" || state === "disconnected") {
+          finish(() => reject(new Error("WebSocket is not connected")));
+        }
+      });
+    });
+  }
+
   private sendHello(): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN || this.helloSent) {
       return;
@@ -384,9 +445,14 @@ export class ConnectionManager {
       },
     };
 
-    void this.sendEnvelope(envelope).then(() => {
-      this.helloSent = true;
-    });
+    void this.sendEnvelope(envelope)
+      .then(() => {
+        this.helloSent = true;
+      })
+      .catch(() => {
+        this.helloSent = false;
+        this.setState("error");
+      });
   }
 
   private async sendEnvelope(envelope: HiveMindEnvelope): Promise<void> {
@@ -395,11 +461,13 @@ export class ConnectionManager {
     }
 
     const configured = this.encryptionKey.trim();
-    if (
-      configured.length === 16 ||
-      configured.length === 24 ||
-      configured.length === 32
-    ) {
+    if (isAesKeyLength(configured)) {
+      if (!hasWebCrypto()) {
+        this.setState("error");
+        throw new Error(
+          "Encrypted HiveMind connections require WebCrypto. Serve the host page over HTTPS or localhost.",
+        );
+      }
       const encrypted = await encryptMessage(
         JSON.stringify(envelope),
         configured,
@@ -473,10 +541,14 @@ export class ConnectionManager {
       const secret = this.accessSecret.trim();
 
       const pushIfAesLength = (value: string): void => {
-        if (value.length === 16 || value.length === 24 || value.length === 32) {
+        if (isAesKeyLength(value)) {
           keys.add(value);
         }
       };
+
+      if (!hasWebCrypto()) {
+        return [];
+      }
 
       pushIfAesLength(configured);
       pushIfAesLength(secret);
