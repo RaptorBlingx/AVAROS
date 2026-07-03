@@ -48,11 +48,7 @@ fi
 if [ -n "${_auto_generated}" ]; then
   echo ""
   echo "WARNING: Auto-generated HiveMind credentials (not set in .env):"
-  echo "  ${_auto_generated}"
-  echo ""
-  echo "  HIVEMIND_MASTER_KEY=${HIVEMIND_MASTER_KEY}"
-  echo "  HIVEMIND_CLIENT_KEY=${HIVEMIND_CLIENT_KEY}"
-  echo "  HIVEMIND_CLIENT_SECRET=${HIVEMIND_CLIENT_SECRET}"
+  echo "  ${_auto_generated} [redacted]"
   echo ""
   echo "  For production, add these to .env with stable values."
   echo "  Generate with: python3 -c \"import secrets; print(secrets.token_hex(16))\""
@@ -134,7 +130,7 @@ client = db.get_client_by_api_key(key) if key else None
 raise SystemExit(0 if client is not None else 1)
 PY
   then
-    echo "Default client exists for key '${HIVEMIND_CLIENT_KEY}'."
+    echo "Default client exists for configured access key."
     return
   fi
 
@@ -155,7 +151,11 @@ PY
   fi
 
   echo "Running: hivemind-core add-client --name ${HIVEMIND_CLIENT_NAME} [...redacted...]"
-  "${ADD_CMD[@]}" || echo "WARNING: Failed to create default client (may already exist)"
+  if "${ADD_CMD[@]}" >/dev/null 2>&1; then
+    echo "Default client created with configured credentials."
+  else
+    echo "WARNING: Failed to create default client (may already exist)"
+  fi
 }
 
 sync_default_client_credentials() {
@@ -185,7 +185,7 @@ if not key:
 db = ClientDatabase()
 client = db.get_client_by_api_key(key)
 if client is None:
-  print(f"Skipping client sync: no client found for key '{key}'")
+  print("Skipping client sync: no client found for configured access key")
   raise SystemExit(0)
 
 updated = False
@@ -229,7 +229,7 @@ PY
   if [ -z "${DESIRED_CRYPTO_KEY}" ]; then
     echo "Client crypto_key is intentionally disabled; skipping recreate enforcement."
   elif [ "${CURRENT_CRYPTO_KEY}" != "${DESIRED_CRYPTO_KEY}" ]; then
-    echo "Client crypto_key mismatch after sync (desired='${DESIRED_CRYPTO_KEY:-<empty>}' current='${CURRENT_CRYPTO_KEY:-<empty>}'). Recreating client..."
+    echo "Client crypto_key mismatch after sync. Recreating client..."
 
     CLIENT_NODE_ID="$(
       CLIENT_KEY="${HIVEMIND_CLIENT_KEY}" python - <<'PY'
@@ -258,7 +258,7 @@ PY
     if [ -n "${HIVEMIND_CLIENT_CRYPTO_KEY}" ]; then
       ADD_CMD+=("--crypto-key" "${HIVEMIND_CLIENT_CRYPTO_KEY}")
     fi
-    if "${ADD_CMD[@]}" >/dev/null; then
+    if "${ADD_CMD[@]}" >/dev/null 2>&1; then
       echo "Client recreated with desired crypto_key policy."
     else
       echo "WARNING: Failed to recreate client with desired crypto_key policy."
@@ -298,13 +298,17 @@ PY
       ADD_CMD+=("--crypto-key" "${HIVEMIND_CLIENT_CRYPTO_KEY}")
     fi
 
-    "${ADD_CMD[@]}" || echo "WARNING: Failed to recreate configured client"
+    if "${ADD_CMD[@]}" >/dev/null 2>&1; then
+      echo "Configured client recreated with configured credentials."
+    else
+      echo "WARNING: Failed to recreate configured client"
+    fi
   fi
 fi
 
 # --- Ensure client policy is consistent on every startup ---
 if [ -n "${HIVEMIND_CLIENT_KEY}" ] && [ -n "${HIVEMIND_CLIENT_ALLOWED_TYPES}" ]; then
-  echo "Applying allowed_types policy for client key '${HIVEMIND_CLIENT_KEY}'..."
+  echo "Applying allowed_types policy for configured client key..."
   CLIENT_KEY="${HIVEMIND_CLIENT_KEY}" \
   CLIENT_ALLOWED_TYPES="${HIVEMIND_CLIENT_ALLOWED_TYPES}" \
   python - <<'PY'
@@ -328,7 +332,7 @@ elif not allowed_types:
 else:
   client = db.get_client_by_api_key(key)
   if client is None:
-    print(f"Skipping policy update: no client found for key '{key}'")
+    print("Skipping policy update: no client found for configured access key")
   else:
     client.allowed_types = allowed_types
     db.update_item(client)
@@ -366,8 +370,7 @@ PY
   fi
 fi
 
-echo "Listing registered clients:"
-hivemind-core list-clients || true
+echo "Registered client listing skipped to avoid credential exposure in logs."
 
 echo "=== Starting HiveMind-core listener ==="
 exec hivemind-core listen

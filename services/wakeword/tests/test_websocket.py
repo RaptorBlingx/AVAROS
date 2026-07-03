@@ -147,6 +147,59 @@ class TestWebSocketEndpoint:
         assert data["score"] == 0.92
         assert "timestamp" in data
 
+    def test_websocket_suppresses_duplicate_detection_inside_cooldown(self) -> None:
+        """Immediate duplicate detector events are not forwarded to clients."""
+        # Arrange
+        events = [
+            DetectionEvent(
+                event="detected",
+                model="hey_avaros",
+                score=0.91,
+                timestamp="2026-03-04T12:00:00+00:00",
+            ),
+            DetectionEvent(
+                event="detected",
+                model="hey_avaros",
+                score=0.92,
+                timestamp="2026-03-04T12:00:00.400000+00:00",
+            ),
+            DetectionEvent(
+                event="detected",
+                model="hey_avaros",
+                score=0.93,
+                timestamp="2026-03-04T12:00:01.500000+00:00",
+            ),
+        ]
+        mock_detector = MagicMock()
+        mock_detector.process_audio.side_effect = events
+        mock_detector.close.return_value = None
+
+        client = TestClient(app)
+
+        # Act
+        with patch.dict(
+            "os.environ",
+            {"WAKEWORD_DETECTION_COOLDOWN_SECONDS": "1.0"},
+            clear=False,
+        ):
+            with patch(
+                "services.wakeword.main.WakeWordDetector",
+                return_value=mock_detector,
+            ), patch(
+                "services.wakeword.main._now_monotonic",
+                side_effect=[100.0, 100.4, 101.5],
+            ):
+                with client.websocket_connect("/ws/detect") as ws:
+                    ws.send_bytes(b"\x00" * 2560)
+                    first = ws.receive_json()
+                    ws.send_bytes(b"\x00" * 2560)
+                    ws.send_bytes(b"\x00" * 2560)
+                    second = ws.receive_json()
+
+        # Assert
+        assert first["score"] == 0.91
+        assert second["score"] == 0.93
+
     def test_websocket_silence_no_response(self) -> None:
         """When detector returns None, server sends nothing."""
         # Arrange
@@ -435,6 +488,22 @@ class TestHealthMetadata:
 
         # Assert
         assert response.json()["confirmation_frames"] == 5
+
+    def test_health_reports_detection_cooldown(self) -> None:
+        """Health response includes duplicate-detection cooldown config."""
+        # Arrange
+        client = TestClient(app)
+
+        # Act
+        with patch.dict(
+            "os.environ",
+            {"WAKEWORD_DETECTION_COOLDOWN_SECONDS": "1.7"},
+            clear=False,
+        ):
+            response = client.get("/health")
+
+        # Assert
+        assert response.json()["detection_cooldown_seconds"] == 1.7
 
     def test_health_reports_active_runtime_threshold_for_live_session(self) -> None:
         """Health reflects runtime threshold after websocket updates."""

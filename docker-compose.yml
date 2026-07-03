@@ -18,10 +18,10 @@ services:
   # AVAROS Skill Service
   # =========================================================================
   avaros:
+    container_name: avaros-skill
     build:
       context: .
       dockerfile: docker/Dockerfile
-    container_name: avaros-skill
     restart: unless-stopped
     environment:
       - AVAROS_LOG_LEVEL=${AVAROS_LOG_LEVEL:-INFO}
@@ -60,8 +60,8 @@ services:
   # OVOS Message Bus (required for ovos-core + HiveMind + AVAROS skill)
   # =========================================================================
   ovos_messagebus:
-    image: smartgic/ovos-messagebus:latest
     container_name: avaros-messagebus
+    image: smartgic/ovos-messagebus@sha256:9ecdeb5cd0dafeb0b71db0f1587265da4db3f8e1906d454fa6279556b8f780e2
     restart: unless-stopped
     volumes:
       - ./docker/ovos-messagebus.standalone.conf:/etc/xdg/mycroft/mycroft.conf:ro
@@ -84,8 +84,8 @@ services:
   # OVOS Core (Voice Processing)
   # =========================================================================
   ovos-core:
-    image: smartgic/ovos-core:0.1.0
     container_name: avaros-ovos-core
+    image: smartgic/ovos-core@sha256:45fa6b3942334e2e4ff90d7e0e5fdfb2415812df10c238f7a31e347f96fcd6f2
     restart: unless-stopped
     # NOTE: upstream ovos_commonqa has a PipelinePlugin.__init__ signature
     # bug in some versions. If ovos-core crashes on startup, pin a known-good
@@ -106,16 +106,17 @@ services:
       - "com.avaros.service=ovos-core"
 
   avaros-web-ui:
+    container_name: avaros-web-ui
     build:
       context: .
       dockerfile: web-ui/Dockerfile
-    container_name: avaros-web-ui
     restart: unless-stopped
     env_file:
       - .env
     environment:
       - AVAROS_DATABASE_URL=sqlite:////data/avaros.db
       - HIVEMIND_WS_URL=${HIVEMIND_WS_URL:-auto}
+      - HIVEMIND_BACKEND_URL=ws://hivemind:5678/
       - HIVEMIND_CLIENT_NAME=${HIVEMIND_CLIENT_NAME:-avaros-web-client}
       - HIVEMIND_CLIENT_KEY=${HIVEMIND_CLIENT_KEY:-}
       - HIVEMIND_CLIENT_SECRET=${HIVEMIND_CLIENT_SECRET:-}
@@ -130,7 +131,7 @@ services:
       - ./tools/prevention-addon/data:/opt/avaros/tools/prevention-addon/data:ro
       - ./tools/reneryo-data-generator:/opt/avaros/tools/reneryo-data-generator:ro
     ports:
-      - "8080:8080"
+      - "127.0.0.1:${AVAROS_WEB_PORT:-8080}:8080"
     networks:
       - avaros-network
     depends_on:
@@ -138,12 +139,27 @@ services:
         condition: service_healthy
       avaros-wakeword:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    labels:
+      - "com.avaros.service=web-ui"
+      - "com.avaros.description=Configuration dashboard and same-origin voice proxy"
 
   avaros-prevention-exporter:
+    container_name: avaros-prevention-exporter
     build:
       context: .
       dockerfile: tools/prevention-data-sync/Dockerfile
-    container_name: avaros-prevention-exporter
     restart: unless-stopped
     user: "${AVAROS_SHARED_DB_UID:-1000}:${AVAROS_SHARED_DB_GID:-1000}"
     env_file:
@@ -176,9 +192,9 @@ services:
   # Wake-word Detection Service (Web UI voice wake trigger)
   # =========================================================================
   avaros-wakeword:
+    container_name: avaros-wakeword
     build:
       context: ./services/wakeword
-    container_name: avaros-wakeword
     restart: unless-stopped
     environment:
       # Default phrase support for browser voice testing.
@@ -187,11 +203,11 @@ services:
       - WAKEWORD_MODEL_PATH=${WAKEWORD_MODEL_PATH:-}
       - WAKEWORD_MODEL_LABEL=${WAKEWORD_MODEL_LABEL:-hey_jarvis}
       - WAKEWORD_PRELOAD_MODELS=${WAKEWORD_PRELOAD_MODELS:-1}
-      # Lower threshold and 2-frame confirmation reduce missed wake detections.
-      - WAKEWORD_THRESHOLD=${WAKEWORD_THRESHOLD:-0.4}
-      - WAKEWORD_CONFIRMATION_FRAMES=${WAKEWORD_CONFIRMATION_FRAMES:-2}
-    ports:
-      - "${WAKEWORD_PORT:-9999}:9999"
+      # Demo-tuned wake-word detection: one strong frame should fire, while
+      # the backend cooldown suppresses duplicate events from the same phrase.
+      - WAKEWORD_THRESHOLD=${WAKEWORD_THRESHOLD:-0.25}
+      - WAKEWORD_CONFIRMATION_FRAMES=${WAKEWORD_CONFIRMATION_FRAMES:-1}
+      - WAKEWORD_DETECTION_COOLDOWN_SECONDS=${WAKEWORD_DETECTION_COOLDOWN_SECONDS:-1.2}
     volumes:
       # Optional mount point for custom trained wake-word models.
       - ${WAKEWORD_MODELS_DIR:-./services/wakeword/models}:/app/models
@@ -209,15 +225,18 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+    labels:
+      - "com.avaros.service=wakeword"
+      - "com.avaros.description=Browser wake-word detection backend"
 
   # =========================================================================
   # HiveMind-core (WebSocket Proxy for Voice — DEC-026)
   # =========================================================================
   hivemind:
+    container_name: avaros-hivemind
     build:
       context: ./docker/hivemind
       dockerfile: Dockerfile
-    container_name: avaros-hivemind
     restart: unless-stopped
     env_file:
       - .env
@@ -230,8 +249,6 @@ services:
       # the browser-facing Web UI configuration and break encrypted WS traffic.
     volumes:
       - hivemind-data:/home/hivemind/.config/hivemind-core
-    ports:
-      - "${HIVEMIND_PORT:-5678}:5678"
     networks:
       - avaros-network
     depends_on:
@@ -255,13 +272,44 @@ services:
       - "com.avaros.service=hivemind"
       - "com.avaros.description=WebSocket proxy for browser voice clients"
 
+  # =========================================================================
+  # Deterministic demo platform (optional)
+  # Start with: docker compose --profile demo up -d
+  # =========================================================================
+  demo-platform:
+    container_name: avaros-demo-platform
+    profiles: ["demo"]
+    build:
+      context: ./tools/reneryo-data-generator
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${AVAROS_DEMO_PORT:-8090}:8090"
+    networks:
+      - avaros-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    labels:
+      - "com.avaros.service=demo-platform"
+      - "com.avaros.description=Deterministic sample manufacturing API"
+
 # =========================================================================
 # Networks
 # =========================================================================
 networks:
   avaros-network:
-    driver: bridge
     name: avaros-network
+    driver: bridge
 
 # =========================================================================
 # Volumes (Persistent Storage)
@@ -269,15 +317,15 @@ networks:
 volumes:
   # SQLite database for settings, audit logs
   avaros-data:
-    driver: local
     name: avaros-data
+    driver: local
 
   # OVOS configuration
   ovos-config:
-    driver: local
     name: ovos-config
+    driver: local
 
   # HiveMind client database
   hivemind-data:
-    driver: local
     name: hivemind-data
+    driver: local

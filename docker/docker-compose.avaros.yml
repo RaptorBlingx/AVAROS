@@ -55,12 +55,6 @@ services:
     networks:
       - ovos
 
-    # Corporate DNS name doesn't always resolve inside Docker Desktop.
-    # Set RENERYO_DEPLOYS_IP in .env when connecting to real RENERYO.
-    # Defaults to 127.0.0.1 (safe no-op when unconfigured).
-    extra_hosts:
-      - "deploys.int.arti.ac:${RENERYO_DEPLOYS_IP:-127.0.0.1}"
-    
     # Mount WASABI OVOS shared volumes and skill code
     volumes:
       # WASABI OVOS config (read-write for skill settings)
@@ -153,9 +147,6 @@ services:
 
     networks:
       - ovos
-
-    extra_hosts:
-      - "deploys.int.arti.ac:${RENERYO_DEPLOYS_IP:-127.0.0.1}"
 
     # Web UI is only accessible via avaros-proxy (HTTPS)
     # For direct HTTP access in dev, use docker-compose.dev.yml override
@@ -258,8 +249,9 @@ services:
       - WAKEWORD_MODEL_LABEL=${WAKEWORD_MODEL_LABEL:-hey_jarvis}
       - WAKEWORD_PRELOAD_MODELS=${WAKEWORD_PRELOAD_MODELS:-1}
       # Lower threshold and 2-frame confirmation reduce missed wake detections.
-      - WAKEWORD_THRESHOLD=${WAKEWORD_THRESHOLD:-0.4}
-      - WAKEWORD_CONFIRMATION_FRAMES=${WAKEWORD_CONFIRMATION_FRAMES:-2}
+      - WAKEWORD_THRESHOLD=${WAKEWORD_THRESHOLD:-0.25}
+      - WAKEWORD_CONFIRMATION_FRAMES=${WAKEWORD_CONFIRMATION_FRAMES:-1}
+      - WAKEWORD_DETECTION_COOLDOWN_SECONDS=${WAKEWORD_DETECTION_COOLDOWN_SECONDS:-1.2}
     networks:
       - ovos
     healthcheck:
@@ -274,28 +266,6 @@ services:
       timeout: 5s
       start_period: 5s
       retries: 3
-
-  avaros-data-generator:
-    container_name: avaros-data-generator
-    hostname: avaros-data-generator
-    build:
-      context: ../tools/reneryo-data-generator
-      dockerfile: Dockerfile.generator
-    restart: unless-stopped
-    environment:
-      - RENERYO_API_URL=${RENERYO_API_URL}
-      - RENERYO_SESSION_COOKIE=${RENERYO_SESSION_COOKIE}
-      - GENERATOR_MODE=daemon
-      - GENERATOR_INTERVAL=900
-      - GENERATOR_SEED_DAYS=90
-      - GENERATOR_BATCH_DELAY=100
-    networks:
-      - ovos
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
 
   certbot:
     container_name: avaros-certbot

@@ -37,6 +37,7 @@ else:
     )
 
 SERVICE_VERSION = "0.1.0"
+DEFAULT_DETECTION_COOLDOWN_SECONDS = 1.2
 
 logging.basicConfig(
     level=logging.INFO,
@@ -225,6 +226,30 @@ def _confirmation_frames() -> int:
         return DEFAULT_CONFIRMATION_FRAMES
 
 
+def _detection_cooldown_seconds() -> float:
+    """Return duplicate-detection suppression window in seconds.
+
+    The frontend streams audio continuously in wake-word mode.  With a
+    responsive one-frame detector, the same spoken wake phrase can produce
+    more than one detection event across neighboring frames.  This cooldown
+    suppresses those duplicates without making the next intentional wake
+    phrase wait for the longer UI prompt cooldown.
+    """
+    raw = os.environ.get(
+        "WAKEWORD_DETECTION_COOLDOWN_SECONDS",
+        str(DEFAULT_DETECTION_COOLDOWN_SECONDS),
+    )
+    try:
+        return max(0.0, min(10.0, float(raw)))
+    except ValueError:
+        return DEFAULT_DETECTION_COOLDOWN_SECONDS
+
+
+def _now_monotonic() -> float:
+    """Return monotonic time; isolated for deterministic WebSocket tests."""
+    return time.monotonic()
+
+
 def _safe_close_reason(reason: str) -> str:
     """Return a WebSocket close reason that fits protocol limits."""
     encoded = reason.encode("utf-8")
@@ -320,6 +345,7 @@ def health() -> dict[str, Any]:
         "active_session_threshold_max": threshold_max,
         "active_session_threshold_avg": threshold_avg,
         "confirmation_frames": _confirmation_frames(),
+        "detection_cooldown_seconds": _detection_cooldown_seconds(),
     }
 
 
@@ -356,6 +382,7 @@ async def ws_detect(websocket: WebSocket) -> None:
         return
 
     last_detection_monotonic: float | None = None
+    detection_cooldown = _detection_cooldown_seconds()
 
     try:
         while True:
@@ -464,11 +491,31 @@ async def ws_detect(websocket: WebSocket) -> None:
 
             event = detector.process_audio(pcm_frame)
             if event is not None:
-                now = time.monotonic()
+                now = _now_monotonic()
+                elapsed_since_last = (
+                    None
+                    if last_detection_monotonic is None
+                    else now - last_detection_monotonic
+                )
+                if (
+                    elapsed_since_last is not None
+                    and elapsed_since_last < detection_cooldown
+                ):
+                    logger.info(
+                        "DETECTION SUPPRESSED: model=%s score=%.4f "
+                        "threshold=%.2f session=%s since_last=%.3fs cooldown=%.3fs",
+                        event.model,
+                        event.score,
+                        _detector_threshold(detector),
+                        session_id,
+                        elapsed_since_last,
+                        detection_cooldown,
+                    )
+                    continue
                 since_last = (
                     "first"
-                    if last_detection_monotonic is None
-                    else f"{now - last_detection_monotonic:.3f}s"
+                    if elapsed_since_last is None
+                    else f"{elapsed_since_last:.3f}s"
                 )
                 last_detection_monotonic = now
                 logger.warning(

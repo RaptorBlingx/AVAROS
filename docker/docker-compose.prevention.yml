@@ -69,7 +69,7 @@ services:
       - avaros-network
 
     ports:
-      - "${PREVENTION_PORT:-8082}:8081"
+      - "127.0.0.1:${PREVENTION_PORT:-8082}:8081"
 
     environment:
       MONGO_USER: ${PREVENTION_MONGO_USER:-prevention}
