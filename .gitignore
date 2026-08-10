@@ -92,3 +92,13 @@ shop/attachments/AVAROS-v0.1.0-SHA256.txt
 # Emre receives tasks via Forgejo issues, not via files in these folders.
 .github/
 docs/
+
+# Source-release technical handover documentation
+!docs/
+docs/*
+!docs/RENERYO-TECHNICAL-HANDOVER.md
+!docs/SYSTEM-ARCHITECTURE.md
+!docs/AVAROS-API-REFERENCE.md
+!docs/INTENTS-AND-DIALOGUE.md
+!docs/DATA-LIFECYCLE.md
+!docs/ALERTS-AND-NOTIFICATIONS.md

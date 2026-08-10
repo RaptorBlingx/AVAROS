@@ -83,6 +83,12 @@ AVAROS remains usable without PREVENTION; anomaly and drift commands are disable
 
 ## Documentation
 
+- [Reneryo technical handover](docs/RENERYO-TECHNICAL-HANDOVER.md)
+- [System architecture](docs/SYSTEM-ARCHITECTURE.md)
+- [AVAROS API reference](docs/AVAROS-API-REFERENCE.md)
+- [Intents and dialogue contract](docs/INTENTS-AND-DIALOGUE.md)
+- [Data lifecycle and query pipeline](docs/DATA-LIFECYCLE.md)
+- [Alerts and notification boundary](docs/ALERTS-AND-NOTIFICATIONS.md)
 - [Installation](user-docs/INSTALLATION.md)
 - [Configuration](user-docs/CONFIGURATION.md)
 - [User guide](user-docs/USER-GUIDE.md)
