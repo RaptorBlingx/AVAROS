@@ -122,6 +122,24 @@ class TestGetVoiceConfigDefaults:
         data = response.json()
         assert data["hivemind_secret"] == "crypto-key-123"
 
+    def test_hides_encryption_key_when_browser_encryption_is_disabled(
+        self,
+        client: TestClient,
+        settings_service: SettingsService,
+        monkeypatch,
+    ) -> None:
+        """LAN HTTP mode does not require browser Web Crypto."""
+        settings_service.delete_setting(SettingsService.VOICE_CLIENT_CRYPTO_KEY)
+        settings_service.delete_setting(SettingsService.VOICE_CLIENT_SECRET)
+        monkeypatch.setenv("HIVEMIND_CLIENT_CRYPTO_KEY", "0123456789abcdef")
+        monkeypatch.setenv("HIVEMIND_CLIENT_SECRET", "legacy-secret-xyz")
+        monkeypatch.setenv("HIVEMIND_BROWSER_ENCRYPTION_ENABLED", "false")
+
+        response = client.get("/api/v1/voice/config")
+
+        assert response.status_code == 200
+        assert response.json()["hivemind_secret"] == ""
+
 
 class TestGetVoiceConfigFromSettings:
     """Verify config is populated from SettingsService persistence."""

@@ -20,6 +20,7 @@ Important `.env` values:
 | `HIVEMIND_CLIENT_KEY` | Browser voice access key | Random secret |
 | `HIVEMIND_CLIENT_SECRET` | HiveMind client password | Random secret |
 | `HIVEMIND_CLIENT_CRYPTO_KEY` | Voice payload encryption key | 16, 24, or 32 characters |
+| `HIVEMIND_BROWSER_ENCRYPTION_ENABLED` | Browser voice payload encryption | `true` for HTTPS; `false` for LAN HTTP IP access |
 | `PREVENTION_URL` | Optional PREVENTION endpoint | Empty when unused |
 | `PREVENTION_EXPORT_ENABLED` | Continuous analytics data export | `false` when PREVENTION is unused |
 | `AVAROS_SERVER_TTS_ENABLED` | Server-backed response audio for browser playback | `true` for demos, disable if not needed |
@@ -36,6 +37,13 @@ Changing `AVAROS_WEB_PORT` does not require changing HiveMind settings. With
 `AVAROS_WEB_PORT=9090`, the browser receives
 `ws://localhost:9090/hivemind/`, while the Web UI reaches HiveMind internally
 at `hivemind:5678`.
+
+When AVAROS is opened through a plain HTTP IP address (for example,
+`http://10.33.10.112:8080`), set
+`HIVEMIND_BROWSER_ENCRYPTION_ENABLED=false` and
+`HIVEMIND_CLIENT_CRYPTO_KEY=`. Browser Web Crypto is not available on that
+insecure origin. Keep encryption enabled for HTTPS deployments; HiveMind
+access-key authentication remains required in either mode.
 
 ## Platform wizard
 

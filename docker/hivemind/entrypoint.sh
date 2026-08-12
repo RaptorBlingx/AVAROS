@@ -54,10 +54,11 @@ if [ -n "${_auto_generated}" ]; then
   echo "  Generate with: python3 -c \"import secrets; print(secrets.token_hex(16))\""
   echo ""
 fi
-# Keep browser/client encryption deterministic:
-# - default to first 16 chars of client secret
-# - normalize invalid lengths to 16 chars (AES-128)
-HIVEMIND_CLIENT_CRYPTO_KEY="${HIVEMIND_CLIENT_CRYPTO_KEY:-${HIVEMIND_CLIENT_SECRET:0:16}}"
+# Keep browser/client encryption deterministic when no explicit crypto-key
+# setting is supplied.  An explicitly empty value deliberately disables
+# payload encryption for LAN HTTP deployments, where Web Crypto is unavailable
+# to browsers on an IP-address origin.
+HIVEMIND_CLIENT_CRYPTO_KEY="${HIVEMIND_CLIENT_CRYPTO_KEY-${HIVEMIND_CLIENT_SECRET:0:16}}"
 if [ -n "${HIVEMIND_CLIENT_CRYPTO_KEY}" ]; then
   KEY_LEN="${#HIVEMIND_CLIENT_CRYPTO_KEY}"
   if [ "${KEY_LEN}" -ne 16 ] && [ "${KEY_LEN}" -ne 24 ] && [ "${KEY_LEN}" -ne 32 ]; then
@@ -205,7 +206,11 @@ if existing_crypto != desired_crypto:
 
 if updated:
   db.update_item(client)
-  db.sync()
+  # JsonDB's sync() reloads from disk; it does not persist mutations.  Commit
+  # the updated client so credentials and the encryption policy survive a
+  # container restart.
+  if not db.db.commit():
+    raise SystemExit("Failed to persist HiveMind client configuration")
   status = "set" if client.crypto_key else "cleared"
   print(f"Synchronized client '{client.name}' (crypto_key={status})")
 else:

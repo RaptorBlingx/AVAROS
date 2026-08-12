@@ -1003,6 +1003,9 @@ class SettingsService(ProfileMixin):
         env_key = os.environ.get("HIVEMIND_CLIENT_KEY", "")
         env_secret = os.environ.get("HIVEMIND_CLIENT_SECRET", "")
         env_crypto_key = os.environ.get("HIVEMIND_CLIENT_CRYPTO_KEY", "")
+        browser_encryption_enabled = os.environ.get(
+            "HIVEMIND_BROWSER_ENCRYPTION_ENABLED", "true"
+        ).strip().lower() not in {"0", "false", "no", "off"}
 
         hivemind_url = self.get_setting(
             self.VOICE_WS_URL_KEY,
@@ -1035,9 +1038,16 @@ class SettingsService(ProfileMixin):
         hivemind_crypto_key = str(hivemind_crypto_key or env_crypto_key)
         legacy_secret = str(legacy_secret or env_secret)
 
-        # Browser encryption expects HiveMind crypto key. Fall back to legacy
-        # password/secret only when crypto key is unavailable.
-        hivemind_secret = hivemind_crypto_key or legacy_secret
+        # Browser encryption requires the Web Crypto API, which browsers do
+        # not expose on ordinary HTTP IP-address origins.  A LAN deployment
+        # can explicitly disable payload encryption while retaining the
+        # HiveMind access-key authentication.
+        if browser_encryption_enabled:
+            # Fall back to the legacy password/secret only when no dedicated
+            # crypto key is configured.
+            hivemind_secret = hivemind_crypto_key or legacy_secret
+        else:
+            hivemind_secret = ""
 
         return VoiceConfig(
             hivemind_url=hivemind_url,
