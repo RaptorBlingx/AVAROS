@@ -266,12 +266,13 @@ def _wav_from_piper_chunks(chunks: list[Any]) -> bytes:
     sample_rate = int(chunks[0].sample_rate)
     sample_width = int(chunks[0].sample_width)
     channels = int(chunks[0].sample_channels)
-    silence = b"\x00" * int(
-        sample_rate
-        * _PIPER_SENTENCE_SILENCE_SECONDS
-        * sample_width
-        * channels
-    )
+    # Calculate silence in complete PCM frames. At Piper's 22,050 Hz sample
+    # rate, 150 ms is 3,307.5 frames. Converting the full expression directly
+    # to bytes produced 6,615 bytes for 16-bit mono audio: one byte short of a
+    # complete frame. Every following sentence was then byte-shifted and
+    # decoded as loud radio-like static.
+    silence_frames = round(sample_rate * _PIPER_SENTENCE_SILENCE_SECONDS)
+    silence = b"\x00" * (silence_frames * sample_width * channels)
     target = BytesIO()
     with wave.open(target, "wb") as writer:
         writer.setnchannels(channels)

@@ -9,8 +9,12 @@ Covers:
 
 from __future__ import annotations
 
+from array import array
+from io import BytesIO
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+import wave
 from fastapi.testclient import TestClient
 
 # Ensure web-ui is importable
@@ -333,6 +337,47 @@ class TestVoiceConfigAuth:
 
 class TestVoiceTTS:
     """Verify server-backed TTS endpoints."""
+
+    def test_piper_sentence_silence_preserves_pcm_frame_alignment(self) -> None:
+        """A 22,050 Hz pause must not byte-shift later 16-bit speech."""
+        first_samples = array("h", [1200, -2400, 3600])
+        second_samples = array("h", [-3210, 4321, -5432])
+        chunks = [
+            SimpleNamespace(
+                sample_rate=22_050,
+                sample_width=2,
+                sample_channels=1,
+                audio_int16_bytes=first_samples.tobytes(),
+            ),
+            SimpleNamespace(
+                sample_rate=22_050,
+                sample_width=2,
+                sample_channels=1,
+                audio_int16_bytes=second_samples.tobytes(),
+            ),
+        ]
+
+        wav_bytes = voice_router._wav_from_piper_chunks(chunks)
+
+        with wave.open(BytesIO(wav_bytes), "rb") as reader:
+            assert reader.getframerate() == 22_050
+            frames = reader.readframes(reader.getnframes())
+
+        decoded = array("h")
+        decoded.frombytes(frames)
+        silence_frames = round(
+            22_050 * voice_router._PIPER_SENTENCE_SILENCE_SECONDS
+        )
+        assert len(decoded) == (
+            len(first_samples) + silence_frames + len(second_samples)
+        )
+        assert decoded[: len(first_samples)] == first_samples
+        assert not any(
+            decoded[
+                len(first_samples) : len(first_samples) + silence_frames
+            ]
+        )
+        assert decoded[-len(second_samples) :] == second_samples
 
     def test_tts_endpoint_requires_api_key(
         self, client_no_auth: TestClient
