@@ -131,7 +131,7 @@ services:
       - ./tools/prevention-addon/data:/opt/avaros/tools/prevention-addon/data:ro
       - ./tools/reneryo-data-generator:/opt/avaros/tools/reneryo-data-generator:ro
     ports:
-      - "127.0.0.1:${AVAROS_WEB_PORT:-8080}:8080"
+      - "${AVAROS_WEB_BIND_ADDRESS:-0.0.0.0}:${AVAROS_WEB_PORT:-8080}:8080"
     networks:
       - avaros-network
     depends_on:
