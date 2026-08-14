@@ -67,24 +67,40 @@ Printable reference card for site operators.
 
 | Say This | You Get |
 |----------|---------|
-| "Are there any anomalies in production?" | Checks for unusual patterns |
+| "Are there any anomalies in production?" | PREVENTION-backed anomaly result, or an explicit unavailable message |
 | "Check for anomalies" | Same — shorter phrasing |
 | "Any unusual patterns?" | Same — alternative phrasing |
 | "Any spikes or issues?" | Same — alternative phrasing |
+
+Anomaly, drift, and forecast commands are advertised only when PREVENTION is configured and available.
 
 ### What-If Simulation
 
 | Say This | You Get |
 |----------|---------|
-| "What if we reduce temperature by 5 degrees?" | Simulated impact on energy per unit |
-| "Simulate reducing temperature by 10" | Same — alternative phrasing |
-| "What happens if temperature goes down by 3 degrees?" | Same — alternative phrasing |
+| "What if scrap rate drops by 10 percent on Line-1?" | Direct bounded KPI percentage scenario |
+| "What if energy per unit reaches 2 kWh per unit on Line-2?" | Direct KPI target scenario |
+
+Process parameters such as temperature or pressure require a configured sensitivity model. AVAROS rejects them when no model is configured. It also rejects physically impossible KPI changes.
+
+### Summaries, Meaning, and Follow-ups
+
+| Say This | You Get |
+|----------|---------|
+| "Give me a factory summary for all lines last month" | Core KPI evidence for every line |
+| "Rank all lines by OEE last month" | Complete ranking with values and period |
+| "What does OEE mean?" | Definition, formula, direction, and data requirements |
+| "Is OEE good on Line-1?" | Objective-based judgment, or an explicit no-objective message |
+| "Why did OEE change?" | Evidence and possible contributors without a causal claim |
+| "What about Line-2?" | Reuses the previous metric and period in the same session |
 
 ---
 
 ## Tips
 
 - Replace **Line-1** with your actual asset name
-- Time periods like **today**, **this week**, **last month** are supported
+- Time periods include **today**, **yesterday**, **last week**, **last month**, **past 30 days**, named months, and explicit date ranges
+- **Last month** means the previous calendar month; **past 30 days** is rolling
+- AVAROS is advisory and read-only; machine-control requests are refused
 - If the assistant doesn't understand, try using the exact phrases above
 - Commands only work for intents that are **enabled** in Settings → Intent Activation

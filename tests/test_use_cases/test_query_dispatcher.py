@@ -200,6 +200,40 @@ class TestGetKPI:
         assert logs[0].metric == "oee"
         assert logs[0].asset_id == "Line-1"
 
+    def test_get_kpis_batch_preserves_order_and_audits_results(
+        self,
+        dispatcher: QueryDispatcher,
+        adapter: StubAdapter,
+        audit_logger: AuditLogger,
+        period: TimePeriod,
+    ) -> None:
+        adapter.get_kpi = AsyncMock(wraps=adapter.get_kpi)
+        requests = [
+            (CanonicalMetric.OEE, "Line-1", period),
+            (CanonicalMetric.SCRAP_RATE, "Line-2", period),
+            (CanonicalMetric.THROUGHPUT, "Line-3", period),
+        ]
+
+        results = dispatcher.get_kpis_batch(requests)
+
+        assert [result.metric for result in results] == [
+            CanonicalMetric.OEE,
+            CanonicalMetric.SCRAP_RATE,
+            CanonicalMetric.THROUGHPUT,
+        ]
+        logs = audit_logger.get_recent_logs(limit=3)
+        assert len(logs) == 3
+        assert {log.query_type for log in logs} == {"get_kpi_batch"}
+
+        cached_results = dispatcher.get_kpis_batch(requests)
+
+        assert [result.metric for result in cached_results] == [
+            CanonicalMetric.OEE,
+            CanonicalMetric.SCRAP_RATE,
+            CanonicalMetric.THROUGHPUT,
+        ]
+        assert adapter.get_kpi.await_count == 3
+
 
 # ══════════════════════════════════════════════════════════
 # 4. compare

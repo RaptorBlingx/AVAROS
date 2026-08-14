@@ -5,12 +5,41 @@ import { useVoice } from "../contexts/VoiceContext";
 
 export type ConversationInputMode = "voice" | "text";
 
+export interface AvarosEvidenceRow {
+  label?: string;
+  metric?: string;
+  metric_label?: string;
+  asset_id?: string;
+  value?: number;
+  unit?: string;
+  rank?: number;
+  sample_count?: number;
+  observation_time?: string | null;
+  coverage_status?: string;
+}
+
+export interface AvarosResponseEvidence {
+  response_type: string;
+  query_id: string;
+  headline?: string;
+  aggregation?: string;
+  source_profile?: string;
+  coverage_status?: string;
+  period?: { label?: string; start?: string | null; end?: string | null };
+  evidence_rows?: AvarosEvidenceRow[];
+  source_times?: Record<string, string | null>;
+  warnings?: string[];
+  assumptions?: string[];
+  suggested_follow_ups?: string[];
+}
+
 export interface Message {
   id: string;
   text: string;
   source: "user" | "avaros";
   inputMode: ConversationInputMode;
   timestamp: Date;
+  evidence?: AvarosResponseEvidence;
 }
 
 const MAX_MESSAGES = 50;
@@ -33,7 +62,7 @@ export function useConversation(): {
   messages: Message[];
   isProcessing: boolean;
   addUserMessage: (text: string, inputMode: ConversationInputMode) => void;
-  addAvarosResponse: (text: string) => void;
+  addAvarosResponse: (text: string, evidence?: AvarosResponseEvidence) => void;
   clearConversation: () => void;
 } {
   const { on } = useHiveMind();
@@ -71,7 +100,7 @@ export function useConversation(): {
   );
 
   const addAvarosResponse = useCallback(
-    (text: string) => {
+    (text: string, evidence?: AvarosResponseEvidence) => {
       const normalized = text.trim();
       if (!normalized) return;
 
@@ -81,6 +110,7 @@ export function useConversation(): {
         source: "avaros",
         inputMode: pendingInputModeRef.current,
         timestamp: new Date(),
+        evidence,
       });
       setIsProcessing(false);
     },
@@ -100,7 +130,19 @@ export function useConversation(): {
           return;
         }
         lastAssistantSpeakRef.current = { text: normalized, at: now };
-        addAvarosResponse(normalized);
+        const messageMeta = msg.data.meta;
+        const nestedEvidence =
+          messageMeta && typeof messageMeta === "object"
+            ? (messageMeta as Record<string, unknown>).avaros_response
+            : undefined;
+        // OVOS places ``speak(..., meta=...)`` under data.meta. Keep the
+        // top-level lookup for compatibility with bridges that flatten it.
+        const rawEvidence = msg.data.avaros_response ?? nestedEvidence;
+        const evidence =
+          rawEvidence && typeof rawEvidence === "object"
+            ? (rawEvidence as unknown as AvarosResponseEvidence)
+            : undefined;
+        addAvarosResponse(normalized, evidence);
       }
     });
   }, [on, addAvarosResponse]);

@@ -30,13 +30,19 @@ def _ensure_valid_metric_name(metric_name: str) -> None:
         )
 
 
-def _mapping_data(payload: MetricMappingRequest) -> dict[str, str | None]:
+def _mapping_data(payload: MetricMappingRequest) -> dict:
     """Extract storage payload for SettingsService mapping methods."""
     return {
         "endpoint": payload.endpoint,
         "json_path": payload.json_path,
         "unit": payload.unit,
         "transform": payload.transform,
+        "aggregation": payload.aggregation,
+        "series_path": payload.series_path,
+        "timestamp_path": payload.timestamp_path,
+        "pagination": payload.pagination,
+        "page_size": payload.page_size,
+        "freshness_seconds": payload.freshness_seconds,
     }
 
 
@@ -59,6 +65,12 @@ def _to_response(
         json_path=str(mapping.get("json_path", "")),
         unit=str(mapping.get("unit", "")),
         transform=mapping.get("transform"),
+        aggregation=mapping.get("aggregation"),
+        series_path=mapping.get("series_path"),
+        timestamp_path=mapping.get("timestamp_path"),
+        pagination=bool(mapping.get("pagination", False)),
+        page_size=int(mapping.get("page_size", 100) or 100),
+        freshness_seconds=mapping.get("freshness_seconds"),
         source=source,
     )
 

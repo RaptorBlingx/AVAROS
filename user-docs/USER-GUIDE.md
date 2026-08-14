@@ -22,11 +22,14 @@ Use the voice control or text interface. Include an asset and period when releva
 
 - “What is the energy per unit for Line-1 this week?”
 - “Compare Line-1 and Line-2 on OEE.”
+- “Give me a factory summary for all lines last month.”
+- “What does OEE mean?”
 - “Show the scrap rate trend for last month.”
 - “List the configured assets.”
 - “Are there any production anomalies?”
 
 Anomaly and drift questions require a healthy PREVENTION connection and fresh exported data.
+AVAROS is advisory and read-only. It does not control equipment or assert a root cause from KPI correlation alone.
 
 ## Add production data
 

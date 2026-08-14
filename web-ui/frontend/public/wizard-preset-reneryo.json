@@ -24,10 +24,16 @@
       "display_name": "Line 3",
       "asset_type": "line",
       "aliases": "line three, third line, l3, production line 3"
+    },
+    {
+      "asset_id": "Electric-Main-Meter",
+      "display_name": "Electric Main Meter",
+      "asset_type": "seu",
+      "aliases": "main electric meter, electricity meter, site meter"
     }
   ],
   "metrics": {
-    "endpoint": "/u/measurement/metric/resource/{resource_id}/values?period=RAW&datetimeMin={start_date}&datetimeMax={end_date}&count=1&page=1",
+    "endpoint": "/u/measurement/metric/resource/{resource_id}/values?period=RAW&datetimeMin={start_date}&datetimeMax={end_date}&count=100&page=1",
     "json_path": "$.records[0].value",
     "mappings": [
       {
@@ -109,6 +115,9 @@
     ]
   },
   "linking": {
+    "Electric-Main-Meter": {
+      "energy_total": "525c5133-80eb-4c95-8f0c-06e56d2854fe"
+    },
     "Line-1": {
       "changeover_time": "5eb943b4-dc61-4573-8397-132463c5bbe7",
       "co2_per_batch": "93fdb0ac-29d5-4f5d-817e-b073048cb07e",

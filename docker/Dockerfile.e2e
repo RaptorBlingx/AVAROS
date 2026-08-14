@@ -1,7 +1,8 @@
 # AVAROS E2E Test Runner
 # Lightweight image with test dependencies for E2E pipeline validation
 
-FROM python:3.10-slim
+# Python 3.11 matches the Web UI runtime and can execute the integrated API tests.
+FROM python:3.11-slim
 
 LABEL org.opencontainers.image.title="AVAROS E2E Test Runner" \
       org.opencontainers.image.description="Test runner for E2E voice pipeline validation"
@@ -22,10 +23,15 @@ WORKDIR /opt/avaros
 # Install Python dependencies
 COPY requirements.txt .
 COPY tests/requirements-test.txt tests/
-RUN pip install --no-cache-dir -r requirements.txt -r tests/requirements-test.txt
+COPY web-ui/requirements.txt web-ui/requirements.txt
+RUN pip install --no-cache-dir \
+    -r requirements.txt \
+    -r web-ui/requirements.txt \
+    -r tests/requirements-test.txt
 RUN pip install --no-cache-dir ovos-bus-client pytest-timeout
 
 # Copy application and test code
 COPY skill/ skill/
 COPY tests/ tests/
+COPY docker/e2e_profile_init.py docker/e2e_profile_init.py
 COPY pytest.ini .

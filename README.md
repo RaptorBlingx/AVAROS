@@ -80,6 +80,7 @@ The web wizard guides an operator through:
 7. Optional PREVENTION configuration
 
 AVAROS remains usable without PREVENTION; anomaly and drift commands are disabled when no PREVENTION endpoint is configured.
+AVAROS is deterministic, advisory, and read-only. It does not control equipment, infer process-parameter causality without a configured model, or judge performance without a configured objective.
 
 ## Documentation
 

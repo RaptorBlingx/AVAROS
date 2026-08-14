@@ -346,11 +346,10 @@ class TestFormatKPIResult:
         # Brief should NOT include asset name or metric name
         assert "Line" not in result
 
-    def test_format_kpi_result_detailed_includes_recommendation(
+    def test_format_kpi_result_detailed_requires_configured_objective(
         self, detailed_builder: ResponseBuilder, period: TimePeriod
     ) -> None:
-        """Detailed verbosity includes a recommendation when applicable."""
-        # Low OEE triggers recommendation
+        """Detailed verbosity must not judge low OEE without a site objective."""
         kpi_low_oee = KPIResult(
             metric=CanonicalMetric.OEE,
             value=65.0,
@@ -360,12 +359,13 @@ class TestFormatKPIResult:
             timestamp=datetime.now(),
         )
         result = detailed_builder.format_kpi_result(kpi_low_oee)
-        assert "below industry average" in result.lower()
+        assert "no performance objective is configured" in result.lower()
+        assert "industry average" not in result.lower()
 
-    def test_format_kpi_result_detailed_excellent_oee(
+    def test_format_kpi_result_detailed_does_not_call_oee_excellent_without_target(
         self, detailed_builder: ResponseBuilder, period: TimePeriod
     ) -> None:
-        """Detailed verbosity for high OEE gives positive recommendation."""
+        """High OEE is not rated without a configured objective."""
         kpi_high = KPIResult(
             metric=CanonicalMetric.OEE,
             value=90.0,
@@ -375,12 +375,13 @@ class TestFormatKPIResult:
             timestamp=datetime.now(),
         )
         result = detailed_builder.format_kpi_result(kpi_high)
-        assert "excellent" in result.lower()
+        assert "no performance objective is configured" in result.lower()
+        assert "excellent" not in result.lower()
 
-    def test_format_kpi_result_detailed_high_scrap(
+    def test_format_kpi_result_detailed_does_not_call_scrap_high_without_target(
         self, detailed_builder: ResponseBuilder, period: TimePeriod
     ) -> None:
-        """Detailed verbosity for high scrap rate advises review."""
+        """Scrap is not rated high without a configured objective."""
         kpi_scrap = KPIResult(
             metric=CanonicalMetric.SCRAP_RATE,
             value=7.5,
@@ -390,7 +391,25 @@ class TestFormatKPIResult:
             timestamp=datetime.now(),
         )
         result = detailed_builder.format_kpi_result(kpi_scrap)
-        assert "high" in result.lower()
+        assert "no performance objective is configured" in result.lower()
+        assert "scrap rate is high" not in result.lower()
+
+    def test_kpi_provenance_is_spoken_for_period_aggregation(
+        self, builder: ResponseBuilder, period: TimePeriod
+    ) -> None:
+        result = builder.format_kpi_result(KPIResult(
+            metric=CanonicalMetric.OEE,
+            value=80.0,
+            unit="%",
+            asset_id="Line-1",
+            period=period,
+            timestamp=datetime.now(),
+            sample_count=12,
+            aggregation="average",
+        ))
+
+        assert "average" in result.lower()
+        assert "12 observations" in result.lower()
 
     def test_format_kpi_result_under_30_words(
         self, builder: ResponseBuilder, kpi_oee: KPIResult
@@ -471,6 +490,16 @@ class TestFormatComparisonResult:
         result = builder.format_comparison_result(comparison_energy)
         # 0.5 kWh formatted as "0.5 kilowatt hours"
         assert "0.5" in result
+
+    def test_comparison_includes_values_period_and_percentage_points(
+        self, builder: ResponseBuilder, comparison_oee: ComparisonResult
+    ) -> None:
+        result = builder.format_comparison_result(comparison_oee)
+
+        assert "Line 1: 85.0 percent" in result
+        assert "Line 2: 78.0 percent" in result
+        assert "today" in result
+        assert "7.0 percentage points" in result
 
     def test_format_comparison_under_30_words(
         self, builder: ResponseBuilder, comparison_energy: ComparisonResult
@@ -736,6 +765,29 @@ class TestFormatAnomalyScanResult:
         result = builder.format_anomaly_scan_result(scan)
         assert "1 check." in result
         assert "checks" not in result
+
+    def test_format_scan_partial_coverage_never_claims_no_anomalies(
+        self,
+        builder: ResponseBuilder,
+    ) -> None:
+        """A failed or insufficient scan cannot be reported as clean."""
+        scan = AnomalyScanResult(
+            checked_pairs=5,
+            anomalous_pairs=0,
+            findings=[],
+            severity_counts={},
+            threshold=2.0,
+            attempted_pairs=5,
+            successful_pairs=2,
+            failed_pairs=1,
+            insufficient_data_pairs=2,
+        )
+
+        result = builder.format_anomaly_scan_result(scan)
+
+        assert "cannot conclude" in result
+        assert "2 succeeded" in result
+        assert "No unusual patterns" not in result
 
     def test_format_scan_excludes_action_in_normal(
         self,

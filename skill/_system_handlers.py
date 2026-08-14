@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from skill.domain.models import TimePeriod
+from skill.services.dia_response import speak_information
+
 if TYPE_CHECKING:
     from ovos_bus_client.message import Message
     from skill import AVAROSSkill
@@ -11,72 +14,88 @@ if TYPE_CHECKING:
 
 def handle_greeting(skill: "AVAROSSkill", message: Message) -> None:
     """Handle greetings such as 'hello' or 'hey avaros'."""
-    skill.speak_dialog("greeting.response")
+    speak_information(
+        skill,
+        "Hello. I can help with configured manufacturing KPIs and evidence.",
+        response_type="greeting",
+        suggestions=["What can you do?", "List the available assets"],
+    )
 
 
 def handle_help(skill: "AVAROSSkill", message: Message) -> None:
     """Handle generic help requests."""
-    skill.speak_dialog("help.response")
+    handle_help_capabilities_list(skill, message)
 
 
 def handle_control_turn_on(skill: "AVAROSSkill", message: Message) -> None:
-    """Handle generic turn-on command."""
-
-    def _execute() -> None:
-        if not skill._require_intent_binding("control.device.turn_on"):
-            return
-        target = skill._resolve_asset_id(message, default="system")
-        skill._set_power_state("on")
-        skill.speak(f"Power state is now on for {target}.")
-
-    skill._safe_dispatch("handle_control_turn_on", _execute)
+    """Explain the advisory-only control boundary without changing state."""
+    speak_information(skill,
+        "AVAROS is read-only and cannot turn equipment on. "
+        "Use the approved equipment control system and site safety procedure.",
+        response_type="read_only_boundary",
+    )
 
 
 def handle_control_turn_off(skill: "AVAROSSkill", message: Message) -> None:
-    """Handle generic turn-off command."""
-
-    def _execute() -> None:
-        if not skill._require_intent_binding("control.device.turn_off"):
-            return
-        target = skill._resolve_asset_id(message, default="system")
-        skill._set_power_state("off")
-        skill.speak(f"Power state is now off for {target}.")
-
-    skill._safe_dispatch("handle_control_turn_off", _execute)
+    """Explain the advisory-only control boundary without changing state."""
+    speak_information(skill,
+        "AVAROS is read-only and cannot turn equipment off. "
+        "Use the approved equipment control system and site safety procedure.",
+        response_type="read_only_boundary",
+    )
 
 
 def handle_status_system_show(skill: "AVAROSSkill", message: Message) -> None:
-    """Handle generic system status request."""
+    """Report actual adapter connectivity and active profile scope."""
 
     def _execute() -> None:
         active_profile = skill._resolve_active_profile()
-        power_state = skill._get_power_state()
-        platform = "unconfigured"
-        if skill.settings_service is not None:
-            config = skill.settings_service.get_profile(active_profile)
-            if config is not None:
-                platform = config.platform_type
-
-        adapter_name = (
-            type(skill.dispatcher._adapter).__name__
-            if skill.dispatcher is not None
-            else "UnknownAdapter"
+        adapter = skill.dispatcher.adapter
+        connection = skill.dispatcher._run_async(adapter.test_connection())
+        assets = skill._get_asset_registry(force_refresh=True)
+        metrics = adapter.get_supported_metrics()
+        prevention_available = getattr(skill.dispatcher, "_prevention_client", None) is not None
+        health = "connected" if connection.success else "not connected"
+        freshness = _status_freshness_clause(skill, assets, metrics)
+        headline = (
+            f"The active data source is {health}. Profile: {active_profile}. "
+            f"Configured scope: {len(assets)} assets and {len(metrics)} metrics. "
+            f"{freshness} "
+            f"PREVENTION analytics is {'available' if prevention_available else 'unavailable'}. "
+            f"Connection check: {connection.message}"
         )
-        prevention_mode = str(getattr(skill, "_prevention_mode", "unknown"))
-        prevention_reason = str(
-            getattr(skill, "_prevention_mode_reason", ""),
-        )
-        health = "online" if power_state == "on" else "offline"
-        skill.speak(
-            (
-                f"System is {health}. Active profile is {active_profile} on platform "
-                f"{platform}, and adapter is {adapter_name}. "
-                f"Prevention mode is {prevention_mode}"
-                f" ({prevention_reason or 'unspecified'})."
-            )
+        speak_information(
+            skill,
+            headline,
+            response_type="system_status",
+            evidence_rows=[{
+                "profile": active_profile,
+                "connection": health,
+                "asset_count": len(assets),
+                "metric_count": len(metrics),
+                "prevention_available": prevention_available,
+            }],
         )
 
     skill._safe_dispatch("handle_status_system_show", _execute)
+
+
+def _status_freshness_clause(skill: "AVAROSSkill", assets, metrics) -> str:
+    """Return an operator-facing timestamp from one live mapped observation."""
+    if not assets or not metrics:
+        return "No mapped observation is available for a freshness check."
+    asset_id = assets[0].asset_id
+    for metric in metrics:
+        try:
+            result = skill.dispatcher.get_kpi(metric, asset_id, TimePeriod.latest())
+        except Exception:
+            continue
+        observed = result.source_observed_at
+        if observed is None:
+            return "The source did not provide an observation timestamp."
+        quality = result.coverage_status or "complete"
+        return f"Latest checked observation: {observed.isoformat()} ({quality})."
+    return "No mapped observation could be read for a freshness check."
 
 
 def handle_status_profile_show(skill: "AVAROSSkill", message: Message) -> None:
@@ -90,7 +109,12 @@ def handle_status_profile_show(skill: "AVAROSSkill", message: Message) -> None:
             if config is not None:
                 platform = config.platform_type
 
-        skill.speak(f"Current profile is {profile} on platform {platform}.")
+        speak_information(
+            skill,
+            f"Current profile is {profile} on platform {platform}.",
+            response_type="profile_status",
+            evidence_rows=[{"profile": profile, "platform": platform}],
+        )
 
     skill._safe_dispatch("handle_status_profile_show", _execute)
 
@@ -99,18 +123,28 @@ def handle_help_capabilities_list(skill: "AVAROSSkill", message: Message) -> Non
     """Handle capability/help request for generic + KPI intents."""
 
     def _execute() -> None:
-        metric_names = _get_mapped_metric_names(skill)
+        from skill.services.capability_manifest import build_capability_manifest
+
+        manifest = build_capability_manifest(
+            skill.settings_service,
+            getattr(skill.dispatcher, "adapter", None),
+        )
+        metric_names = [item["label"] for item in manifest["metrics"]]
         if metric_names:
             metric_part = ", ".join(metric_names[:5])
             if len(metric_names) > 5:
                 metric_part += f", and {len(metric_names) - 5} more"
         else:
             metric_part = "energy per unit, scrap rate, OEE"
-        skill.speak(
-            f"I can report KPIs like {metric_part}. "
-            "I can also compare metrics, check anomalies, show trends, and "
-            "handle commands like turn on, "
-            "turn off, and show status."
+        analytics = (
+            "PREVENTION anomaly analytics is available."
+            if manifest["prevention"]["available"]
+            else "PREVENTION anomaly, drift, and forecast analytics are unavailable."
+        )
+        speak_information(skill,
+            f"I can report, compare, rank, summarize, explain, and trend KPIs like {metric_part}. "
+            f"{analytics} I am read-only and cannot control equipment.",
+            response_type="capabilities",
         )
 
     skill._safe_dispatch("handle_help_capabilities_list", _execute)
@@ -132,11 +166,22 @@ def _get_mapped_metric_names(skill: "AVAROSSkill") -> list[str]:
 
 def handle_list_assets(skill: "AVAROSSkill", message: Message) -> None:
     """Handle voice request to list configured assets."""
+    # Broad analytics wording can overlap Padatious' "all assets" list
+    # patterns. Give the deterministic operation parser first refusal.
+    from skill.services.dia_dialogue import try_handle_structured_query
+
+    if try_handle_structured_query(skill, message):
+        return
 
     def _execute() -> None:
         assets = skill._get_asset_registry(force_refresh=True)
         if not assets:
-            skill.speak_dialog("list.assets")
+            speak_information(
+                skill,
+                "No assets are configured in the active profile.",
+                response_type="asset_list",
+                warnings=["The active profile has no configured assets."],
+            )
             return
 
         names = [
@@ -145,6 +190,11 @@ def handle_list_assets(skill: "AVAROSSkill", message: Message) -> None:
             if str(asset.display_name or asset.asset_id).strip()
         ]
         response = skill.response_builder.format_asset_list(names)
-        skill.speak(response)
+        speak_information(
+            skill,
+            response,
+            response_type="asset_list",
+            evidence_rows=[{"asset": name} for name in names],
+        )
 
     skill._safe_dispatch("handle_list_assets", _execute)

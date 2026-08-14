@@ -88,8 +88,8 @@ def test_canonicalize_asset_id_unknown_raises_with_suggestions() -> None:
     assert "Available assets are" in error.user_message
 
 
-def test_resolve_asset_id_returns_default_when_no_asset_slot() -> None:
-    """No asset slot in utterance should keep default fallback behavior."""
+def test_resolve_asset_id_returns_default_when_no_assets_are_configured() -> None:
+    """The sentinel fallback remains valid only with no configured assets."""
     skill = _build_skill()
 
     resolved = skill._resolve_asset_id(_message(utterance="what is the energy"))
@@ -106,6 +106,23 @@ def test_resolve_asset_id_raises_when_slot_present_but_unknown() -> None:
 
     with pytest.raises(AssetNotFoundError):
         skill._resolve_asset_id(_message(asset="Unknown line", utterance="energy for unknown line"))
+
+
+def test_line_99_is_rejected_instead_of_defaulted() -> None:
+    """Asset-like unknowns must never inherit a plausible default value."""
+    skill = _build_skill()
+    skill._get_asset_registry.return_value = [
+        Asset(asset_id="Line-1", display_name="Line 1", asset_type="line"),
+        Asset(asset_id="Line-2", display_name="Line 2", asset_type="line"),
+    ]
+
+    with pytest.raises(AssetNotFoundError) as exc_info:
+        skill._resolve_asset_id(
+            _message(utterance="what is the OEE for Line-99"),
+        )
+
+    assert exc_info.value.asset_id == "Line-99"
+    assert exc_info.value.available_assets == ["Line 1", "Line 2"]
 
 
 def test_resolve_asset_id_ignores_noisy_slot_and_uses_utterance() -> None:
@@ -162,7 +179,16 @@ def test_list_assets_handler_speaks_formatted_asset_list() -> None:
     skill.handle_list_assets(_message(utterance="list assets"))
 
     skill.response_builder.format_asset_list.assert_called_once_with(["Line 1", "Compressor 1"])
-    skill.speak.assert_called_once_with("You have 2 assets configured: Line 1 and Compressor 1.")
+    skill.speak.assert_called_once()
+    assert skill.speak.call_args.args == (
+        "You have 2 assets configured: Line 1 and Compressor 1.",
+    )
+    evidence = skill.speak.call_args.kwargs["meta"]["avaros_response"]
+    assert evidence["response_type"] == "asset_list"
+    assert evidence["evidence_rows"] == [
+        {"asset": "Line 1"},
+        {"asset": "Compressor 1"},
+    ]
     skill.speak_dialog.assert_not_called()
 
 
@@ -173,5 +199,11 @@ def test_list_assets_handler_with_empty_registry_speaks_empty_message() -> None:
 
     skill.handle_list_assets(_message(utterance="what assets do I have"))
 
-    skill.speak_dialog.assert_called_once_with("list.assets")
-    skill.speak.assert_not_called()
+    skill.speak_dialog.assert_not_called()
+    skill.speak.assert_called_once()
+    assert skill.speak.call_args.args == (
+        "No assets are configured in the active profile.",
+    )
+    evidence = skill.speak.call_args.kwargs["meta"]["avaros_response"]
+    assert evidence["response_type"] == "asset_list"
+    assert evidence["warnings"]

@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from skill.domain.exceptions import AssetNotFoundError
+from skill.domain.exceptions import AssetNotFoundError, ValidationError
 from skill.domain.models import Asset
 
 if TYPE_CHECKING:
@@ -112,7 +112,7 @@ def extract_line_assets_from_text(self, text: str) -> list[str]:
         return []
 
     matches = re.findall(
-        r"\bline[\s-]+(1|2|3|4|5|one|two|three|four|five|to|too)\b",
+        r"\bline[\s-]+(\d+|one|two|three|four|five|to|too)\b",
         text.lower(),
     )
     line_token_to_digit = {
@@ -124,9 +124,23 @@ def extract_line_assets_from_text(self, text: str) -> list[str]:
         "to": "2",
         "too": "2",
     }
-    return [
+    return list(dict.fromkeys(
         f"Line-{line_token_to_digit.get(value, value)}"
         for value in matches
+    ))
+
+
+def _validate_extracted_assets(self, asset_ids: list[str]) -> list[str]:
+    """Validate utterance-derived asset identifiers against the registry.
+
+    Asset-looking text must never silently fall through to a configured
+    default.  This is particularly important for phrases such as ``Line-99``:
+    returning data for Line-1 would look plausible while referring to the
+    wrong production line.
+    """
+    return [
+        self._canonicalize_asset_id(asset_id, raise_on_unknown=True)
+        for asset_id in asset_ids
     ]
 
 
@@ -155,7 +169,10 @@ def resolve_asset_id(self, message: Message, default: str = "default") -> str:
                 return utterance_asset
             return slot_asset
         except AssetNotFoundError:
-            utterance_assets = self._extract_line_assets_from_text(utterance_text)
+            utterance_assets = _validate_extracted_assets(
+                self,
+                self._extract_line_assets_from_text(utterance_text),
+            )
             if utterance_assets:
                 return utterance_assets[0]
             # Slot collision fallback: Padatious may have split a
@@ -167,7 +184,10 @@ def resolve_asset_id(self, message: Message, default: str = "default") -> str:
                 return utterance_alias
             raise
 
-    utterance_assets = self._extract_line_assets_from_text(utterance_text)
+    utterance_assets = _validate_extracted_assets(
+        self,
+        self._extract_line_assets_from_text(utterance_text),
+    )
     if utterance_assets:
         return utterance_assets[0]
 
@@ -196,21 +216,23 @@ def resolve_compare_assets(self, message: Message) -> tuple[str, str]:
     if asset_a and asset_b:
         return asset_a, asset_b
 
-    utterance_assets = self._extract_line_assets_from_text(
-        self._extract_utterance_text(message)
+    utterance_assets = _validate_extracted_assets(
+        self,
+        self._extract_line_assets_from_text(
+            self._extract_utterance_text(message),
+        ),
     )
     if len(utterance_assets) >= 2:
         return utterance_assets[0], utterance_assets[1]
 
-    default_pair = _resolve_default_compare_assets(self)
-    if default_pair is not None:
-        default_a, default_b = default_pair
-        resolved_a = asset_a or default_a
-        resolved_b = asset_b or (default_b if default_b != resolved_a else default_a)
-        if resolved_a and resolved_b and resolved_a != resolved_b:
-            return resolved_a, resolved_b
-
-    return asset_a or "Asset-1", asset_b or "Asset-2"
+    raise ValidationError(
+        message="Comparison assets were not explicit",
+        field="assets",
+        value=self._extract_utterance_text(message),
+        user_message=(
+            "Please name at least two assets to compare, or say all lines."
+        ),
+    )
 
 
 # ── Default asset resolution ─────────────────────────
@@ -256,8 +278,10 @@ def _resolve_default_asset_id(self, *, fallback: str) -> str:
             mappings = {}
         if isinstance(mappings, dict):
             asset_ids = _ranked_mapping_asset_ids(mappings)
-            if asset_ids:
+            if len(asset_ids) == 1:
                 return asset_ids[0]
+            if len(asset_ids) > 1:
+                raise _asset_scope_required(asset_ids)
 
     try:
         assets = list(self._get_asset_registry())
@@ -268,10 +292,23 @@ def _resolve_default_asset_id(self, *, fallback: str) -> str:
         for asset in assets
         if str(getattr(asset, "asset_id", "")).strip()
     )
-    if registry_ids:
+    if len(registry_ids) == 1:
         return registry_ids[0]
+    if len(registry_ids) > 1:
+        raise _asset_scope_required(registry_ids)
 
     return fallback
+
+
+def _asset_scope_required(asset_ids: list[str]) -> ValidationError:
+    """Build the deterministic clarification used instead of unsafe defaults."""
+    available = ", ".join(asset_ids[:10])
+    return ValidationError(
+        message="Asset scope is ambiguous",
+        field="asset",
+        value="",
+        user_message=f"Which asset should I use? Available assets: {available}.",
+    )
 
 
 def _ranked_mapping_asset_ids(mappings: dict[str, object]) -> list[str]:

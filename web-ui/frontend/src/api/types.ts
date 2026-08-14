@@ -172,6 +172,12 @@ export type MetricMapping = {
   json_path: string;
   unit: string;
   transform: string | null;
+  aggregation?: "average" | "sum" | "max" | "latest" | null;
+  series_path?: string | null;
+  timestamp_path?: string | null;
+  pagination?: boolean;
+  page_size?: number;
+  freshness_seconds?: number | null;
   source: MetricMappingSource;
 };
 

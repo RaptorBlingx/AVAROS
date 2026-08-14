@@ -75,6 +75,9 @@ from skill.domain.exceptions import AVAROSError
 from skill.services.alert_monitor import AlertMonitor
 from skill.services.prevention_runtime import resolve_prevention_config
 from skill.services.response_builder import ResponseBuilder
+from skill.services.conversation_state import DialogueStateStore
+from skill.services.dia_dialogue import try_handle_structured_query
+from skill.services.dia_response import speak_information
 from skill.use_cases.query_dispatcher import QueryDispatcher
 
 if TYPE_CHECKING:
@@ -148,6 +151,10 @@ class AVAROSSkill(FallbackSkill):
         self._prevention_state: str = "unknown"
         self._prevention_state_reason: str = ""
         self._prevention_endpoint: str = ""
+        self._dialogue_state_store = DialogueStateStore(
+            ttl_minutes=15,
+            max_sessions=256,
+        )
 
         super().__init__(*args, **kwargs)
 
@@ -313,6 +320,9 @@ class AVAROSSkill(FallbackSkill):
             self.handle_whatif_scenario(message)
             return
 
+        if try_handle_structured_query(self, message):
+            return
+
         if "trend" in utterance:
             self.handle_trend_metric(message)
             return
@@ -325,7 +335,9 @@ class AVAROSSkill(FallbackSkill):
             return
 
         intent_name = self._extract_intent_name(message)
-        metric = INTENT_METRIC_MAP.get(intent_name)
+        metric = self._resolve_metric_from_utterance(utterance)
+        if metric is None:
+            metric = INTENT_METRIC_MAP.get(intent_name)
         if metric is None:
             self.speak("I don't recognize that metric.")
             return
@@ -777,13 +789,20 @@ class AVAROSSkill(FallbackSkill):
             return action()
         except AVAROSError as exc:
             self.log.error("Error in %s: %s", handler_name, exc, exc_info=True)
-            self.speak(exc.user_message)
+            speak_information(
+                self,
+                exc.user_message,
+                response_type="unavailable" if "NOT_CONFIGURED" in exc.code else "error",
+                warnings=[exc.user_message],
+            )
             return None
         except FutureTimeoutError as exc:
             self.log.error("Timeout in %s: %s", handler_name, exc, exc_info=True)
-            self.speak(
+            speak_information(
+                self,
                 "The data platform did not respond in time. "
                 "Please check the platform connection and try again.",
+                response_type="timeout",
             )
             return None
         except AbortEvent:
@@ -791,7 +810,11 @@ class AVAROSSkill(FallbackSkill):
             return None
         except Exception as exc:
             self.log.error("Error in %s: %s", handler_name, exc, exc_info=True)
-            self.speak("Sorry, I encountered an error. Please try again.")
+            speak_information(
+                self,
+                "Sorry, I encountered an error. Please try again.",
+                response_type="error",
+            )
             return None
 
     # =================================================================

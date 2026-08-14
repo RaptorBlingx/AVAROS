@@ -98,11 +98,22 @@ class ResponseBuilder:
         
         if self.verbosity == "brief":
             return f"{value}"
-        elif self.verbosity == "normal":
-            return f"The {metric_name} for {asset_name} is {value} {period}".strip()
-        else:  # detailed
-            recommendation = self._get_kpi_recommendation(result)
-            return f"The {metric_name} for {asset_name} is {value} {period}. {recommendation}".strip()
+        aggregation = f"{result.aggregation} " if result.aggregation else ""
+        if period == "latest available":
+            period_clause = self._format_observation_clause(result.source_observed_at)
+        else:
+            period_clause = f" over {period}" if period else ""
+            if result.sample_count > 0:
+                period_clause += f", based on {result.sample_count} observations"
+        response = (
+            f"The {aggregation}{metric_name} for {asset_name} is {value}"
+            f"{period_clause}."
+        )
+        if result.warnings:
+            response += f" Data warning: {result.warnings[0]}"
+        if self.verbosity == "detailed":
+            response += " No performance objective is configured, so I am not rating this result."
+        return response
     
     # =========================================================================
     # Comparison Results
@@ -124,17 +135,34 @@ class ResponseBuilder:
         """
         winner = self._format_asset_name(result.winner_id)
         metric_name = result.metric.display_name
-        difference = self._format_value(result.difference, result.unit)
+        difference = (
+            f"{self._format_number(result.difference)} percentage points"
+            if result.unit == "%"
+            else self._format_comparison_value(result.difference, result.unit)
+        )
+        values = "; ".join(
+            f"{self._format_asset_name(item.asset_id)}: "
+            f"{self._format_comparison_value(item.value, result.unit)}"
+            for item in sorted(result.items, key=lambda item: item.rank)
+        )
+        period = result.period.display_name or "the requested period"
+        aggregation = f" {result.aggregation}" if result.aggregation else ""
         
         # Determine if lower or higher is better
         lower_is_better = self._is_lower_better(result.metric)
         
         if self.verbosity == "brief":
-            return f"{winner} wins by {difference}"
-        elif lower_is_better:
-            return f"{winner} is more efficient, using {difference} less {metric_name}"
-        else:
-            return f"{winner} wins with {difference} better {metric_name}"
+            return f"{values}. {winner} wins by {difference}."
+        quality_warning = f" Warning: {result.warnings[0]}" if result.warnings else ""
+        outcome = (
+            f"{winner} is more efficient by {difference}"
+            if lower_is_better
+            else f"{winner} wins by {difference}"
+        )
+        return (
+            f"For {period},{aggregation} {metric_name}: {values}. "
+            f"{outcome}.{quality_warning}"
+        )
     
     # =========================================================================
     # Trend Results
@@ -237,9 +265,17 @@ class ResponseBuilder:
 
     def format_anomaly_scan_result(self, result: AnomalyScanResult) -> str:
         """Format aggregate anomaly scan findings for broad queries."""
-        checks_word = "check" if result.checked_pairs == 1 else "checks"
+        checks_word = "check" if result.attempted_pairs == 1 else "checks"
 
         if not result.has_anomalies:
+            if not result.has_complete_coverage:
+                return (
+                    "I cannot conclude that there are no anomalies. "
+                    f"Attempted {result.attempted_pairs} {checks_word}: "
+                    f"{result.successful_pairs} succeeded, {result.failed_pairs} failed, "
+                    f"{result.insufficient_data_pairs} had insufficient data, and "
+                    f"{result.stale_pairs} were stale."
+                )
             return (
                 "No unusual patterns detected across "
                 f"{result.checked_pairs} {checks_word}."
@@ -255,6 +291,13 @@ class ResponseBuilder:
             f"I found anomalies in {result.anomalous_pairs} "
             f"of {result.checked_pairs} {checks_word}."
         ]
+
+        if not result.has_complete_coverage:
+            parts.append(
+                f"Coverage was partial: {result.failed_pairs} failed, "
+                f"{result.insufficient_data_pairs} had insufficient data, and "
+                f"{result.stale_pairs} were stale."
+            )
 
         # Top findings (up to 3 at normal, all at detailed)
         top_n = 3 if self.verbosity == "normal" else len(result.findings)
@@ -481,10 +524,16 @@ class ResponseBuilder:
         )
         if unit == "%":
             return f"{formatted} percent"
+        elif unit == "kWh/unit":
+            return f"{formatted} kilowatt hours per unit"
         elif "kWh" in unit:
             return f"{formatted} kilowatt hours"
         elif unit == "kW":
             return f"{formatted} kilowatts"
+        elif unit in {"kg CO₂/kg", "kg CO2/kg"}:
+            return f"{formatted} kilograms CO2 per kilogram"
+        elif "per unit" in unit.lower() or unit.endswith("/unit"):
+            return f"{formatted} {unit.replace('/', ' per ').lower()}"
         elif "kg" in unit:
             return f"{formatted} kilograms"
         elif "°C" in unit:
@@ -513,6 +562,15 @@ class ResponseBuilder:
         if abs_value >= 0.001:
             return f"{value:.4f}"
         return f"{value:.2e}"
+
+    def _format_comparison_value(self, value: float, unit: str) -> str:
+        """Use compact but unambiguous units in spoken comparison rows."""
+        formatted = self._format_number(value)
+        if unit == "%":
+            return f"{formatted} percent"
+        if unit == "kWh/unit":
+            return f"{formatted} kilowatt-hours per unit"
+        return self._format_value(value, unit)
 
     @staticmethod
     def _format_forecast_horizon(horizon_periods: int) -> str:
@@ -623,22 +681,16 @@ class ResponseBuilder:
         return metric not in higher_is_better
     
     def _get_kpi_recommendation(self, result: KPIResult) -> str:
-        """Generate simple recommendation based on KPI value."""
-        from skill.domain.models import CanonicalMetric
-        
-        # Simple heuristics for recommendations
-        if result.metric == CanonicalMetric.OEE:
-            if result.value < 70:
-                return "This is below industry average. Consider investigating bottlenecks."
-            elif result.value > 85:
-                return "This is excellent performance."
-        elif result.metric == CanonicalMetric.SCRAP_RATE:
-            if result.value > 5:
-                return "Scrap rate is high. Review quality controls."
-            elif result.value < 2:
-                return "Scrap rate is excellent."
-        
-        return ""
+        """Avoid performance judgments when no configured objective is supplied."""
+        _ = result
+        return "No performance objective is configured, so I am not rating this result."
+
+    @staticmethod
+    def _format_observation_clause(observed_at: datetime | None) -> str:
+        """Format latest source time without exposing implementation details."""
+        if observed_at is None:
+            return " from the latest available observation"
+        return f" as of {observed_at.isoformat()}"
 
     def format_asset_list(self, asset_names: list[str], max_items: int = 10) -> str:
         """Format concise voice response listing configured assets."""

@@ -14,7 +14,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+import calendar
+import re
 from typing import Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 class CanonicalMetric(Enum):
@@ -149,7 +152,7 @@ class CanonicalMetric(Enum):
         return units.get(self, "")
 
 
-_VALID_ASSET_TYPES = {"machine", "line", "sensor", "seu"}
+_VALID_ASSET_TYPES = {"machine", "line", "sensor", "seu", "supplier", "group"}
 
 
 @dataclass(frozen=True)
@@ -241,21 +244,60 @@ class TimePeriod:
         return cls(start=start, end=now, display_name="last 2 weeks")
     
     @classmethod
-    def last_month(cls) -> TimePeriod:
-        """Create a period for the last 30 days."""
-        now = datetime.now(tz=timezone.utc)
-        start = now - timedelta(days=30)
-        return cls(start=start, end=now, display_name="last month")
+    def last_month(
+        cls,
+        *,
+        now: datetime | None = None,
+        timezone_name: str = "UTC",
+    ) -> TimePeriod:
+        """Create the previous calendar month in the configured site timezone."""
+        tz = cls._resolve_timezone(timezone_name)
+        local_now = (now or datetime.now(tz=tz)).astimezone(tz)
+        this_month = local_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        previous_day = this_month - timedelta(days=1)
+        start = previous_day.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        return cls(
+            start=start.astimezone(timezone.utc),
+            end=this_month.astimezone(timezone.utc),
+            display_name="last month",
+        )
+
+    @classmethod
+    def rolling_days(cls, days: int, *, now: datetime | None = None) -> TimePeriod:
+        """Create a rolling period ending now."""
+        if days <= 0:
+            raise ValueError("Rolling period must contain at least one day")
+        end = now or datetime.now(tz=timezone.utc)
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        return cls(
+            start=end - timedelta(days=days),
+            end=end,
+            display_name=f"past {days} days",
+        )
+
+    @classmethod
+    def latest(cls) -> TimePeriod:
+        """Create the bounded lookup window used for latest-observation queries."""
+        return cls(
+            start=datetime(2021, 2, 1, tzinfo=timezone.utc),
+            end=datetime.now(tz=timezone.utc),
+            display_name="latest available",
+        )
 
     @classmethod
     def wide_default(cls) -> TimePeriod:
-        """Create a wide default period (2021-02-01 → now) for implicit queries."""
-        start = datetime(2021, 2, 1, tzinfo=timezone.utc)
-        end = datetime.now(tz=timezone.utc)
-        return cls(start=start, end=end, display_name="")
+        """Backward-compatible alias for an explicit latest-observation lookup."""
+        return cls.latest()
     
     @classmethod
-    def from_natural_language(cls, text: str) -> TimePeriod:
+    def from_natural_language(
+        cls,
+        text: str,
+        *,
+        timezone_name: str = "UTC",
+        now: datetime | None = None,
+    ) -> TimePeriod:
         """
         Parse natural language period description.
         
@@ -265,7 +307,9 @@ class TimePeriod:
         Returns:
             Corresponding TimePeriod
         """
-        normalized = text.lower().strip()
+        normalized = re.sub(r"\s+", " ", text.lower().strip())
+        if not normalized:
+            raise ValueError("Time period cannot be empty")
         
         mapping = {
             "today": cls.today,
@@ -276,12 +320,112 @@ class TimePeriod:
             "past week": cls.last_week,
             "last 2 weeks": cls.last_two_weeks,
             "last two weeks": cls.last_two_weeks,
-            "last month": cls.last_month,
-            "past month": cls.last_month,
+            "last month": lambda: cls.last_month(
+                now=now,
+                timezone_name=timezone_name,
+            ),
+            "past month": lambda: cls.rolling_days(30, now=now),
+            "past 30 days": lambda: cls.rolling_days(30, now=now),
+            "last 30 days": lambda: cls.rolling_days(30, now=now),
+            "latest": cls.latest,
+            "current": cls.latest,
+            "right now": cls.latest,
         }
-        
-        factory = mapping.get(normalized, cls.today)
-        return factory()
+
+        factory = mapping.get(normalized)
+        if factory is not None:
+            return factory()
+
+        named_month = re.fullmatch(
+            r"(" + "|".join(month.lower() for month in calendar.month_name[1:]) + r")\s+(\d{4})",
+            normalized,
+        )
+        if named_month:
+            month_name, year_text = named_month.groups()
+            month = list(calendar.month_name).index(month_name.title())
+            return cls._calendar_month(
+                year=int(year_text),
+                month=month,
+                timezone_name=timezone_name,
+                now=now,
+            )
+
+        iso_range = re.fullmatch(
+            r"(?:from\s+)?(\d{4}-\d{2}-\d{2})\s+(?:to|through|until)\s+(\d{4}-\d{2}-\d{2})",
+            normalized,
+        )
+        if iso_range:
+            return cls._explicit_date_range(
+                iso_range.group(1),
+                iso_range.group(2),
+                timezone_name=timezone_name,
+                now=now,
+            )
+
+        raise ValueError(
+            "Unsupported time period. Try today, yesterday, last week, "
+            "last month, past 30 days, a named month such as July 2026, "
+            "or an ISO range such as 2026-07-01 to 2026-07-31."
+        )
+
+    @staticmethod
+    def _resolve_timezone(timezone_name: str):
+        """Resolve an IANA site timezone with a clear validation error."""
+        try:
+            return ZoneInfo(timezone_name or "UTC")
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError(f"Unknown site timezone: {timezone_name}") from exc
+
+    @classmethod
+    def _calendar_month(
+        cls,
+        *,
+        year: int,
+        month: int,
+        timezone_name: str,
+        now: datetime | None,
+    ) -> TimePeriod:
+        tz = cls._resolve_timezone(timezone_name)
+        start = datetime(year, month, 1, tzinfo=tz)
+        if month == 12:
+            end = datetime(year + 1, 1, 1, tzinfo=tz)
+        else:
+            end = datetime(year, month + 1, 1, tzinfo=tz)
+        cls._reject_future(start, now=now, tz=tz)
+        return cls(
+            start=start.astimezone(timezone.utc),
+            end=end.astimezone(timezone.utc),
+            display_name=f"{calendar.month_name[month]} {year}",
+        )
+
+    @classmethod
+    def _explicit_date_range(
+        cls,
+        start_text: str,
+        end_text: str,
+        *,
+        timezone_name: str,
+        now: datetime | None,
+    ) -> TimePeriod:
+        tz = cls._resolve_timezone(timezone_name)
+        start = datetime.fromisoformat(start_text).replace(tzinfo=tz)
+        end_day = datetime.fromisoformat(end_text).replace(tzinfo=tz)
+        cls._reject_future(start, now=now, tz=tz)
+        cls._reject_future(end_day, now=now, tz=tz)
+        end = end_day + timedelta(days=1)
+        return cls(
+            start=start.astimezone(timezone.utc),
+            end=end.astimezone(timezone.utc),
+            display_name=f"{start_text} to {end_text}",
+        )
+
+    @staticmethod
+    def _reject_future(value: datetime, *, now: datetime | None, tz) -> None:
+        reference = now or datetime.now(tz=tz)
+        if reference.tzinfo is None:
+            reference = reference.replace(tzinfo=tz)
+        if value.date() > reference.astimezone(tz).date():
+            raise ValueError("Future time periods are not available")
     
     @property
     def duration_days(self) -> float:

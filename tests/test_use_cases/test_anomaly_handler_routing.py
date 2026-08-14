@@ -5,6 +5,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
+
 from skill._handlers import _fallback_anomaly, _fallback_drift
 from skill._metric_handlers import handle_anomaly_check, handle_drift_check
 from skill.domain.exceptions import AssetNotFoundError
@@ -93,8 +95,8 @@ def _build_skill_for_drift() -> SimpleNamespace:
     return skill
 
 
-def test_handle_drift_falls_back_on_asset_not_found() -> None:
-    """Drift handler uses default asset when slot resolution fails."""
+def test_handle_drift_never_hides_asset_not_found() -> None:
+    """Drift handler must not replace an unknown asset with a default."""
     skill = _build_skill_for_drift()
     skill._resolve_asset_id = Mock(side_effect=AssetNotFoundError("bad"))
     skill.settings_service = Mock()
@@ -107,14 +109,14 @@ def test_handle_drift_falls_back_on_asset_not_found() -> None:
     skill.dispatcher.check_drift.return_value = "drift-result"
     skill.response_builder.format_drift_result.return_value = "drift response"
 
-    handle_drift_check(skill, message)
+    with pytest.raises(AssetNotFoundError):
+        handle_drift_check(skill, message)
 
-    skill.dispatcher.check_drift.assert_called_once()
-    skill.speak.assert_called_once_with("drift response")
+    skill.dispatcher.check_drift.assert_not_called()
 
 
-def test_fallback_drift_falls_back_on_asset_not_found() -> None:
-    """Fallback drift path uses default asset when slot resolution fails."""
+def test_fallback_drift_never_hides_asset_not_found() -> None:
+    """Fallback drift must not replace an unknown asset with a default."""
     skill = _build_skill_for_drift()
     skill._resolve_asset_id = Mock(side_effect=AssetNotFoundError("bad"))
     skill.settings_service = Mock()
@@ -126,8 +128,7 @@ def test_fallback_drift_falls_back_on_asset_not_found() -> None:
     skill.dispatcher.check_drift.return_value = "drift-result"
     skill.response_builder.format_drift_result.return_value = "drift response"
 
-    handled = _fallback_drift(skill, message, "how has energy been trending")
+    with pytest.raises(AssetNotFoundError):
+        _fallback_drift(skill, message, "how has energy been trending")
 
-    assert handled is True
-    skill.dispatcher.check_drift.assert_called_once()
-    skill.speak.assert_called_once_with("drift response")
+    skill.dispatcher.check_drift.assert_not_called()

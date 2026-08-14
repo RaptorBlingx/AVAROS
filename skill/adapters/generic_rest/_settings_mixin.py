@@ -20,7 +20,7 @@ class GenericRestSettingsMixin:
 
     _AUTO_ENDPOINT_TEMPLATE = (
         "/api/u/measurement/metric/resource/{resource_id}/values"
-        "?period=RAW&datetimeMin={start_date}&datetimeMax={end_date}&count=1&page=1"
+        "?period=RAW&datetimeMin={start_date}&datetimeMax={end_date}&count=100&page=1"
     )
     _AUTO_TREND_ENDPOINT_TEMPLATE = (
         "/api/u/measurement/metric/resource/{resource_id}/values"
@@ -215,9 +215,11 @@ class GenericRestSettingsMixin:
         return {
             "endpoint": self._AUTO_ENDPOINT_TEMPLATE,
             "trend_endpoint": self._AUTO_TREND_ENDPOINT_TEMPLATE,
-            # Generic REST JSONPath resolver supports explicit numeric indexes.
-            # Auto requests use `count=1`, so first record is the latest value.
+            # The adapter aggregates and paginates the complete observation list.
             "json_path": "$.records[0].value",
+            "series_path": "$.records",
+            "timestamp_path": "datetime",
+            "pagination": True,
             "unit": unit,
             "transform": None,
         }

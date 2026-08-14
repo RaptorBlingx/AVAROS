@@ -132,6 +132,38 @@ class TestCreateMetricMapping:
 
         assert body["transform"] is None
 
+    def test_create_mapping_preserves_aggregation_and_provenance_settings(
+        self,
+        client: TestClient,
+    ) -> None:
+        """Series, pagination, aggregation, timestamp and freshness survive CRUD."""
+        payload = {
+            "canonical_metric": "energy_total",
+            "endpoint": "/api/u/measurement/seu/values",
+            "json_path": "$.records[0].value",
+            "unit": "kWh",
+            "aggregation": "sum",
+            "series_path": "$.records",
+            "timestamp_path": "datetime",
+            "pagination": True,
+            "page_size": 75,
+            "freshness_seconds": 86400,
+        }
+
+        response = client.post("/api/v1/config/metrics", json=payload)
+
+        assert response.status_code == 201
+        body = response.json()
+        for key in (
+            "aggregation",
+            "series_path",
+            "timestamp_path",
+            "pagination",
+            "page_size",
+            "freshness_seconds",
+        ):
+            assert body[key] == payload[key]
+
 
 class TestCreateMetricMappingValidation:
     """Validation error tests for metric mapping creation."""
@@ -265,6 +297,12 @@ class TestListMetricMappings:
             "json_path",
             "unit",
             "transform",
+            "aggregation",
+            "series_path",
+            "timestamp_path",
+            "pagination",
+            "page_size",
+            "freshness_seconds",
             "source",
         }
         assert set(items[0].keys()) == expected_keys

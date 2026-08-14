@@ -10,7 +10,7 @@ import pytest
 from skill import AVAROSSkill
 from skill._metric_handlers import _resolve_kpi_period, dispatch_kpi_for_metric
 from skill.domain.exceptions import MetricNotSupportedError
-from skill.domain.models import CanonicalMetric, TimePeriod
+from skill.domain.models import Asset, CanonicalMetric, TimePeriod
 
 
 def _make_skill() -> AVAROSSkill:
@@ -20,6 +20,11 @@ def _make_skill() -> AVAROSSkill:
     skill.speak = Mock()
     skill.dispatcher = Mock()
     skill.response_builder = Mock()
+    skill._get_asset_registry = Mock(return_value=[
+        Asset("Line-1", "Line 1", "line"),
+        Asset("Line-2", "Line 2", "line"),
+        Asset("Line-3", "Line 3", "line"),
+    ])
     skill._resolve_asset_id = Mock(return_value="Line-1")
     skill._parse_period = Mock(return_value=TimePeriod.from_natural_language("today"))
     return skill
@@ -70,8 +75,25 @@ def test_generic_kpi_handler_dispatches_energy_per_unit():
         period=skill._parse_period.return_value,
     )
     skill.response_builder.format_kpi_result.assert_called_once_with(result)
-    skill.speak.assert_called_once_with("ok")
+    skill.speak.assert_called_once()
+    assert skill.speak.call_args.args == ("ok",)
+    assert "avaros_response" in skill.speak.call_args.kwargs["meta"]
     assert captured["handler_name"] == "handle_kpi_energy_per_unit"
+
+
+def test_generic_kpi_handler_prefers_explicit_total_energy_semantics():
+    """Loose Padatious routing must not override explicit consumption wording."""
+    skill = _make_skill()
+    skill.dispatcher.get_kpi.return_value = Mock()
+    skill.response_builder.format_kpi_result.return_value = "ok"
+    skill._safe_dispatch = Mock(side_effect=lambda _name, action: action())
+
+    skill._handle_generic_kpi(_message_for_intent(
+        "kpi.energy.per_unit",
+        utterance="How much energy was consumed by Line 3 last month?",
+    ))
+
+    assert skill.dispatcher.get_kpi.call_args.kwargs["metric"] is CanonicalMetric.ENERGY_TOTAL
 
 
 def test_generic_kpi_handler_dispatches_multiple_metrics():

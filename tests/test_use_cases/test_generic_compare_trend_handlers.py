@@ -6,7 +6,8 @@ from unittest.mock import Mock
 
 from skill import AVAROSSkill
 from skill.domain.exceptions import AdapterError
-from skill.domain.models import CanonicalMetric, TimePeriod
+from skill.domain.models import Asset, CanonicalMetric, TimePeriod
+from skill.services.conversation_state import DialogueState
 
 
 def _make_skill() -> AVAROSSkill:
@@ -52,7 +53,9 @@ def test_compare_metric_resolves_oee_and_dispatches():
         period=skill._parse_period.return_value,
     )
     skill.response_builder.format_comparison_result.assert_called_once_with(result)
-    skill.speak.assert_called_once_with("ok")
+    skill.speak.assert_called_once()
+    assert skill.speak.call_args.args == ("ok",)
+    assert "avaros_response" in skill.speak.call_args.kwargs["meta"]
 
 
 def test_compare_metric_resolves_material_efficiency_and_dispatches():
@@ -65,6 +68,35 @@ def test_compare_metric_resolves_material_efficiency_and_dispatches():
 
     called_metric = skill.dispatcher.compare.call_args.kwargs["metric"]
     assert called_metric is CanonicalMetric.MATERIAL_EFFICIENCY
+
+
+def test_compare_them_uses_session_evidence() -> None:
+    """A Padatious compare intent must preserve deterministic follow-up state."""
+    skill = _make_skill()
+    skill._get_asset_registry = Mock(return_value=[
+        Asset("Line-1", "Line 1", "line"),
+        Asset("Line-2", "Line 2", "line"),
+    ])
+    period = TimePeriod.latest()
+    skill._dialogue_state_store.put("browser-1", DialogueState(
+        metrics=(CanonicalMetric.OEE,),
+        asset_ids=("Line-2",),
+        period=period,
+        operation="kpi",
+        answer_evidence=({"asset_id": "Line-1"}, {"asset_id": "Line-2"}),
+    ))
+    skill.dispatcher.compare.return_value = Mock()
+    skill.response_builder.format_comparison_result.return_value = "ok"
+    message = _message(utterance="Compare them.")
+    message.context = {"session": {"session_id": "browser-1"}}
+
+    skill.handle_compare_metric(message)
+
+    skill.dispatcher.compare.assert_called_once_with(
+        metric=CanonicalMetric.OEE,
+        asset_ids=["Line-1", "Line-2"],
+        period=period,
+    )
 
 
 def test_compare_metric_unrecognized_metric_speaks_error():
@@ -107,24 +139,32 @@ def test_compare_metric_mapping_guard_fails_closed_on_adapter_errors():
 
 
 def test_trend_metric_resolves_throughput_and_dispatches():
-    """Trend handler should resolve throughput and dispatch get_trend()."""
+    """Structured trend routing should resolve throughput, asset, and period."""
     skill = _make_skill()
+    skill._get_asset_registry = Mock(return_value=[
+        Asset(asset_id="Line-1", display_name="Line 1", asset_type="line"),
+    ])
     result = Mock()
     skill.dispatcher.get_trend.return_value = result
     skill.response_builder.format_trend_result.return_value = "ok"
 
     skill.handle_trend_metric(
-        _message(metric="throughput", period="today", utterance="show throughput trend today"),
+        _message(
+            metric="throughput",
+            period="today",
+            utterance="show throughput trend for Line 1 today",
+        ),
     )
 
-    skill.dispatcher.get_trend.assert_called_once_with(
-        metric=CanonicalMetric.THROUGHPUT,
-        asset_id="Line-1",
-        period=skill._parse_period.return_value,
-        granularity="daily",
-    )
+    skill.dispatcher.get_trend.assert_called_once()
+    metric, asset_id, period = skill.dispatcher.get_trend.call_args.args
+    assert metric is CanonicalMetric.THROUGHPUT
+    assert asset_id == "Line-1"
+    assert period.display_name == "today"
     skill.response_builder.format_trend_result.assert_called_once_with(result)
-    skill.speak.assert_called_once_with("ok")
+    skill.speak.assert_called_once()
+    assert skill.speak.call_args.args == ("ok",)
+    assert "avaros_response" in skill.speak.call_args.kwargs["meta"]
 
 
 def test_trend_metric_resolves_co2_per_unit_and_dispatches():

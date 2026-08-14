@@ -8,13 +8,17 @@ pytest-mock>=3.11.1
 
 # Mocking and testing utilities
 mock>=5.1.0
-aioresponses>=0.7.6  # For mocking aiohttp HTTP calls
+aioresponses>=0.7.9  # For mocking aiohttp HTTP calls
+# aiohttp 3.13+ changed response internals that aioresponses does not yet mock.
+aiohttp>=3.9,<3.13
 
 # Web UI test client (FastAPI TestClient requires httpx)
 httpx>=0.25.0
 websockets>=12.0
 pycryptodomex>=3.20.0
 cryptography>=42.0.0
+pandas>=2.0.0  # PREVENTION add-on forecast regression tests
+pymongo>=4.6.0  # PREVENTION initialization regression tests
 
 # Code quality
 flake8>=6.1.0

@@ -117,6 +117,14 @@ class KPIResult:
     period: TimePeriod
     timestamp: datetime
     recommendation_id: str = ""
+    source_observed_at: datetime | None = None
+    source_period_start: datetime | None = None
+    source_period_end: datetime | None = None
+    sample_count: int = 0
+    aggregation: str = ""
+    source_profile: str = ""
+    coverage_status: str = "complete"
+    warnings: tuple[str, ...] = ()
     
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
@@ -129,6 +137,26 @@ class KPIResult:
             "period_end": self.period.end.isoformat(),
             "timestamp": self.timestamp.isoformat(),
             "recommendation_id": self.recommendation_id,
+            "source_observed_at": (
+                self.source_observed_at.isoformat()
+                if self.source_observed_at is not None
+                else None
+            ),
+            "source_period_start": (
+                self.source_period_start.isoformat()
+                if self.source_period_start is not None
+                else None
+            ),
+            "source_period_end": (
+                self.source_period_end.isoformat()
+                if self.source_period_end is not None
+                else None
+            ),
+            "sample_count": self.sample_count,
+            "aggregation": self.aggregation,
+            "source_profile": self.source_profile,
+            "coverage_status": self.coverage_status,
+            "warnings": list(self.warnings),
         }
     
     @property
@@ -153,6 +181,9 @@ class ComparisonItem:
     asset_id: str
     value: float
     rank: int
+    source_observed_at: datetime | None = None
+    sample_count: int = 0
+    coverage_status: str = "complete"
 
 
 @dataclass(frozen=True)
@@ -191,6 +222,10 @@ class ComparisonResult:
     unit: str
     period: TimePeriod
     recommendation_id: str = ""
+    aggregation: str = ""
+    source_profile: str = ""
+    coverage_status: str = "complete"
+    warnings: tuple[str, ...] = ()
     
     def __init__(
         self,
@@ -201,6 +236,10 @@ class ComparisonResult:
         unit: str,
         period: TimePeriod,
         recommendation_id: str = "",
+        aggregation: str = "",
+        source_profile: str = "",
+        coverage_status: str = "complete",
+        warnings: list[str] | tuple[str, ...] = (),
     ):
         """Initialize with items converted to tuple for immutability."""
         object.__setattr__(self, "metric", metric)
@@ -210,6 +249,10 @@ class ComparisonResult:
         object.__setattr__(self, "unit", unit)
         object.__setattr__(self, "period", period)
         object.__setattr__(self, "recommendation_id", recommendation_id)
+        object.__setattr__(self, "aggregation", aggregation)
+        object.__setattr__(self, "source_profile", source_profile)
+        object.__setattr__(self, "coverage_status", coverage_status)
+        object.__setattr__(self, "warnings", tuple(warnings))
     
     def get_value_for_asset(self, asset_id: str) -> float | None:
         """Get the metric value for a specific asset."""
@@ -256,6 +299,9 @@ class TrendResult:
     period: TimePeriod
     granularity: str
     recommendation_id: str = ""
+    source_profile: str = ""
+    coverage_status: str = "complete"
+    warnings: tuple[str, ...] = ()
     
     def __init__(
         self,
@@ -267,6 +313,9 @@ class TrendResult:
         period: TimePeriod,
         granularity: str,
         recommendation_id: str = "",
+        source_profile: str = "",
+        coverage_status: str = "complete",
+        warnings: list[str] | tuple[str, ...] = (),
     ):
         """Initialize with data_points converted to tuple."""
         object.__setattr__(self, "metric", metric)
@@ -277,6 +326,9 @@ class TrendResult:
         object.__setattr__(self, "period", period)
         object.__setattr__(self, "granularity", granularity)
         object.__setattr__(self, "recommendation_id", recommendation_id)
+        object.__setattr__(self, "source_profile", source_profile)
+        object.__setattr__(self, "coverage_status", coverage_status)
+        object.__setattr__(self, "warnings", tuple(warnings))
     
     @property
     def start_value(self) -> float | None:
@@ -376,6 +428,11 @@ class AnomalyScanResult:
     severity_counts: dict[str, int]
     threshold: float
     recommendation_id: str = ""
+    attempted_pairs: int = 0
+    successful_pairs: int = 0
+    failed_pairs: int = 0
+    stale_pairs: int = 0
+    insufficient_data_pairs: int = 0
 
     def __init__(
         self,
@@ -385,6 +442,11 @@ class AnomalyScanResult:
         severity_counts: dict[str, int],
         threshold: float,
         recommendation_id: str = "",
+        attempted_pairs: int | None = None,
+        successful_pairs: int | None = None,
+        failed_pairs: int = 0,
+        stale_pairs: int = 0,
+        insufficient_data_pairs: int = 0,
     ) -> None:
         """Initialize with findings converted to tuple and dict copied."""
         object.__setattr__(self, "checked_pairs", checked_pairs)
@@ -393,11 +455,29 @@ class AnomalyScanResult:
         object.__setattr__(self, "severity_counts", dict(severity_counts))
         object.__setattr__(self, "threshold", threshold)
         object.__setattr__(self, "recommendation_id", recommendation_id)
+        attempted = checked_pairs if attempted_pairs is None else attempted_pairs
+        successful = checked_pairs if successful_pairs is None else successful_pairs
+        object.__setattr__(self, "attempted_pairs", attempted)
+        object.__setattr__(self, "successful_pairs", successful)
+        object.__setattr__(self, "failed_pairs", failed_pairs)
+        object.__setattr__(self, "stale_pairs", stale_pairs)
+        object.__setattr__(self, "insufficient_data_pairs", insufficient_data_pairs)
 
     @property
     def has_anomalies(self) -> bool:
         """Whether scan found at least one anomaly."""
         return self.anomalous_pairs > 0
+
+    @property
+    def has_complete_coverage(self) -> bool:
+        """Whether every attempted pair completed with enough current data."""
+        return (
+            self.attempted_pairs > 0
+            and self.successful_pairs == self.attempted_pairs
+            and self.failed_pairs == 0
+            and self.stale_pairs == 0
+            and self.insufficient_data_pairs == 0
+        )
 
 
 @dataclass(frozen=True)
