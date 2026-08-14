@@ -8,6 +8,63 @@ from skill.domain.models import CanonicalMetric
 
 _UTTERANCE_PHRASE_MAP: tuple[tuple[CanonicalMetric, tuple[str, ...]], ...] = (
     (
+        CanonicalMetric.STORAGE_STATE_OF_CHARGE,
+        (
+            "battery state of charge",
+            "battery charge level",
+            "storage state of charge",
+            "storage charge level",
+            "battery soc",
+        ),
+    ),
+    (CanonicalMetric.STORAGE_POWER, ("battery power", "storage power")),
+    (
+        CanonicalMetric.ENERGY_GRID_IMPORT_TOTAL,
+        (
+            "grid import energy",
+            "energy imported from grid",
+            "imported energy",
+            "grid bought energy",
+        ),
+    ),
+    (
+        CanonicalMetric.ENERGY_GRID_EXPORT_TOTAL,
+        (
+            "grid export energy",
+            "energy exported to grid",
+            "exported energy",
+            "grid sold energy",
+        ),
+    ),
+    (CanonicalMetric.GRID_POWER, ("grid power", "grid exchange power")),
+    (
+        CanonicalMetric.ENERGY_PRODUCTION_TOTAL,
+        (
+            "total production energy",
+            "produced energy",
+            "generated energy",
+            "production energy",
+        ),
+    ),
+    (
+        CanonicalMetric.PRODUCTION_POWER,
+        (
+            "production power",
+            "generated power",
+            "generation power",
+        ),
+    ),
+    (
+        CanonicalMetric.CONSUMPTION_POWER,
+        (
+            "consumption power",
+            "power consumption",
+            "consumed power",
+            "current demand",
+            "current consumption",
+        ),
+    ),
+    (
         CanonicalMetric.OEE,
         (
             "oee",
@@ -150,6 +207,11 @@ def resolve_metric_from_utterance(utterance: str) -> CanonicalMetric | None:
         return CanonicalMetric.CO2_TOTAL
     if co2_like and batch_like:
         return CanonicalMetric.CO2_PER_BATCH
+
+    # Verb phrasing commonly used for live energy systems does not contain
+    # the noun "consumption", e.g. "How much power is the site consuming?".
+    if "power" in normalized and re.search(r"\bconsum(?:e|es|ing|ed)\b", normalized):
+        return CanonicalMetric.CONSUMPTION_POWER
 
     for metric, phrases in _UTTERANCE_PHRASE_MAP:
         if any(phrase in normalized for phrase in phrases):

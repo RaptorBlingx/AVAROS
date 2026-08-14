@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import re
 from typing import Any
@@ -86,6 +87,9 @@ def _build_auth_headers(auth_type: str, token: str) -> dict[str, str]:
         return {}
     if auth_type == "cookie":
         return {"Cookie": normalize_cookie_header_value(token)}
+    if auth_type == "basic":
+        encoded = base64.b64encode(token.encode("utf-8")).decode("ascii")
+        return {"Authorization": f"Basic {encoded}"}
     return {"Authorization": f"Bearer {token}"}
 
 

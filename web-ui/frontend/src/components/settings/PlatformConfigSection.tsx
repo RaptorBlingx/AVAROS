@@ -26,11 +26,14 @@ type PlatformConfigSectionProps = {
   onActiveProfileResolved?: (profileName: string) => void;
 };
 
-type AuthType = "api_key" | "cookie" | "none";
+type AuthType = "api_key" | "basic" | "cookie" | "none";
 
-function toBackendAuthType(authType: AuthType): "bearer" | "cookie" | "none" {
+function toBackendAuthType(authType: AuthType): "bearer" | "basic" | "cookie" | "none" {
   if (authType === "cookie") {
     return "cookie";
+  }
+  if (authType === "basic") {
+    return "basic";
   }
   if (authType === "none") {
     return "none";
@@ -41,6 +44,9 @@ function toBackendAuthType(authType: AuthType): "bearer" | "cookie" | "none" {
 function fromBackendAuthType(authType: string | undefined): AuthType {
   if (authType === "cookie") {
     return "cookie";
+  }
+  if (authType === "basic") {
+    return "basic";
   }
   if (authType === "none") {
     return "none";
@@ -83,9 +89,7 @@ function validate(config: {
     return "API URL must start with http:// or https://.";
   }
   if (config.authType !== "none" && !config.apiKey.trim()) {
-    return config.authType === "cookie"
-      ? "Session cookie is required."
-      : "API key is required.";
+    return config.authType === "cookie" ? "Session cookie is required." : config.authType === "basic" ? "Username and password are required." : "API key is required.";
   }
   return "";
 }
@@ -369,6 +373,7 @@ export default function PlatformConfigSection({
                     className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                   >
                     <option value="api_key">API Key</option>
+                    <option value="basic">Basic Authentication</option>
                     <option value="cookie">Session Cookie</option>
                     <option value="none">No Authentication</option>
                   </select>
@@ -376,7 +381,7 @@ export default function PlatformConfigSection({
                 {authType !== "none" && (
                   <label className="block md:col-span-2">
                     <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
-                      {authType === "cookie" ? "Session Cookie Value" : "API Key"}
+                      {authType === "cookie" ? "Session Cookie Value" : authType === "basic" ? "Username:Password" : "API Key"}
                     </span>
                     <input
                       type="password"
@@ -386,7 +391,9 @@ export default function PlatformConfigSection({
                         editing
                           ? authType === "cookie"
                             ? "Paste session cookie value or full Cookie: S=..."
-                            : "Enter API key to update"
+                            : authType === "basic"
+                              ? "Enter username:password"
+                              : "Enter API key to update"
                           : config?.api_key ?? "****"
                       }
                       disabled={!editing || saving || formLocked || isUnconfigured}

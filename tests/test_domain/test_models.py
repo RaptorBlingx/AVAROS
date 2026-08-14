@@ -25,13 +25,13 @@ from skill.domain.models import (
 class TestCanonicalMetric:
     """Tests for CanonicalMetric enum."""
     
-    def test_all_19_metrics_are_defined(self):
-        """Should have exactly 19 canonical metrics."""
+    def test_all_27_metrics_are_defined(self):
+        """Should expose the manufacturing and generic energy metric set."""
         # Arrange & Act
         metrics = list(CanonicalMetric)
         
         # Assert
-        assert len(metrics) == 19
+        assert len(metrics) == 27
     
     def test_all_metrics_have_default_unit(self):
         """Every metric should have a default unit."""
@@ -108,6 +108,8 @@ class TestCanonicalMetric:
         assert CanonicalMetric.CYCLE_TIME.default_unit == "sec"
         assert CanonicalMetric.CO2_TOTAL.default_unit == "kg CO₂-eq"
         assert CanonicalMetric.PEAK_TARIFF_EXPOSURE.default_unit == "%"
+        assert CanonicalMetric.CONSUMPTION_POWER.default_unit == "W"
+        assert CanonicalMetric.STORAGE_STATE_OF_CHARGE.default_unit == "%"
         assert CanonicalMetric.SUPPLIER_CO2_PER_KG.default_unit == "kg CO₂/kg"
 
 

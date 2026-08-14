@@ -390,6 +390,8 @@ export default function MetricMappingStep({
         json_path: m.json_path ?? preset.metrics.json_path,
         unit: m.unit,
         transform: "",
+        trend_endpoint: "",
+        trend_json_path: "",
         source: "manual" as const,
       }));
       setRows(newRows);

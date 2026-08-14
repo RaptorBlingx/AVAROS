@@ -216,6 +216,26 @@ class TestMetricMappingValidationEndpoint:
         _, headers, _ = fetch_mock.await_args.args
         assert headers["Authorization"] == "Bearer token-123"
 
+    def test_test_mapping_basic_auth_sends_encoded_credentials(
+        self,
+        client: TestClient,
+    ) -> None:
+        payload = {
+            "base_url": "https://api.example.com",
+            "endpoint": "/metrics/energy",
+            "json_path": "$.data.energy",
+            "auth_type": "basic",
+            "auth_token": "user:password",
+        }
+
+        fetch_mock = AsyncMock(return_value=(200, '{"data": {"energy": 1}}'))
+        with patch("services.metric_test_service._fetch_response", new=fetch_mock):
+            response = client.post("/api/v1/config/metrics/test", json=payload)
+
+        assert response.status_code == 200
+        _, headers, _ = fetch_mock.await_args.args
+        assert headers["Authorization"] == "Basic dXNlcjpwYXNzd29yZA=="
+
     def test_test_mapping_cookie_auth_sends_header(self, client: TestClient) -> None:
         payload = {
             "base_url": "https://api.example.com",

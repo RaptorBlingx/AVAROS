@@ -14,6 +14,8 @@ export const EMPTY_SETTINGS_ROW_DEFAULTS: Omit<
   json_path: "",
   unit: "",
   transform: "",
+  trend_endpoint: "",
+  trend_json_path: "",
   source: "manual",
 };
 
@@ -25,9 +27,10 @@ export function createSettingsRow(mapping: MetricMapping): SettingsMetricRow {
     json_path: mapping.json_path,
     unit: mapping.unit,
     transform: mapping.transform ?? "",
+    trend_endpoint: mapping.trend_endpoint ?? "",
+    trend_json_path: mapping.trend_json_path ?? "",
     source: mapping.source ?? "manual",
     persisted: true,
     originalMetric: mapping.canonical_metric,
   };
 }
-

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
 
@@ -104,6 +105,23 @@ def _add_period_replacements(
     replacements["end_datetime"] = end_iso
     replacements["datetimemax"] = end_iso
     replacements["period"] = f"{start_iso}_{end_iso}"
+
+    # APIs commonly express time windows as Unix epoch values rather than
+    # ISO-8601 strings.  Keep both forms available in every generic mapping
+    # rather than coupling the adapter to one platform's query convention.
+    start_epoch_seconds = _to_utc_epoch_seconds(period.start)
+    end_epoch_seconds = _to_utc_epoch_seconds(period.end)
+    replacements["start_epoch_seconds"] = str(start_epoch_seconds)
+    replacements["end_epoch_seconds"] = str(end_epoch_seconds)
+    replacements["start_epoch_ms"] = str(start_epoch_seconds * 1000)
+    replacements["end_epoch_ms"] = str(end_epoch_seconds * 1000)
+
+
+def _to_utc_epoch_seconds(value: datetime) -> int:
+    """Return a Unix epoch value, treating naive datetimes as UTC."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return int(value.timestamp())
 
 
 def _normalize_endpoint_path(parsed, filled: str) -> str:

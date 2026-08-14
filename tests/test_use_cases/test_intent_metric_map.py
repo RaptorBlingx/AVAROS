@@ -8,9 +8,9 @@ from skill import INTENT_METRIC_MAP
 from skill.domain.models import CanonicalMetric
 
 
-def test_intent_metric_map_has_19_entries():
+def test_intent_metric_map_has_27_entries():
     """KPI map must include exactly one entry per KPI intent file."""
-    assert len(INTENT_METRIC_MAP) == 19
+    assert len(INTENT_METRIC_MAP) == 27
 
 
 def test_all_canonical_kpi_metrics_have_intent_mapping():

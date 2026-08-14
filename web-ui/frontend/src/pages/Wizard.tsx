@@ -32,7 +32,7 @@ type StepNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 type WizardState = {
   currentStep: StepNumber;
-  authType: "api_key" | "cookie" | "none";
+  authType: "api_key" | "basic" | "cookie" | "none";
   apiUrl: string;
   apiKey: string;
 };
@@ -42,6 +42,9 @@ type IntegrationPreset = "mock" | null;
 function fromBackendAuthType(authType: string | undefined): WizardState["authType"] {
   if (authType === "cookie") {
     return "cookie";
+  }
+  if (authType === "basic") {
+    return "basic";
   }
   if (authType === "none") {
     return "none";
@@ -59,9 +62,7 @@ function buildPayload(
     api_key: state.authType === "none" ? "" : state.apiKey.trim(),
     extra_settings: {
       auth_type:
-        state.authType === "cookie"
-          ? "cookie"
-          : state.authType === "none"
+        state.authType === "cookie" ? "cookie" : state.authType === "basic" ? "basic" : state.authType === "none"
           ? "none"
           : "bearer",
     },
@@ -87,9 +88,7 @@ function validateConnection(
     return "URL must start with http:// or https://.";
   }
   if (state.authType !== "none" && !key) {
-    return state.authType === "cookie"
-      ? "Session cookie is required."
-      : "API key is required.";
+    return state.authType === "cookie" ? "Session cookie is required." : state.authType === "basic" ? "Username and password are required." : "API key is required.";
   }
   return "";
 }

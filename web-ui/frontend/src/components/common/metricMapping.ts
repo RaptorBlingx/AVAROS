@@ -13,6 +13,8 @@ export type MetricMappingRow = {
   json_path: string;
   unit: string;
   transform: string;
+  trend_endpoint: string;
+  trend_json_path: string;
   source: MetricMappingSource;
 };
 
@@ -26,6 +28,14 @@ export type MetricRowError = {
 export const METRIC_OPTIONS: MetricOption[] = [
   { value: "energy_per_unit", label: "Energy Per Unit", category: "Energy" },
   { value: "energy_total", label: "Energy Total", category: "Energy" },
+  { value: "consumption_power", label: "Consumption Power", category: "Energy" },
+  { value: "production_power", label: "Production Power", category: "Energy" },
+  { value: "energy_production_total", label: "Production Energy Total", category: "Energy" },
+  { value: "grid_power", label: "Grid Power", category: "Energy" },
+  { value: "energy_grid_import_total", label: "Grid Import Energy Total", category: "Energy" },
+  { value: "energy_grid_export_total", label: "Grid Export Energy Total", category: "Energy" },
+  { value: "storage_state_of_charge", label: "Battery State of Charge", category: "Energy" },
+  { value: "storage_power", label: "Battery Power", category: "Energy" },
   { value: "peak_demand", label: "Peak Demand", category: "Energy" },
   {
     value: "peak_tariff_exposure",

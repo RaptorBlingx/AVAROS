@@ -39,6 +39,14 @@ class MetricMappingRequest(BaseModel):
         default=None,
         description="Optional transform instruction (future use).",
     )
+    trend_endpoint: str | None = Field(
+        default=None,
+        description="Optional time-series endpoint template for trend queries.",
+    )
+    trend_json_path: str | None = Field(
+        default=None,
+        description="Optional JSONPath selecting the list of trend points.",
+    )
 
 
 MetricMappingSource = Literal["manual", "auto"]
@@ -67,6 +75,16 @@ class MetricMappingResponse(BaseModel):
         default=None,
         description="Optional transform instruction.",
     )
+    trend_endpoint: str | None = Field(
+        default=None,
+        description="Optional time-series endpoint template for trend queries.",
+        exclude_if=lambda value: value is None,
+    )
+    trend_json_path: str | None = Field(
+        default=None,
+        description="Optional JSONPath selecting the list of trend points.",
+        exclude_if=lambda value: value is None,
+    )
     source: MetricMappingSource = Field(
         default="manual",
         description="'auto' = derived from asset metric_resources, 'manual' = user-configured.",
@@ -77,7 +95,7 @@ class MetricMappingListResponse(RootModel[list[MetricMappingResponse]]):
     """Array response wrapper for metric mappings list."""
 
 
-MetricAuthType = Literal["bearer", "cookie", "none"]
+MetricAuthType = Literal["bearer", "basic", "cookie", "none"]
 
 
 class MetricMappingTestRequest(BaseModel):
@@ -104,7 +122,7 @@ class MetricMappingTestRequest(BaseModel):
     )
     auth_token: str = Field(
         ...,
-        description="Bearer token or session cookie value.",
+        description="Bearer token, Basic username:password, or session cookie value.",
     )
 
 

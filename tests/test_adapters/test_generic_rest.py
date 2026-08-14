@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
 import pytest
@@ -282,6 +283,45 @@ async def test_get_kpi_non_energy_metric_on_energy_only_asset_raises_unavailable
 
 
 @pytest.mark.asyncio
+async def test_get_kpi_energy_total_on_energy_only_asset_uses_manual_mapping(
+    period: TimePeriod,
+) -> None:
+    """Energy-only assets may use a generic mapping for their allowed KPI."""
+    adapter = GenericRestAdapter(
+        api_url="https://api.example.com",
+        api_key="secret-token",
+        settings_service=_StubSettingsService(
+            {
+                "energy_total": {
+                    "endpoint": "/channels/consumption-energy",
+                    "json_path": "$.value",
+                    "unit": "Wh",
+                },
+            },
+            asset_mappings={
+                "edge-1": {
+                    "display_name": "Energy Edge",
+                    "capability_mode": "energy_only",
+                },
+            },
+        ),
+        profile_name="custom",
+    )
+    adapter._session = object()
+    adapter._retry_fetch = AsyncMock(return_value={"value": 54})
+
+    result = await adapter.get_kpi(
+        metric=CanonicalMetric.ENERGY_TOTAL,
+        asset_id="edge-1",
+        period=period,
+    )
+
+    assert result.value == pytest.approx(54)
+    assert result.unit == "Wh"
+    assert adapter._retry_fetch.await_args.args[0] == "/channels/consumption-energy"
+
+
+@pytest.mark.asyncio
 async def test_get_trend_energy_only_asset_raises_unavailable(period: TimePeriod) -> None:
     """Energy-only SEU assets should not expose trend endpoint in V1."""
     seu_id = "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4"
@@ -467,6 +507,53 @@ async def test_get_trend_uses_trend_endpoint_override(period: TimePeriod) -> Non
 
     call_endpoint = adapter._retry_fetch.await_args.args[0]
     assert call_endpoint == "/trend-override"
+
+
+@pytest.mark.asyncio
+async def test_get_trend_supports_epoch_templates_and_millisecond_timestamps(
+    period: TimePeriod,
+) -> None:
+    """Generic trend mappings support numeric time windows and ``ts`` points."""
+    start = period.start.replace(tzinfo=timezone.utc) if period.start.tzinfo is None else period.start
+    end = period.end.replace(tzinfo=timezone.utc) if period.end.tzinfo is None else period.end
+    start_ms = int(start.timestamp()) * 1000
+    end_ms = int(end.timestamp()) * 1000
+
+    adapter = _build_adapter({
+        "energy_per_unit": {
+            "endpoint": "/kpi",
+            "trend_endpoint": (
+                "/telemetry?from={start_epoch_ms}&to={end_epoch_ms}"
+            ),
+            "trend_json_path": "$.series",
+            "json_path": "$.series[0].value",
+            "unit": "kWh/unit",
+        },
+    })
+    adapter._session = object()
+    # Newest-first is common; adapter output must still be chronological.
+    adapter._retry_fetch = AsyncMock(return_value={
+        "series": [
+            {"ts": end_ms, "value": "2.0"},
+            {"ts": start_ms, "value": "1.0"},
+        ],
+    })
+
+    result = await adapter.get_trend(
+        metric=CanonicalMetric.ENERGY_PER_UNIT,
+        asset_id="asset-a",
+        period=period,
+    )
+
+    call_endpoint, call_params = adapter._retry_fetch.await_args.args
+    assert call_endpoint == "/telemetry"
+    assert call_params == {"from": str(start_ms), "to": str(end_ms)}
+    assert [point.value for point in result.data_points] == [1.0, 2.0]
+    assert [point.timestamp for point in result.data_points] == [
+        datetime.fromtimestamp(start_ms / 1000, tz=timezone.utc),
+        datetime.fromtimestamp(end_ms / 1000, tz=timezone.utc),
+    ]
+    assert result.direction == "up"
 
 
 @pytest.mark.asyncio
@@ -694,6 +781,21 @@ async def test_initialize_unreachable_endpoint_raises_adapter_error() -> None:
 
 
 @pytest.mark.asyncio
+async def test_initialize_uses_configured_read_endpoint_when_base_returns_5xx() -> None:
+    """A profile probe endpoint should support APIs without a healthy root."""
+    adapter = _build_adapter({})
+    adapter._extra_settings["connection_test_endpoint"] = "/channels/total"
+
+    with aioresponses() as mocked:
+        mocked.head("https://api.example.com", status=500)
+        mocked.get("https://api.example.com/channels/total", status=200)
+        await adapter.initialize()
+
+    assert adapter._session is not None
+    await adapter.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_shutdown_closes_session() -> None:
     """shutdown() should clear session after initialize()."""
     adapter = _build_adapter({})
@@ -713,6 +815,16 @@ def test_bearer_auth_sends_header() -> None:
     adapter._api_key = "abc123"
 
     assert adapter._build_auth_headers() == {"Authorization": "Bearer abc123"}
+
+
+def test_basic_auth_sends_encoded_credentials() -> None:
+    """Basic auth should encode the configured username:password value."""
+    adapter = _build_adapter({}, auth_type="basic")
+    adapter._api_key = "x:admin"
+
+    assert adapter._build_auth_headers() == {
+        "Authorization": "Basic eDphZG1pbg==",
+    }
 
 
 def test_cookie_auth_sends_header() -> None:

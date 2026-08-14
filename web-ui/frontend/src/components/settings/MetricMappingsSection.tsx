@@ -160,6 +160,12 @@ export default function MetricMappingsSection({
         json_path: row.json_path.trim(),
         unit: row.unit.trim(),
         transform: row.transform.trim() || null,
+        ...(row.trend_endpoint.trim()
+          ? { trend_endpoint: row.trend_endpoint.trim() }
+          : {}),
+        ...(row.trend_json_path.trim()
+          ? { trend_json_path: row.trend_json_path.trim() }
+          : {}),
       };
 
       if (!row.persisted) {

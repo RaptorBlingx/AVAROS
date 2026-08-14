@@ -37,6 +37,8 @@ def _mapping_data(payload: MetricMappingRequest) -> dict[str, str | None]:
         "json_path": payload.json_path,
         "unit": payload.unit,
         "transform": payload.transform,
+        "trend_endpoint": payload.trend_endpoint,
+        "trend_json_path": payload.trend_json_path,
     }
 
 
@@ -59,6 +61,8 @@ def _to_response(
         json_path=str(mapping.get("json_path", "")),
         unit=str(mapping.get("unit", "")),
         transform=mapping.get("transform"),
+        trend_endpoint=mapping.get("trend_endpoint"),
+        trend_json_path=mapping.get("trend_json_path"),
         source=source,
     )
 

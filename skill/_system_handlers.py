@@ -96,22 +96,38 @@ def handle_status_profile_show(skill: "AVAROSSkill", message: Message) -> None:
 
 
 def handle_help_capabilities_list(skill: "AVAROSSkill", message: Message) -> None:
-    """Handle capability/help request for generic + KPI intents."""
+    """Handle capability help using mapped metrics and active profile intents."""
 
     def _execute() -> None:
         metric_names = _get_mapped_metric_names(skill)
+        capabilities: list[str] = []
         if metric_names:
             metric_part = ", ".join(metric_names[:5])
             if len(metric_names) > 5:
                 metric_part += f", and {len(metric_names) - 5} more"
+            capabilities.append(f"report KPIs like {metric_part}")
         else:
-            metric_part = "energy per unit, scrap rate, OEE"
-        skill.speak(
-            f"I can report KPIs like {metric_part}. "
-            "I can also compare metrics, check anomalies, show trends, and "
-            "handle commands like turn on, "
-            "turn off, and show status."
-        )
+            capabilities.append("report configured KPIs")
+
+        if _intent_is_active(skill, "compare.energy"):
+            capabilities.append("compare energy")
+        if _intent_is_active(skill, "anomaly.production.check"):
+            capabilities.append("check production anomalies")
+        if (
+            _intent_is_active(skill, "trend.energy")
+            or _intent_is_active(skill, "trend.scrap")
+        ):
+            capabilities.append("show trends")
+        if _intent_is_active(skill, "control.device.turn_on"):
+            capabilities.append("turn devices on")
+        if _intent_is_active(skill, "control.device.turn_off"):
+            capabilities.append("turn devices off")
+        if _intent_is_active(skill, "status.system.show"):
+            capabilities.append("show system status")
+        if _intent_is_active(skill, "status.profile.show"):
+            capabilities.append("report the active profile")
+
+        skill.speak(f"I can {', '.join(capabilities)}.")
 
     skill._safe_dispatch("handle_help_capabilities_list", _execute)
 
@@ -128,6 +144,17 @@ def _get_mapped_metric_names(skill: "AVAROSSkill") -> list[str]:
         return [m.display_name for m in metrics if hasattr(m, "display_name")]
     except Exception:
         return []
+
+
+def _intent_is_active(skill: "AVAROSSkill", intent_name: str) -> bool:
+    """Return profile-scoped activation state, failing open for legacy setup."""
+    settings_service = getattr(skill, "settings_service", None)
+    if settings_service is None:
+        return True
+    try:
+        return bool(settings_service.is_intent_active(intent_name))
+    except Exception:
+        return True
 
 
 def handle_list_assets(skill: "AVAROSSkill", message: Message) -> None:

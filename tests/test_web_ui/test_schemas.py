@@ -322,13 +322,24 @@ class TestMetricMappingTestRequest:
 
         assert model.auth_type == "bearer"
 
+    def test_basic_auth_type_is_valid(self) -> None:
+        model = MetricMappingTestRequest(
+            base_url="https://api.example.com",
+            endpoint="/metrics/energy",
+            json_path="$.data.value",
+            auth_type="basic",
+            auth_token="user:password",
+        )
+
+        assert model.auth_type == "basic"
+
     def test_invalid_auth_type_raises(self) -> None:
         with pytest.raises(ValidationError):
             MetricMappingTestRequest(
                 base_url="https://api.example.com",
                 endpoint="/metrics/energy",
                 json_path="$.data.value",
-                auth_type="basic",  # type: ignore[arg-type]
+                auth_type="digest",  # type: ignore[arg-type]
                 auth_token="token",
             )
 
