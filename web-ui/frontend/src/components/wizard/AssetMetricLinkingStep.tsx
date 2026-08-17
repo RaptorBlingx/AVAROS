@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   getConfiguredAssets,
@@ -121,12 +121,14 @@ export default function AssetMetricLinkingStep({
   const [mappedMetrics, setMappedMetrics] = useState<CanonicalMetricName[]>([]);
   const [rows, setRows] = useState<AssetLinkRow[]>([]);
   const [needsLinking, setNeedsLinking] = useState(false);
+  const loadGenerationRef = useRef(0);
 
   /* ---------------------------------------------------------------- */
   /*  Load existing data                                               */
   /* ---------------------------------------------------------------- */
 
   const loadData = useCallback(async () => {
+    const loadGeneration = ++loadGenerationRef.current;
     setLoading(true);
     setError("");
     try {
@@ -134,6 +136,13 @@ export default function AssetMetricLinkingStep({
         getConfiguredAssets(),
         listMetricMappings(),
       ]);
+
+      // Profile switches can start a new load before the previous profile's
+      // requests have completed. Only the newest load may update the matrix;
+      // otherwise a slow response for profile X can overwrite profile Y.
+      if (loadGeneration !== loadGenerationRef.current) {
+        return;
+      }
 
       const assetMap = assetResponse.asset_mappings ?? {};
       setAssets(assetMap);
@@ -164,9 +173,14 @@ export default function AssetMetricLinkingStep({
       });
       setRows(initialRows);
     } catch (err: unknown) {
+      if (loadGeneration !== loadGenerationRef.current) {
+        return;
+      }
       setError(toFriendlyErrorMessage(err));
     } finally {
-      setLoading(false);
+      if (loadGeneration === loadGenerationRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
