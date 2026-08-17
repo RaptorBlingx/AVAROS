@@ -18,10 +18,7 @@ from skill.adapters.generic_rest._http import GenericRestHttpMixin
 from skill.adapters.generic_rest._mapping_helpers import (
     MetricMapping,
     compute_trend_change,
-    extract_mapped_value,
     extract_trend_points,
-    get_mapping_json_path,
-    get_mapping_unit,
     parse_mapped_kpi_response,
     rank_descending,
     resolve_request,
@@ -136,8 +133,104 @@ class GenericRestAdapter(
             asset_id=asset_id,
             extra_settings=self._runtime_settings_for(metric.value, asset_id),
         )
-        data = await self._retry_fetch(endpoint, params)
-        return parse_mapped_kpi_response(data, mapping, metric, asset_id, period)
+        data = await self._fetch_complete_mapped_payload(
+            endpoint=endpoint,
+            params=params,
+            mapping=mapping,
+            period=period,
+        )
+        return parse_mapped_kpi_response(
+            data,
+            mapping,
+            metric,
+            asset_id,
+            period,
+            source_profile=self._profile_name,
+        )
+
+    async def _fetch_complete_mapped_payload(
+        self,
+        *,
+        endpoint: str,
+        params: dict[str, str],
+        mapping: MetricMapping,
+        period: TimePeriod,
+    ) -> dict | list:
+        """Fetch every page for mapped observation-series endpoints."""
+        if not self._mapping_uses_observation_series(mapping, endpoint):
+            return await self._retry_fetch(endpoint, params)
+
+        request_params = dict(params)
+        if period.display_name == "latest available":
+            request_params.update({"count": "1", "page": "1", "descending": "true"})
+            return await self._retry_fetch(endpoint, request_params)
+
+        page_size = self._bounded_positive_int(mapping.get("page_size"), default=100, maximum=100)
+        max_pages = self._bounded_positive_int(mapping.get("max_pages"), default=1000, maximum=10000)
+        request_params.update({"count": str(page_size), "page": "1"})
+        first_payload = await self._retry_fetch(endpoint, request_params)
+        if not isinstance(first_payload, dict):
+            return first_payload
+        first_records = first_payload.get("records")
+        if not isinstance(first_records, list):
+            return first_payload
+
+        all_records = list(first_records)
+        total = self._payload_total_count(first_payload)
+        page = 1
+        current_count = len(first_records)
+        while page < max_pages:
+            if total is not None and len(all_records) >= total:
+                break
+            if total is None and current_count < page_size:
+                break
+            page += 1
+            page_params = dict(request_params)
+            page_params["page"] = str(page)
+            payload = await self._retry_fetch(endpoint, page_params)
+            if not isinstance(payload, dict) or not isinstance(payload.get("records"), list):
+                break
+            records = payload["records"]
+            current_count = len(records)
+            if not records:
+                break
+            all_records.extend(records)
+            if total is None:
+                total = self._payload_total_count(payload)
+
+        merged = dict(first_payload)
+        merged["records"] = all_records
+        if total is not None:
+            merged["recordCount"] = total
+        return merged
+
+    @staticmethod
+    def _mapping_uses_observation_series(mapping: MetricMapping, endpoint: str) -> bool:
+        json_path = str(mapping.get("json_path", "") or "")
+        return bool(
+            mapping.get("series_path")
+            or mapping.get("pagination")
+            or mapping.get("aggregation")
+            or ("/values" in endpoint and "records[" in json_path)
+        )
+
+    @staticmethod
+    def _payload_total_count(payload: dict[str, Any]) -> int | None:
+        for key in ("recordCount", "record_count", "total", "totalCount"):
+            try:
+                value = payload.get(key)
+                return int(value) if value is not None else None
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    @staticmethod
+    def _bounded_positive_int(raw: Any, *, default: int, maximum: int) -> int:
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return default
+        return min(max(value, 1), maximum)
 
     async def compare(
         self,
@@ -166,42 +259,50 @@ class GenericRestAdapter(
                 ),
             )
 
-        mapping = self._require_metric_mapping(metric)
-        json_path = get_mapping_json_path(mapping)
-        unit = get_mapping_unit(mapping, metric)
-
-        values: list[tuple[str, float]] = []
+        values: list[KPIResult] = []
         for asset_id in asset_ids:
-            endpoint, params = resolve_request(
-                mapping=mapping,
-                period=period,
-                asset_id=asset_id,
-                extra_settings=self._runtime_settings_for(metric.value, asset_id),
-            )
-            data = await self._retry_fetch(endpoint, params)
-            value = extract_mapped_value(data, json_path, mapping)
-            values.append((asset_id, value))
+            values.append(await self.get_kpi(metric, asset_id, period))
 
         sorted_values = sorted(
             values,
-            key=lambda item: item[1],
+            key=lambda item: item.value,
             reverse=rank_descending(metric),
         )
         items = [
-            ComparisonItem(asset_id=asset_id, value=value, rank=index + 1)
-            for index, (asset_id, value) in enumerate(sorted_values)
+            ComparisonItem(
+                asset_id=result.asset_id,
+                value=result.value,
+                rank=index + 1,
+                source_observed_at=result.source_observed_at,
+                sample_count=result.sample_count,
+                coverage_status=result.coverage_status,
+            )
+            for index, result in enumerate(sorted_values)
         ]
 
         winner_id = items[0].asset_id
-        difference = round(abs(max(value for _, value in values) - min(value for _, value in values)), 2)
+        difference = round(
+            abs(max(result.value for result in values) - min(result.value for result in values)),
+            2,
+        )
+        coverage_status = (
+            "complete"
+            if all(result.coverage_status == "complete" for result in values)
+            else "partial"
+        )
+        warnings = [warning for result in values for warning in result.warnings]
 
         return ComparisonResult(
             metric=metric,
             items=items,
             winner_id=winner_id,
             difference=difference,
-            unit=unit,
+            unit=values[0].unit,
             period=period,
+            aggregation=values[0].aggregation,
+            source_profile=self._profile_name,
+            coverage_status=coverage_status,
+            warnings=warnings,
         )
 
     async def get_trend(
@@ -233,7 +334,12 @@ class GenericRestAdapter(
             asset_id=asset_id,
             granularity=granularity,
         )
-        data = await self._retry_fetch(endpoint, params)
+        data = await self._fetch_complete_mapped_payload(
+            endpoint=endpoint,
+            params=params,
+            mapping=mapping,
+            period=period,
+        )
 
         points = extract_trend_points(
             payload=data,
@@ -253,6 +359,12 @@ class GenericRestAdapter(
             )
 
         direction, change_percent = compute_trend_change(points)
+        total = self._payload_total_count(data) if isinstance(data, dict) else None
+        coverage_status = "complete"
+        warnings: list[str] = []
+        if total is not None and total > len(points):
+            coverage_status = "partial"
+            warnings.append(f"Only {len(points)} of {total} trend observations were retrieved.")
         return TrendResult(
             metric=metric,
             asset_id=asset_id,
@@ -261,6 +373,9 @@ class GenericRestAdapter(
             change_percent=change_percent,
             period=period,
             granularity=granularity,
+            source_profile=self._profile_name,
+            coverage_status=coverage_status,
+            warnings=warnings,
         )
 
     async def get_raw_data(
@@ -408,8 +523,10 @@ class GenericRestAdapter(
     async def test_connection(self) -> ConnectionTestResult:
         """Probe connectivity and verify auth with known protected endpoints."""
         start = time.monotonic()
+        already_initialized = self._session is not None and not self._session.closed
         try:
-            await self.initialize()
+            if not already_initialized:
+                await self.initialize()
             auth_error = await self._probe_authenticated_endpoint()
             if auth_error:
                 elapsed = (time.monotonic() - start) * 1000
@@ -440,7 +557,11 @@ class GenericRestAdapter(
                 error_details=str(exc),
             )
         finally:
-            await self.shutdown()
+            # A status probe may run against the skill's long-lived adapter.
+            # Preserve that shared session; only clean up a session created
+            # specifically for this standalone connection test.
+            if not already_initialized:
+                await self.shutdown()
 
     async def shutdown(self) -> None:
         """Close HTTP session gracefully."""
@@ -705,6 +826,16 @@ class GenericRestAdapter(
         binding: dict[str, Any],
     ) -> KPIResult:
         """Fetch a Reneryo metric item counter and read its latest value."""
+        if period.display_name != "latest available":
+            raise AdapterError(
+                message="Native metric item lastValue does not represent a requested historical period",
+                code="GENERIC_REST_PERIOD_UNSUPPORTED",
+                platform="generic_rest",
+                user_message=(
+                    "That source exposes only the latest counter value for this asset. "
+                    "Ask for the current value or configure a time-series mapping for period totals."
+                ),
+            )
         resource_id = str(
             binding.get("resource_id")
             or binding.get("resource_uuid")
@@ -761,6 +892,10 @@ class GenericRestAdapter(
                 platform="generic_rest",
             ) from exc
 
+        observed_at = self._native_observation_time(payload)
+        warnings = () if observed_at else (
+            "The latest-value source did not provide an observation timestamp.",
+        )
         return KPIResult(
             metric=metric,
             value=value,
@@ -768,6 +903,14 @@ class GenericRestAdapter(
             asset_id=asset_id,
             period=period,
             timestamp=datetime.now(tz=timezone.utc),
+            source_observed_at=observed_at,
+            source_period_start=observed_at,
+            source_period_end=observed_at,
+            sample_count=1,
+            aggregation="latest",
+            source_profile=self._profile_name,
+            coverage_status="complete" if observed_at else "unknown",
+            warnings=warnings,
         )
 
     async def _query_seu_energy_total(self, *, asset_id: str, period: TimePeriod) -> KPIResult:
@@ -834,6 +977,10 @@ class GenericRestAdapter(
                 platform="generic_rest",
             ) from exc
 
+        observed_at = self._native_observation_time(selected)
+        warnings = () if observed_at else (
+            "The aggregate source did not provide an observation timestamp.",
+        )
         return KPIResult(
             metric=CanonicalMetric.ENERGY_TOTAL,
             value=value,
@@ -841,7 +988,39 @@ class GenericRestAdapter(
             asset_id=asset_id,
             period=period,
             timestamp=datetime.now(tz=timezone.utc),
+            source_observed_at=observed_at,
+            source_period_start=period.start,
+            source_period_end=period.end,
+            sample_count=1,
+            aggregation="sum",
+            source_profile=self._profile_name,
+            coverage_status="complete" if observed_at else "unknown",
+            warnings=warnings,
         )
+
+    @staticmethod
+    def _native_observation_time(payload: dict[str, Any]) -> datetime | None:
+        """Read a source timestamp without substituting retrieval time."""
+        for key in (
+            "timestamp",
+            "datetime",
+            "dateTime",
+            "lastValueTimestamp",
+            "lastValueDatetime",
+            "lastUpdate",
+            "updatedAt",
+        ):
+            raw = payload.get(key)
+            if isinstance(raw, datetime):
+                return raw.replace(tzinfo=raw.tzinfo or timezone.utc).astimezone(timezone.utc)
+            if not isinstance(raw, str) or not raw.strip():
+                continue
+            try:
+                parsed = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            return parsed.replace(tzinfo=parsed.tzinfo or timezone.utc).astimezone(timezone.utc)
+        return None
 
     @staticmethod
     def _to_iso8601(value: datetime) -> str:

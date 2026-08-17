@@ -361,12 +361,22 @@ async def verify(client: ReneryoClient, count: int = 5) -> None:
 
     ok_count = 0
     fail_count = 0
+    # RENERYO requires an explicit datetime window for RAW resource reads.
+    # Use a wide window so verification works for any configured seed depth.
+    datetime_max = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    datetime_min = (
+        datetime.now(timezone.utc) - timedelta(days=365)
+    ).isoformat().replace("+00:00", "Z")
 
     for metric_name, assets in sorted(mapping.items()):
         for asset, resource_id in sorted(assets.items()):
             try:
                 result = await client.read_values(
-                    resource_id, period="RAW", count=count,
+                    resource_id,
+                    datetime_min=datetime_min,
+                    datetime_max=datetime_max,
+                    period="RAW",
+                    count=count,
                 )
                 records = result.get("records", [])
                 total = result.get("recordCount", 0)

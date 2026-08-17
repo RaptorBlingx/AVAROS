@@ -54,6 +54,13 @@ def _make_message(profile: str = "my-api") -> Mock:
     return msg
 
 
+def _assert_structured_speak(skill: AVAROSSkill, headline: str) -> None:
+    """Assert the compatible headline plus browser evidence envelope."""
+    skill.speak.assert_called_once()
+    assert skill.speak.call_args.args[0] == headline
+    assert "avaros_response" in skill.speak.call_args.kwargs["meta"]
+
+
 # ══════════════════════════════════════════════════════════
 # Profile Switch Handler
 # ══════════════════════════════════════════════════════════
@@ -323,10 +330,12 @@ class TestSafeDispatchProfileCheck:
         )
 
         assert result is None
-        skill.speak.assert_called_once_with(
+        _assert_structured_speak(
+            skill,
             "The data platform did not respond in time. "
             "Please check the platform connection and try again.",
         )
+        assert skill.speak.call_args.kwargs["meta"]["avaros_response"]["response_type"] == "timeout"
 
     def test_safe_dispatch_recovers_dispatcher_when_missing(self):
         """_safe_dispatch attempts adapter reload and proceeds when recovered."""
@@ -553,8 +562,8 @@ class TestAssetResolutionFromUtterance:
 
         assert skill._resolve_compare_assets(msg) == ("Line-1", "Line-2")
 
-    def test_resolve_compare_assets_defaults_to_configured_assets(self):
-        """Uses configured asset mappings when compare slots are missing."""
+    def test_resolve_compare_assets_requires_explicit_configured_assets(self):
+        """Missing comparison slots must not select configured assets silently."""
         skill = _make_skill()
         skill.settings_service = Mock()
         skill.settings_service.get_asset_mappings.return_value = {
@@ -569,10 +578,11 @@ class TestAssetResolutionFromUtterance:
             "asset_b": "",
         }
 
-        assert skill._resolve_compare_assets(msg) == ("Line-1", "Line-2")
+        with pytest.raises(AVAROSError, match="Comparison assets were not explicit"):
+            skill._resolve_compare_assets(msg)
 
-    def test_resolve_compare_assets_ignores_noisy_slots(self):
-        """Noisy compare slots should not override configured defaults."""
+    def test_resolve_compare_assets_rejects_noisy_slots(self):
+        """Noisy compare slots should trigger clarification."""
         skill = _make_skill()
         skill.settings_service = Mock()
         skill._get_asset_registry = Mock(return_value=[])
@@ -587,7 +597,8 @@ class TestAssetResolutionFromUtterance:
             "asset_b": "trend",
         }
 
-        assert skill._resolve_compare_assets(msg) == ("Line-1", "Line-2")
+        with pytest.raises(AVAROSError, match="Comparison assets were not explicit"):
+            skill._resolve_compare_assets(msg)
 
     def test_resolve_asset_ignores_metric_phrase_in_slot(self):
         """Metric phrases like 'energy per unit been trending' are noise."""
@@ -605,8 +616,8 @@ class TestAssetResolutionFromUtterance:
 
         assert skill._resolve_asset_id(msg) == "Line-1"
 
-    def test_resolve_asset_id_defaults_to_first_configured_asset(self):
-        """No asset mention should default to first configured asset id."""
+    def test_resolve_asset_id_clarifies_multiple_configured_assets(self):
+        """No asset mention must not default to the first configured asset."""
         skill = _make_skill()
         skill.settings_service = Mock()
         skill._get_asset_registry = Mock(return_value=[])
@@ -618,10 +629,11 @@ class TestAssetResolutionFromUtterance:
         msg = Mock()
         msg.data = {"utterance": "show energy trend today", "asset": ""}
 
-        assert skill._resolve_asset_id(msg) == "Line-1"
+        with pytest.raises(AVAROSError, match="Asset scope is ambiguous"):
+            skill._resolve_asset_id(msg)
 
-    def test_resolve_asset_id_defaults_to_metric_ready_asset(self):
-        """Default asset should prefer rows that contain metric resources."""
+    def test_resolve_asset_id_does_not_choose_metric_ready_asset(self):
+        """Metric readiness does not authorize an implicit asset choice."""
         skill = _make_skill()
         skill.settings_service = Mock()
         skill._get_asset_registry = Mock(return_value=[])
@@ -640,10 +652,11 @@ class TestAssetResolutionFromUtterance:
         msg = Mock()
         msg.data = {"utterance": "show energy trend this week", "asset": ""}
 
-        assert skill._resolve_asset_id(msg) == "Line-1"
+        with pytest.raises(AVAROSError, match="Asset scope is ambiguous"):
+            skill._resolve_asset_id(msg)
 
-    def test_resolve_compare_assets_defaults_to_metric_ready_assets(self):
-        """Compare defaults should use KPI-ready assets before registration-only rows."""
+    def test_resolve_compare_assets_does_not_choose_metric_ready_assets(self):
+        """Comparison scope must remain explicit despite metric readiness."""
         skill = _make_skill()
         skill.settings_service = Mock()
         skill._get_asset_registry = Mock(return_value=[])
@@ -662,7 +675,8 @@ class TestAssetResolutionFromUtterance:
         msg = Mock()
         msg.data = {"utterance": "compare energy", "asset_a": "", "asset_b": ""}
 
-        assert skill._resolve_compare_assets(msg) == ("Line-1", "Line-2")
+        with pytest.raises(AVAROSError, match="Comparison assets were not explicit"):
+            skill._resolve_compare_assets(msg)
 
 
 class TestWhatIfAmountParsing:
@@ -810,8 +824,8 @@ class TestMetricFallback:
 
         assert metric == CanonicalMetric.CO2_TOTAL
 
-    def test_metric_query_fallback_handles_peak_demand(self):
-        """Fallback should answer KPI query when intent matching misses."""
+    def test_metric_query_fallback_clarifies_peak_demand_asset(self):
+        """A KPI query without an asset must not silently default to Line-1."""
         skill = _initialized_skill()
         skill._check_profile_mismatch = Mock()
         skill.dispatcher = Mock()
@@ -826,8 +840,9 @@ class TestMetricFallback:
         handled = skill.handle_metric_query_fallback(msg)
 
         assert handled is True
-        skill.dispatcher.get_kpi.assert_called_once()
-        skill.speak.assert_called_once_with("peak demand response")
+        skill.dispatcher.get_kpi.assert_not_called()
+        assert "Which asset" in skill.speak.call_args.args[0]
+        assert "avaros_response" in skill.speak.call_args.kwargs["meta"]
 
     def test_metric_query_fallback_routes_forecast_energy(self):
         """Fallback should not answer forecast phrases as current KPI values."""
@@ -854,7 +869,7 @@ class TestMetricFallback:
             horizon_periods=7,
         )
         skill.dispatcher.get_kpi.assert_not_called()
-        skill.speak.assert_called_once_with("forecast response")
+        _assert_structured_speak(skill, "forecast response")
 
     def test_metric_query_fallback_routes_whatif_scrap(self):
         """Fallback should route what-if phrases to scenario simulation."""
@@ -881,7 +896,7 @@ class TestMetricFallback:
         assert scenario.target_metric == CanonicalMetric.SCRAP_RATE
         assert scenario.asset_id == "Line-1"
         assert scenario.parameters[0].proposed_value == -5.0
-        skill.speak.assert_called_once_with("what-if response")
+        _assert_structured_speak(skill, "what-if response")
 
     def test_metric_query_fallback_whatif_ignores_line_number_as_amount(self):
         """What-if parser should use the percent value, not Line 1."""
@@ -954,6 +969,9 @@ class TestMetricFallback:
         skill.response_builder.format_kpi_result.return_value = "energy total response"
         skill.speak = Mock()
         skill._resolve_asset_id = Mock(return_value="620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4")
+        skill._get_asset_registry = Mock(return_value=[
+            Asset("620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4", "Seu", "seu")
+        ])
         skill.settings_service = Mock()
         skill.settings_service.get_asset_mappings.return_value = {
             "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4": {
@@ -981,7 +999,7 @@ class TestMetricFallback:
         assert handled is True
         dispatched_period = skill.dispatcher.get_kpi.call_args.kwargs["period"]
         assert dispatched_period.display_name == "in total"
-        skill.speak.assert_called_once_with("energy total response")
+        _assert_structured_speak(skill, "energy total response")
 
     def test_metric_query_fallback_energy_total_today_rejects_cumulative_meter(self):
         """Fallback should reject spoken today for cumulative-only meter totals."""
@@ -995,6 +1013,9 @@ class TestMetricFallback:
         skill.response_builder.format_kpi_result.return_value = "energy total response"
         skill.speak = Mock()
         skill._resolve_asset_id = Mock(return_value="620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4")
+        skill._get_asset_registry = Mock(return_value=[
+            Asset("620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4", "Seu", "seu")
+        ])
         skill.settings_service = Mock()
         skill.settings_service.get_asset_mappings.return_value = {
             "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4": {
@@ -1017,7 +1038,8 @@ class TestMetricFallback:
 
         assert handled is False
         skill.dispatcher.get_kpi.assert_not_called()
-        skill.speak.assert_called_once_with(
+        _assert_structured_speak(
+            skill,
             "Time-based total energy is not available for Seu. "
             "This meter only exposes a cumulative total. Ask for total energy without a period."
         )
@@ -1032,6 +1054,7 @@ class TestMetricFallback:
         skill.response_builder.format_kpi_result.return_value = "energy total response"
         skill.speak = Mock()
         skill._resolve_asset_id = Mock(return_value="Line-1")
+        skill._get_asset_registry = Mock(return_value=[Asset("Line-1", "Line 1", "line")])
         skill.settings_service = Mock()
         skill.settings_service.get_asset_mappings.return_value = {}
 
@@ -1046,7 +1069,7 @@ class TestMetricFallback:
         assert handled is True
         dispatched_period = skill.dispatcher.get_kpi.call_args.kwargs["period"]
         assert dispatched_period.display_name == "last 2 weeks"
-        skill.speak.assert_called_once_with("energy total response")
+        _assert_structured_speak(skill, "energy total response")
 
     def test_metric_query_fallback_energy_total_last_week_rejects_cumulative_meter(self):
         """Fallback should speak a clear rejection for cumulative-only meter periods."""
@@ -1058,6 +1081,9 @@ class TestMetricFallback:
         skill.response_builder = Mock()
         skill.speak = Mock()
         skill._resolve_asset_id = Mock(return_value="Electric-Main-Meter")
+        skill._get_asset_registry = Mock(return_value=[
+            Asset("Electric-Main-Meter", "Electric Main Meter", "machine")
+        ])
         skill.settings_service = Mock()
         skill.settings_service.get_asset_mappings.return_value = {
             "Electric-Main-Meter": {
@@ -1083,7 +1109,8 @@ class TestMetricFallback:
 
         assert handled is False
         skill.dispatcher.get_kpi.assert_not_called()
-        skill.speak.assert_called_once_with(
+        _assert_structured_speak(
+            skill,
             "Time-based total energy is not available for Electric Main Meter. "
             "This meter only exposes a cumulative total. Ask for total energy without a period."
         )
@@ -1098,6 +1125,9 @@ class TestMetricFallback:
         skill.response_builder = Mock()
         skill.speak = Mock()
         skill._resolve_asset_id = Mock(return_value="Electric-Main-Meter")
+        skill._get_asset_registry = Mock(return_value=[
+            Asset("Electric-Main-Meter", "Electric Main Meter", "machine")
+        ])
         skill.settings_service = Mock()
         skill.settings_service.get_asset_mappings.return_value = {
             "Electric-Main-Meter": {
@@ -1124,7 +1154,8 @@ class TestMetricFallback:
 
         assert handled is False
         skill.dispatcher.get_kpi.assert_not_called()
-        skill.speak.assert_called_once_with(
+        _assert_structured_speak(
+            skill,
             "Time-based total energy is not available for Electric Main Meter. "
             "This meter only exposes a cumulative total. Ask for total energy without a period."
         )
@@ -1180,7 +1211,8 @@ class TestMetricFallback:
 
         assert handled is False
         skill.dispatcher.get_kpi.assert_not_called()
-        skill.speak.assert_called_once_with(
+        _assert_structured_speak(
+            skill,
             "Time-based total energy is not available for Gas Main Meter. "
             "This meter only exposes a cumulative total. Ask for total energy without a period."
         )
@@ -1189,8 +1221,8 @@ class TestMetricFallback:
 class TestIntentFailureRecovery:
     """Tests for intent_failure bus recovery path."""
 
-    def test_intent_failure_recovers_co2_total(self):
-        """When intent parser fails, CO2 total utterance should still be handled."""
+    def test_intent_failure_clarifies_co2_total_asset(self):
+        """Intent recovery must not silently assign an asset to CO2 total."""
         skill = _initialized_skill()
         skill._check_profile_mismatch = Mock()
         skill.dispatcher = Mock()
@@ -1204,8 +1236,8 @@ class TestIntentFailureRecovery:
 
         skill._handle_intent_failure(msg)
 
-        skill.dispatcher.get_kpi.assert_called_once()
-        skill.speak.assert_called_once_with("co2 total response")
+        skill.dispatcher.get_kpi.assert_not_called()
+        assert "Which asset" in skill.speak.call_args.args[0]
 
     def test_intent_failure_ignores_unrelated_utterance(self):
         """Unrelated utterance in intent_failure should be ignored."""
@@ -1245,7 +1277,8 @@ class TestIntentFailureRecovery:
 
         skill.dispatcher.scan_anomalies.assert_called_once()
         skill.response_builder.format_anomaly_scan_result.assert_not_called()
-        skill.speak.assert_called_once_with(
+        _assert_structured_speak(
+            skill,
             "Anomaly detection is not yet available. This feature requires "
             "the PREVENTION service which is pending."
         )

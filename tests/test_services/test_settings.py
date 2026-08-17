@@ -9,6 +9,8 @@ All tests use in-memory SQLite — no file I/O.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from typing import Any
 
@@ -1014,11 +1016,25 @@ class TestIntentCategories:
             "control.device.turn_off",
             "status.system.show",
             "status.profile.show",
+            "greeting",
+            "help",
             "help.capabilities.list",
+            "list.assets",
         }
         for intent in KNOWN_INTENTS:
             if intent not in non_kpi:
                 assert INTENT_CATEGORIES[intent] == "kpi"
+
+    def test_registry_matches_english_runtime_intent_files(self) -> None:
+        """The capability registry must not omit registered runtime intents."""
+        from skill.services.settings import KNOWN_INTENTS
+
+        locale_dir = Path(__file__).parents[2] / "skill" / "locale" / "en-us"
+        runtime_intents = {
+            path.name.removesuffix(".intent")
+            for path in locale_dir.glob("*.intent")
+        }
+        assert set(KNOWN_INTENTS) == runtime_intents
 
 
 # ══════════════════════════════════════════════════════════

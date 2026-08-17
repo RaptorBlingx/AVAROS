@@ -20,6 +20,12 @@ function renderSourceIcon(message: Message) {
   return message.inputMode === "voice" ? "🎤" : "⌨️";
 }
 
+function formatEvidenceValue(value: number | undefined, unit: string | undefined): string {
+  if (value === undefined) return "—";
+  const formatted = Number.isInteger(value) ? value.toString() : value.toFixed(2);
+  return `${formatted}${unit === "%" ? "%" : unit ? ` ${unit}` : ""}`;
+}
+
 export default function MessageHistory({
   messages,
   isProcessing,
@@ -148,6 +154,47 @@ export default function MessageHistory({
             >
               <div className="voice-chat-message__bubble">
                 <p className="voice-chat-message__text">{message.text}</p>
+                {message.evidence && (
+                  <details className="voice-chat-evidence">
+                    <summary>Evidence and data quality</summary>
+                    <dl className="voice-chat-evidence__facts">
+                      {message.evidence.period?.label && (
+                        <><dt>Period</dt><dd>{message.evidence.period.label}</dd></>
+                      )}
+                      {message.evidence.aggregation && (
+                        <><dt>Aggregation</dt><dd>{message.evidence.aggregation}</dd></>
+                      )}
+                      {message.evidence.source_profile && (
+                        <><dt>Source</dt><dd>{message.evidence.source_profile}</dd></>
+                      )}
+                      {message.evidence.coverage_status && (
+                        <><dt>Coverage</dt><dd>{message.evidence.coverage_status}</dd></>
+                      )}
+                    </dl>
+                    {!!message.evidence.evidence_rows?.length && (
+                      <div className="voice-chat-evidence__rows">
+                        {message.evidence.evidence_rows.map((row, index) => (
+                          <div className="voice-chat-evidence__row" key={`${row.asset_id ?? row.label ?? "row"}-${index}`}>
+                            <span>{row.asset_id ?? row.label ?? row.metric_label ?? "Evidence"}</span>
+                            <strong>{formatEvidenceValue(row.value, row.unit)}</strong>
+                            {row.sample_count !== undefined && row.sample_count > 0 && (
+                              <small>{row.sample_count} samples</small>
+                            )}
+                            {row.observation_time && <small>{row.observation_time}</small>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {message.evidence.warnings?.map((warning) => (
+                      <p className="voice-chat-evidence__warning" key={warning}>{warning}</p>
+                    ))}
+                    {!!message.evidence.suggested_follow_ups?.length && (
+                      <p className="voice-chat-evidence__followup">
+                        Try: {message.evidence.suggested_follow_ups[0]}
+                      </p>
+                    )}
+                  </details>
+                )}
                 <div className="voice-chat-message__meta">
                   <span className="voice-chat-message__source">
                     <span aria-hidden="true">{renderSourceIcon(message)}</span>

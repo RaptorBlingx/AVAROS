@@ -17,6 +17,7 @@ import PlatformConfigSection from "../components/settings/PlatformConfigSection"
 import AssetMetricLinkingStep from "../components/wizard/AssetMetricLinkingStep";
 import SystemInfoSection from "../components/settings/SystemInfoSection";
 import VoiceSettingsSection from "../components/settings/VoiceSettingsSection";
+import { emitActiveProfileChanged } from "../hooks/useProfileChange";
 
 function Section({
   title,
@@ -154,7 +155,9 @@ export default function Settings() {
 
   const handleProfileSwitch = useCallback(
     (profileName: string, voiceReloaded: boolean) => {
+      const previousProfileName = activeProfileRef.current;
       syncActiveProfile(profileName);
+      emitActiveProfileChanged({ profileName, previousProfileName });
       if (!voiceReloaded) {
         notify(
           "error",
@@ -280,6 +283,8 @@ export default function Settings() {
       >
         <AssetMetricLinkingStep
           mode="settings"
+          profileName={activeProfileName}
+          refreshKey={profileRefreshKey}
           onComplete={() => notify("success", "Asset-metric linking saved.")}
         />
       </Section>
@@ -321,7 +326,7 @@ export default function Settings() {
         helpText="View live runtime state, adapter details, and backend health information."
         targetId="settings-system-information"
       >
-        <SystemInfoSection onNotify={notify} />
+        <SystemInfoSection onNotify={notify} refreshKey={profileRefreshKey} />
       </Section>
 
       <OnboardingOverlay

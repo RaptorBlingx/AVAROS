@@ -7,9 +7,11 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from skill.domain.exceptions import AdapterError, AssetNotFoundError, MetricNotSupportedError
+from skill.domain.exceptions import AdapterError, MetricNotSupportedError
 from skill.domain.models import CanonicalMetric, TimePeriod
 from skill.domain.results import AnomalyResult, ComparisonResult, KPIResult, TrendResult
+from skill.services.dia_dialogue import remember_kpi_result, try_handle_structured_query
+from skill.services.dia_response import speak_with_evidence
 
 if TYPE_CHECKING:
     from skill import AVAROSSkill
@@ -27,6 +29,9 @@ _AGGREGATE_TOTAL_LABEL = "in total"
 _DEFAULT_AGGREGATE_START_ISO = "2021-02-01T00:00:00.000Z"
 _DEFAULT_WIDE_START_ISO = "2021-02-01T00:00:00.000Z"
 _SUPPORTED_PERIOD_PHRASES = (
+    "right now",
+    "past 30 days",
+    "last 30 days",
     "last two weeks",
     "last 2 weeks",
     "this month",
@@ -37,6 +42,8 @@ _SUPPORTED_PERIOD_PHRASES = (
     "past week",
     "yesterday",
     "today",
+    "latest",
+    "current",
 )
 
 
@@ -68,6 +75,21 @@ def _extract_period_phrase_from_text(raw: str) -> str | None:
     for phrase in _SUPPORTED_PERIOD_PHRASES:
         if re.search(rf"\b{re.escape(phrase)}\b", normalized):
             return phrase
+    named_month = re.search(
+        r"\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}\b",
+        normalized,
+    )
+    if named_month:
+        return named_month.group(0)
+    iso_range = re.search(
+        r"\b\d{4}-\d{2}-\d{2}\s+(?:to|through|until)\s+\d{4}-\d{2}-\d{2}\b",
+        normalized,
+    )
+    if iso_range:
+        return iso_range.group(0)
+    unsupported_rolling = re.search(r"\b(?:past|last)\s+\d+\s+days\b", normalized)
+    if unsupported_rolling:
+        return unsupported_rolling.group(0)
     return None
 
 
@@ -108,17 +130,22 @@ def _resolve_requested_period_phrase(
     """Resolve the effective requested period phrase from slot and utterance."""
     slot_period_phrase = _extract_supported_period_phrase(explicit_period)
     if slot_period_phrase is None:
-        return utterance_period_phrase
+        if utterance_period_phrase is not None:
+            return utterance_period_phrase
+        if re.search(
+            r"\b(?:today|yesterday|week|month|days?|from|through|until|\d{4}-\d{2}-\d{2})\b",
+            explicit_period.lower(),
+        ):
+            return explicit_period
+        return None
     if slot_period_phrase == "today" and utterance_period_phrase != "today":
         return None
     return slot_period_phrase
 
 
 def _wide_default_period() -> TimePeriod:
-    """Return a wide default period (2021-02-01 → now) for implicit queries."""
-    start = datetime(2021, 2, 1, tzinfo=timezone.utc)
-    end = datetime.now(tz=timezone.utc)
-    return TimePeriod(start=start, end=end, display_name="")
+    """Return an explicit latest-observation lookup for implicit queries."""
+    return TimePeriod.latest()
 
 
 def _resolve_energy_total_aggregate_period(
@@ -453,7 +480,8 @@ def dispatch_kpi_for_metric(
         )
 
         response = skill.response_builder.format_kpi_result(result)
-        skill.speak(response)
+        speak_with_evidence(skill, response, result)
+        remember_kpi_result(skill, message, result)
 
     skill._safe_dispatch(handler_name, _execute)
 
@@ -485,13 +513,17 @@ def handle_compare_energy(skill: "AVAROSSkill", message) -> None:
         )
 
         response = skill.response_builder.format_comparison_result(result)
-        skill.speak(response)
+        speak_with_evidence(skill, response, result)
 
     skill._safe_dispatch("handle_compare_energy", _execute)
 
 
 def handle_compare_metric(skill: "AVAROSSkill", message) -> None:
     """Handle generic compare requests for any canonical metric."""
+    utterance = skill._extract_utterance_text(message).strip().lower()
+    if re.fullmatch(r"compare them[.!?]*", utterance):
+        if try_handle_structured_query(skill, message):
+            return
     metric = _resolve_and_validate_metric(skill, message)
     if metric is None:
         return
@@ -505,7 +537,7 @@ def handle_compare_metric(skill: "AVAROSSkill", message) -> None:
             period=period,
         )
         response = skill.response_builder.format_comparison_result(result)
-        skill.speak(response)
+        speak_with_evidence(skill, response, result)
 
     skill._safe_dispatch("handle_compare_metric", _execute)
 
@@ -527,13 +559,18 @@ def handle_trend_scrap(skill: "AVAROSSkill", message) -> None:
         )
 
         response = skill.response_builder.format_trend_result(result)
-        skill.speak(response)
+        speak_with_evidence(skill, response, result)
 
     skill._safe_dispatch("handle_trend_scrap", _execute)
 
 
 def handle_trend_metric(skill: "AVAROSSkill", message) -> None:
     """Handle generic trend requests for any canonical metric."""
+    # Padatious can capture leading prose as the metric slot.  Re-parse the
+    # complete utterance so operation, metric, asset and period are resolved
+    # together before trusting those loose slots.
+    if try_handle_structured_query(skill, message):
+        return
     metric = _resolve_and_validate_metric(skill, message)
     if metric is None:
         return
@@ -553,7 +590,7 @@ def handle_trend_metric(skill: "AVAROSSkill", message) -> None:
         )
 
         response = skill.response_builder.format_trend_result(result)
-        skill.speak(response)
+        speak_with_evidence(skill, response, result)
 
     skill._safe_dispatch("handle_trend_metric", _execute)
 
@@ -576,7 +613,7 @@ def handle_trend_energy(skill: "AVAROSSkill", message) -> None:
                 granularity=granularity,
             )
             response = skill.response_builder.format_trend_result(result)
-            skill.speak(response)
+            speak_with_evidence(skill, response, result)
             return
         except AdapterError as exc:
             if exc.code != "EMPTY_RESPONSE":
@@ -590,8 +627,10 @@ def handle_trend_energy(skill: "AVAROSSkill", message) -> None:
             period=skill._parse_period("today"),
         )
         kpi_response = skill.response_builder.format_kpi_result(kpi_result)
-        skill.speak(
+        speak_with_evidence(
+            skill,
             f"I couldn't find enough trend points for {period.display_name}. {kpi_response}",
+            kpi_result,
         )
 
     skill._safe_dispatch("handle_trend_energy", _execute)
@@ -677,6 +716,16 @@ def handle_anomaly_check(skill: "AVAROSSkill", message) -> None:
     """Handle: 'Any unusual patterns in production?'."""
 
     def _execute() -> None:
+        if getattr(skill.dispatcher, "_prevention_client", None) is None:
+            raise AdapterError(
+                message="PREVENTION analytics client is unavailable",
+                code="ANOMALY_NOT_CONFIGURED",
+                platform=getattr(skill.dispatcher.adapter, "platform_name", "unknown"),
+                user_message=(
+                    "Anomaly detection is unavailable because PREVENTION is not configured. "
+                    "I can still report KPIs, comparisons, and trends."
+                ),
+            )
         text = skill._extract_utterance_text(message)
         metric, asset_id = _resolve_anomaly_query_scope(
             skill,
@@ -694,13 +743,8 @@ def handle_anomaly_check(skill: "AVAROSSkill", message) -> None:
 
 
 def _resolve_drift_asset(skill: "AVAROSSkill", message) -> str:
-    """Resolve asset for drift queries, falling back to default on failure."""
-    try:
-        return skill._resolve_asset_id(message)
-    except AssetNotFoundError:
-        from skill._slot_resolution import _resolve_default_asset_id
-
-        return _resolve_default_asset_id(skill, fallback="default")
+    """Resolve asset for analytics queries without hiding unknown entities."""
+    return skill._resolve_asset_id(message)
 
 
 def handle_drift_check(skill: "AVAROSSkill", message) -> None:

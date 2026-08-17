@@ -217,6 +217,9 @@ async def upsert_platform_config(
         )
 
     profile_name = settings_service.get_active_profile_name()
+    from routers.status import invalidate_status_caches
+
+    invalidate_status_caches()
     _notify_skill_profile_changed(profile_name)
 
     return _to_response(settings_service.get_platform_config())
@@ -231,13 +234,19 @@ def get_platform_config(
 
 
 @router.delete("/platform", response_model=ResetResponse)
-def reset_platform_config(
+async def reset_platform_config(
     settings_service: SettingsService = Depends(get_settings_service),
+    adapter_factory: AdapterFactory = Depends(get_adapter_factory),
 ) -> ResetResponse:
     """Reset configuration by switching back to unconfigured profile."""
     active = settings_service.get_active_profile_name()
     if active != settings_service.DEFAULT_PROFILE:
         settings_service.delete_profile(active)
+    await adapter_factory.reload()
+    from routers.status import invalidate_status_caches
+
+    invalidate_status_caches()
+    _notify_skill_profile_changed(settings_service.get_active_profile_name())
     return ResetResponse(status="reset", platform_type="unconfigured")
 
 

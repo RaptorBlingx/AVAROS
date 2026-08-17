@@ -248,7 +248,7 @@ Enable or disable individual voice commands:
 | Energy trend | Enabled | Show energy consumption trends |
 | Scrap trend | Enabled | Show scrap rate trends |
 | Anomaly check | Enabled | Check for production anomalies |
-| What-if simulation | Enabled | Simulate parameter changes |
+| What-if simulation | Enabled | Simulate bounded direct KPI percentage or target changes |
 
 Disable intents that are not relevant to your site. Click **Save** to finish the wizard.
 
@@ -450,8 +450,12 @@ Use these voice commands during daily operations. Say "Hey Mycroft" to activate 
 | "Compare energy between Line-1 and Line-2" | Side-by-side energy comparison |
 | "Show the energy trend for last week" | Rising, falling, or stable energy trend |
 | "What's the scrap trend for this month?" | Scrap rate trend direction |
-| "Are there any anomalies in production?" | Anomaly detection results |
-| "What if we reduce temperature by 5 degrees?" | What-if simulation result |
+| "Are there any anomalies in production?" | PREVENTION result, or an explicit unavailable message |
+| "What if scrap rate drops by 10 percent on Line-1?" | Bounded direct-KPI what-if result |
+| "Give me a factory summary for all lines last month" | Core KPI evidence for every configured line |
+| "What does OEE mean?" | Definition, formula, and data requirements |
+
+Anomaly, drift, and forecast results require PREVENTION. Process parameters such as temperature require a separately configured sensitivity model; AVAROS does not infer causality from them.
 
 > For a printable reference card, see [Voice Commands Quick Reference](VOICE-COMMANDS.md).
 

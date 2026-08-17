@@ -19,7 +19,7 @@
 
 services:
   ovos-core:
-    image: smartgic/ovos-core:latest
+    image: smartgic/ovos-core@sha256:45fa6b3942334e2e4ff90d7e0e5fdfb2415812df10c238f7a31e347f96fcd6f2
     container_name: e2e-ovos-core
     depends_on:
       ovos_messagebus:
@@ -93,10 +93,16 @@ services:
       - HIVEMIND_CLIENT_SECRET=e2e-test-password
       - HIVEMIND_CLIENT_CRYPTO_KEY=0123456789abcdef
     healthcheck:
-      test: ["CMD", "true"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; s=socket.create_connection(('localhost', 5678), timeout=2); s.close()",
+        ]
       interval: 5s
       timeout: 3s
-      retries: 3
+      retries: 12
       start_period: 5s
 
   # Override e2e-runner to also expose HiveMind env vars
@@ -119,4 +125,4 @@ services:
       ovos-core:
         condition: service_started
       hivemind:
-        condition: service_started
+        condition: service_healthy

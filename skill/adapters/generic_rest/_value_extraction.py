@@ -21,6 +21,43 @@ _HIGHER_IS_BETTER: set[CanonicalMetric] = {
     CanonicalMetric.RECYCLED_CONTENT,
 }
 
+_SUM_METRICS = {
+    CanonicalMetric.ENERGY_TOTAL,
+    CanonicalMetric.CO2_TOTAL,
+}
+_MAX_METRICS = {CanonicalMetric.PEAK_DEMAND}
+_VALID_AGGREGATIONS = {"average", "sum", "max", "latest"}
+
+
+def canonical_aggregation(metric: CanonicalMetric, period: TimePeriod) -> str:
+    """Return the safe default aggregation for a canonical metric query."""
+    if period.display_name == "latest available":
+        return "latest"
+    if metric in _SUM_METRICS:
+        return "sum"
+    if metric in _MAX_METRICS:
+        return "max"
+    return "average"
+
+
+def get_mapping_aggregation(
+    mapping: MetricMapping,
+    metric: CanonicalMetric,
+    period: TimePeriod,
+) -> str:
+    """Resolve and validate mapping-level aggregation overrides."""
+    aggregation = str(mapping.get("aggregation", "") or "").strip().lower()
+    if not aggregation:
+        return canonical_aggregation(metric, period)
+    if aggregation not in _VALID_AGGREGATIONS:
+        raise AdapterError(
+            message=f"Unsupported metric aggregation '{aggregation}'",
+            code="GENERIC_REST_MAPPING_INVALID",
+            platform="generic_rest",
+            user_message="The configured aggregation for this metric is invalid.",
+        )
+    return aggregation
+
 
 def get_mapping_json_path(
     mapping: MetricMapping,
@@ -88,10 +125,46 @@ def parse_mapped_kpi_response(
     metric: CanonicalMetric,
     asset_id: str,
     period: TimePeriod,
+    *,
+    source_profile: str = "",
 ) -> KPIResult:
     """Parse mapped KPI payload into KPIResult."""
-    json_path = get_mapping_json_path(mapping)
-    value = extract_mapped_value(data, json_path, mapping)
+    aggregation = get_mapping_aggregation(mapping, metric, period)
+    series = _resolve_kpi_series(data, mapping)
+    observed_at: datetime | None = None
+    source_start: datetime | None = None
+    source_end: datetime | None = None
+    sample_count = 1
+    coverage_status = "complete"
+    warnings: list[str] = []
+
+    if series is not None:
+        values, timestamps = _parse_series_values(series, mapping)
+        value = _aggregate_values(values, timestamps, aggregation)
+        sample_count = len(values)
+        valid_times = [item for item in timestamps if item is not None]
+        if valid_times:
+            source_start = min(valid_times)
+            source_end = max(valid_times)
+            observed_at = source_end
+        total = _payload_record_count(data)
+        if total is not None and total > sample_count:
+            coverage_status = "partial"
+            warnings.append(
+                f"Only {sample_count} of {total} source observations were retrieved."
+            )
+        freshness_seconds = _positive_int(mapping.get("freshness_seconds"))
+        if freshness_seconds and observed_at is not None:
+            age_seconds = (datetime.now(tz=timezone.utc) - observed_at).total_seconds()
+            if age_seconds > freshness_seconds:
+                coverage_status = "stale" if coverage_status == "complete" else coverage_status
+                warnings.append(
+                    f"Latest source observation is older than {freshness_seconds} seconds."
+                )
+    else:
+        json_path = get_mapping_json_path(mapping)
+        value = extract_mapped_value(data, json_path, mapping)
+
     return KPIResult(
         metric=metric,
         value=value,
@@ -99,7 +172,132 @@ def parse_mapped_kpi_response(
         asset_id=asset_id,
         period=period,
         timestamp=datetime.now(tz=timezone.utc),
+        source_observed_at=observed_at,
+        source_period_start=source_start,
+        source_period_end=source_end,
+        sample_count=sample_count,
+        aggregation=aggregation,
+        source_profile=source_profile,
+        coverage_status=coverage_status,
+        warnings=tuple(warnings),
     )
+
+
+def _resolve_kpi_series(
+    payload: dict | list,
+    mapping: MetricMapping,
+) -> list[Any] | None:
+    """Resolve an explicitly mapped or conventional KPI observation list."""
+    series_path = str(mapping.get("series_path", "") or "").strip()
+    if series_path:
+        resolved = resolve_json_path(payload, series_path)
+        if not isinstance(resolved, list):
+            raise AdapterError(
+                message="series_path must resolve to a list",
+                code="GENERIC_REST_MAPPING_INVALID",
+                platform="generic_rest",
+            )
+        return resolved
+    json_path = str(mapping.get("json_path", "") or "").strip()
+    if (
+        isinstance(payload, dict)
+        and json_path.startswith("$.records[")
+        and isinstance(payload.get("records"), list)
+    ):
+        return payload["records"]
+    if isinstance(payload, list) and json_path in {"$.[0]", "$[0]"}:
+        return payload
+    return None
+
+
+def _parse_series_values(
+    series: list[Any],
+    mapping: MetricMapping,
+) -> tuple[list[float], list[datetime | None]]:
+    """Parse numeric values and source timestamps from observation records."""
+    if not series:
+        raise AdapterError(
+            message="No source observations in selected period",
+            code="GENERIC_REST_NO_DATA",
+            platform="generic_rest",
+            user_message="I couldn't find data for that period.",
+        )
+    value_key = str(mapping.get("value_path", "value") or "value").split(".")[-1]
+    timestamp_key = str(mapping.get("timestamp_path", "datetime") or "datetime").split(".")[-1]
+    values: list[float] = []
+    timestamps: list[datetime | None] = []
+    for item in series:
+        raw_value = item.get(value_key) if isinstance(item, dict) else item
+        try:
+            numeric = float(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise AdapterError(
+                message=f"Series observation is not numeric: {raw_value}",
+                code="GENERIC_REST_MAPPING_INVALID",
+                platform="generic_rest",
+            ) from exc
+        values.append(apply_transform(numeric, mapping.get("transform")))
+        raw_timestamp = item.get(timestamp_key) if isinstance(item, dict) else None
+        if raw_timestamp is None and isinstance(item, dict):
+            raw_timestamp = first_present(item, ("timestamp", "datetime", "date", "time"))
+        timestamps.append(_parse_source_timestamp(raw_timestamp))
+    return values, timestamps
+
+
+def _aggregate_values(
+    values: list[float],
+    timestamps: list[datetime | None],
+    aggregation: str,
+) -> float:
+    """Aggregate complete source observations with deterministic semantics."""
+    if aggregation == "sum":
+        return sum(values)
+    if aggregation == "max":
+        return max(values)
+    if aggregation == "average":
+        return sum(values) / len(values)
+    dated = [
+        (timestamp, value)
+        for value, timestamp in zip(values, timestamps)
+        if timestamp is not None
+    ]
+    if dated:
+        return max(dated, key=lambda item: item[0])[1]
+    return values[-1]
+
+
+def _parse_source_timestamp(raw: Any) -> datetime | None:
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        return raw.replace(tzinfo=timezone.utc) if raw.tzinfo is None else raw.astimezone(timezone.utc)
+    try:
+        parsed = datetime.fromisoformat(str(raw).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _payload_record_count(payload: dict | list) -> int | None:
+    if not isinstance(payload, dict):
+        return None
+    for key in ("recordCount", "record_count", "total", "totalCount"):
+        value = payload.get(key)
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _positive_int(raw: Any) -> int:
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return 0
+    return value if value > 0 else 0
 
 
 def rank_descending(metric: CanonicalMetric) -> bool:

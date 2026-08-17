@@ -1,2 +1,2 @@
-I can answer questions about: energy per unit, OEE, scrap rate, energy trends, and production anomalies. For example: 'show energy trend today' or 'check production anomalies'.
-Here's what I understand: KPI queries like 'what is the OEE for Line-1', trend queries like 'show scrap rate trend last week', anomaly checks, energy comparisons, and temperature simulations.
+I can answer configured manufacturing KPI, summary, comparison, ranking, trend, definition, target, and advisory questions. Ask 'what can you do' for the active capability list.
+Try 'give me a factory summary', 'compare OEE across all lines last month', or 'what does OEE mean'. Analytics are listed only when PREVENTION is available, and AVAROS is read-only.

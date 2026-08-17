@@ -99,14 +99,22 @@ KNOWN_INTENTS: tuple[str, ...] = (
     "kpi.co2.total",
     "kpi.co2.per_batch",
     "compare.energy",
+    "compare.metric",
     "trend.scrap",
     "trend.energy",
+    "trend.metric",
     "anomaly.production.check",
+    "drift.production.check",
+    "forecast.metric",
+    "whatif.scenario",
     "control.device.turn_on",
     "control.device.turn_off",
     "status.system.show",
     "status.profile.show",
+    "greeting",
+    "help",
     "help.capabilities.list",
+    "list.assets",
 )
 
 IntentCategory = Literal["kpi", "action", "system"]
@@ -132,14 +140,22 @@ INTENT_CATEGORIES: dict[str, IntentCategory] = {
     "kpi.co2.total": "kpi",
     "kpi.co2.per_batch": "kpi",
     "compare.energy": "kpi",
+    "compare.metric": "kpi",
     "trend.scrap": "kpi",
     "trend.energy": "kpi",
+    "trend.metric": "kpi",
     "anomaly.production.check": "kpi",
+    "drift.production.check": "kpi",
+    "forecast.metric": "kpi",
+    "whatif.scenario": "kpi",
     "control.device.turn_on": "action",
     "control.device.turn_off": "action",
     "status.system.show": "system",
     "status.profile.show": "system",
+    "greeting": "system",
+    "help": "system",
     "help.capabilities.list": "system",
+    "list.assets": "system",
 }
 
 INTENT_METRIC_REQUIREMENTS: dict[str, list[CanonicalMetric]] = {
@@ -163,14 +179,22 @@ INTENT_METRIC_REQUIREMENTS: dict[str, list[CanonicalMetric]] = {
     "kpi.co2.total": [CanonicalMetric.CO2_TOTAL],
     "kpi.co2.per_batch": [CanonicalMetric.CO2_PER_BATCH],
     "compare.energy": [CanonicalMetric.ENERGY_PER_UNIT],
+    "compare.metric": [],
     "trend.scrap": [CanonicalMetric.SCRAP_RATE],
     "trend.energy": [CanonicalMetric.ENERGY_PER_UNIT],
+    "trend.metric": [],
     "anomaly.production.check": [CanonicalMetric.OEE],
+    "drift.production.check": [],
+    "forecast.metric": [],
+    "whatif.scenario": [],
     "control.device.turn_on": [],
     "control.device.turn_off": [],
     "status.system.show": [],
     "status.profile.show": [],
+    "greeting": [],
+    "help": [],
     "help.capabilities.list": [],
+    "list.assets": [],
 }
 
 _DEFAULT_ENDPOINT_BY_METRIC: dict[str, str] = {
@@ -889,6 +913,7 @@ class SettingsService(ProfileMixin):
     # ── Metric Mapping CRUD ─────────────────────────────
 
     METRIC_MAPPING_PREFIX = "metric_mapping:"
+    KPI_OBJECTIVE_PREFIX = "kpi_objective:"
     INTENT_BINDING_PREFIX = "intent_binding:"
     ASSET_MAPPINGS_KEY = "asset_mappings"
     VOICE_WS_URL_KEY = "voice:hivemind_ws_url"
@@ -1133,6 +1158,85 @@ class SettingsService(ProfileMixin):
             return False
         key = self._scoped_key_for(
             self.METRIC_MAPPING_PREFIX, profile, metric_name,
+        )
+        return self.delete_setting(key)
+
+    # ── KPI Objective CRUD ─────────────────────────────
+
+    def set_kpi_objective(
+        self,
+        metric_name: str,
+        asset_id: str,
+        objective: dict[str, Any],
+    ) -> None:
+        """Store an explicit profile/asset objective used for quality judgments."""
+        self._validate_metric_name(metric_name)
+        mode = str(objective.get("mode", "threshold"))
+        if mode not in {"threshold", "improvement_from_baseline"}:
+            raise ValidationError(
+                message=f"Invalid KPI objective mode: {mode}",
+                field="mode",
+                value=mode,
+            )
+        comparator = str(objective.get("comparator", "at_least"))
+        if comparator not in {"at_least", "at_most"}:
+            raise ValidationError(
+                message=f"Invalid KPI objective comparator: {comparator}",
+                field="comparator",
+                value=comparator,
+            )
+        scope = asset_id.strip() or "all"
+        key = self._scoped_key(
+            self.KPI_OBJECTIVE_PREFIX,
+            f"{metric_name}:{scope}",
+        )
+        self.set_setting(key, dict(objective))
+
+    def get_kpi_objective(self, metric_name: str, asset_id: str) -> dict[str, Any] | None:
+        """Return an asset objective, falling back to the profile-wide objective."""
+        self._validate_metric_name(metric_name)
+        profile = self.get_active_profile_name()
+        if profile == self.DEFAULT_PROFILE:
+            return None
+        for scope in (asset_id.strip(), "all"):
+            if not scope:
+                continue
+            key = self._scoped_key_for(
+                self.KPI_OBJECTIVE_PREFIX,
+                profile,
+                f"{metric_name}:{scope}",
+            )
+            objective = self.get_setting(key, default=None)
+            if isinstance(objective, dict):
+                return objective
+        return None
+
+    def list_kpi_objectives(self) -> list[dict[str, Any]]:
+        """List objectives for the active configured profile."""
+        profile = self.get_active_profile_name()
+        if profile == self.DEFAULT_PROFILE:
+            return []
+        prefix = self._scoped_key_for(self.KPI_OBJECTIVE_PREFIX, profile, "")
+        rows = []
+        for key in self.list_settings():
+            if not key.startswith(prefix):
+                continue
+            suffix = key[len(prefix):]
+            metric_name, _, asset_id = suffix.partition(":")
+            value = self.get_setting(key, default={})
+            if isinstance(value, dict):
+                rows.append({"metric": metric_name, "asset_id": asset_id, **value})
+        return rows
+
+    def delete_kpi_objective(self, metric_name: str, asset_id: str) -> bool:
+        """Delete one objective from the active configured profile."""
+        profile = self.get_active_profile_name()
+        if profile == self.DEFAULT_PROFILE:
+            return False
+        key = self._scoped_key_for(
+            self.KPI_OBJECTIVE_PREFIX,
+            profile,
+            f"{metric_name}:{asset_id.strip() or 'all'}",
         )
         return self.delete_setting(key)
 

@@ -233,6 +233,24 @@ export function buildDashboardStatusCards(
         "Shows the currently active platform connector AVAROS is using.",
     },
     {
+      label: "Active Profile",
+      value: status.active_profile ?? "unknown",
+      icon: (
+        <svg
+          className={iconClass}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+        >
+          <circle cx="12" cy="8" r="3" strokeWidth="2" />
+          <path d="M5 20c.8-3.3 3.1-5 7-5s6.2 1.7 7 5" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      ),
+      tone: "info",
+      helpText:
+        "Shows the named platform profile currently used by the backend.",
+    },
+    {
       label: "Platform Type",
       value: status.platform_type,
       icon: (

@@ -13,7 +13,7 @@
 services:
   # Lightweight OVOS message bus (no audio, no STT, no TTS)
   ovos_messagebus:
-    image: smartgic/ovos-messagebus:latest
+    image: smartgic/ovos-messagebus@sha256:9ecdeb5cd0dafeb0b71db0f1587265da4db3f8e1906d454fa6279556b8f780e2
     container_name: e2e-messagebus
     networks:
       - e2e-net
@@ -59,6 +59,23 @@ services:
       timeout: 3s
       retries: 5
 
+  e2e-profile-init:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.e2e
+    container_name: e2e-profile-init
+    command: ["python", "docker/e2e_profile_init.py"]
+    depends_on:
+      e2e-db:
+        condition: service_healthy
+      reneryo-data-generator:
+        condition: service_healthy
+    environment:
+      - AVAROS_DATABASE_URL=postgresql://avaros:avaros@e2e-db:5432/avaros
+      - E2E_PLATFORM_URL=http://e2e-reneryo-data-generator:8090
+    networks:
+      - e2e-net
+
   avaros-skill:
     build:
       context: ..
@@ -71,6 +88,8 @@ services:
         condition: service_healthy
       reneryo-data-generator:
         condition: service_healthy
+      e2e-profile-init:
+        condition: service_completed_successfully
     environment:
       - AVAROS_DATABASE_URL=postgresql://avaros:avaros@e2e-db:5432/avaros
       - MESSAGEBUS_HOST=ovos_messagebus

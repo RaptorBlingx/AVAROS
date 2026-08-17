@@ -114,6 +114,122 @@ async def test_get_kpi_valid_mapping_returns_kpi_result(period: TimePeriod) -> N
 
 
 @pytest.mark.asyncio
+async def test_reneryo_period_paginates_and_aggregates() -> None:
+    """Every Reneryo page contributes to the period average and provenance."""
+    adapter = _build_adapter({
+        "oee": {
+            "endpoint": (
+                "/u/measurement/metric/resource/{asset_id}/values"
+                "?period=RAW&datetimeMin={start_date}&datetimeMax={end_date}&count=1&page=1"
+            ),
+            "json_path": "$.records[0].value",
+            "unit": "%",
+            "page_size": 2,
+        },
+    })
+    adapter._session = object()
+    adapter._retry_fetch = AsyncMock(side_effect=[
+        {
+            "recordCount": 3,
+            "records": [
+                {"value": 60.0, "datetime": "2026-07-01T00:00:00Z"},
+                {"value": 90.0, "datetime": "2026-07-02T00:00:00Z"},
+            ],
+        },
+        {
+            "recordCount": 3,
+            "records": [
+                {"value": 75.0, "datetime": "2026-07-03T00:00:00Z"},
+            ],
+        },
+    ])
+
+    result = await adapter.get_kpi(
+        metric=CanonicalMetric.OEE,
+        asset_id="line-1",
+        period=TimePeriod.from_natural_language("July 2026"),
+    )
+
+    assert result.value == pytest.approx(75.0)
+    assert result.aggregation == "average"
+    assert result.sample_count == 3
+    assert result.source_observed_at.isoformat() == "2026-07-03T00:00:00+00:00"
+    assert result.coverage_status == "complete"
+    assert adapter._retry_fetch.await_count == 2
+    assert adapter._retry_fetch.await_args_list[0].args[1]["count"] == "2"
+    assert adapter._retry_fetch.await_args_list[1].args[1]["page"] == "2"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("metric", "expected_aggregation", "expected_value"),
+    [
+        (CanonicalMetric.ENERGY_TOTAL, "sum", 9.0),
+        (CanonicalMetric.PEAK_DEMAND, "max", 5.0),
+        (CanonicalMetric.SCRAP_RATE, "average", 3.0),
+    ],
+)
+async def test_canonical_period_aggregation_defaults(
+    metric: CanonicalMetric,
+    expected_aggregation: str,
+    expected_value: float,
+) -> None:
+    adapter = _build_adapter({
+        metric.value: {
+            "endpoint": "/values",
+            "json_path": "$.records[0].value",
+            "unit": metric.default_unit,
+        },
+    })
+    adapter._session = object()
+    adapter._retry_fetch = AsyncMock(return_value={
+        "recordCount": 3,
+        "records": [
+            {"value": 1.0, "datetime": "2026-07-01T00:00:00Z"},
+            {"value": 3.0, "datetime": "2026-07-02T00:00:00Z"},
+            {"value": 5.0, "datetime": "2026-07-03T00:00:00Z"},
+        ],
+    })
+
+    result = await adapter.get_kpi(
+        metric=metric,
+        asset_id="line-1",
+        period=TimePeriod.from_natural_language("July 2026"),
+    )
+
+    assert result.aggregation == expected_aggregation
+    assert result.value == pytest.approx(expected_value)
+
+
+@pytest.mark.asyncio
+async def test_implicit_latest_uses_descending_single_observation() -> None:
+    adapter = _build_adapter({
+        "oee": {
+            "endpoint": "/values?count=100&page=1",
+            "json_path": "$.records[0].value",
+            "unit": "%",
+        },
+    })
+    adapter._session = object()
+    adapter._retry_fetch = AsyncMock(return_value={
+        "recordCount": 1000,
+        "records": [{"value": 88.0, "datetime": "2026-08-14T09:00:00Z"}],
+    })
+
+    result = await adapter.get_kpi(
+        metric=CanonicalMetric.OEE,
+        asset_id="line-1",
+        period=TimePeriod.latest(),
+    )
+
+    params = adapter._retry_fetch.await_args.args[1]
+    assert params["count"] == "1"
+    assert params["descending"] == "true"
+    assert result.value == pytest.approx(88.0)
+    assert result.aggregation == "latest"
+
+
+@pytest.mark.asyncio
 async def test_get_kpi_missing_mapping_raises_adapter_error(period: TimePeriod) -> None:
     """Unmapped metric returns clear mapping error."""
     adapter = _build_adapter({})
@@ -206,7 +322,6 @@ async def test_get_kpi_energy_total_uses_native_seu_binding(period: TimePeriod) 
 
 @pytest.mark.asyncio
 async def test_get_kpi_energy_total_uses_native_metric_item_last_value(
-    period: TimePeriod,
 ) -> None:
     """Counter meter assets can resolve energy_total from metric item lastValue."""
     resource_id = "525c5133-80eb-4c95-8f0c-06e56d2854fe"
@@ -236,7 +351,7 @@ async def test_get_kpi_energy_total_uses_native_metric_item_last_value(
     result = await adapter.get_kpi(
         metric=CanonicalMetric.ENERGY_TOTAL,
         asset_id="Electric Main Meter",
-        period=period,
+        period=TimePeriod.latest(),
     )
 
     assert result.metric == CanonicalMetric.ENERGY_TOTAL
@@ -248,6 +363,33 @@ async def test_get_kpi_energy_total_uses_native_metric_item_last_value(
         "525c5133-80eb-4c95-8f0c-06e56d2854fe"
     )
     assert adapter._retry_fetch.await_args.args[1] is None
+
+
+@pytest.mark.asyncio
+async def test_native_last_value_rejects_historical_period(period: TimePeriod) -> None:
+    """A current counter must never be presented as a historical period total."""
+    adapter = _build_asset_adapter(
+        {
+            "Electric-Main-Meter": {
+                "display_name": "Electric Main Meter",
+                "metric_resources": {"energy_total": "resource-1"},
+                "native_metric_bindings": {
+                    "energy_total": {"strategy": "metric_item_last_value"},
+                },
+            },
+        },
+    )
+    adapter._session = object()
+
+    with pytest.raises(AdapterError) as exc_info:
+        await adapter.get_kpi(
+            CanonicalMetric.ENERGY_TOTAL,
+            "Electric-Main-Meter",
+            period,
+        )
+
+    assert exc_info.value.code == "GENERIC_REST_PERIOD_UNSUPPORTED"
+    assert "latest counter value" in exc_info.value.user_message
 
 
 @pytest.mark.asyncio
@@ -779,6 +921,29 @@ async def test_test_connection_cookie_auth_accepted_returns_success() -> None:
 
     assert result.success is True
     assert result.error_code == ""
+
+
+@pytest.mark.asyncio
+async def test_connection_probe_preserves_initialized_runtime_session() -> None:
+    """Status probes must not shut down the skill's shared adapter session."""
+    adapter = _build_adapter({}, auth_type="cookie")
+    adapter._api_key = "valid-cookie"
+
+    with aioresponses() as mocked:
+        mocked.head("https://api.example.com", status=200)
+        await adapter.initialize()
+        session = adapter._session
+        mocked.get(
+            "https://api.example.com/api/u/measurement/seu/names?count=1",
+            status=200,
+            payload={"records": []},
+        )
+        result = await adapter.test_connection()
+
+    assert result.success is True
+    assert adapter._session is session
+    assert adapter._session is not None and not adapter._session.closed
+    await adapter.shutdown()
 
 
 @pytest.mark.asyncio

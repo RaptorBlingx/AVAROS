@@ -345,6 +345,9 @@ async def activate_profile(
         )
 
     # Phase 3: Notify skill (best-effort, no rollback on failure)
+    from routers.status import invalidate_status_caches
+
+    invalidate_status_caches()
     voice_reloaded = _notify_skill_via_bus(name)
 
     config = svc.get_profile(name)

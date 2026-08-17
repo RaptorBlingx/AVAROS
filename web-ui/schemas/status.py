@@ -14,6 +14,10 @@ class SystemStatusResponse(BaseModel):
     active_adapter: str = Field(
         ..., description="Currently active adapter identifier."
     )
+    active_profile: str = Field(
+        default="unconfigured",
+        description="Currently active named platform profile.",
+    )
     platform_type: str = Field(
         ..., description="Configured platform type from persistent settings."
     )

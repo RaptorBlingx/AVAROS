@@ -7,7 +7,7 @@ ScenarioParameter, WhatIfScenario, and Anomaly.
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from skill.domain.models import (
     Asset,
@@ -174,14 +174,17 @@ class TestTimePeriod:
         assert period.display_name == "last week"
         assert period.duration_days == 7
     
-    def test_last_month_period_is_thirty_days(self):
-        """last_month() should cover 30 days."""
+    def test_last_month_period_is_previous_calendar_month(self):
+        """last_month() should use previous calendar-month boundaries."""
         # Arrange & Act
         period = TimePeriod.last_month()
         
         # Assert
         assert period.display_name == "last month"
-        assert 29.5 <= period.duration_days <= 30.5  # Allow for time precision
+        assert period.start.day == 1
+        assert period.end.day == 1
+        assert period.start.month != period.end.month
+        assert period.duration_days in {28, 29, 30, 31}
     
     def test_from_natural_language_with_today_returns_today(self):
         """Should parse 'today' correctly."""
@@ -240,6 +243,31 @@ class TestTimePeriod:
         # Assert
         assert period.display_name == "yesterday"
         assert 0.9 <= period.duration_days <= 1.1
+
+    def test_from_natural_language_supports_rolling_past_30_days(self):
+        period = TimePeriod.from_natural_language("past 30 days")
+
+        assert period.display_name == "past 30 days"
+        assert period.duration_days == pytest.approx(30)
+
+    def test_from_natural_language_supports_named_month(self):
+        period = TimePeriod.from_natural_language("July 2026")
+
+        assert period.display_name == "July 2026"
+        assert period.start == datetime(2026, 7, 1, tzinfo=timezone.utc)
+        assert period.end == datetime(2026, 8, 1, tzinfo=timezone.utc)
+
+    def test_from_natural_language_supports_explicit_date_range(self):
+        period = TimePeriod.from_natural_language("2026-07-10 to 2026-07-12")
+
+        assert period.display_name == "2026-07-10 to 2026-07-12"
+        assert period.start == datetime(2026, 7, 10, tzinfo=timezone.utc)
+        assert period.end == datetime(2026, 7, 13, tzinfo=timezone.utc)
+
+    @pytest.mark.parametrize("phrase", ["past 90 days", "July 2099", "sometime before lunch"])
+    def test_from_natural_language_rejects_unsupported_or_future_periods(self, phrase):
+        with pytest.raises(ValueError):
+            TimePeriod.from_natural_language(phrase)
     
     def test_creation_with_end_before_start_raises_valueerror(self):
         """Should raise ValueError for invalid period."""

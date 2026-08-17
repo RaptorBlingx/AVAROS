@@ -50,7 +50,7 @@ def extract_trend_points(
         )
         points.append(DataPoint(timestamp=timestamp, value=value, unit=point_unit))
 
-    return points
+    return sorted(points, key=lambda point: point.timestamp)
 
 
 def compute_trend_change(

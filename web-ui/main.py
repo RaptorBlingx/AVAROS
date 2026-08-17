@@ -15,11 +15,13 @@ from dependencies import get_kpi_scheduler, get_settings_service
 from routers.alerts import router as alerts_router
 from routers.assets import router as assets_router
 from routers.config import router as config_router
+from routers.capabilities import router as capabilities_router
 from routers.emission_factors import router as emission_factors_router
 from routers.intents import router as intents_router
 from routers.intent_bindings import router as intent_bindings_router
 from routers.hivemind import router as hivemind_router
 from routers.metrics import router as metrics_router
+from routers.objectives import router as objectives_router
 from routers.kpi_progress import router as kpi_progress_router
 from routers.production_data import router as production_data_router
 from routers.profiles import router as profiles_router
@@ -161,11 +163,13 @@ app.include_router(hivemind_router)
 app.include_router(wakeword_router)
 app.include_router(assets_router)
 app.include_router(config_router)
+app.include_router(capabilities_router)
 app.include_router(profiles_router)
 app.include_router(emission_factors_router)
 app.include_router(intents_router)
 app.include_router(intent_bindings_router)
 app.include_router(metrics_router)
+app.include_router(objectives_router)
 app.include_router(production_data_router)
 app.include_router(kpi_progress_router)
 app.include_router(voice_router)

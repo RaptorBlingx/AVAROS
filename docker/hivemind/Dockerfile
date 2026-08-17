@@ -111,8 +111,48 @@ if old_open not in source:
     raise SystemExit("Expected open() auth extraction line not found; patch aborted")
 source = source.replace(old_open, new_open)
 
+# hivemind-websocket-protocol 0.0.3 invokes ``write_message`` from the
+# OVOS bus client's worker thread.  Modern Tornado requires WebSocket writes
+# and closes to run on its IOLoop; otherwise one disconnected browser can
+# break delivery for every subsequent client.
+old_send = '''        def do_send(payload: str, is_bin: bool):
+            self.loop.install()  # TODO is this needed?
+            self.write_message(payload, is_bin)
+
+        def do_disconnect():
+            self.loop.install()  # TODO is this needed?
+            self.close()
+'''
+new_send = '''        def do_send(payload: str, is_bin: bool):
+            self.loop.add_callback(self.write_message, payload, is_bin)
+
+        def do_disconnect():
+            self.loop.add_callback(self.close)
+'''
+if old_send not in source:
+    raise SystemExit("Expected websocket send block not found; patch aborted")
+source = source.replace(old_send, new_send)
+
 module_path.write_text(source, encoding="utf-8")
 print(f"Patched HiveMind auth parser at {module_path}")
+
+# The OVOS agent's catch-all bus callback can disconnect a client while it is
+# iterating the live client dictionary.  Iterate over a snapshot to avoid a
+# RuntimeError that otherwise disconnects HiveMind from the OVOS bus.
+hpm_spec = importlib.util.find_spec("ovos_bus_client.hpm")
+if hpm_spec is None or hpm_spec.origin is None:
+    raise SystemExit("ovos_bus_client.hpm not found")
+hpm_path = Path(hpm_spec.origin)
+hpm_source = hpm_path.read_text(encoding="utf-8")
+old_clients = "            for peer, client in self.clients.items():\n"
+new_clients = "            for peer, client in list(self.clients.items()):\n"
+if old_clients not in hpm_source:
+    raise SystemExit("Expected HiveMind client iteration not found; patch aborted")
+hpm_path.write_text(
+    hpm_source.replace(old_clients, new_clients),
+    encoding="utf-8",
+)
+print(f"Patched HiveMind OVOS client iteration at {hpm_path}")
 PY
 
 # Copy entrypoint script

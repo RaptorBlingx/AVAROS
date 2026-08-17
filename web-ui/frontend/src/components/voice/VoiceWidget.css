@@ -816,6 +816,63 @@
   word-break: break-word;
 }
 
+.voice-chat-evidence {
+  margin-top: 0.42rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.35);
+  padding-top: 0.34rem;
+  font-size: 0.68rem;
+  color: #475569;
+}
+
+.voice-chat-evidence summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.voice-chat-evidence__facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.18rem 0.42rem;
+  margin: 0.38rem 0;
+}
+
+.voice-chat-evidence__facts dt {
+  font-weight: 650;
+}
+
+.voice-chat-evidence__facts dd {
+  margin: 0;
+}
+
+.voice-chat-evidence__rows {
+  display: grid;
+  gap: 0.24rem;
+}
+
+.voice-chat-evidence__row {
+  display: grid;
+  grid-template-columns: minmax(5rem, 1fr) auto;
+  gap: 0.08rem 0.45rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.62);
+  padding: 0.28rem 0.34rem;
+}
+
+.voice-chat-evidence__row small {
+  grid-column: 1 / -1;
+  color: #64748b;
+}
+
+.voice-chat-evidence__warning {
+  margin: 0.34rem 0 0;
+  color: #b45309;
+}
+
+.voice-chat-evidence__followup {
+  margin: 0.34rem 0 0;
+  font-style: italic;
+}
+
 .voice-chat-message__meta {
   margin-top: 0.22rem;
   display: flex;

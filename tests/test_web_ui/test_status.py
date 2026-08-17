@@ -32,6 +32,7 @@ class TestStatusUnconfigured:
 
         assert body["configured"] is False
         assert body["active_adapter"] == "unconfigured"
+        assert body["active_profile"] == "unconfigured"
         assert body["platform_type"] == "unconfigured"
 
     def test_status_database_connected_true(self, client: TestClient) -> None:
@@ -93,6 +94,7 @@ class TestStatusConfigured:
 
         assert body["configured"] is True
         assert body["active_adapter"] == "custom_rest"
+        assert body["active_profile"] == "custom-rest"
         assert body["platform_type"] == "custom_rest"
 
     def test_status_returns_unconfigured_after_config_deleted(
@@ -143,6 +145,7 @@ class TestStatusResponseShape:
     EXPECTED_KEYS = {
         "configured",
         "active_adapter",
+        "active_profile",
         "platform_type",
         "loaded_intents",
         "database_connected",

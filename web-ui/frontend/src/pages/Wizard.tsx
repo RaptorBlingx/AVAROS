@@ -27,6 +27,7 @@ import {
   shouldOpenOnboardingForScope,
   type OnboardingRerunDetail,
 } from "../components/common/onboarding";
+import { emitActiveProfileChanged } from "../hooks/useProfileChange";
 
 type StepNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
@@ -331,6 +332,7 @@ export default function Wizard() {
           extra_settings: (payload.extra_settings ?? {}) as Record<string, string>,
         });
         await activateProfile(selectedProfile);
+        emitActiveProfileChanged({ profileName: selectedProfile });
       } else {
         await createPlatformConfig(payload);
       }

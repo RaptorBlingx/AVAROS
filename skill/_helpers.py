@@ -9,6 +9,7 @@ from skill._asset_resolution import (
     get_asset_registry as _get_asset_registry,
     resolve_asset_id_from_text as _resolve_asset_id_from_text,
 )
+from skill.domain.exceptions import ValidationError
 from skill.domain.models import Asset, CanonicalMetric, TimePeriod
 from skill._intent_resolver import resolve_intent_name as _resolve_intent_name
 from skill._metric_resolver import resolve_metric_from_utterance as _resolve_metric_from_utterance
@@ -24,7 +25,29 @@ if TYPE_CHECKING:
 
 def parse_period(self, period_str: str) -> TimePeriod:
     """Parse natural language period into TimePeriod value object."""
-    return TimePeriod.from_natural_language(period_str)
+    timezone_name = "UTC"
+    settings_service = getattr(self, "settings_service", None)
+    if settings_service is not None:
+        try:
+            profile = settings_service.get_profile(self._resolve_active_profile())
+            if profile is not None:
+                timezone_name = str(
+                    profile.extra_settings.get("site_timezone", "UTC") or "UTC"
+                )
+        except Exception:
+            timezone_name = "UTC"
+    try:
+        return TimePeriod.from_natural_language(
+            period_str,
+            timezone_name=timezone_name,
+        )
+    except ValueError as exc:
+        raise ValidationError(
+            message=str(exc),
+            field="period",
+            value=period_str,
+            user_message=str(exc),
+        ) from exc
 
 
 def resolve_metric_from_utterance(
@@ -267,9 +290,6 @@ def is_forecast_query(self, utterance: str) -> bool:
         "prediction",
         "expected",
         "what is expected",
-        "next week",
-        "next month",
-        "in the next",
     )
     return any(pattern in normalized for pattern in forecast_patterns)
 

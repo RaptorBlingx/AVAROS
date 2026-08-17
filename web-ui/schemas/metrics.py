@@ -39,6 +39,12 @@ class MetricMappingRequest(BaseModel):
         default=None,
         description="Optional transform instruction (future use).",
     )
+    aggregation: Literal["average", "sum", "max", "latest"] | None = None
+    series_path: str | None = None
+    timestamp_path: str | None = None
+    pagination: bool = False
+    page_size: int = Field(default=100, ge=1, le=100)
+    freshness_seconds: int | None = Field(default=None, ge=1)
 
 
 MetricMappingSource = Literal["manual", "auto"]
@@ -67,6 +73,12 @@ class MetricMappingResponse(BaseModel):
         default=None,
         description="Optional transform instruction.",
     )
+    aggregation: Literal["average", "sum", "max", "latest"] | None = None
+    series_path: str | None = None
+    timestamp_path: str | None = None
+    pagination: bool = False
+    page_size: int = 100
+    freshness_seconds: int | None = None
     source: MetricMappingSource = Field(
         default="manual",
         description="'auto' = derived from asset metric_resources, 'manual' = user-configured.",

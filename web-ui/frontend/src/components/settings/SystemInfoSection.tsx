@@ -8,9 +8,13 @@ import LoadingSpinner from "../common/LoadingSpinner";
 
 type SystemInfoSectionProps = {
   onNotify: (type: "success" | "error", message: string) => void;
+  refreshKey?: number;
 };
 
-export default function SystemInfoSection({ onNotify }: SystemInfoSectionProps) {
+export default function SystemInfoSection({
+  onNotify,
+  refreshKey = 0,
+}: SystemInfoSectionProps) {
   const [status, setStatus] = useState<SystemStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -32,7 +36,7 @@ export default function SystemInfoSection({ onNotify }: SystemInfoSectionProps) 
 
   useEffect(() => {
     void loadStatus();
-  }, [loadStatus]);
+  }, [loadStatus, refreshKey]);
 
   return (
     <section className="space-y-3">
@@ -58,6 +62,10 @@ export default function SystemInfoSection({ onNotify }: SystemInfoSectionProps) 
         />
       ) : status ? (
         <div className="reveal-in reveal-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <div className="brand-surface rounded-xl p-4">
+            <p className="m-0 text-xs font-semibold uppercase text-slate-500">Active Profile</p>
+            <p className="m-0 mt-2 text-base font-semibold text-slate-900">{status.active_profile ?? "unknown"}</p>
+          </div>
           <div className="brand-surface rounded-xl p-4">
             <p className="m-0 text-xs font-semibold uppercase text-slate-500">Active Adapter</p>
             <p className="m-0 mt-2 text-base font-semibold text-slate-900">{status.active_adapter}</p>

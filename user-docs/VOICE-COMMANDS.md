@@ -46,8 +46,14 @@ Replace `Line-1` and `Line-2` with configured asset names.
 ## Analysis
 
 - “Compare Line-1 and Line-2 on energy per unit.”
+- “Rank all lines by OEE last month.”
+- “Give me a factory summary for all lines last month.”
 - “Show the scrap rate trend for last month.”
+- “What does OEE mean?”
+- “Is OEE good on Line-1?”
+- “Why did OEE change on Line-1?”
+- “What if scrap rate drops by 10 percent on Line-1?”
 - “Are there any production anomalies?”
 - “Is energy per unit drifting on Line-1?”
 
-Anomaly and drift commands require PREVENTION.
+Anomaly, drift, and forecast commands require PREVENTION. Performance judgments require a configured objective. Process-parameter scenarios require a configured model. AVAROS is advisory and read-only.

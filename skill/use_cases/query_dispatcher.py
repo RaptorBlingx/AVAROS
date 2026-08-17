@@ -19,11 +19,12 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-from collections import Counter
+from collections import Counter, OrderedDict
 from dataclasses import replace
 import logging
 from datetime import datetime, timedelta, timezone
 import re
+import time
 from typing import TYPE_CHECKING
 import uuid
 
@@ -127,6 +128,10 @@ class QueryDispatcher:
         self._settings_service = settings_service
         self._prevention_client = prevention_client
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._batch_kpi_cache: OrderedDict[
+            tuple[str, str, datetime, datetime, str],
+            tuple[float, KPIResult],
+        ] = OrderedDict()
         self._executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix="avaros-dispatcher",
@@ -150,6 +155,7 @@ class QueryDispatcher:
             type(adapter).__name__,
         )
         self._adapter = adapter
+        self._batch_kpi_cache.clear()
     
     # =========================================================================
     # Query Type 1: KPI Retrieval
@@ -217,6 +223,67 @@ class QueryDispatcher:
         
         self._log_audit("get_kpi", query_id, metric.value, asset_id, result)
         return result
+
+    def get_kpis_batch(
+        self,
+        requests: list[tuple[CanonicalMetric, str, TimePeriod]],
+    ) -> list[KPIResult | BaseException]:
+        """Retrieve independent mapped KPIs concurrently for composite cards."""
+        for metric, asset_id, _period in requests:
+            self._ensure_metric_supported_for_asset(metric, asset_id)
+
+        now = time.monotonic()
+        results: list[KPIResult | BaseException | None] = [None] * len(requests)
+        missing: list[tuple[int, CanonicalMetric, str, TimePeriod]] = []
+        for index, (metric, asset_id, period) in enumerate(requests):
+            key = self._batch_cache_key(metric, asset_id, period)
+            cached = self._batch_kpi_cache.get(key)
+            if cached is not None and now - cached[0] <= 30:
+                self._batch_kpi_cache.move_to_end(key)
+                results[index] = cached[1]
+            else:
+                self._batch_kpi_cache.pop(key, None)
+                missing.append((index, metric, asset_id, period))
+
+        async def _fetch_all() -> None:
+            for index, metric, asset_id, period in missing:
+                try:
+                    result = await self._adapter.get_kpi(metric, asset_id, period)
+                    results[index] = result
+                    key = self._batch_cache_key(metric, asset_id, period)
+                    self._batch_kpi_cache[key] = (time.monotonic(), result)
+                    self._batch_kpi_cache.move_to_end(key)
+                    while len(self._batch_kpi_cache) > 256:
+                        self._batch_kpi_cache.popitem(last=False)
+                except BaseException as exc:  # preserve partial composite evidence
+                    results[index] = exc
+
+        if missing:
+            self._run_async(_fetch_all())
+        finalized = [
+            result if result is not None else RuntimeError("Batch result unavailable")
+            for result in results
+        ]
+        for (metric, asset_id, _period), result in zip(requests, finalized):
+            if isinstance(result, BaseException):
+                continue
+            self._log_audit(
+                "get_kpi_batch",
+                self._generate_query_id(),
+                metric.value,
+                asset_id,
+                result,
+            )
+        return finalized
+
+    @staticmethod
+    def _batch_cache_key(
+        metric: CanonicalMetric,
+        asset_id: str,
+        period: TimePeriod,
+    ) -> tuple[str, str, datetime, datetime, str]:
+        """Build an exact bounded cache key for short-lived composite reuse."""
+        return metric.value, asset_id, period.start, period.end, period.display_name
     
     # =========================================================================
     # Query Type 2: Comparison
@@ -385,6 +452,16 @@ class QueryDispatcher:
         Returns:
             Aggregate anomaly scan result with counts and findings.
         """
+        if self._prevention_client is None:
+            raise AVAROSError(
+                message="Anomaly scan requires PREVENTION analytics",
+                code="ANOMALY_NOT_CONFIGURED",
+                user_message=(
+                    "Anomaly detection is unavailable because PREVENTION is not configured. "
+                    "I can still report KPIs, comparisons, and trends."
+                ),
+            )
+
         query_id = self._generate_query_id()
         effective_threshold = (
             threshold
@@ -398,7 +475,7 @@ class QueryDispatcher:
             query_id, len(pairs), effective_threshold,
         )
 
-        findings = self._run_async(
+        findings, coverage = self._run_async(
             self._scan_all_pairs_async(
                 pairs, effective_threshold, query_id,
             ),
@@ -412,6 +489,11 @@ class QueryDispatcher:
             severity_counts=self._build_severity_counts(ordered),
             threshold=effective_threshold,
             recommendation_id=query_id,
+            attempted_pairs=len(pairs),
+            successful_pairs=coverage["successful"],
+            failed_pairs=coverage["failed"],
+            stale_pairs=coverage["stale"],
+            insufficient_data_pairs=coverage["insufficient"],
         )
         self._log_audit(
             "scan_anomalies",
@@ -450,13 +532,16 @@ class QueryDispatcher:
         pairs: list[tuple[CanonicalMetric, str]],
         threshold: float,
         query_id: str,
-    ) -> list[AnomalyResult]:
-        """Check all pairs concurrently, return anomalous results."""
+    ) -> tuple[list[AnomalyResult], dict[str, int]]:
+        """Check all pairs concurrently and return findings plus coverage."""
         semaphore = asyncio.Semaphore(self._SCAN_CONCURRENCY)
 
-        async def _guarded(m: CanonicalMetric, a: str) -> AnomalyResult | None:
+        async def _guarded(
+            m: CanonicalMetric,
+            a: str,
+        ) -> tuple[str, AnomalyResult | None]:
             async with semaphore:
-                return await self._check_pair_async(
+                return await self._check_pair_outcome_async(
                     m, a, threshold, f"{query_id}:{m.value}:{a}",
                 )
 
@@ -465,13 +550,17 @@ class QueryDispatcher:
             return_exceptions=True,
         )
         findings: list[AnomalyResult] = []
+        coverage = {"successful": 0, "failed": 0, "stale": 0, "insufficient": 0}
         for result in results:
             if isinstance(result, BaseException):
                 logger.debug("Pair scan error: %s", result)
+                coverage["failed"] += 1
                 continue
-            if result is not None and result.is_anomalous:
-                findings.append(result)
-        return findings
+            outcome, finding = result
+            coverage[outcome] += 1
+            if finding is not None and finding.is_anomalous:
+                findings.append(finding)
+        return findings, coverage
 
     # Days of historical data to collect for anomaly / drift analysis.
     # 30 days ensures enough data points even when APIs have gaps
@@ -480,32 +569,42 @@ class QueryDispatcher:
     _DRIFT_LOOKBACK_DAYS = 30
     _FORECAST_LOOKBACK_DAYS = 30
 
-    async def _check_pair_async(
+    async def _check_pair_outcome_async(
         self,
         metric: CanonicalMetric,
         asset_id: str,
         threshold: float,
         recommendation_id: str,
-    ) -> AnomalyResult | None:
-        """Fully-async single-pair anomaly check."""
+    ) -> tuple[str, AnomalyResult | None]:
+        """Fully-async check with an explicit coverage outcome."""
         if self._prevention_client is None:
-            return None
+            return "failed", None
         try:
             data_points = await self._collect_analysis_series_async(
                 metric, asset_id, days=self._ANOMALY_LOOKBACK_DAYS,
             )
+            if len(data_points) < 2:
+                return "insufficient", None
+            newest = max(point.timestamp for point in data_points)
+            if newest.tzinfo is None:
+                newest = newest.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) - newest > timedelta(days=3):
+                return "stale", None
             detection = await self._prevention_client.detect_anomaly(
                 metric, data_points, threshold, asset_id,
             )
-            return self._build_anomaly_result(
-                detection, metric, asset_id, recommendation_id,
+            return (
+                "successful",
+                self._build_anomaly_result(
+                    detection, metric, asset_id, recommendation_id,
+                ),
             )
         except Exception as exc:
             logger.debug(
                 "Anomaly check failed for %s/%s: %s",
                 metric.value, asset_id, exc,
             )
-            return None
+            return "failed", None
 
     async def _collect_analysis_series_async(
         self,

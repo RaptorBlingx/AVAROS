@@ -14,6 +14,8 @@ import base64
 import json
 import os
 import time
+import uuid
+from weakref import WeakKeyDictionary
 from collections.abc import Mapping
 from typing import Any
 
@@ -33,6 +35,7 @@ _HIVEMIND_CLIENT_CRYPTO_KEY = os.environ.get(
 )
 _RESPONSE_TIMEOUT_S = 12.0
 _PIPELINE_LATENCY_LIMIT_S = 3.0
+_CLIENT_SESSIONS: WeakKeyDictionary[Any, str] = WeakKeyDictionary()
 
 
 def _auth_url() -> str:
@@ -41,7 +44,7 @@ def _auth_url() -> str:
     return f"ws://{_HIVEMIND_HOST}:{_HIVEMIND_PORT}?authorization={token}"
 
 
-def _utterance_envelope(utterance: str) -> dict[str, Any]:
+def _utterance_envelope(utterance: str, session_id: str) -> dict[str, Any]:
     event_type = "recognizer_loop:utterance"
     event_data = {"utterances": [utterance], "lang": "en-us"}
 
@@ -49,9 +52,27 @@ def _utterance_envelope(utterance: str) -> dict[str, Any]:
         "type": event_type,
         "data": event_data,
         "context": {
-            "source": "e2e.voice.pipeline",
+            "source": "avaros-web-ui",
             "destination": "HiveMind",
-            "platform": "AVAROS-E2E",
+            "platform": "AVAROS-WebUI-v1",
+            "session": {
+                "session_id": session_id,
+                "site_id": "default",
+                "lang": "en-us",
+                "pipeline": [
+                    "stop_high",
+                    "converse",
+                    "padatious_high",
+                    "adapt_high",
+                    "fallback_high",
+                    "padatious_medium",
+                    "adapt_medium",
+                    "fallback_medium",
+                    "padatious_low",
+                    "adapt_low",
+                    "fallback_low",
+                ],
+            },
         },
     }
     return {"msg_type": "bus", "payload": payload}
@@ -78,6 +99,9 @@ def _decrypt_payload(envelope: Mapping[str, Any]) -> Mapping[str, Any] | None:
     nonce = envelope.get("nonce")
     if not isinstance(ciphertext, str) or not isinstance(nonce, str):
         return None
+    tag = envelope.get("tag")
+    if isinstance(tag, str):
+        ciphertext = f"{ciphertext}{tag}"
     aes = AESGCM(_HIVEMIND_CLIENT_CRYPTO_KEY.encode("utf-8"))
     decrypted = aes.decrypt(_hex_to_bytes(nonce), _hex_to_bytes(ciphertext), None)
     payload = json.loads(decrypted.decode("utf-8"))
@@ -130,7 +154,40 @@ async def _send_utterance_and_wait(
     utterance: str,
     timeout_s: float = _RESPONSE_TIMEOUT_S,
 ) -> Mapping[str, Any] | None:
-    envelope = _encrypt_payload(_utterance_envelope(utterance))
+    session_id = _CLIENT_SESSIONS.get(ws)
+    if session_id is None:
+        session_id = f"e2e-{uuid.uuid4()}"
+        _CLIENT_SESSIONS[ws] = session_id
+        hello = {
+            "msg_type": "hello",
+            "payload": {
+                "site_id": "default",
+                "session": {
+                    "session_id": session_id,
+                    "site_id": "default",
+                    "lang": "en-us",
+                    "context": {},
+                    "active_skills": [],
+                    "utterance_states": {},
+                    "pipeline": [
+                        "stop_high",
+                        "converse",
+                        "padatious_high",
+                        "adapt_high",
+                        "fallback_high",
+                        "padatious_medium",
+                        "adapt_medium",
+                        "fallback_medium",
+                        "padatious_low",
+                        "adapt_low",
+                        "fallback_low",
+                    ],
+                },
+            },
+        }
+        await ws.send(json.dumps(_encrypt_payload(hello)))
+
+    envelope = _encrypt_payload(_utterance_envelope(utterance, session_id))
     await ws.send(json.dumps(envelope))
     return await _wait_for_type(ws, "speak", timeout_s)
 
@@ -154,7 +211,7 @@ class TestUtteranceRoundtrip:
     async def test_energy_per_unit_utterance(self) -> None:
         """'what is the energy per unit' returns spoken energy value."""
         async with websockets.connect(_auth_url()) as ws:
-            response = await _send_utterance_and_wait(ws, "what is the energy per unit")
+            response = await _send_utterance_and_wait(ws, "what is the energy per unit for Line 1")
         assert response is not None, "No speak response (timeout)"
         spoken = _spoken_text(response).lower()
         assert "energy" in spoken or "kilowatt" in spoken
@@ -162,7 +219,7 @@ class TestUtteranceRoundtrip:
     async def test_oee_utterance(self) -> None:
         """'what is the oee' returns OEE percentage."""
         async with websockets.connect(_auth_url()) as ws:
-            response = await _send_utterance_and_wait(ws, "what is the oee")
+            response = await _send_utterance_and_wait(ws, "what is the oee for Line 1")
         assert response is not None, "No speak response (timeout)"
         spoken = _spoken_text(response).lower()
         assert "%" in _spoken_text(response) or "percent" in spoken
@@ -177,7 +234,7 @@ class TestUtteranceRoundtrip:
     async def test_scrap_rate_utterance(self) -> None:
         """'what is the scrap rate' returns scrap rate value."""
         async with websockets.connect(_auth_url()) as ws:
-            response = await _send_utterance_and_wait(ws, "what is the scrap rate")
+            response = await _send_utterance_and_wait(ws, "what is the scrap rate for Line 1")
         assert response is not None, "No speak response (timeout)"
         spoken = _spoken_text(response).lower()
         assert "scrap" in spoken or "rate" in spoken
@@ -185,7 +242,7 @@ class TestUtteranceRoundtrip:
     async def test_trend_utterance(self) -> None:
         """'show me the trend for energy' returns trend direction."""
         async with websockets.connect(_auth_url()) as ws:
-            response = await _send_utterance_and_wait(ws, "show me the trend for energy")
+            response = await _send_utterance_and_wait(ws, "show me the trend for energy on Line 1 last week")
         assert response is not None, "No speak response (timeout)"
         utterance = _spoken_text(response).lower()
         assert any(
@@ -204,24 +261,24 @@ class TestMultipleIntents:
 
     UTTERANCE_CASES: list[tuple[str, list[str]]] = [
         (
-            "what is the energy per unit",
+            "what is the energy per unit for Line 1",
             ["energy", "kilowatt", "per unit"],
         ),
         (
-            "what is the oee",
+            "what is the oee for Line 1",
             ["%", "percent", "oee", "efficiency"],
         ),
         (
-            "what is the scrap rate",
+            "what is the scrap rate for Line 1",
             ["scrap", "rate", "%"],
         ),
         (
-            "show me the trend for energy",
+            "show me the trend for energy on Line 1 last week",
             ["up", "down", "stable", "trend", "increasing", "decreasing"],
         ),
         (
             "are there any anomalies",
-            ["anomal", "unusual", "normal", "pattern", "no"],
+            ["anomal", "unusual", "normal", "pattern", "no", "unavailable"],
         ),
     ]
 
@@ -260,7 +317,7 @@ class TestPipelineLatency:
             start = time.time()
             response = await _send_utterance_and_wait(
                 ws,
-                "what is the energy per unit",
+                "what is the energy per unit for Line 1",
                 timeout_s=_PIPELINE_LATENCY_LIMIT_S,
             )
         elapsed = time.time() - start
@@ -276,9 +333,9 @@ class TestPipelineLatency:
     async def test_multiple_queries_average_latency(self) -> None:
         """Average latency across 3 queries stays under 3 seconds."""
         queries = [
-            "what is the energy per unit",
-            "what is the oee",
-            "what is the scrap rate",
+            "what is the energy per unit for Line 1",
+            "what is the oee for Line 1",
+            "what is the scrap rate for Line 1",
         ]
         latencies: list[float] = []
 
@@ -316,8 +373,8 @@ class TestGracefulErrors:
                 timeout_s=8.0,
             )
 
-        # Either a graceful fallback response or None (no intent matched).
-        # The key assertion: no exception was raised, pipeline didn't crash.
+        assert response is not None, "Browser-originated gibberish must receive clarification"
+        assert "couldn't map" in _spoken_text(response).lower() or "name a metric" in _spoken_text(response).lower()
         if response is not None:
             assert len(_spoken_text(response)) > 0
 
@@ -344,8 +401,8 @@ class TestSessionIsolation:
         """Two bus clients send different queries, each gets correct answer."""
         async with websockets.connect(_auth_url()) as ws_a:
             async with websockets.connect(_auth_url()) as ws_b:
-                task_a = _send_utterance_and_wait(ws_a, "what is the energy per unit")
-                task_b = _send_utterance_and_wait(ws_b, "what is the oee")
+                task_a = _send_utterance_and_wait(ws_a, "what is the energy per unit for Line 1")
+                task_b = _send_utterance_and_wait(ws_b, "what is the oee for Line 2")
                 response_a, response_b = await asyncio.gather(task_a, task_b)
 
         assert response_a is not None, "Client A got no response"
@@ -365,7 +422,7 @@ class TestResponseQuality:
     async def test_response_not_too_long(self) -> None:
         """Spoken response is under 30 words (voice-optimized)."""
         async with websockets.connect(_auth_url()) as ws:
-            response = await _send_utterance_and_wait(ws, "what is the energy per unit")
+            response = await _send_utterance_and_wait(ws, "what is the energy per unit for Line 1")
 
         assert response is not None
         word_count = len(_spoken_text(response).split())
@@ -377,7 +434,7 @@ class TestResponseQuality:
     async def test_response_is_not_empty(self) -> None:
         """Spoken response contains meaningful content."""
         async with websockets.connect(_auth_url()) as ws:
-            response = await _send_utterance_and_wait(ws, "what is the oee")
+            response = await _send_utterance_and_wait(ws, "what is the oee for Line 1")
 
         assert response is not None
         assert len(_spoken_text(response).strip()) > 5, (

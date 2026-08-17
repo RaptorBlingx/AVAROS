@@ -22,7 +22,7 @@ _LINE_SYNONYM_TO_DIGIT = {
     "to": "2",
     "too": "2",
 }
-_VALID_ASSET_TYPES = {"machine", "line", "sensor", "seu"}
+_VALID_ASSET_TYPES = {"machine", "line", "sensor", "seu", "supplier", "group"}
 
 
 def get_asset_registry(
@@ -114,6 +114,10 @@ def _load_assets_from_settings(
         rows = settings_service.get_asset_list(profile=profile)
     except Exception as exc:
         skill.log.warning("Asset discovery failed on SettingsService.get_asset_list(): %s", exc)
+        return []
+
+    if not isinstance(rows, list):
+        skill.log.warning("SettingsService.get_asset_list() returned a non-list value")
         return []
 
     assets: list[Asset] = []

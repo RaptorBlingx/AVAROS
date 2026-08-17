@@ -41,6 +41,7 @@ class TestKPIVoicePipeline:
         assert response is not None, "No speak response received (timeout)"
         utterance = response["utterance"].lower()
         assert "energy" in utterance or "per unit" in utterance
+        assert "avaros_response" in response.get("meta", {})
 
     def test_oee_intent(self, bus_client) -> None:
         """kpi.oee intent returns OEE percentage."""
@@ -157,9 +158,10 @@ def _assert_anomaly_response_structure(utterance: str) -> None:
     lower = utterance.lower()
     has_anomaly = any(sev in lower for sev in _SEVERITY_WORDS)
     has_clean = "no unusual" in lower
+    unavailable = "unavailable" in lower or "not configured" in lower
 
-    assert has_anomaly or has_clean, (
-        f"Anomaly response lacks both severity AND 'no unusual': {utterance!r}"
+    assert has_anomaly or has_clean or unavailable, (
+        f"Anomaly response lacks severity, clean coverage, or unavailable status: {utterance!r}"
     )
     # Mutually exclusive: never both "no unusual" and a severity word
     if has_clean:
@@ -184,6 +186,8 @@ class TestAnomalyPipeline:
         _assert_anomaly_response_structure(utterance)
 
         lower = utterance.lower()
+        if "unavailable" in lower or "not configured" in lower:
+            return
         # Targeted response must reference the asset or say "no unusual"
         if "no unusual" not in lower:
             assert "line" in lower or "sigma" in lower, (
@@ -204,7 +208,7 @@ class TestAnomalyPipeline:
 
         lower = utterance.lower()
         # Full-scan response must include scope indicator (P9.1 Phase 3)
-        assert "check" in lower or "across" in lower, (
+        assert "unavailable" in lower or "not configured" in lower or "check" in lower or "across" in lower, (
             f"Broad scan response missing scope phrase ('checks'/'across'): {utterance!r}"
         )
 
@@ -244,15 +248,16 @@ class TestErrorHandling:
         # Should get some response (either data or graceful error), not a timeout
         assert response is not None, "Unknown asset caused timeout — no error message spoken"
 
-    def test_missing_asset_defaults_gracefully(self, bus_client) -> None:
-        """Missing asset param defaults to 'default' and still responds."""
+    def test_missing_asset_clarifies_gracefully(self, bus_client) -> None:
+        """Missing asset asks for a scope instead of defaulting to Line-1."""
         response = send_intent_and_wait(
             bus_client,
             "kpi.oee.intent",
-            {},  # no asset provided — skill defaults to "default"
+            {},  # no asset provided — skill must clarify
         )
 
         assert response is not None, "Missing asset param caused timeout"
+        assert "which asset" in response["utterance"].lower()
 
 
 # ══════════════════════════════════════════════════════════
