@@ -152,6 +152,8 @@ export default function useMetricMappingTest({
         auth_type:
           config.extra_settings.auth_type === "cookie"
             ? "cookie"
+            : config.extra_settings.auth_type === "basic"
+            ? "basic"
             : config.extra_settings.auth_type === "none"
             ? "none"
             : "bearer",

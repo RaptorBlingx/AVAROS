@@ -119,6 +119,25 @@ class TestCreateMetricMapping:
 
         assert body["transform"] == "multiply_by_1000"
 
+    def test_create_mapping_preserves_optional_trend_configuration(
+        self,
+        client: TestClient,
+        energy_mapping_payload: dict[str, Any],
+    ) -> None:
+        """A mapping can configure an independent generic time-series query."""
+        payload = {
+            **energy_mapping_payload,
+            "trend_endpoint": (
+                "/api/series?from={start_epoch_ms}&to={end_epoch_ms}"
+            ),
+            "trend_json_path": "$.series",
+        }
+
+        body = client.post("/api/v1/config/metrics", json=payload).json()
+
+        assert body["trend_endpoint"] == payload["trend_endpoint"]
+        assert body["trend_json_path"] == "$.series"
+
     def test_create_mapping_transform_null_by_default(
         self,
         client: TestClient,

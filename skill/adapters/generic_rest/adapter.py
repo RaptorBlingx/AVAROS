@@ -110,7 +110,10 @@ class GenericRestAdapter(
                 binding=native_binding,
             )
 
-        if self._is_energy_only_asset(asset_id):
+        if (
+            self._is_energy_only_asset(asset_id)
+            and metric != CanonicalMetric.ENERGY_TOTAL
+        ):
             self._raise_asset_metric_unavailable(
                 metric=metric,
                 asset_id=asset_id,
@@ -386,7 +389,10 @@ class GenericRestAdapter(
     ) -> dict | list:
         """Fetch and return mapped endpoint payload without normalization."""
         self._ensure_initialized()
-        if self._is_energy_only_asset(asset_id):
+        if (
+            self._is_energy_only_asset(asset_id)
+            and metric != CanonicalMetric.ENERGY_TOTAL
+        ):
             self._raise_asset_metric_unavailable(
                 metric=metric,
                 asset_id=asset_id,

@@ -43,6 +43,8 @@ def _mapping_data(payload: MetricMappingRequest) -> dict:
         "pagination": payload.pagination,
         "page_size": payload.page_size,
         "freshness_seconds": payload.freshness_seconds,
+        "trend_endpoint": payload.trend_endpoint,
+        "trend_json_path": payload.trend_json_path,
     }
 
 
@@ -71,6 +73,8 @@ def _to_response(
         pagination=bool(mapping.get("pagination", False)),
         page_size=int(mapping.get("page_size", 100) or 100),
         freshness_seconds=mapping.get("freshness_seconds"),
+        trend_endpoint=mapping.get("trend_endpoint"),
+        trend_json_path=mapping.get("trend_json_path"),
         source=source,
     )
 

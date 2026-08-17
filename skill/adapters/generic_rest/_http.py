@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 from urllib.parse import urlsplit, urlunsplit
 
@@ -28,6 +29,7 @@ class GenericRestHttpMixin:
     _timeout: int
     _auth_type: str
     _api_key: str
+    _extra_settings: dict
     _max_retries: int
     _backoff_factors: tuple[float, ...]
 
@@ -124,15 +126,7 @@ class GenericRestHttpMixin:
             )
             if status_code < 500:
                 return
-            raise AdapterError(
-                message=(
-                    f"Base URL probe failed with status {status_code}: "
-                    f"{self._api_url}"
-                ),
-                code="GENERIC_REST_INIT_FAILED",
-                platform="generic_rest",
-                status_code=status_code,
-            )
+            return await self._probe_configured_endpoint(status_code)
         except aiohttp.ClientConnectorError as exc:
             raise AdapterError(
                 message=f"Could not reach API URL: {self._api_url}",
@@ -159,15 +153,7 @@ class GenericRestHttpMixin:
                 )
                 if status_code < 500:
                     return
-                raise AdapterError(
-                    message=(
-                        f"Base URL probe failed with status {status_code}: "
-                        f"{self._api_url}"
-                    ),
-                    code="GENERIC_REST_INIT_FAILED",
-                    platform="generic_rest",
-                    status_code=status_code,
-                )
+                return await self._probe_configured_endpoint(status_code)
             except AdapterError:
                 raise
             except aiohttp.ClientConnectorError as exc:
@@ -185,6 +171,39 @@ class GenericRestHttpMixin:
                     code="GENERIC_REST_INIT_FAILED",
                     platform="generic_rest",
                 ) from exc
+
+    async def _probe_configured_endpoint(self, base_status_code: int) -> None:
+        """Fall back to a configured read endpoint when an API root rejects probes.
+
+        Some valid APIs intentionally expose no document or health resource at
+        their base path.  A profile can provide ``connection_test_endpoint``
+        so the generic adapter verifies a real, read-only resource instead.
+        """
+        assert self._session is not None
+        endpoint = str(
+            self._extra_settings.get("connection_test_endpoint", ""),
+        ).strip()
+        if endpoint:
+            try:
+                url = self._build_request_url(endpoint)
+                status_code = await self._await_with_timeout(
+                    self._probe_status("GET", url),
+                    max(1, min(int(self._timeout), 10)),
+                )
+                if status_code < 500:
+                    return
+            except (aiohttp.ClientConnectorError, asyncio.TimeoutError):
+                pass
+
+        raise AdapterError(
+            message=(
+                f"Base URL probe failed with status {base_status_code}: "
+                f"{self._api_url}"
+            ),
+            code="GENERIC_REST_INIT_FAILED",
+            platform="generic_rest",
+            status_code=base_status_code,
+        )
 
     async def _refresh_session_if_needed(self) -> None:
         """Recreate session when bound loop is closed or mismatched."""
@@ -281,7 +300,7 @@ class GenericRestHttpMixin:
         return f"{self._api_url}/{endpoint}"
 
     def _build_auth_headers(self) -> dict[str, str]:
-        """Build auth headers for bearer or cookie auth."""
+        """Build auth headers for configured generic HTTP authentication."""
         if self._auth_type == "none":
             return {}
         if self._auth_type == "cookie":
@@ -291,6 +310,9 @@ class GenericRestHttpMixin:
                     decode=True,
                 ),
             }
+        if self._auth_type == "basic":
+            encoded = base64.b64encode(self._api_key.encode("utf-8")).decode("ascii")
+            return {"Authorization": f"Basic {encoded}"}
 
         return {"Authorization": f"Bearer {self._api_key}"}
 

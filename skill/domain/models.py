@@ -40,6 +40,14 @@ class CanonicalMetric(Enum):
     ENERGY_TOTAL = "energy_total"             # Total kWh consumed
     PEAK_DEMAND = "peak_demand"               # Maximum power draw (kW)
     PEAK_TARIFF_EXPOSURE = "peak_tariff_exposure"  # Cost exposure to peak rates
+    CONSUMPTION_POWER = "consumption_power"   # Instantaneous electrical consumption
+    PRODUCTION_POWER = "production_power"     # Instantaneous electrical production
+    ENERGY_PRODUCTION_TOTAL = "energy_production_total"  # Accumulated generated energy
+    GRID_POWER = "grid_power"                 # Instantaneous grid import/export power
+    ENERGY_GRID_IMPORT_TOTAL = "energy_grid_import_total"  # Accumulated grid import
+    ENERGY_GRID_EXPORT_TOTAL = "energy_grid_export_total"  # Accumulated grid export
+    STORAGE_STATE_OF_CHARGE = "storage_state_of_charge"  # Battery state of charge
+    STORAGE_POWER = "storage_power"           # Battery charge/discharge power
     
     # Material Metrics
     SCRAP_RATE = "scrap_rate"                 # % of material scrapped
@@ -114,6 +122,14 @@ class CanonicalMetric(Enum):
             self.ENERGY_PER_UNIT: "energy per unit",
             self.ENERGY_TOTAL: "total energy",
             self.PEAK_DEMAND: "peak demand",
+            self.CONSUMPTION_POWER: "consumption power",
+            self.PRODUCTION_POWER: "production power",
+            self.ENERGY_PRODUCTION_TOTAL: "total production energy",
+            self.GRID_POWER: "grid power",
+            self.ENERGY_GRID_IMPORT_TOTAL: "total grid import energy",
+            self.ENERGY_GRID_EXPORT_TOTAL: "total grid export energy",
+            self.STORAGE_STATE_OF_CHARGE: "battery state of charge",
+            self.STORAGE_POWER: "battery power",
             self.SCRAP_RATE: "scrap rate",
             self.REWORK_RATE: "rework rate",
             self.MATERIAL_EFFICIENCY: "material efficiency",
@@ -132,6 +148,14 @@ class CanonicalMetric(Enum):
             self.ENERGY_PER_UNIT: "kWh/unit",
             self.ENERGY_TOTAL: "kWh",
             self.PEAK_DEMAND: "kW",
+            self.CONSUMPTION_POWER: "W",
+            self.PRODUCTION_POWER: "W",
+            self.ENERGY_PRODUCTION_TOTAL: "Wh",
+            self.GRID_POWER: "W",
+            self.ENERGY_GRID_IMPORT_TOTAL: "Wh",
+            self.ENERGY_GRID_EXPORT_TOTAL: "Wh",
+            self.STORAGE_STATE_OF_CHARGE: "%",
+            self.STORAGE_POWER: "W",
             self.PEAK_TARIFF_EXPOSURE: "%",
             self.SCRAP_RATE: "%",
             self.REWORK_RATE: "%",

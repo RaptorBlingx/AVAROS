@@ -10,7 +10,7 @@ import ErrorMessage from "../common/ErrorMessage";
 import LoadingSpinner from "../common/LoadingSpinner";
 import Tooltip from "../common/Tooltip";
 
-type AuthType = "api_key" | "cookie" | "none";
+type AuthType = "api_key" | "basic" | "cookie" | "none";
 
 const PROFILE_NAME_RE = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
 
@@ -94,6 +94,8 @@ export default function PlatformSetupStep({
         const backendAuth = detail.extra_settings?.auth_type;
         if (backendAuth === "cookie") {
           onAuthTypeChange("cookie");
+        } else if (backendAuth === "basic") {
+          onAuthTypeChange("basic");
         } else if (backendAuth === "none") {
           onAuthTypeChange("none");
         } else {
@@ -323,6 +325,7 @@ export default function PlatformSetupStep({
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
               >
                 <option value="api_key">API Key</option>
+                <option value="basic">Basic Authentication</option>
                 <option value="cookie">Session Cookie</option>
                 <option value="none">No Authentication</option>
               </select>
@@ -331,7 +334,7 @@ export default function PlatformSetupStep({
             {authType !== "none" && (
               <label className="block">
                 <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">
-                  {authType === "cookie" ? "Session Cookie Value" : "API Key"}
+                  {authType === "cookie" ? "Session Cookie Value" : authType === "basic" ? "Username:Password" : "API Key"}
                 </span>
                 <input
                   type="password"
@@ -340,7 +343,9 @@ export default function PlatformSetupStep({
                   placeholder={
                     authType === "cookie"
                       ? "Paste session cookie (S=...)"
-                      : "Enter your API key"
+                      : authType === "basic"
+                        ? "Enter username:password"
+                        : "Enter your API key"
                   }
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-200 focus:ring-2 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                 />

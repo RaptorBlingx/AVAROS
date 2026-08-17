@@ -120,7 +120,7 @@ def handle_status_profile_show(skill: "AVAROSSkill", message: Message) -> None:
 
 
 def handle_help_capabilities_list(skill: "AVAROSSkill", message: Message) -> None:
-    """Handle capability/help request for generic + KPI intents."""
+    """Handle capability help using mapped metrics and active profile intents."""
 
     def _execute() -> None:
         from skill.services.capability_manifest import build_capability_manifest
@@ -130,20 +130,41 @@ def handle_help_capabilities_list(skill: "AVAROSSkill", message: Message) -> Non
             getattr(skill.dispatcher, "adapter", None),
         )
         metric_names = [item["label"] for item in manifest["metrics"]]
+        capabilities: list[str] = []
         if metric_names:
             metric_part = ", ".join(metric_names[:5])
             if len(metric_names) > 5:
                 metric_part += f", and {len(metric_names) - 5} more"
+            capabilities.append(f"report KPIs like {metric_part}")
         else:
-            metric_part = "energy per unit, scrap rate, OEE"
-        analytics = (
-            "PREVENTION anomaly analytics is available."
-            if manifest["prevention"]["available"]
-            else "PREVENTION anomaly, drift, and forecast analytics are unavailable."
-        )
-        speak_information(skill,
-            f"I can report, compare, rank, summarize, explain, and trend KPIs like {metric_part}. "
-            f"{analytics} I am read-only and cannot control equipment.",
+            capabilities.append("report configured KPIs")
+
+        if _intent_is_active(skill, "compare.energy"):
+            capabilities.append("compare energy")
+        anomaly_active = _intent_is_active(skill, "anomaly.production.check")
+        if anomaly_active:
+            capabilities.append("check production anomalies")
+        if (
+            _intent_is_active(skill, "trend.energy")
+            or _intent_is_active(skill, "trend.scrap")
+        ):
+            capabilities.append("show trends")
+        if _intent_is_active(skill, "status.system.show"):
+            capabilities.append("show system status")
+        if _intent_is_active(skill, "status.profile.show"):
+            capabilities.append("report the active profile")
+
+        analytics = ""
+        if anomaly_active:
+            analytics = (
+                " PREVENTION anomaly analytics is available."
+                if manifest["prevention"]["available"]
+                else " PREVENTION anomaly, drift, and forecast analytics are unavailable."
+            )
+        speak_information(
+            skill,
+            f"I can {', '.join(capabilities)}.{analytics} "
+            "I am read-only and cannot control equipment.",
             response_type="capabilities",
         )
 
@@ -162,6 +183,17 @@ def _get_mapped_metric_names(skill: "AVAROSSkill") -> list[str]:
         return [m.display_name for m in metrics if hasattr(m, "display_name")]
     except Exception:
         return []
+
+
+def _intent_is_active(skill: "AVAROSSkill", intent_name: str) -> bool:
+    """Return profile-scoped activation state, failing open for legacy setup."""
+    settings_service = getattr(skill, "settings_service", None)
+    if settings_service is None:
+        return True
+    try:
+        return bool(settings_service.is_intent_active(intent_name))
+    except Exception:
+        return True
 
 
 def handle_list_assets(skill: "AVAROSSkill", message: Message) -> None:

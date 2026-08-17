@@ -265,6 +265,22 @@ class TestBusListenerRegistration:
         assert second_count == first_count
         assert register_intent_file.call_count == first_count + second_count
 
+    def test_disabled_intent_registration_guard_skips_handler(self):
+        """Profile intent activation state must be enforced at voice dispatch."""
+        skill = _make_skill()
+        skill.settings_service = Mock()
+        skill.settings_service.is_intent_active.return_value = False
+        skill.speak = Mock()
+        handler = Mock()
+
+        guarded = skill._guard_intent_activation("trend.energy", handler)
+        guarded(Mock())
+
+        handler.assert_not_called()
+        skill.speak.assert_called_once_with(
+            "That capability is disabled for the active profile.",
+        )
+
 # ══════════════════════════════════════════════════════════
 # Force Unconfigured Fallback
 # ══════════════════════════════════════════════════════════
@@ -796,6 +812,28 @@ class TestNonMetricIntentBindings:
         skill._require_intent_binding.assert_not_called()
         skill.speak.assert_called_once()
 
+    def test_help_capabilities_reports_only_active_profile_features(self):
+        """Capability help must not advertise profile-disabled features."""
+        skill = _initialized_skill()
+        skill.settings_service = Mock()
+        skill.settings_service.is_intent_active.side_effect = (
+            lambda name: name in {"status.system.show", "status.profile.show"}
+        )
+        skill.dispatcher.adapter.get_supported_metrics = Mock(
+            return_value=[CanonicalMetric.ENERGY_TOTAL],
+        )
+        skill.speak = Mock()
+
+        skill.handle_help_capabilities_list(Mock())
+
+        response = skill.speak.call_args.args[0]
+        assert "total energy" in response
+        assert "system status" in response
+        assert "active profile" in response
+        assert "compare" not in response
+        assert "anomal" not in response
+        assert "trend" not in response
+
 
 class TestMetricFallback:
     """Tests for metric fallback handler and utterance metric resolution."""
@@ -815,6 +853,25 @@ class TestMetricFallback:
         metric = skill._resolve_metric_from_utterance("what is the energy per unit")
 
         assert metric == CanonicalMetric.ENERGY_PER_UNIT
+
+    @pytest.mark.parametrize(
+        ("utterance", "expected"),
+        [
+            ("how much power is OpenEMS Edge consuming", CanonicalMetric.CONSUMPTION_POWER),
+            ("what is generated power", CanonicalMetric.PRODUCTION_POWER),
+            ("what is produced energy", CanonicalMetric.ENERGY_PRODUCTION_TOTAL),
+            ("what is grid power", CanonicalMetric.GRID_POWER),
+            ("what is energy imported from grid", CanonicalMetric.ENERGY_GRID_IMPORT_TOTAL),
+            ("what is energy exported to grid", CanonicalMetric.ENERGY_GRID_EXPORT_TOTAL),
+            ("what is battery state of charge", CanonicalMetric.STORAGE_STATE_OF_CHARGE),
+            ("what is battery power", CanonicalMetric.STORAGE_POWER),
+        ],
+    )
+    def test_resolve_metric_from_utterance_generic_energy_metrics(self, utterance, expected):
+        """Platform-neutral energy phrases resolve to the matching metric."""
+        skill = _make_skill()
+
+        assert skill._resolve_metric_from_utterance(utterance) == expected
 
     def test_resolve_metric_from_utterance_co2_total(self):
         """Resolves CO2 total from common phrasing."""

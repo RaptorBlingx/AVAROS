@@ -1,0 +1,27 @@
+# Official OpenEMS Edge UI for the local AVAROS OpenEMS Edge simulator.
+# It joins the existing AVAROS Docker network; it does not alter the Edge
+# container or its configuration/data volumes.
+services:
+  openems-ui:
+    image: openems/ui-edge:latest
+    container_name: avaros-openems-ui
+    hostname: avaros-openems-ui
+    restart: unless-stopped
+    environment:
+      WEBSOCKET_HOST: avaros-openems-edge
+      WEBSOCKET_PORT: "8085"
+    ports:
+      - "10.33.10.112:8186:80"
+    volumes:
+      - avaros-openems-ui-conf:/etc/nginx:rw
+      - avaros-openems-ui-log:/var/log/nginx:rw
+    networks:
+      - avaros-network
+
+volumes:
+  avaros-openems-ui-conf:
+  avaros-openems-ui-log:
+
+networks:
+  avaros-network:
+    external: true

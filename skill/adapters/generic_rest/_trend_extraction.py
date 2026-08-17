@@ -50,6 +50,8 @@ def extract_trend_points(
         )
         points.append(DataPoint(timestamp=timestamp, value=value, unit=point_unit))
 
+    # Upstream APIs are free to return newest-first or oldest-first.  Trend
+    # math must always compare chronological first/last values.
     return sorted(points, key=lambda point: point.timestamp)
 
 
@@ -160,7 +162,10 @@ def _parse_trend_item(
             platform="generic_rest",
         ) from exc
 
-    raw_ts = first_present(item, ("timestamp", "datetime", "date", "time", "x"))
+    raw_ts = first_present(
+        item,
+        ("timestamp", "ts", "datetime", "date", "time", "x"),
+    )
     timestamp = _parse_timestamp(raw_ts)
     if timestamp is None:
         timestamp = _interpolate_timestamp(period, index, total)
@@ -180,14 +185,16 @@ def _parse_timestamp(raw: Any) -> datetime | None:
         return raw
 
     if isinstance(raw, (int, float)):
-        try:
-            return datetime.fromtimestamp(float(raw), tz=timezone.utc)
-        except (ValueError, OSError):
-            return None
+        return _parse_epoch_timestamp(float(raw))
 
     raw_str = str(raw).strip()
     if not raw_str:
         return None
+
+    try:
+        return _parse_epoch_timestamp(float(raw_str))
+    except ValueError:
+        pass
 
     normalized = raw_str.replace("Z", "+00:00")
     try:
@@ -196,6 +203,27 @@ def _parse_timestamp(raw: Any) -> datetime | None:
             parsed = parsed.replace(tzinfo=timezone.utc)
         return parsed
     except ValueError:
+        return None
+
+
+def _parse_epoch_timestamp(value: float) -> datetime | None:
+    """Parse Unix epoch seconds, milliseconds, microseconds, or nanoseconds.
+
+    The magnitude-based normalization is deliberately protocol-neutral: it
+    supports the common numeric timestamp units without requiring a platform
+    name or special adapter branch.
+    """
+    absolute = abs(value)
+    if absolute >= 1e17:  # nanoseconds
+        value /= 1e9
+    elif absolute >= 1e14:  # microseconds
+        value /= 1e6
+    elif absolute >= 1e11:  # milliseconds
+        value /= 1e3
+
+    try:
+        return datetime.fromtimestamp(value, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
         return None
 
 

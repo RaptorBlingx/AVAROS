@@ -91,14 +91,24 @@ using:
 - `end_date`, `end_datetime`, `datetimemax`; and
 - `period`, formatted as `<start>_<end>`.
 
+For APIs that use numeric windows, mappings may also use
+`start_epoch_seconds`, `end_epoch_seconds`, `start_epoch_ms`, and
+`end_epoch_ms`. Trend mappings may supply a distinct `trend_endpoint` and
+`trend_json_path`; numeric point timestamps are normalized automatically from
+seconds, milliseconds, microseconds, or nanoseconds.
+
 Dates are rendered in UTC as `%Y-%m-%dT%H:%M:%SZ`. Query parameters embedded in
 the endpoint template are split from the path before the HTTP request. Any
 unresolved placeholder raises `GENERIC_REST_MAPPING_INVALID`; AVAROS does not
 silently send unresolved templates upstream.
 
-The adapter's HTTP layer applies the configured auth mode, timeout, retry count,
-and backoff. Reneryo-specific auth and verified upstream endpoint behavior are
-documented separately in `RENERYO-API-REFERENCE.md`.
+The adapter's HTTP layer supports bearer tokens, HTTP Basic credentials
+(`username:password`), session cookies, and no-auth endpoints, as well as the
+configured timeout, retry count, and backoff. If an API intentionally rejects a
+request to its root path, a profile may set `connection_test_endpoint` to a
+safe read-only endpoint for connection validation. Reneryo-specific auth and
+verified upstream endpoint behavior are documented separately in
+`RENERYO-API-REFERENCE.md`.
 
 ## Direct KPI query lifecycle
 
@@ -136,7 +146,9 @@ intent handler.
 For `get_kpi`, the generic adapter applies this order:
 
 1. resolve a native asset/metric binding, if configured;
-2. reject unsupported metrics for energy-only/native-limited assets;
+2. reject unsupported metrics for energy-only/native-limited assets (an
+   energy-only asset may still resolve `energy_total` through either a native
+   binding or its generic metric mapping);
 3. require a canonical metric mapping;
 4. resolve endpoint and query parameters using profile/asset settings;
 5. call the upstream API with retry behavior;

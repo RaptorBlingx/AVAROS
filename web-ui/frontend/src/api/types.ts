@@ -117,7 +117,7 @@ export type PlatformConfigRequest = {
   api_url: string;
   api_key: string;
   extra_settings: {
-    auth_type?: "bearer" | "cookie" | "none";
+    auth_type?: "bearer" | "basic" | "cookie" | "none";
     [key: string]: string | number | boolean | null | undefined;
   };
 };
@@ -147,6 +147,14 @@ export type ConnectionTestResponse = {
 export type CanonicalMetricName =
   | "energy_per_unit"
   | "energy_total"
+  | "consumption_power"
+  | "production_power"
+  | "energy_production_total"
+  | "grid_power"
+  | "energy_grid_import_total"
+  | "energy_grid_export_total"
+  | "storage_state_of_charge"
+  | "storage_power"
   | "peak_demand"
   | "peak_tariff_exposure"
   | "scrap_rate"
@@ -179,6 +187,8 @@ export type MetricMapping = {
   pagination?: boolean;
   page_size?: number;
   freshness_seconds?: number | null;
+  trend_endpoint?: string | null;
+  trend_json_path?: string | null;
   source: MetricMappingSource;
 };
 
@@ -188,7 +198,7 @@ export type MetricMappingTestRequest = {
   base_url: string;
   endpoint: string;
   json_path: string;
-  auth_type: "bearer" | "cookie" | "none";
+  auth_type: "bearer" | "basic" | "cookie" | "none";
   auth_token: string;
 };
 

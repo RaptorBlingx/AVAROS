@@ -6,6 +6,7 @@ import os
 import re
 import sys
 from concurrent.futures import TimeoutError as FutureTimeoutError
+from functools import wraps
 from pathlib import Path
 from collections.abc import Coroutine
 from typing import TYPE_CHECKING, Any, Callable, List
@@ -73,6 +74,7 @@ from skill.adapters.factory import AdapterFactory
 from skill.clients.prevention import PreventionClient
 from skill.domain.exceptions import AVAROSError
 from skill.services.alert_monitor import AlertMonitor
+from skill.services.settings import KNOWN_INTENTS
 from skill.services.prevention_runtime import resolve_prevention_config
 from skill.services.response_builder import ResponseBuilder
 from skill.services.conversation_state import DialogueStateStore
@@ -249,12 +251,21 @@ class AVAROSSkill(FallbackSkill):
 
         registered_count = 0
 
-        def _register(intent_file: str, handler) -> None:
+        def _register(
+            intent_file: str,
+            handler,
+            intent_name: str | None = None,
+        ) -> None:
             nonlocal registered_count
             if not force and intent_file in self._registered_intent_files:
                 return
             try:
-                self.register_intent_file(intent_file, handler)
+                guarded_handler = (
+                    self._guard_intent_activation(intent_name, handler)
+                    if intent_name
+                    else handler
+                )
+                self.register_intent_file(intent_file, guarded_handler)
             except RuntimeError as exc:
                 if "bus not set" not in str(exc):
                     raise
@@ -265,10 +276,43 @@ class AVAROSSkill(FallbackSkill):
 
         self._register_entity_files(force=force)
         for intent_name in INTENT_METRIC_MAP:
-            _register(f"{intent_name}.intent", self._handle_generic_kpi)
+            _register(
+                f"{intent_name}.intent",
+                self._handle_generic_kpi,
+                intent_name,
+            )
         for intent_file, handler_name in NON_KPI_INTENT_MAP:
-            _register(intent_file, getattr(self, handler_name))
+            intent_name = intent_file.removesuffix(".intent")
+            _register(
+                intent_file,
+                getattr(self, handler_name),
+                intent_name if intent_name in KNOWN_INTENTS else None,
+            )
         return registered_count
+
+    def _guard_intent_activation(self, intent_name: str, handler: Callable):
+        """Wrap a registered intent so profile activation settings take effect.
+
+        Intent files stay registered to allow profile switches without an OVOS
+        restart.  The wrapper reads the active profile at dispatch time, which
+        makes an enable/disable choice immediate and profile-scoped.
+        """
+        @wraps(handler)
+        def _guarded(message: Message) -> Any:
+            if self.settings_service is not None:
+                try:
+                    if not self.settings_service.is_intent_active(intent_name):
+                        self.speak("That capability is disabled for the active profile.")
+                        return None
+                except Exception as exc:  # noqa: BLE001 - do not break voice routing
+                    self.log.warning(
+                        "Unable to read activation state for '%s': %s",
+                        intent_name,
+                        exc,
+                    )
+            return handler(message)
+
+        return _guarded
 
     def _register_entity_files(self, *, force: bool = False) -> None:
         """Register dynamic asset entity files used by intent slots."""
