@@ -27,6 +27,7 @@ type AssetMetricLinkingStepProps = {
   onSkip?: () => void;
   mode?: "wizard" | "settings";
   profileName?: string;
+  refreshKey?: number;
 };
 
 /** One row in the linking matrix: one asset's resource IDs per metric. */
@@ -110,6 +111,7 @@ export default function AssetMetricLinkingStep({
   onSkip,
   mode = "wizard",
   profileName,
+  refreshKey = 0,
 }: AssetMetricLinkingStepProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -170,7 +172,7 @@ export default function AssetMetricLinkingStep({
 
   useEffect(() => {
     void loadData();
-  }, [loadData]);
+  }, [loadData, profileName, refreshKey]);
 
   /* ---------------------------------------------------------------- */
   /*  Handlers                                                         */

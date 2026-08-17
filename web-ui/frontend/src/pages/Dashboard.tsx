@@ -33,10 +33,12 @@ import {
   buildDashboardStatusCards,
   DASHBOARD_ONBOARDING_STEPS,
 } from "./dashboard.helpers";
+import { useProfileRevision } from "../hooks/useProfileChange";
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const { isDark } = useTheme();
+  const profileRevision = useProfileRevision();
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [status, setStatus] = useState<SystemStatusResponse | null>(null);
   const [siteProgress, setSiteProgress] = useState<SiteProgressResponse | null>(
@@ -98,7 +100,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     void loadData();
-  }, [loadData]);
+  }, [loadData, profileRevision]);
 
   useEffect(() => {
     const isComplete = localStorage.getItem(ONBOARDING_STORAGE_KEY) === "1";

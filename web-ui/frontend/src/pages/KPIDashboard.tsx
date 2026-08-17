@@ -28,6 +28,7 @@ import {
 } from "../components/common/onboarding";
 import KPITrendChart from "../components/kpi/KPITrendChart";
 import KPITargetCard from "../components/kpi/KPITargetCard";
+import { useProfileRevision } from "../hooks/useProfileChange";
 import {
   KPI_METRICS,
   PERIOD_OPTIONS,
@@ -41,6 +42,7 @@ import {
 
 export default function KPIDashboard() {
   const navigate = useNavigate();
+  const profileRevision = useProfileRevision();
 
   const [period, setPeriod] = useState<PeriodOption>("30d");
   const [loading, setLoading] = useState(true);
@@ -144,7 +146,7 @@ export default function KPIDashboard() {
 
   useEffect(() => {
     void loadKPIData();
-  }, [loadKPIData]);
+  }, [loadKPIData, profileRevision]);
 
   useEffect(() => {
     const onRerun = (event: Event) => {

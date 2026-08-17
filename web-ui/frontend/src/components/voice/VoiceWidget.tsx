@@ -23,6 +23,10 @@ import {
   type WidgetPosition,
 } from "./voiceWidget.helpers";
 import { normalizeUtteranceForIntent } from "../../services/intent-normalizer";
+import {
+  ACTIVE_PROFILE_CHANGED_EVENT,
+  type ActiveProfileChangedDetail,
+} from "../../hooks/useProfileChange";
 import "./VoiceWidget.css";
 
 type VoiceWidgetProps = {
@@ -156,6 +160,33 @@ export default function VoiceWidget({
       setLocalError("");
     }
   }, [lastResponse, voiceMode]);
+
+  useEffect(() => {
+    const handleProfileChanged = (event: Event) => {
+      const detail = (event as CustomEvent<ActiveProfileChangedDetail>).detail;
+      if (!detail?.profileName) return;
+
+      // Do not let evidence or an in-flight response from profile X appear
+      // after the browser has switched to profile Y.
+      cancelCurrentQuery();
+      cancelProcessing();
+      clearConversation();
+      setAwaitingResponse(false);
+      setIgnoreStuckProcessing(false);
+      setActiveResponse(null);
+      setResponseFallback(null);
+      setResponseReceivedAt(null);
+      setLocalError("");
+    };
+
+    window.addEventListener(ACTIVE_PROFILE_CHANGED_EVENT, handleProfileChanged);
+    return () => {
+      window.removeEventListener(
+        ACTIVE_PROFILE_CHANGED_EVENT,
+        handleProfileChanged,
+      );
+    };
+  }, [cancelCurrentQuery, cancelProcessing, clearConversation]);
 
   // If a response is being spoken but text did not change (same reply as previous),
   // keep the widget out of timeout by reusing the latest known response.

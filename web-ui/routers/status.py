@@ -34,6 +34,11 @@ _prevention_status_cache: dict[
 ] = {}
 
 
+def invalidate_status_caches() -> None:
+    """Drop cached status observations after a profile/configuration change."""
+    _live_status_cache.clear()
+
+
 def _intent_count() -> int:
     """Count intent files from mounted skill path or local fallback path."""
     mounted_locale_dir = Path("/opt/avaros/skill/locale/en-us")
@@ -200,6 +205,7 @@ async def get_system_status(
     defaults = SystemStatusResponse(
         configured=False,
         active_adapter="unconfigured",
+        active_profile="unconfigured",
         platform_type="unconfigured",
         loaded_intents=loaded_intents,
         database_connected=False,
@@ -230,6 +236,7 @@ async def get_system_status(
 
     try:
         settings_service.initialize()
+        active_profile = settings_service.get_active_profile_name()
         prevention_status = await _resolve_prevention_status(
             settings_service,
         )
@@ -249,6 +256,7 @@ async def get_system_status(
         else:
             cache_key = "|".join(
                 [
+                    str(active_profile).strip(),
                     str(platform_type).strip().lower(),
                     str(platform_config.api_url or "").strip(),
                     str(platform_config.extra_settings.get("auth_type", "")).strip().lower(),
@@ -263,6 +271,7 @@ async def get_system_status(
         return SystemStatusResponse(
             configured=configured,
             active_adapter=platform_type,
+            active_profile=active_profile,
             platform_type=platform_type,
             loaded_intents=loaded_intents,
             database_connected=True,

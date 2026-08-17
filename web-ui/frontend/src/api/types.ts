@@ -6,6 +6,7 @@ export type HealthResponse = {
 export type SystemStatusResponse = {
   configured: boolean;
   active_adapter: string;
+  active_profile?: string;
   platform_type: string;
   loaded_intents: number;
   database_connected: boolean;
