@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from skill.domain.models import CanonicalMetric
-from skill.services.prevention_runtime import resolve_prevention_config
+from skill.services.prevention_runtime import (
+    resolve_prevention_config,
+    resolve_prevention_data_status,
+)
 
 
 def build_capability_manifest(settings_service, adapter=None) -> dict[str, Any]:
@@ -51,7 +54,13 @@ def build_capability_manifest(settings_service, adapter=None) -> dict[str, Any]:
                 continue
 
     prevention = resolve_prevention_config(settings_service)
-    analytics_available = prevention.mode == "http" and bool(prevention.url)
+    prevention_data = resolve_prevention_data_status(settings_service)
+    analytics_available = (
+        prevention.mode == "http"
+        and bool(prevention.url)
+        and prevention_data.state == "fresh"
+        and (prevention_data.record_count or 0) > 0
+    )
     operations = [
         "kpi",
         "multi_kpi",
@@ -86,6 +95,8 @@ def build_capability_manifest(settings_service, adapter=None) -> dict[str, Any]:
             "available": analytics_available,
             "mode": prevention.mode,
             "reason": prevention.mode_reason,
+            "data_state": prevention_data.state,
+            "data_message": prevention_data.message,
         },
         "unsupported": ["machine_control", "causal_claims", "unmodelled_process_what_if"],
     }

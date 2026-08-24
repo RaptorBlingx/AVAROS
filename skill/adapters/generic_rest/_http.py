@@ -303,6 +303,23 @@ class GenericRestHttpMixin:
         """Build auth headers for configured generic HTTP authentication."""
         if self._auth_type == "none":
             return {}
+        if self._auth_type == "custom_header":
+            header_name = str(
+                self._extra_settings.get("auth_header_name", ""),
+            ).strip()
+            header_prefix = str(
+                self._extra_settings.get("auth_header_prefix", ""),
+            ).strip()
+            if not header_name or any(char in header_name for char in "\r\n:"):
+                raise AdapterError(
+                    message="Custom authentication requires a valid auth_header_name",
+                    code="GENERIC_REST_AUTH_CONFIG_INVALID",
+                    platform="generic_rest",
+                )
+            value = " ".join(
+                part for part in (header_prefix, self._api_key) if part
+            )
+            return {header_name: value}
         if self._auth_type == "cookie":
             return {
                 "Cookie": normalize_cookie_header_value(

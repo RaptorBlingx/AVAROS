@@ -111,3 +111,25 @@ def test_load_data_ignores_empty_files_when_valid_data_exists(tmp_path, monkeypa
     assert df["timestamp"].iloc[0].isoformat() == "2026-04-17T09:00:00+00:00"
     assert kwargs["collection_name"] == "kpi_metrics"
     assert kwargs["db_name"] == "init_data"
+
+
+def test_clean_data_removes_shared_avaros_metadata(monkeypatch) -> None:
+    module = _load_prevention_load_data_module()
+    dropped_databases: list[str] = []
+    metadata_cleanups: list[bool] = []
+
+    monkeypatch.setattr(
+        module.mongo_utils,
+        "drop_all_collections",
+        lambda db_name: dropped_databases.append(db_name),
+    )
+    monkeypatch.setattr(
+        module,
+        "_clean_avaros_metadata",
+        lambda: metadata_cleanups.append(True),
+    )
+
+    module.AvarosDataLoad().clean_data()
+
+    assert dropped_databases == module.DATABASES_TO_CLEAN
+    assert metadata_cleanups == [True]

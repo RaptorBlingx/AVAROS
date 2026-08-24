@@ -7,7 +7,7 @@ from unittest.mock import Mock
 import pytest
 
 from skill import AVAROSSkill
-from skill.domain.exceptions import AssetNotFoundError
+from skill.domain.exceptions import AssetNotFoundError, ValidationError
 from skill.domain.models import Asset
 
 
@@ -162,6 +162,35 @@ def test_resolve_asset_id_prefers_specific_utterance_over_generic_slot() -> None
     )
 
     assert resolved == "8ce88962-956e-4773-912e-42230d1d0a9b"
+
+
+@pytest.mark.parametrize(
+    ("slot", "utterance"),
+    [
+        ("scrap rate", "check for drift in scrap rate"),
+        ("is", "is OEE getting worse"),
+    ],
+)
+def test_resolve_asset_id_ignores_drift_parser_noise(
+    slot: str,
+    utterance: str,
+) -> None:
+    """Metric/parser fragments should clarify scope, not become asset IDs."""
+    skill = _build_skill()
+    skill.settings_service = Mock()
+    skill.settings_service.get_asset_mappings.return_value = {
+        "Line-1": {"metric_resources": {"oee": "resource-1"}},
+        "Line-2": {"metric_resources": {"oee": "resource-2"}},
+    }
+    skill._get_asset_registry.return_value = [
+        Asset(asset_id="Line-1", display_name="Line 1", asset_type="line"),
+        Asset(asset_id="Line-2", display_name="Line 2", asset_type="line"),
+    ]
+
+    with pytest.raises(ValidationError, match="Asset scope is ambiguous"):
+        skill._resolve_asset_id(
+            _message(asset=slot, utterance=utterance),
+        )
 
 
 def test_list_assets_handler_speaks_formatted_asset_list() -> None:

@@ -10,7 +10,7 @@ import sys
 import os
 import logging
 import time
-from threading import Lock
+from threading import Event
 from pathlib import Path
 
 # Ensure skill package is importable when running as standalone script
@@ -47,42 +47,28 @@ def main() -> None:
         logger.info("Creating and initializing AVAROS skill...")
         skill = AVAROSSkill(skill_id="avaros-manufacturing.avaros", bus=bus)
 
-        register_lock = Lock()
-        last_reregister_monotonic = 0.0
-        reregister_cooldown_sec = 30.0
+        core_restarted = Event()
 
-        def _register_intents_when_core_ready(_message=None) -> None:
-            """Re-register intents after OVOS announces system-ready."""
-            nonlocal last_reregister_monotonic
-            now = time.monotonic()
-            if now - last_reregister_monotonic < reregister_cooldown_sec:
-                return
-            with register_lock:
-                now = time.monotonic()
-                if now - last_reregister_monotonic < reregister_cooldown_sec:
-                    return
-                try:
-                    registered_now = skill._register_intent_handlers()
-                    if registered_now > 0:
-                        bus.emit(Message("padatious:train"))
-                        logger.info(
-                            "Re-registered %d AVAROS intents after mycroft.ready",
-                            registered_now,
-                        )
-                    else:
-                        logger.info(
-                            "AVAROS intent registrations already up to date after mycroft.ready",
-                        )
-                    last_reregister_monotonic = now
-                except Exception as exc:
-                    logger.warning(
-                        "Intent re-registration after mycroft.ready failed: %s",
-                        exc,
-                    )
+        def _restart_after_core_ready(_message=None) -> None:
+            """Recycle the standalone skill after OVOS Core is rebuilt.
+
+            The standalone skill and OVOS Core are separate containers.  The
+            skill can register while Core is still starting, and Core can
+            restart without restarting this process.  A fresh skill process
+            registers its Padatious models only after the rebuilt Core is
+            ready, while also guaranteeing that local event handlers exist
+            exactly once.  Docker's ``unless-stopped`` policy brings this
+            process back immediately.
+            """
+            logger.info(
+                "OVOS Core announced mycroft.ready; recycling AVAROS skill "
+                "for a clean intent registration"
+            )
+            core_restarted.set()
 
         # In standalone mode AVAROS may start before ovos-core intent services,
         # and ovos-core may restart independently later.
-        bus.on("mycroft.ready", _register_intents_when_core_ready)
+        bus.on("mycroft.ready", _restart_after_core_ready)
 
         # In standalone mode (outside OVOS SkillManager), initialize()
         # is not guaranteed to be called automatically.
@@ -97,8 +83,15 @@ def main() -> None:
         
         # Keep the skill running
         # The skill's bus client will handle events in the background
-        while True:
-            time.sleep(1)
+        while not core_restarted.wait(timeout=1):
+            pass
+
+        logger.info("Exiting AVAROS skill so Docker can restart it")
+        # MessageBusClient owns background threads that can keep Python alive
+        # after main() returns.  The container is the lifecycle boundary here;
+        # exit directly and let the configured restart policy create a clean
+        # process against the now-ready Core.
+        os._exit(75)
             
     except KeyboardInterrupt:
         logger.info("AVAROS skill shutting down...")

@@ -304,10 +304,17 @@ class TestWriteFiles:
             "unit": "kWh/unit",
         })
 
-        _write_files(buckets, tmp_path, platform="generic_rest", days=7)
+        _write_files(
+            buckets,
+            tmp_path,
+            platform="generic_rest",
+            profile="reneryo",
+            days=7,
+        )
 
         manifest = json.loads((tmp_path / _MANIFEST_FILENAME).read_text())
         assert manifest["platform"] == "generic_rest"
+        assert manifest["profile"] == "reneryo"
         assert manifest["days"] == 7
         assert manifest["total_records"] == 1
         assert manifest["files"]["energy"]["records"] == 1

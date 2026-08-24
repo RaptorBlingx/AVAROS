@@ -107,7 +107,7 @@ class MetricMappingListResponse(RootModel[list[MetricMappingResponse]]):
     """Array response wrapper for metric mappings list."""
 
 
-MetricAuthType = Literal["bearer", "basic", "cookie", "none"]
+MetricAuthType = Literal["bearer", "basic", "cookie", "custom_header", "none"]
 
 
 class MetricMappingTestRequest(BaseModel):
@@ -135,6 +135,14 @@ class MetricMappingTestRequest(BaseModel):
     auth_token: str = Field(
         ...,
         description="Bearer token, Basic username:password, or session cookie value.",
+    )
+    auth_header_name: str = Field(
+        default="",
+        description="Header name used by custom_header authentication.",
+    )
+    auth_header_prefix: str = Field(
+        default="",
+        description="Optional value prefix used by custom_header authentication.",
     )
 
 

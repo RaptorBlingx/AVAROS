@@ -92,6 +92,8 @@ describe("ConnectionManager", () => {
       "widget",
       "access-key",
     );
+    const spoken: string[] = [];
+    manager.onSpeak((text) => spoken.push(text));
 
     const sendPromise = manager.sendUtterance("energy last week");
     const socket = MockWebSocket.instances[0];
@@ -103,5 +105,34 @@ describe("ConnectionManager", () => {
     expect(socket.sentMessages).toHaveLength(2);
     expect(socket.sentMessages[0]).toContain('"msg_type":"hello"');
     expect(socket.sentMessages[1]).toContain("energy last week");
+
+    await manager.interrupt();
+    const eventTypes = socket.sentMessages
+      .map((raw) => JSON.parse(raw))
+      .filter((message) => message.msg_type === "bus")
+      .map((message) => message.payload.type);
+    expect(eventTypes).toEqual([
+      "recognizer_loop:utterance",
+      "mycroft.stop",
+      "mycroft.audio.speech.stop",
+    ]);
+
+    const utterance = socket.sentMessages
+      .map((raw) => JSON.parse(raw))
+      .find((message) => message.payload?.type === "recognizer_loop:utterance");
+    socket.onmessage?.({
+      data: JSON.stringify({
+        msg_type: "bus",
+        payload: {
+          type: "speak",
+          data: { utterance: "late cancelled response" },
+          context: {
+            client_request_id: utterance.payload.context.client_request_id,
+          },
+        },
+      }),
+    });
+    await Promise.resolve();
+    expect(spoken).toEqual([]);
   });
 });

@@ -1123,7 +1123,11 @@ class SettingsService(ProfileMixin):
                 encrypt=True,
             )
 
-    def get_metric_mapping(self, metric_name: str) -> dict[str, Any] | None:
+    def get_metric_mapping(
+        self,
+        metric_name: str,
+        profile: str | None = None,
+    ) -> dict[str, Any] | None:
         """Get a metric mapping (profile-scoped, DEC-029).
 
         Unconfigured profile returns default built-in mappings.
@@ -1134,15 +1138,18 @@ class SettingsService(ProfileMixin):
         Returns:
             Mapping data dictionary, or None if not found
         """
-        profile = self.get_active_profile_name()
-        if profile == self.DEFAULT_PROFILE:
+        target_profile = self._resolve_asset_profile(profile)
+        if target_profile == self.DEFAULT_PROFILE:
             return deepcopy(DEFAULT_METRIC_MAPPINGS.get(metric_name))
         key = self._scoped_key_for(
-            self.METRIC_MAPPING_PREFIX, profile, metric_name,
+            self.METRIC_MAPPING_PREFIX, target_profile, metric_name,
         )
         return self.get_setting(key, default=None)
 
-    def list_metric_mappings(self) -> dict[str, dict[str, Any]]:
+    def list_metric_mappings(
+        self,
+        profile: str | None = None,
+    ) -> dict[str, dict[str, Any]]:
         """List metric mappings (profile-scoped, DEC-029).
 
         Unconfigured returns default built-in mappings. Configured profiles
@@ -1152,11 +1159,11 @@ class SettingsService(ProfileMixin):
             Dictionary mapping canonical metric names to their mapping data
         """
         self._ensure_initialized()
-        profile = self.get_active_profile_name()
-        if profile == self.DEFAULT_PROFILE:
+        target_profile = self._resolve_asset_profile(profile)
+        if target_profile == self.DEFAULT_PROFILE:
             return deepcopy(DEFAULT_METRIC_MAPPINGS)
         prefix = self._scoped_key_for(
-            self.METRIC_MAPPING_PREFIX, profile, "",
+            self.METRIC_MAPPING_PREFIX, target_profile, "",
         )
         result: dict[str, dict[str, Any]] = {}
         for key in self.list_settings():

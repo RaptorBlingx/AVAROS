@@ -33,7 +33,7 @@ type StepNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 type WizardState = {
   currentStep: StepNumber;
-  authType: "api_key" | "basic" | "cookie" | "none";
+  authType: "api_key" | "basic" | "cookie" | "custom_header" | "none";
   apiUrl: string;
   apiKey: string;
 };
@@ -50,6 +50,9 @@ function fromBackendAuthType(authType: string | undefined): WizardState["authTyp
   if (authType === "none") {
     return "none";
   }
+  if (authType === "custom_header") {
+    return "custom_header";
+  }
   return "api_key";
 }
 
@@ -63,9 +66,15 @@ function buildPayload(
     api_key: state.authType === "none" ? "" : state.apiKey.trim(),
     extra_settings: {
       auth_type:
-        state.authType === "cookie" ? "cookie" : state.authType === "basic" ? "basic" : state.authType === "none"
+        state.authType === "cookie" ? "cookie" : state.authType === "basic" ? "basic" : state.authType === "custom_header" ? "custom_header" : state.authType === "none"
           ? "none"
           : "bearer",
+      ...(state.authType === "custom_header"
+        ? {
+            auth_header_name: "X-Authorization",
+            auth_header_prefix: "ApiKey",
+          }
+        : {}),
     },
   };
 }

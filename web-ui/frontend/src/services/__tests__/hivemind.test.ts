@@ -283,6 +283,46 @@ describe("HiveMindService", () => {
         "WebSocket is not connected",
       );
     });
+
+    it("sends OVOS stop events when interrupted", async () => {
+      const svc = new HiveMindService(
+        createDefaultConfig({ accessSecret: "" }),
+      );
+      const connectPromise = svc.connect();
+      mockWsInstance!.simulateOpen();
+      await connectPromise;
+
+      const spoken: string[] = [];
+      svc.onSpeak((text) => spoken.push(text));
+      await svc.sendUtterance("long running query");
+      const utteranceMessage = mockWsInstance!.sent
+        .map((raw) => JSON.parse(raw))
+        .find((msg) => msg.payload?.type === "recognizer_loop:utterance");
+      const requestId = utteranceMessage.payload.context.client_request_id;
+
+      await svc.interrupt();
+
+      const eventTypes = mockWsInstance!.sent
+        .map((raw) => JSON.parse(raw))
+        .filter((msg) => msg.msg_type === "bus")
+        .map((msg) => msg.payload.type);
+      expect(eventTypes).toEqual([
+        "recognizer_loop:utterance",
+        "mycroft.stop",
+        "mycroft.audio.speech.stop",
+      ]);
+
+      mockWsInstance!.simulateMessage({
+        msg_type: "bus",
+        payload: {
+          type: "speak",
+          data: { utterance: "late cancelled response" },
+          context: { client_request_id: requestId },
+        },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(spoken).toEqual([]);
+    });
   });
 
   // ── Event listeners ──────────────────────────────────

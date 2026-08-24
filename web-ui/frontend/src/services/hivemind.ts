@@ -85,6 +85,18 @@ function isOVOSMessage(value: unknown): value is OVOSMessage {
   return typeof value.type === "string" && isRecord(value.data);
 }
 
+function makeClientRequestId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `request-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getClientRequestId(message: OVOSMessage): string | null {
+  const candidate = message.context?.client_request_id;
+  return typeof candidate === "string" && candidate ? candidate : null;
+}
+
 // ── Crypto helpers ─────────────────────────────────────
 
 async function importSecretKey(
@@ -164,6 +176,8 @@ export class HiveMindService {
       : `session-${Date.now()}`;
   private handshakeSent = false;
   private decryptionKeysPromise: Promise<string[]> | null = null;
+  private activeRequestId: string | null = null;
+  private readonly cancelledRequestIds = new Set<string>();
 
   constructor(config: HiveMindConfig) {
     this.config = {
@@ -296,6 +310,8 @@ export class HiveMindService {
     text: string,
     lang = "en-us",
   ): Promise<void> {
+    const clientRequestId = makeClientRequestId();
+    this.activeRequestId = clientRequestId;
     const session_id = this.sessionId ?? this.fallbackSessionId;
     const payload: OVOSMessage = {
       type: "recognizer_loop:utterance",
@@ -303,6 +319,7 @@ export class HiveMindService {
       context: {
         source: "avaros-web-ui",
         platform: "AVAROS-WebUI-v1",
+        client_request_id: clientRequestId,
         session: {
           session_id,
           site_id: "default",
@@ -312,6 +329,39 @@ export class HiveMindService {
       },
     };
     await this.sendBusMessage(payload);
+  }
+
+  /** Ask OVOS to stop the active skill/session work and any current speech. */
+  async interrupt(): Promise<void> {
+    const clientRequestId = this.activeRequestId;
+    if (clientRequestId) {
+      this.cancelledRequestIds.add(clientRequestId);
+      while (this.cancelledRequestIds.size > 32) {
+        const oldest = this.cancelledRequestIds.values().next().value;
+        if (typeof oldest !== "string") break;
+        this.cancelledRequestIds.delete(oldest);
+      }
+    }
+    const session_id = this.sessionId ?? this.fallbackSessionId;
+    const context = {
+      source: "avaros-web-ui",
+      platform: "AVAROS-WebUI-v1",
+      ...(clientRequestId ? { client_request_id: clientRequestId } : {}),
+      session: {
+        session_id,
+        site_id: "default",
+        lang: "en-us",
+        pipeline: [...OVOS_INTENT_PIPELINE],
+      },
+    };
+
+    await this.sendBusMessage({ type: "mycroft.stop", data: {}, context });
+    await this.sendBusMessage({
+      type: "mycroft.audio.speech.stop",
+      data: {},
+      context,
+    });
+    this.activeRequestId = null;
   }
 
   async sendBusMessage(payload: OVOSMessage): Promise<void> {
@@ -435,6 +485,20 @@ export class HiveMindService {
     }
 
     if (msg.msg_type === "bus" && isOVOSMessage(msg.payload)) {
+      const requestId = getClientRequestId(msg.payload);
+      if (requestId && this.cancelledRequestIds.has(requestId)) {
+        if (msg.payload.type === "mycroft.skill.handler.complete") {
+          this.cancelledRequestIds.delete(requestId);
+        }
+        return;
+      }
+      if (
+        requestId &&
+        this.activeRequestId &&
+        requestId !== this.activeRequestId
+      ) {
+        return;
+      }
       this.dispatchEvent(msg.payload);
     }
   }

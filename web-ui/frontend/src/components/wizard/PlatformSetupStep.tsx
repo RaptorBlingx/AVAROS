@@ -10,7 +10,7 @@ import ErrorMessage from "../common/ErrorMessage";
 import LoadingSpinner from "../common/LoadingSpinner";
 import Tooltip from "../common/Tooltip";
 
-type AuthType = "api_key" | "basic" | "cookie" | "none";
+type AuthType = "api_key" | "basic" | "cookie" | "custom_header" | "none";
 
 const PROFILE_NAME_RE = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
 
@@ -98,6 +98,8 @@ export default function PlatformSetupStep({
           onAuthTypeChange("basic");
         } else if (backendAuth === "none") {
           onAuthTypeChange("none");
+        } else if (backendAuth === "custom_header") {
+          onAuthTypeChange("custom_header");
         } else {
           onAuthTypeChange("api_key");
         }
@@ -327,6 +329,7 @@ export default function PlatformSetupStep({
                 <option value="api_key">API Key</option>
                 <option value="basic">Basic Authentication</option>
                 <option value="cookie">Session Cookie</option>
+                <option value="custom_header">X-Authorization API Key</option>
                 <option value="none">No Authentication</option>
               </select>
             </label>

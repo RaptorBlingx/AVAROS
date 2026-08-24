@@ -6,13 +6,14 @@ manufacturing data into Reneryo for all 19 AVAROS canonical metrics.
 CLI modes:
     --seed     Create metrics + push 90 days of historical data
     --daemon   After seeding, push a new data point every 15 min
+    --continuous  Continue an existing mapping without reseeding history
     --verify   Read back latest values and print summary
     --list     Show current metric/resource mapping table
 
 Environment variables:
     RENERYO_API_URL          Base URL (default: http://deploys.int.arti.ac:31290/api)
     RENERYO_SESSION_COOKIE   Session cookie value (required)
-    GENERATOR_MODE           daemon | seed | verify | list
+    GENERATOR_MODE           daemon | continuous | seed | verify | list
     GENERATOR_INTERVAL       Seconds between daemon writes (default 900)
     GENERATOR_SEED_DAYS      Days of historical data to seed (default 90)
     GENERATOR_BATCH_DELAY    Milliseconds between batches (default 100)
@@ -305,6 +306,129 @@ async def daemon(
         )
 
 
+async def continuous(
+    client: ReneryoClient,
+    interval_s: int = 900,
+    reference_days: int = 30,
+) -> None:
+    """Keep an existing seeded mapping current without rewriting history.
+
+    This mode is intended for a persistent service after ``--seed`` has run.
+    It validates that all physical metrics still exist, pushes one current
+    point immediately, and then continues at the configured interval.
+
+    Args:
+        client: Initialized ReneryoClient.
+        interval_s: Seconds between live writes.
+        reference_days: Pattern reference depth used for deterministic drift.
+    """
+    mapping = _load_mapping()
+    if not mapping:
+        raise RuntimeError(
+            "No mapping_output.json found. Run --seed before --continuous.",
+        )
+
+    key_to_metric_id = await ensure_metrics_exist(client)
+    mapping = await _refresh_stale_mapping(
+        client,
+        mapping,
+        key_to_metric_id=key_to_metric_id,
+        reference_days=reference_days,
+    )
+
+    # Re-read metric IDs because a recovery seed may have created definitions.
+    key_to_metric_id = await ensure_metrics_exist(client)
+    resource_map = {
+        _metric_asset_key(metric_name, asset): resource_id
+        for metric_name, assets in mapping.items()
+        for asset, resource_id in assets.items()
+    }
+    ref_start = datetime.now(timezone.utc) - timedelta(days=reference_days)
+
+    logger.info(
+        "Entering continuous mode (interval=%ds, resources=%d)",
+        interval_s,
+        len(resource_map),
+    )
+    while True:
+        now = datetime.now(timezone.utc)
+        now = now.replace(
+            minute=(now.minute // 15) * 15,
+            second=0,
+            microsecond=0,
+        )
+        await _push_single_round(
+            client,
+            key_to_metric_id,
+            resource_map,
+            now,
+            ref_start,
+        )
+        await asyncio.sleep(max(60, interval_s))
+
+
+async def _refresh_stale_mapping(
+    client: ReneryoClient,
+    mapping: dict[str, dict[str, str]],
+    *,
+    key_to_metric_id: dict[str, str],
+    reference_days: int,
+) -> dict[str, dict[str, str]]:
+    """Re-seed when a persisted mapping belongs to a reset Reneryo DB.
+
+    The local preview stack resets its database when the backend container is
+    recreated.  ``mapping_output.json`` survives on the AVAROS host, so a
+    continuous worker can otherwise recreate metric definitions but retain
+    resource IDs that no longer exist.  Probe one expected resource before
+    writing; a missing/malformed mapping or a 4xx resource lookup means the
+    date-relative history must be rebuilt natively through Reneryo's API.
+    """
+    expected_keys = {
+        _metric_asset_key(profile.name, asset)
+        for profile in METRIC_PROFILES
+        for asset in DEFAULT_ASSETS
+    }
+    resource_map = {
+        _metric_asset_key(metric_name, asset): resource_id
+        for metric_name, assets in mapping.items()
+        for asset, resource_id in assets.items()
+        if resource_id
+    }
+    mapping_is_complete = set(resource_map) == expected_keys
+
+    resources_match_metrics = False
+    if mapping_is_complete:
+        resources_match_metrics = True
+        for key in sorted(expected_keys):
+            metric_id = key_to_metric_id.get(key, "")
+            resources = await client.list_resources(metric_id)
+            current_ids = {
+                str(resource.get("id", "")) for resource in resources
+            }
+            if resource_map[key] not in current_ids:
+                logger.warning(
+                    "Persisted resource %s is not attached to metric %s",
+                    resource_map[key],
+                    metric_id,
+                )
+                resources_match_metrics = False
+                break
+
+    if mapping_is_complete and resources_match_metrics:
+        return mapping
+
+    logger.warning(
+        "Reneryo mapping is missing or stale; rebuilding %d days of "
+        "date-relative history",
+        reference_days,
+    )
+    return await seed(
+        client,
+        days=reference_days,
+        batch_delay_ms=100,
+    )
+
+
 async def _push_single_round(
     client: ReneryoClient,
     key_to_metric_id: dict[str, str],
@@ -505,6 +629,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Seed, then continuously push data",
     )
     modes.add_argument(
+        "--continuous", action="store_true",
+        help="Continue pushing current data from an existing mapping",
+    )
+    modes.add_argument(
         "--verify", action="store_true",
         help="Read back data and verify round-trip",
     )
@@ -544,6 +672,12 @@ async def _async_main(args: argparse.Namespace) -> None:
                 seed_days=args.days,
                 batch_delay_ms=args.batch_delay,
             )
+        elif args.continuous:
+            await continuous(
+                client,
+                interval_s=args.interval,
+                reference_days=args.days,
+            )
         elif args.verify:
             await verify(client)
         elif args.list:
@@ -570,9 +704,17 @@ def main(argv: list[str] | None = None) -> None:
 
     # Support env-based mode (for Docker)
     env_mode = os.environ.get("GENERATOR_MODE", "").lower()
-    if not any([args.seed, args.daemon, args.verify, args.list]):
+    if not any([
+        args.seed,
+        args.daemon,
+        args.continuous,
+        args.verify,
+        args.list,
+    ]):
         if env_mode == "daemon":
             args.daemon = True
+        elif env_mode == "continuous":
+            args.continuous = True
         elif env_mode == "verify":
             args.verify = True
         elif env_mode == "list":

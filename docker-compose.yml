@@ -45,7 +45,7 @@ services:
       ovos_messagebus:
         condition: service_healthy
       ovos-core:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import skill; print('healthy')"]
       interval: 30s
@@ -187,6 +187,38 @@ services:
     labels:
       - "com.avaros.service=prevention-exporter"
       - "com.avaros.description=Continuous platform-to-PREVENTION data export"
+
+  avaros-widget-demo-proxy:
+    container_name: avaros-widget-demo-proxy
+    image: nginx:1.25-alpine
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - NGINX_ENVSUBST_FILTER=^(HIVEMIND_CLIENT_NAME|HIVEMIND_CLIENT_KEY)$$
+      - HIVEMIND_CLIENT_NAME=${HIVEMIND_CLIENT_NAME:-avaros-client}
+      - HIVEMIND_CLIENT_KEY=${HIVEMIND_CLIENT_KEY:-}
+    volumes:
+      - ./docker/nginx/widget-demo-proxy.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./docker/nginx/widget-tls:/etc/nginx/widget-tls:ro
+    ports:
+      # Demo-only private HTTPS listeners.  Cloudflare WARP routes the stable
+      # server IP to the presenter laptop outside the office network.
+      - "10.33.10.112:8280:8280"
+      - "10.33.10.112:8286:8286"
+      - "10.33.10.112:8288:8288"
+    networks:
+      - avaros-network
+    depends_on:
+      avaros-web-ui:
+        condition: service_healthy
+      hivemind:
+        condition: service_healthy
+      avaros-wakeword:
+        condition: service_healthy
+    labels:
+      - "com.avaros.service=widget-demo-proxy"
+      - "com.avaros.description=Demo-only AVAROS widget injection for third-party UIs"
 
   # =========================================================================
   # Wake-word Detection Service (Web UI voice wake trigger)

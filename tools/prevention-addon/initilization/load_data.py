@@ -42,6 +42,28 @@ REQUIRED_COLUMNS = [
     "unit",
 ]
 
+ANALYTICS_GOALS = [
+    "ENERGY_ANOMALY_CHECK",
+    "PRODUCTION_ANOMALY_CHECK",
+    "MATERIAL_ANOMALY_CHECK",
+    "CO2_ANOMALY_CHECK",
+    "SUPPLIER_ANOMALY_CHECK",
+    "ENERGY_DRIFT_CHECK",
+    "PRODUCTION_DRIFT_CHECK",
+    "MATERIAL_DRIFT_CHECK",
+    "CO2_DRIFT_CHECK",
+    "SUPPLIER_DRIFT_CHECK",
+    "ENERGY_FORECAST",
+    "PRODUCTION_FORECAST",
+    "MATERIAL_FORECAST",
+    "CO2_FORECAST",
+    "SUPPLIER_FORECAST",
+]
+
+METADATA_DB_NAME = "wasabi"
+RESULTS_DB_NAME = "wasabi-results"
+DATASET_NAME = "AVAROS KPI Metrics"
+
 
 class AvarosDataLoad(DataLoad):
     """Load AVAROS manufacturing KPI data into PREVENTION MongoDB."""
@@ -57,6 +79,7 @@ class AvarosDataLoad(DataLoad):
         """Drop all AVAROS-related MongoDB collections."""
         for db_name in DATABASES_TO_CLEAN:
             mongo_utils.drop_all_collections(db_name)
+        _clean_avaros_metadata()
 
     def load_data(self):
         """Load all KPI JSON files into a single MongoDB collection."""
@@ -128,3 +151,71 @@ def _insert_to_mongo(
     records = df.to_dict(orient="records")
     if records:
         col.insert_many(records)
+
+
+def _clean_avaros_metadata() -> None:
+    """Remove only metadata and result collections owned by this addon.
+
+    PREVENTION keeps datasets, models, analyses, deployments, and result
+    descriptors in its shared ``wasabi`` database. Leaving those records in
+    place while replacing the input collection causes duplicate analytics and
+    dangling deployments. The cleanup is deliberately scoped to AVAROS goal
+    keys and the AVAROS dataset identity so other addons remain untouched.
+    """
+    client = MongoClient(
+        f"mongodb://{mongo_utils.mongo_username}:"
+        f"{urllib.parse.quote_plus(mongo_utils.mongo_pass)}"
+        f"@{mongo_utils.mongo_host}:{int(mongo_utils.mongo_port)}/"
+    )
+    try:
+        metadata = client[METADATA_DB_NAME]
+        analyses = list(
+            metadata["analysis"].find(
+                {"analytics_goal": {"$in": ANALYTICS_GOALS}},
+                {"_id": 1, "model": 1, "dataset": 1},
+            ),
+        )
+        analysis_ids = [item["_id"] for item in analyses if item.get("_id")]
+        model_ids = [item["model"] for item in analyses if item.get("model")]
+        dataset_ids = [item["dataset"] for item in analyses if item.get("dataset")]
+
+        deployments = list(
+            metadata["deployment"].find(
+                {"analysis": {"$in": analysis_ids}},
+                {"_id": 1},
+            ),
+        ) if analysis_ids else []
+        deployment_ids = [
+            item["_id"] for item in deployments if item.get("_id")
+        ]
+
+        if deployment_ids:
+            metadata["results"].delete_many(
+                {"deployment": {"$in": deployment_ids}},
+            )
+            metadata["deployment"].delete_many(
+                {"_id": {"$in": deployment_ids}},
+            )
+        if analysis_ids:
+            metadata["analysis"].delete_many({"_id": {"$in": analysis_ids}})
+        if model_ids:
+            metadata["model"].delete_many({"_id": {"$in": model_ids}})
+
+        dataset_filter = {
+            "$or": [
+                {"name": DATASET_NAME},
+                {
+                    "db_name": "init_data",
+                    "collection_name": "kpi_metrics",
+                },
+            ],
+        }
+        if dataset_ids:
+            dataset_filter["$or"].append({"_id": {"$in": dataset_ids}})
+        metadata["dataset"].delete_many(dataset_filter)
+
+        results_db = client[RESULTS_DB_NAME]
+        for goal in ANALYTICS_GOALS:
+            results_db[f"Results - {goal}"].drop()
+    finally:
+        client.close()

@@ -15,6 +15,7 @@ from skill.clients.prevention_http import (
     _CATEGORY_TO_ANOMALY_GOAL,
     _CATEGORY_TO_DRIFT_GOAL,
     _CATEGORY_TO_FORECAST_GOAL,
+    _fallback_drift_result_from_series,
     _fallback_forecast_result_from_series,
     _is_predictive_viewer_limit_reason,
     _parse_anomaly_results,
@@ -589,15 +590,35 @@ class TestHttpClientDriftDetection:
             assert result.metric == CanonicalMetric.OEE
 
     @pytest.mark.asyncio
-    async def test_check_drift_connection_error_propagates(
+    async def test_check_drift_connection_error_uses_live_series_fallback(
         self, client: HttpPreventionClient, sample_data: list[DataPoint],
     ) -> None:
         with patch.object(client, "_fetch_results", new_callable=AsyncMock) as mock_f:
             mock_f.side_effect = ConnectionError("unreachable")
-            with pytest.raises(ConnectionError):
-                await client.check_drift(
-                    CanonicalMetric.ENERGY_PER_UNIT, sample_data,
-                )
+            result = await client.check_drift(
+                CanonicalMetric.ENERGY_PER_UNIT, sample_data,
+            )
+
+        assert result.has_drift is False
+        assert result.periods_analyzed == 0
+        assert "Insufficient live history" in result.description
+
+    @pytest.mark.asyncio
+    async def test_check_drift_empty_provider_result_uses_live_series_fallback(
+        self, client: HttpPreventionClient,
+    ) -> None:
+        data_points = _make_data_points([float(value) for value in range(10, 22)])
+        with patch.object(client, "_fetch_results", new_callable=AsyncMock) as mock_f:
+            mock_f.return_value = []
+            result = await client.check_drift(
+                CanonicalMetric.ENERGY_PER_UNIT,
+                data_points,
+                asset_id="Line-1",
+            )
+
+        assert result.has_drift is True
+        assert result.drift_direction == "degrading"
+        assert result.periods_analyzed == 12
 
     @pytest.mark.asyncio
     async def test_check_drift_queries_correct_goal(
@@ -865,6 +886,40 @@ class TestDriftResultParsing:
         with pytest.raises(AttributeError):
             result.drift_rate = 0.0  # type: ignore[misc]
 
+    def test_local_drift_fallback_respects_lower_is_better_semantics(self) -> None:
+        result = _fallback_drift_result_from_series(
+            CanonicalMetric.ENERGY_PER_UNIT,
+            _make_data_points([float(value) for value in range(10, 22)]),
+            asset_id="Line-1",
+        )
+
+        assert result.has_drift is True
+        assert result.drift_direction == "degrading"
+        assert result.drift_rate == 1.0
+        assert result.periods_analyzed == 12
+
+    def test_local_drift_fallback_respects_higher_is_better_semantics(self) -> None:
+        result = _fallback_drift_result_from_series(
+            CanonicalMetric.OEE,
+            _make_data_points([float(value) for value in range(70, 82)], unit="%"),
+            asset_id="Line-1",
+        )
+
+        assert result.has_drift is True
+        assert result.drift_direction == "improving"
+
+    def test_local_drift_fallback_reports_flat_series_as_stable(self) -> None:
+        result = _fallback_drift_result_from_series(
+            CanonicalMetric.OEE,
+            _make_data_points([90.0] * 10, unit="%"),
+            asset_id="Line-1",
+        )
+
+        assert result.has_drift is False
+        assert result.drift_direction == "stable"
+        assert result.drift_rate == 0.0
+        assert result.periods_analyzed == 10
+
 
 class TestForecastResultParsing:
     """Test _parse_forecast_results function."""
@@ -942,6 +997,19 @@ class TestForecastResultParsing:
         assert result.available is True
         assert result.predicted_value == 90.0
         assert result.fit_quality == 1.0
+
+    def test_local_forecast_horizon_uses_days_not_sample_count(self) -> None:
+        result = _fallback_forecast_result_from_series(
+            CanonicalMetric.ENERGY_PER_UNIT,
+            _make_data_points([float(value) for value in range(10)]),
+            horizon_periods=1,
+            asset_id="Line-1",
+        )
+
+        # Ten hourly points end at hour 9. One day ahead is hour 33.
+        assert result.available is True
+        assert result.predicted_value == pytest.approx(33.0)
+        assert "daily slope=24.000000" in result.description
 
     def test_frozen_result(self) -> None:
         result = _parse_forecast_results(

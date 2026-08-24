@@ -94,6 +94,29 @@ def test_definition_mean_phrase_is_not_routed_to_average() -> None:
     assert query.operation is QueryOperation.DEFINE
 
 
+@pytest.mark.parametrize(
+    ("utterance", "metric"),
+    (
+        ("How much power is OpenEMS Edge consuming?", CanonicalMetric.CONSUMPTION_POWER),
+        ("How much power is OpenEMS Edge producing?", CanonicalMetric.PRODUCTION_POWER),
+        ("What is the battery state of charge for OpenEMS Edge?", CanonicalMetric.STORAGE_STATE_OF_CHARGE),
+        ("What is the battery power for OpenEMS Edge?", CanonicalMetric.STORAGE_POWER),
+        ("What is the grid power for OpenEMS Edge?", CanonicalMetric.GRID_POWER),
+        ("How much energy has OpenEMS Edge produced?", CanonicalMetric.ENERGY_PRODUCTION_TOTAL),
+        ("How much energy has OpenEMS Edge imported from grid?", CanonicalMetric.ENERGY_GRID_IMPORT_TOTAL),
+        ("How much energy has OpenEMS Edge exported to grid?", CanonicalMetric.ENERGY_GRID_EXPORT_TOTAL),
+    ),
+)
+def test_parse_live_energy_kpi_query(utterance: str, metric: CanonicalMetric) -> None:
+    openems = [Asset("openems-edge", "OpenEMS Edge", "seu")]
+
+    query = parse_structured_query(utterance, assets=openems)
+
+    assert query.operation is QueryOperation.KPI
+    assert query.metrics == (metric,)
+    assert query.asset_ids == ("openems-edge",)
+
+
 def test_follow_up_reuses_entities_but_not_conversation_text() -> None:
     prior = DialogueState(
         metrics=(CanonicalMetric.OEE,),

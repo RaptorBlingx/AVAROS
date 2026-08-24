@@ -42,6 +42,8 @@ interface HiveMindContextValue {
   disconnect: () => void;
   /** Send a text utterance to OVOS */
   sendUtterance: (text: string) => Promise<void>;
+  /** Stop the active OVOS request/session work and speech. */
+  interrupt: () => Promise<void>;
   /** Last speak response from OVOS */
   lastResponse: string | null;
   /** Clear the currently shown speak response */
@@ -207,6 +209,13 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
     await serviceRef.current.sendUtterance(text);
   }, []);
 
+  const interrupt = useCallback(async () => {
+    if (!serviceRef.current || serviceRef.current.state !== "connected") return;
+    await serviceRef.current.interrupt();
+    setIsProcessing(false);
+    setIsSpeaking(false);
+  }, []);
+
   const on = useCallback(
     (eventType: string, callback: (msg: OVOSMessage) => void): (() => void) => {
       if (serviceRef.current) {
@@ -248,6 +257,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
       connect,
       disconnect,
       sendUtterance,
+      interrupt,
       lastResponse,
       clearLastResponse,
       isSpeaking,
@@ -263,6 +273,7 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
       connect,
       disconnect,
       sendUtterance,
+      interrupt,
       lastResponse,
       clearLastResponse,
       isSpeaking,

@@ -67,6 +67,11 @@ function isBusMessage(payload: unknown): payload is BusMessage {
   return typeof message.type === "string" && Boolean(message.data && typeof message.data === "object");
 }
 
+function getClientRequestId(message: BusMessage): string | null {
+  const candidate = message.context?.client_request_id;
+  return typeof candidate === "string" && candidate ? candidate : null;
+}
+
 function makePaddingSafeUserAgent(name: string, key: string): string {
   const baseName = name.trim() || "widget";
   const totalLen = baseName.length + 1 + key.length; // "<name>:<key>"
@@ -194,6 +199,8 @@ export class ConnectionManager {
   private decryptionKeysPromise: Promise<string[]> | null = null;
   private disposed = false;
   private helloSent = false;
+  private activeRequestId: string | null = null;
+  private readonly cancelledRequestIds = new Set<string>();
 
   constructor(
     host: string,
@@ -366,6 +373,8 @@ export class ConnectionManager {
       await this.waitUntilConnected(SEND_CONNECT_TIMEOUT_MS);
     }
 
+    const clientRequestId = makeSessionId();
+    this.activeRequestId = clientRequestId;
     const busMessage: BusMessage = {
       type: "recognizer_loop:utterance",
       data: {
@@ -375,6 +384,7 @@ export class ConnectionManager {
       context: {
         source: "avaros-widget",
         platform: "AVAROS-Widget-v1",
+        client_request_id: clientRequestId,
         session: {
           session_id: this.sessionId,
           site_id: DEFAULT_SESSION_SITE,
@@ -389,6 +399,40 @@ export class ConnectionManager {
       payload: busMessage,
     };
     await this.sendEnvelope(envelope);
+  }
+
+  /** Ask OVOS to stop active work and speech for this widget session. */
+  async interrupt(): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+    const clientRequestId = this.activeRequestId;
+    if (clientRequestId) {
+      this.cancelledRequestIds.add(clientRequestId);
+      while (this.cancelledRequestIds.size > 32) {
+        const oldest = this.cancelledRequestIds.values().next().value;
+        if (typeof oldest !== "string") break;
+        this.cancelledRequestIds.delete(oldest);
+      }
+    }
+    const context = {
+      source: "avaros-widget",
+      platform: "AVAROS-Widget-v1",
+      ...(clientRequestId ? { client_request_id: clientRequestId } : {}),
+      session: {
+        session_id: this.sessionId,
+        site_id: DEFAULT_SESSION_SITE,
+        lang: "en-us",
+        pipeline: [...OVOS_INTENT_PIPELINE],
+      },
+    };
+
+    for (const type of ["mycroft.stop", "mycroft.audio.speech.stop"]) {
+      await this.sendEnvelope({
+        msg_type: "bus",
+        payload: { type, data: {}, context },
+      });
+    }
+    this.activeRequestId = null;
   }
 
   private waitUntilConnected(timeoutMs: number): Promise<void> {
@@ -515,9 +559,22 @@ export class ConnectionManager {
     }
 
     if (envelope.msg_type !== "bus") return;
-    if (isBusMessage(envelope.payload)) {
-      this.dispatchEvent(envelope.payload);
+    if (!isBusMessage(envelope.payload)) return;
+    const requestId = getClientRequestId(envelope.payload);
+    if (requestId && this.cancelledRequestIds.has(requestId)) {
+      if (envelope.payload.type === "mycroft.skill.handler.complete") {
+        this.cancelledRequestIds.delete(requestId);
+      }
+      return;
     }
+    if (
+      requestId &&
+      this.activeRequestId &&
+      requestId !== this.activeRequestId
+    ) {
+      return;
+    }
+    this.dispatchEvent(envelope.payload);
     const speakText = extractSpeakText(envelope.payload);
     if (!speakText) return;
 

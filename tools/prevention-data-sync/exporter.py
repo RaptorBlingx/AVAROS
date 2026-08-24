@@ -333,6 +333,7 @@ def _write_files(
     output_dir: Path,
     *,
     platform: str = "unknown",
+    profile: str = "",
     days: int | None = None,
 ) -> int:
     """Write category JSON files to *output_dir*.
@@ -364,6 +365,7 @@ def _write_files(
     manifest = {
         "exported_at": datetime.now(tz=timezone.utc).isoformat(),
         "platform": platform,
+        "profile": profile,
         "days": days,
         "total_records": total,
         "files": manifest_files,
@@ -474,6 +476,9 @@ async def _run_export_once(args: argparse.Namespace) -> None:
     settings_service = SettingsService() if not args.api_url else None
     adapter: Any | None = None
     try:
+        export_profile = args.profile
+        if settings_service is not None and not export_profile:
+            export_profile = settings_service.get_active_profile_name()
         adapter = await _create_adapter(
             platform=args.platform,
             api_url=args.api_url,
@@ -487,6 +492,7 @@ async def _run_export_once(args: argparse.Namespace) -> None:
             buckets,
             output_dir=args.output,
             platform=args.platform,
+            profile=export_profile,
             days=args.days,
         )
         logger.info("Export complete: %d records total", total)

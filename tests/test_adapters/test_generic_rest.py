@@ -25,10 +25,17 @@ class _StubSettingsService:
         self._mappings = mappings or {}
         self._asset_mappings = asset_mappings or {}
 
-    def get_metric_mapping(self, metric_name: str) -> dict | None:
+    def get_metric_mapping(
+        self,
+        metric_name: str,
+        profile: str | None = None,
+    ) -> dict | None:
         return self._mappings.get(metric_name)
 
-    def list_metric_mappings(self) -> dict[str, dict]:
+    def list_metric_mappings(
+        self,
+        profile: str | None = None,
+    ) -> dict[str, dict]:
         return dict(self._mappings)
 
     def get_asset_mappings(self, profile: str | None = None) -> dict[str, dict]:
@@ -967,6 +974,36 @@ def test_basic_auth_sends_encoded_credentials() -> None:
     assert adapter._build_auth_headers() == {
         "Authorization": "Basic eDphZG1pbg==",
     }
+
+
+def test_custom_header_auth_uses_configured_name_and_prefix() -> None:
+    """Custom-header auth should support platform API-key conventions."""
+    adapter = GenericRestAdapter(
+        api_url="https://api.example.com",
+        api_key="tb_example",
+        auth_type="custom_header",
+        extra_settings={
+            "auth_header_name": "X-Authorization",
+            "auth_header_prefix": "ApiKey",
+        },
+    )
+
+    assert adapter._build_auth_headers() == {
+        "X-Authorization": "ApiKey tb_example",
+    }
+
+
+def test_custom_header_auth_rejects_invalid_header_name() -> None:
+    """Custom-header auth must reject header-injection characters."""
+    adapter = GenericRestAdapter(
+        api_url="https://api.example.com",
+        api_key="secret",
+        auth_type="custom_header",
+        extra_settings={"auth_header_name": "X-Bad\r\nHeader"},
+    )
+
+    with pytest.raises(AdapterError, match="auth_header_name"):
+        adapter._build_auth_headers()
 
 
 def test_cookie_auth_sends_header() -> None:

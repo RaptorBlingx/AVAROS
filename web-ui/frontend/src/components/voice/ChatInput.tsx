@@ -3,6 +3,8 @@ import { useMemo, useState, type FormEvent } from "react";
 type ChatInputProps = {
   isConnected: boolean;
   disabled: boolean;
+  interruptLabel?: "Cancel request" | "Stop response";
+  onInterrupt?: () => void;
   onSend: (text: string) => Promise<void> | void;
 };
 
@@ -11,6 +13,8 @@ const MAX_CHARS = 500;
 export default function ChatInput({
   isConnected,
   disabled,
+  interruptLabel,
+  onInterrupt,
   onSend,
 }: ChatInputProps) {
   const [value, setValue] = useState("");
@@ -57,6 +61,17 @@ export default function ChatInput({
           readOnly={disabled}
           aria-label="Chat message input"
         />
+        <button
+          type="button"
+          className="voice-chat-input__interrupt"
+          hidden={!interruptLabel}
+          onClick={onInterrupt}
+          aria-label={interruptLabel ?? "Interrupt AVAROS"}
+          title={interruptLabel}
+        >
+          <span aria-hidden="true">■</span>
+          <span>{interruptLabel}</span>
+        </button>
         <button
           type="submit"
           className="voice-chat-input__send"

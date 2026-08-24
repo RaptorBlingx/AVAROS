@@ -25,6 +25,7 @@ from generator import (
     _load_mapping,
     _parse_args,
     _physical_metric_name,
+    _refresh_stale_mapping,
     _save_mapping,
     _write_batched,
     ensure_metrics_exist,
@@ -52,6 +53,12 @@ class TestParseArgs:
         args = _parse_args(["--daemon"])
         assert args.daemon is True
         assert args.seed is False
+
+    def test_continuous_mode(self) -> None:
+        args = _parse_args(["--continuous"])
+        assert args.continuous is True
+        assert args.seed is False
+        assert args.daemon is False
 
     def test_verify_mode(self) -> None:
         args = _parse_args(["--verify"])
@@ -126,6 +133,104 @@ class TestMappingIO:
         content = test_file.read_text()
         data = json.loads(content)
         assert list(data.keys()) == ["aaa_metric", "zzz_metric"]
+
+
+class TestContinuousMappingRefresh:
+    """Tests for recovering after the Reneryo preview DB is reset."""
+
+    @staticmethod
+    def _complete_mapping() -> dict[str, dict[str, str]]:
+        return {
+            profile.name: {
+                asset: f"resource-{profile.name}-{asset}"
+                for asset in DEFAULT_ASSETS
+            }
+            for profile in METRIC_PROFILES
+        }
+
+    @pytest.mark.asyncio
+    async def test_keeps_mapping_when_resource_is_live(self) -> None:
+        mapping = self._complete_mapping()
+        key_to_metric_id = {
+            _metric_asset_key(profile.name, asset):
+                f"metric-{profile.name}-{asset}"
+            for profile in METRIC_PROFILES
+            for asset in DEFAULT_ASSETS
+        }
+        client = AsyncMock()
+        resource_by_metric = {
+            metric_id: mapping[key.split("::", 1)[0]][key.split("::", 1)[1]]
+            for key, metric_id in key_to_metric_id.items()
+        }
+        client.list_resources = AsyncMock(
+            side_effect=lambda metric_id: [
+                {"id": resource_by_metric[metric_id]},
+            ],
+        )
+
+        with patch("generator.seed", new_callable=AsyncMock) as seed_mock:
+            result = await _refresh_stale_mapping(
+                client,
+                mapping,
+                key_to_metric_id=key_to_metric_id,
+                reference_days=30,
+            )
+
+        assert result == mapping
+        seed_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_reseeds_when_resource_was_reset(self) -> None:
+        mapping = self._complete_mapping()
+        replacement = {"oee": {"Line-1": "new-resource"}}
+        client = AsyncMock()
+        client.list_resources = AsyncMock(return_value=[])
+
+        with patch(
+            "generator.seed",
+            new_callable=AsyncMock,
+            return_value=replacement,
+        ) as seed_mock:
+            result = await _refresh_stale_mapping(
+                client,
+                mapping,
+                key_to_metric_id={
+                    key: f"metric-{key}" for key in (
+                        _metric_asset_key(profile.name, asset)
+                        for profile in METRIC_PROFILES
+                        for asset in DEFAULT_ASSETS
+                    )
+                },
+                reference_days=30,
+            )
+
+        assert result == replacement
+        seed_mock.assert_awaited_once_with(
+            client,
+            days=30,
+            batch_delay_ms=100,
+        )
+
+    @pytest.mark.asyncio
+    async def test_reseeds_incomplete_mapping_without_probe(self) -> None:
+        client = AsyncMock()
+        replacement = self._complete_mapping()
+
+        with patch(
+            "generator.seed",
+            new_callable=AsyncMock,
+            return_value=replacement,
+        ) as seed_mock:
+            result = await _refresh_stale_mapping(
+                client,
+                {"oee": {"Line-1": "resource-1"}},
+                key_to_metric_id={},
+                reference_days=7,
+            )
+
+        assert result == replacement
+        client.list_resources.assert_not_awaited()
+        seed_mock.assert_awaited_once()
 
 
 # =========================================================================

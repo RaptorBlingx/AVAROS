@@ -81,7 +81,10 @@ class GenericRestSettingsMixin:
     def _lookup_metric_mapping_by_name(self, metric_name: str) -> MetricMapping | None:
         """Resolve mapping from SettingsService (or extra_settings fallback)."""
         if self._settings_service is not None:
-            mapping = self._settings_service.get_metric_mapping(metric_name)
+            mapping = self._settings_service.get_metric_mapping(
+                metric_name,
+                profile=self._profile_name or None,
+            )
             if isinstance(mapping, dict):
                 return mapping
 
@@ -96,7 +99,9 @@ class GenericRestSettingsMixin:
     def _list_metric_mappings(self) -> dict[str, MetricMapping]:
         """Return current active profile mappings."""
         if self._settings_service is not None:
-            mappings = self._settings_service.list_metric_mappings()
+            mappings = self._settings_service.list_metric_mappings(
+                profile=self._profile_name or None,
+            )
             if isinstance(mappings, dict):
                 return {
                     str(name): value

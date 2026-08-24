@@ -250,7 +250,7 @@ class TestBusListenerRegistration:
         assert register_intent_file.call_count == first_count
 
     def test_register_intent_handlers_force_replays_registration(self):
-        """Force mode should intentionally replay all intent registrations."""
+        """Force mode replays Core registrations without duplicating handlers."""
         skill = _initialized_skill()
         register_intent_file = Mock()
         skill.register_entity_file = Mock()
@@ -264,6 +264,9 @@ class TestBusListenerRegistration:
         assert first_count > 0
         assert second_count == first_count
         assert register_intent_file.call_count == first_count + second_count
+        replay_calls = register_intent_file.call_args_list[first_count:]
+        assert replay_calls
+        assert all(call.args[1] is None for call in replay_calls)
 
     def test_disabled_intent_registration_guard_skips_handler(self):
         """Profile intent activation state must be enforced at voice dispatch."""
@@ -577,6 +580,58 @@ class TestAssetResolutionFromUtterance:
         }
 
         assert skill._resolve_compare_assets(msg) == ("Line-1", "Line-2")
+
+    def test_resolve_compare_assets_from_configured_multiword_names(self):
+        """Extracts arbitrary adapter assets when intent slots split names."""
+        skill = _make_skill()
+        skill._get_asset_registry = Mock(return_value=[
+            Asset(
+                asset_id="device-a1",
+                display_name="Test Device A1",
+                asset_type="machine",
+                aliases=["A1 test device"],
+            ),
+            Asset(
+                asset_id="device-a2",
+                display_name="Test Device A2",
+                asset_type="machine",
+            ),
+        ])
+        msg = Mock()
+        msg.data = {
+            "utterance": (
+                "compare energy per unit between Test Device A1 "
+                "and Test Device A2"
+            ),
+            "asset_a": "unit between Test Device A1",
+            "asset_b": "Test Device A2",
+        }
+
+        assert skill._resolve_compare_assets(msg) == ("device-a1", "device-a2")
+
+    def test_resolve_compare_assets_uses_explicit_utterance_order(self):
+        """Registry extraction preserves the order spoken by the user."""
+        skill = _make_skill()
+        skill._get_asset_registry = Mock(return_value=[
+            Asset(
+                asset_id="asset-a",
+                display_name="Machine Alpha",
+                asset_type="machine",
+            ),
+            Asset(
+                asset_id="asset-b",
+                display_name="Machine Beta",
+                asset_type="machine",
+            ),
+        ])
+        msg = Mock()
+        msg.data = {
+            "utterance": "compare Machine Beta versus Machine Alpha",
+            "asset_a": "",
+            "asset_b": "",
+        }
+
+        assert skill._resolve_compare_assets(msg) == ("asset-b", "asset-a")
 
     def test_resolve_compare_assets_requires_explicit_configured_assets(self):
         """Missing comparison slots must not select configured assets silently."""

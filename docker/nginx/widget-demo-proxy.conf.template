@@ -1,0 +1,97 @@
+# Demo-only reverse proxies that inject the AVAROS widget into third-party UIs.
+# The upstream projects remain unmodified.  These private LAN/WARP listeners
+# terminate TLS with the AVAROS demo certificate so browser microphone and
+# wake-word APIs are available on the embedded pages.
+
+map $http_upgrade $widget_proxy_connection {
+    default upgrade;
+    ''      close;
+}
+
+resolver 127.0.0.11 valid=5s ipv6=off;
+
+server {
+    listen 8280 ssl;
+    server_name _;
+
+    ssl_certificate     /etc/nginx/widget-tls/widget-server-cert.pem;
+    ssl_certificate_key /etc/nginx/widget-tls/widget-server-key.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    add_header Permissions-Policy "microphone=(self)" always;
+
+    location / {
+        set $widget_thingsboard_upstream http://thingsboard-ce:8080;
+        proxy_pass $widget_thingsboard_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $widget_proxy_connection;
+        proxy_set_header Accept-Encoding "";
+        proxy_hide_header Content-Security-Policy;
+        proxy_hide_header Content-Security-Policy-Report-Only;
+        sub_filter_once on;
+        sub_filter '</body>' '<script async src="https://avaros.reneryo.com/avaros-widget.js" data-host="wss://avaros.reneryo.com/hivemind/" data-avaros-url="https://avaros.reneryo.com/" data-client-name="${HIVEMIND_CLIENT_NAME}" data-access-key="${HIVEMIND_CLIENT_KEY}" data-position="bottom-right" data-theme="auto" data-size="medium" data-label="Ask AVAROS" data-tts-engine="server" data-meeting-audio="true" data-wake-word-url="wss://avaros.reneryo.com/wakeword/ws/detect" data-disabled-modes="none" data-default-mode="wake-word"></script></body>';
+    }
+}
+
+server {
+    listen 8286 ssl;
+    server_name _;
+
+    ssl_certificate     /etc/nginx/widget-tls/widget-server-cert.pem;
+    ssl_certificate_key /etc/nginx/widget-tls/widget-server-key.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    add_header Permissions-Policy "microphone=(self)" always;
+
+    location / {
+        set $widget_openems_upstream http://avaros-openems-ui:80;
+        proxy_pass $widget_openems_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $widget_proxy_connection;
+        proxy_set_header Accept-Encoding "";
+        proxy_hide_header Content-Security-Policy;
+        proxy_hide_header Content-Security-Policy-Report-Only;
+        sub_filter_once on;
+        sub_filter '</body>' '<script async src="https://avaros.reneryo.com/avaros-widget.js" data-host="wss://avaros.reneryo.com/hivemind/" data-avaros-url="https://avaros.reneryo.com/" data-client-name="${HIVEMIND_CLIENT_NAME}" data-access-key="${HIVEMIND_CLIENT_KEY}" data-position="bottom-right" data-theme="auto" data-size="medium" data-label="Ask AVAROS" data-tts-engine="server" data-meeting-audio="true" data-wake-word-url="wss://avaros.reneryo.com/wakeword/ws/detect" data-disabled-modes="none" data-default-mode="wake-word"></script></body>';
+    }
+}
+
+server {
+    listen 8288 ssl;
+    server_name _;
+
+    ssl_certificate     /etc/nginx/widget-tls/widget-server-cert.pem;
+    ssl_certificate_key /etc/nginx/widget-tls/widget-server-key.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    add_header Permissions-Policy "microphone=(self)" always;
+
+    location / {
+        proxy_pass http://172.18.0.1:18080;
+        proxy_http_version 1.1;
+        # A laptop network handoff briefly breaks the reverse SSH tunnel.
+        # Retry transient upstream failures so the browser receives the
+        # recovered Reneryo origin instead of an immediate gateway error.
+        proxy_connect_timeout 3s;
+        proxy_next_upstream error timeout http_502 http_503 http_504;
+        proxy_next_upstream_tries 3;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $widget_proxy_connection;
+        proxy_set_header Accept-Encoding "";
+        proxy_hide_header Content-Security-Policy;
+        proxy_hide_header Content-Security-Policy-Report-Only;
+        sub_filter_once on;
+        sub_filter '</body>' '<script async src="https://avaros.reneryo.com/avaros-widget.js" data-host="wss://avaros.reneryo.com/hivemind/" data-avaros-url="https://avaros.reneryo.com/" data-client-name="${HIVEMIND_CLIENT_NAME}" data-access-key="${HIVEMIND_CLIENT_KEY}" data-position="bottom-right" data-theme="auto" data-size="medium" data-label="Ask AVAROS" data-tts-engine="server" data-meeting-audio="true" data-wake-word-url="wss://avaros.reneryo.com/wakeword/ws/detect" data-disabled-modes="none" data-default-mode="wake-word"></script></body>';
+    }
+}

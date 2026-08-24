@@ -54,6 +54,8 @@ docker/logs/
 
 # TLS certificates (generated, never commit)
 docker/nginx/ssl/*.pem
+docker/nginx/widget-tls/*.pem
+docker/nginx/widget-tls/*.srl
 
 # Environment variables
 .env

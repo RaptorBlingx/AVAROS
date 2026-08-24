@@ -748,7 +748,7 @@
 
 .voice-chat-input__row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 0.35rem;
 }
 
@@ -770,6 +770,32 @@
   color: #0369a1;
   font-weight: 700;
   cursor: pointer;
+}
+
+.voice-chat-input__interrupt {
+  min-height: 34px;
+  border-radius: 9px;
+  border: 1px solid rgba(225, 29, 72, 0.55);
+  background: rgba(255, 241, 242, 0.98);
+  color: #be123c;
+  padding: 0 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  font-size: 0.68rem;
+  font-weight: 750;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.voice-chat-input__interrupt:hover {
+  border-color: #e11d48;
+  background: #ffe4e6;
+}
+
+.voice-chat-input__interrupt[hidden] {
+  display: none;
 }
 
 .voice-chat-input__send:disabled {
@@ -1016,6 +1042,16 @@
   color: #bae6fd;
 }
 
+.aw-widget--dark .voice-chat-input__interrupt {
+  border-color: rgba(251, 113, 133, 0.55);
+  background: rgba(136, 19, 55, 0.42);
+  color: #fecdd3;
+}
+
+.aw-widget--dark .voice-chat-input__interrupt:hover {
+  background: rgba(159, 18, 57, 0.62);
+}
+
 .aw-widget--dark .voice-chat-input__warning--error {
   color: #fcd34d;
 }
@@ -1068,7 +1104,11 @@
   }
 
   .voice-chat-input__row {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .voice-chat-input__interrupt span:last-child {
+    display: none;
   }
 }
 

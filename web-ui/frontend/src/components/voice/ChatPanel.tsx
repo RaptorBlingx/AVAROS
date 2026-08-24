@@ -11,6 +11,8 @@ type ChatPanelProps = {
   canReplay: boolean;
   wakeWordLabel: string;
   primaryAction?: ReactNode;
+  interruptLabel?: "Cancel request" | "Stop response";
+  onInterrupt?: () => void;
   onSendText: (text: string) => Promise<void>;
   onReplayResponse: (text: string) => void;
   onClearConversation: () => void;
@@ -23,6 +25,8 @@ export default function ChatPanel({
   canReplay,
   wakeWordLabel,
   primaryAction,
+  interruptLabel,
+  onInterrupt,
   onSendText,
   onReplayResponse,
   onClearConversation,
@@ -46,6 +50,8 @@ export default function ChatPanel({
       <ChatInput
         isConnected={isConnected}
         disabled={isProcessing}
+        interruptLabel={interruptLabel}
+        onInterrupt={onInterrupt}
         onSend={onSendText}
       />
     </section>

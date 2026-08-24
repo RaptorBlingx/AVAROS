@@ -210,6 +210,11 @@ export function WidgetPanel({
     connectionState === "disconnected";
   const voiceToggleTarget = getVoiceToggleTarget(mode, disabledModes);
   const voiceToggleDisabled = mode === "text" || voiceToggleTarget === null;
+  const interruptLabel = processing
+    ? "Cancel request"
+    : visualState === "speaking"
+      ? "Stop response"
+      : null;
 
   const handlePrimaryAction = () => {
     if (visualState === "listening") {
@@ -484,6 +489,26 @@ export function WidgetPanel({
               className="voice-chat-input__field"
               maxLength={500}
             />
+            <button
+              type="button"
+              className="voice-chat-input__interrupt"
+              hidden={!interruptLabel}
+              onClick={() => {
+                if (processing) {
+                  onCancelRequest?.();
+                  return;
+                }
+                if ("speechSynthesis" in window) {
+                  window.speechSynthesis.cancel();
+                }
+                onStopSpeaking?.();
+              }}
+              aria-label={interruptLabel ?? "Interrupt AVAROS"}
+              title={interruptLabel ?? undefined}
+            >
+              <span aria-hidden="true">■</span>
+              <span>{interruptLabel}</span>
+            </button>
             <button
               type="submit"
               className="voice-chat-input__send"

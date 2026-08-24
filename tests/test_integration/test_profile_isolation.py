@@ -50,6 +50,33 @@ def test_two_profiles_independent_metric_mappings(svc: SettingsService) -> None:
     }
 
 
+def test_explicit_profile_metric_lookup_ignores_active_profile(
+    svc: SettingsService,
+) -> None:
+    """Background exporters must read the requested profile's endpoints."""
+    _create_profiles(svc)
+
+    svc.set_active_profile("my-api")
+    svc.set_metric_mapping(
+        "energy_per_unit",
+        {"endpoint": "/my-api", "json_path": "$.value", "unit": "kWh/unit"},
+    )
+    svc.set_active_profile("sap")
+    svc.set_metric_mapping(
+        "energy_per_unit",
+        {"endpoint": "/sap", "json_path": "$.value", "unit": "kWh/unit"},
+    )
+
+    assert svc.get_metric_mapping(
+        "energy_per_unit",
+        profile="my-api",
+    )["endpoint"] == "/my-api"
+    assert svc.list_metric_mappings(profile="my-api")[
+        "energy_per_unit"
+    ]["endpoint"] == "/my-api"
+    assert svc.get_active_profile_name() == "sap"
+
+
 def test_two_profiles_independent_emission_factors(svc: SettingsService) -> None:
     """Emission factors are isolated by active profile."""
     _create_profiles(svc)

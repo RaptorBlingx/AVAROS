@@ -25,6 +25,9 @@ class _Settings:
     def get_setting(self, key: str, default=None):
         return self._values.get(key, default)
 
+    def get_active_profile_name(self) -> str:
+        return str(self._values.get("active_profile", ""))
+
 
 def test_resolve_prevention_data_status_uses_env_manifest_path(
     monkeypatch,
@@ -50,6 +53,61 @@ def test_resolve_prevention_data_status_uses_env_manifest_path(
     assert status.state == "fresh"
     assert status.record_count == 42
     assert "42 records" in status.message
+
+
+def test_resolve_prevention_data_status_rejects_empty_export(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """A recent zero-row export must not enable analytics capabilities."""
+    manifest_path = tmp_path / "export_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "exported_at": datetime.now(tz=timezone.utc).isoformat(),
+                "platform": "mock",
+                "days": 7,
+                "total_records": 0,
+                "files": {},
+            },
+        ),
+    )
+    monkeypatch.setenv("PREVENTION_EXPORT_MANIFEST_PATH", str(manifest_path))
+
+    status = resolve_prevention_data_status(settings_service=None)
+
+    assert status.state == "missing"
+    assert status.record_count == 0
+    assert "no records" in status.message
+
+
+def test_resolve_prevention_data_status_rejects_other_profile_export(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """Fresh data from one client must not enable another client profile."""
+    manifest_path = tmp_path / "export_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "exported_at": datetime.now(tz=timezone.utc).isoformat(),
+                "platform": "generic_rest",
+                "profile": "reneryo",
+                "days": 30,
+                "total_records": 42,
+                "files": {},
+            },
+        ),
+    )
+    monkeypatch.setenv("PREVENTION_EXPORT_MANIFEST_PATH", str(manifest_path))
+
+    status = resolve_prevention_data_status(
+        settings_service=_Settings({"active_profile": "openems"}),
+    )
+
+    assert status.state == "missing"
+    assert status.record_count == 42
+    assert "belongs to profile 'reneryo'" in status.message
 
 
 def test_resolve_prevention_config_detects_keycloak_mode(

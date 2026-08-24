@@ -117,7 +117,9 @@ export type PlatformConfigRequest = {
   api_url: string;
   api_key: string;
   extra_settings: {
-    auth_type?: "bearer" | "basic" | "cookie" | "none";
+    auth_type?: "bearer" | "basic" | "cookie" | "custom_header" | "none";
+    auth_header_name?: string;
+    auth_header_prefix?: string;
     [key: string]: string | number | boolean | null | undefined;
   };
 };
@@ -198,8 +200,10 @@ export type MetricMappingTestRequest = {
   base_url: string;
   endpoint: string;
   json_path: string;
-  auth_type: "bearer" | "basic" | "cookie" | "none";
+  auth_type: "bearer" | "basic" | "cookie" | "custom_header" | "none";
   auth_token: string;
+  auth_header_name?: string;
+  auth_header_prefix?: string;
 };
 
 export type MetricMappingTestResponse = {
