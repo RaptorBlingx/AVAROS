@@ -18,6 +18,9 @@ server {
     ssl_certificate_key /etc/nginx/widget-tls/widget-server-key.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     add_header Permissions-Policy "microphone=(self)" always;
+    # Browsers default to HTTP when a presenter types only IP:port. Redirect
+    # that accidental plaintext request to the same secure widget address.
+    error_page 497 =301 https://$http_host$request_uri;
 
     location / {
         set $widget_thingsboard_upstream http://thingsboard-ce:8080;
@@ -45,6 +48,7 @@ server {
     ssl_certificate_key /etc/nginx/widget-tls/widget-server-key.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     add_header Permissions-Policy "microphone=(self)" always;
+    error_page 497 =301 https://$http_host$request_uri;
 
     location / {
         set $widget_openems_upstream http://avaros-openems-ui:80;
@@ -72,6 +76,7 @@ server {
     ssl_certificate_key /etc/nginx/widget-tls/widget-server-key.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     add_header Permissions-Policy "microphone=(self)" always;
+    error_page 497 =301 https://$http_host$request_uri;
 
     location / {
         proxy_pass http://172.18.0.1:18080;

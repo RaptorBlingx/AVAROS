@@ -162,13 +162,36 @@ This documentation records the implemented architecture, integration boundaries,
 
 ## 4. Platform-Agnostic Experiment
 
-### 4.1 Why ThingsBoard CE and OpenEMS were selected
+### 4.1 What ThingsBoard CE and OpenEMS are, and why they were selected
 
-The two open-source projects were selected because they test different parts of the adapter model.
+The two projects are public, independently developed open-source platforms;
+they are not Reneryo variants and are not AVAROS-owned source applications.
+They were selected to test materially different parts of the adapter model,
+instead of demonstrating AVAROS only against a platform developed by the same
+company.
 
 [ThingsBoard Community Edition](https://thingsboard.io/installations/) is an open-source IoT platform for device management, data collection, processing, and visualization. It provides devices, assets, current telemetry, time-series data, dashboards, and REST APIs.
 
 [OpenEMS](https://openems.github.io/openems.io/openems/latest/introduction.html) is a modular open-source energy-management platform. OpenEMS Edge communicates with devices and services, collects live data, and supports energy-management functions. OpenEMS UI provides a real-time view, while an optional backend can provide aggregation and monitoring for distributed systems.
+
+In practical terms for this validation:
+
+- **ThingsBoard CE** represents a general-purpose IoT platform. It organizes
+  connected devices and their telemetry, such as measurements emitted by a
+  sensor, machine, or gateway. It was selected because it tests AVAROS against
+  a device-oriented entity model, native telemetry keys, current values,
+  time-series retrieval, and a different authentication/request convention.
+- **OpenEMS** represents an energy-management platform. Its Edge runtime
+  exposes operational electrical channels such as consumption, production,
+  grid exchange, battery state of charge, and cumulative energy. It was
+  selected because it tests a different operational domain, live channel model,
+  energy-specific units and signed values, HTTP Basic authentication, and an
+  environment without a configured historical time-data backend.
+
+Neither platform was chosen because it resembles Reneryo. The value of the
+experiment is the contrast: AVAROS must change only profile and adapter
+configuration while the source system's vocabulary, data model, endpoints,
+authentication, and supported capability set change.
 
 Together they provide a useful comparison:
 
