@@ -12,6 +12,7 @@ from skill.domain.models import CanonicalMetric, TimePeriod
 from skill.domain.results import AnomalyResult, ComparisonResult, KPIResult, TrendResult
 from skill.services.dia_dialogue import remember_kpi_result, try_handle_structured_query
 from skill.services.dia_response import speak_with_evidence
+from skill.services.language import normalize_phrase
 
 if TYPE_CHECKING:
     from skill import AVAROSSkill
@@ -44,6 +45,21 @@ _SUPPORTED_PERIOD_PHRASES = (
     "today",
     "latest",
     "current",
+    "son otuz gün",
+    "son 30 gün",
+    "son iki hafta",
+    "son 2 hafta",
+    "geçen hafta",
+    "son hafta",
+    "bu hafta",
+    "geçen ay",
+    "son ay",
+    "bu ay",
+    "şu anda",
+    "en güncel",
+    "bugün",
+    "dün",
+    "şimdi",
 )
 
 
@@ -69,7 +85,7 @@ def _parse_utc_iso(value: str) -> datetime | None:
 
 def _extract_period_phrase_from_text(raw: str) -> str | None:
     """Extract the first supported period phrase from arbitrary text."""
-    normalized = str(raw or "").strip().lower()
+    normalized = normalize_phrase(str(raw or ""))
     if not normalized:
         return None
     for phrase in _SUPPORTED_PERIOD_PHRASES:
@@ -81,12 +97,24 @@ def _extract_period_phrase_from_text(raw: str) -> str | None:
     )
     if named_month:
         return named_month.group(0)
+    turkish_month = re.search(
+        r"\b(ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık)\s+\d{4}\b",
+        normalized,
+    )
+    if turkish_month:
+        return turkish_month.group(0)
     iso_range = re.search(
         r"\b\d{4}-\d{2}-\d{2}\s+(?:to|through|until)\s+\d{4}-\d{2}-\d{2}\b",
         normalized,
     )
     if iso_range:
         return iso_range.group(0)
+    turkish_iso_range = re.search(
+        r"\b\d{4}-\d{2}-\d{2}\s+(?:ile|ila)\s+\d{4}-\d{2}-\d{2}(?:\s+arası)?\b",
+        normalized,
+    )
+    if turkish_iso_range:
+        return turkish_iso_range.group(0)
     unsupported_rolling = re.search(r"\b(?:past|last)\s+\d+\s+days\b", normalized)
     if unsupported_rolling:
         return unsupported_rolling.group(0)
@@ -133,8 +161,8 @@ def _resolve_requested_period_phrase(
         if utterance_period_phrase is not None:
             return utterance_period_phrase
         if re.search(
-            r"\b(?:today|yesterday|week|month|days?|from|through|until|\d{4}-\d{2}-\d{2})\b",
-            explicit_period.lower(),
+            r"\b(?:today|yesterday|week|month|days?|from|through|until|bugün|dün|hafta|ay|gün|ile|ila|\d{4}-\d{2}-\d{2})\b",
+            normalize_phrase(explicit_period),
         ):
             return explicit_period
         return None

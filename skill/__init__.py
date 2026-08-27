@@ -68,6 +68,7 @@ from skill._helpers import (
     resolve_metric_from_utterance as _resolve_metric_from_utterance_impl,
     resolve_temperature_amount as _resolve_temperature_amount_impl,
     set_power_state as _set_power_state_impl,
+    sync_response_language as _sync_response_language_impl,
 )
 from skill._intent_maps import INTENT_METRIC_MAP, NON_KPI_INTENT_MAP
 from skill.adapters.factory import AdapterFactory
@@ -76,7 +77,8 @@ from skill.domain.exceptions import AVAROSError
 from skill.services.alert_monitor import AlertMonitor
 from skill.services.settings import KNOWN_INTENTS
 from skill.services.prevention_runtime import resolve_prevention_config
-from skill.services.response_builder import ResponseBuilder
+from skill.services.response_builder import ResponseBuilder, create_response_builder
+from skill.services.language import normalize_language_tag, normalize_phrase
 from skill.services.conversation_state import DialogueStateStore
 from skill.services.dia_dialogue import try_handle_structured_query
 from skill.services.dia_response import speak_information
@@ -99,6 +101,7 @@ class AVAROSSkill(FallbackSkill):
     _parse_numeric_amount = _parse_numeric_amount_impl
     _resolve_temperature_amount = _resolve_temperature_amount_impl
     _extract_utterance_text = _extract_utterance_text_impl
+    _sync_response_language = _sync_response_language_impl
     _canonicalize_asset_id = _canonicalize_asset_id_impl
     _extract_line_assets_from_text = _extract_line_assets_from_text_impl
     _get_asset_registry = _get_asset_registry_impl
@@ -138,6 +141,7 @@ class AVAROSSkill(FallbackSkill):
         self.adapter_factory: AdapterFactory | None = None
         self.dispatcher: QueryDispatcher | None = None
         self.response_builder: ResponseBuilder | None = None
+        self._response_language: str = ""
         self._loaded_profile: str = "unconfigured"
         self._loaded_platform: str = "unconfigured"
         self._is_initialized: bool = False
@@ -202,10 +206,12 @@ class AVAROSSkill(FallbackSkill):
         except Exception as exc:
             self.log.warning("Adapter initialize failed at startup: %s", exc)
         self._initialize_prevention_client(prevention_client)
-        self.response_builder = ResponseBuilder(
+        self.response_builder = create_response_builder(
+            self.lang,
             verbosity="normal",
             asset_name_resolver=self._resolve_asset_name_for_voice,
         )
+        self._response_language = normalize_language_tag(self.lang)
 
         self._loaded_profile = self._resolve_active_profile()
         self._loaded_platform = adapter.platform_name.lower()
@@ -270,10 +276,9 @@ class AVAROSSkill(FallbackSkill):
                     # the event handler.  Replay only the model registration.
                     registration_handler = None
                 else:
-                    registration_handler = (
-                        self._guard_intent_activation(intent_name, handler)
-                        if intent_name
-                        else handler
+                    registration_handler = self._guard_intent_activation(
+                        intent_name,
+                        handler,
                     )
                 self.register_intent_file(intent_file, registration_handler)
             except RuntimeError as exc:
@@ -300,7 +305,7 @@ class AVAROSSkill(FallbackSkill):
             )
         return registered_count
 
-    def _guard_intent_activation(self, intent_name: str, handler: Callable):
+    def _guard_intent_activation(self, intent_name: str | None, handler: Callable):
         """Wrap a registered intent so profile activation settings take effect.
 
         Intent files stay registered to allow profile switches without an OVOS
@@ -309,7 +314,8 @@ class AVAROSSkill(FallbackSkill):
         """
         @wraps(handler)
         def _guarded(message: Message) -> Any:
-            if self.settings_service is not None:
+            self._sync_response_language(message)
+            if intent_name and self.settings_service is not None:
                 try:
                     if not self.settings_service.is_intent_active(intent_name):
                         self.speak("That capability is disabled for the active profile.")
@@ -356,6 +362,7 @@ class AVAROSSkill(FallbackSkill):
         Includes utterance-based guards to redirect trend/compare/anomaly/drift/forecast
         queries that Padatious mis-routed to a KPI intent.
         """
+        self._sync_response_language(message)
         utterance = self._extract_utterance_text(message).lower()
 
         if self._is_anomaly_query(utterance):
@@ -510,8 +517,7 @@ class AVAROSSkill(FallbackSkill):
     @staticmethod
     def _normalize_asset_lookup_key(value: str) -> str:
         """Normalize free-form identifiers for robust asset comparisons."""
-        lowered = value.lower().strip()
-        return re.sub(r"[^a-z0-9]", "", lowered)
+        return normalize_phrase(value).replace(" ", "").replace("-", "")
 
     def _resolve_asset_name_for_voice(self, asset_id: str) -> str:
         """Resolve display-friendly asset label for speech responses."""
@@ -668,7 +674,8 @@ class AVAROSSkill(FallbackSkill):
         self._initialize_prevention_client(prevention_client)
         self._shutdown_prevention_client(old_prevention_client)
         if self.response_builder is None:
-            self.response_builder = ResponseBuilder(
+            self.response_builder = create_response_builder(
+                self.lang,
                 verbosity="normal",
                 asset_name_resolver=self._resolve_asset_name_for_voice,
             )
@@ -737,7 +744,8 @@ class AVAROSSkill(FallbackSkill):
         )
         self._shutdown_prevention_client(old_prevention_client)
         if self.response_builder is None:
-            self.response_builder = ResponseBuilder(
+            self.response_builder = create_response_builder(
+                self.lang,
                 verbosity="normal",
                 asset_name_resolver=self._resolve_asset_name_for_voice,
             )
@@ -832,7 +840,8 @@ class AVAROSSkill(FallbackSkill):
 
         if self.response_builder is None:
             self.log.warning("Response builder missing in %s; recovering", handler_name)
-            self.response_builder = ResponseBuilder(
+            self.response_builder = create_response_builder(
+                self.lang,
                 verbosity="normal",
                 asset_name_resolver=self._resolve_asset_name_for_voice,
             )

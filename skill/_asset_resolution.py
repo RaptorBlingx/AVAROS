@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from skill.domain.exceptions import AssetNotFoundError
 from skill.domain.models import Asset
+from skill.services.language import normalize_phrase
 
 if TYPE_CHECKING:
     from skill import AVAROSSkill
@@ -244,10 +245,7 @@ def _build_lookup(assets: list[Asset]) -> dict[str, Asset]:
 
 def _normalize_key(text: str) -> str:
     """Normalize free-form text for case/whitespace/punctuation-insensitive match."""
-    lowered = text.lower().strip()
-    lowered = lowered.replace("-", " ").replace("_", " ")
-    lowered = re.sub(r"[^a-z0-9\s]", " ", lowered)
-    return re.sub(r"\s+", " ", lowered).strip()
+    return normalize_phrase(text).replace("-", " ")
 
 
 def _normalize_key_variants(text: str) -> tuple[str, ...]:

@@ -444,6 +444,33 @@ class TestVoiceTTS:
         assert response.content.startswith(b"RIFF")
         assert commands[0][0] == "/usr/bin/piper"
 
+    def test_turkish_tts_uses_turkish_espeak_voice(
+        self, client: TestClient, monkeypatch
+    ) -> None:
+        commands: list[list[str]] = []
+
+        def fake_run(command, **_kwargs):
+            commands.append(command)
+            wav_path = Path(command[command.index("-w") + 1])
+            wav_path.write_bytes(b"RIFF----WAVEfmt ")
+
+        monkeypatch.setattr(voice_router, "SERVER_TTS_ENGINE", "auto")
+        monkeypatch.setattr(
+            voice_router.shutil,
+            "which",
+            lambda name: f"/usr/bin/{name}",
+        )
+        monkeypatch.setattr(voice_router.subprocess, "run", fake_run)
+
+        response = client.post(
+            "/api/v1/voice/tts",
+            json={"text": "Merhaba", "language": "tr-TR"},
+        )
+
+        assert response.status_code == 200
+        assert commands[0][0] == "/usr/bin/espeak-ng"
+        assert commands[0][commands[0].index("-v") + 1] == "tr"
+
     def test_public_tts_endpoint_accepts_plain_text(
         self, client_no_auth: TestClient, monkeypatch
     ) -> None:

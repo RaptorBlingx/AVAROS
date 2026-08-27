@@ -26,6 +26,14 @@ describe("widget config", () => {
     const { config } = readWidgetConfig(makeScript());
 
     expect(config.disabledModes).toEqual(["wake-word"]);
+    expect(config.language).toBe("en-US");
+  });
+
+  it("reads the embed language", () => {
+    const script = makeScript();
+    script.dataset.language = "tr-TR";
+
+    expect(readWidgetConfig(script).config.language).toBe("tr-TR");
   });
 
   it("resolves widget assets relative to the script URL", () => {

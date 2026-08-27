@@ -4,21 +4,37 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from skill.domain.models import TimePeriod
+from skill.domain.models import CanonicalMetric, TimePeriod
 from skill.services.dia_response import speak_information
+from skill.services.language import is_turkish, metric_display_name
 
 if TYPE_CHECKING:
     from ovos_bus_client.message import Message
     from skill import AVAROSSkill
 
 
+def _is_turkish_request(skill: "AVAROSSkill") -> bool:
+    """Return the language selected for the current request."""
+    return is_turkish(
+        getattr(skill, "_response_language", getattr(skill, "lang", "en-US"))
+    )
+
+
 def handle_greeting(skill: "AVAROSSkill", message: Message) -> None:
     """Handle greetings such as 'hello' or 'hey avaros'."""
     speak_information(
         skill,
-        "Hello. I can help with configured manufacturing KPIs and evidence.",
+        (
+            "Merhaba. Yapılandırılmış üretim KPI'ları ve kanıtlarla yardımcı olabilirim."
+            if _is_turkish_request(skill)
+            else "Hello. I can help with configured manufacturing KPIs and evidence."
+        ),
         response_type="greeting",
-        suggestions=["What can you do?", "List the available assets"],
+        suggestions=(
+            ["Ne yapabilirsin?", "Kullanılabilir varlıkları listele"]
+            if _is_turkish_request(skill)
+            else ["What can you do?", "List the available assets"]
+        ),
     )
 
 
@@ -30,8 +46,13 @@ def handle_help(skill: "AVAROSSkill", message: Message) -> None:
 def handle_control_turn_on(skill: "AVAROSSkill", message: Message) -> None:
     """Explain the advisory-only control boundary without changing state."""
     speak_information(skill,
-        "AVAROS is read-only and cannot turn equipment on. "
-        "Use the approved equipment control system and site safety procedure.",
+        (
+            "AVAROS salt okunurdur ve ekipmanı açamaz. Onaylı ekipman kontrol "
+            "sistemini ve tesis güvenlik prosedürünü kullanın."
+            if _is_turkish_request(skill)
+            else "AVAROS is read-only and cannot turn equipment on. "
+            "Use the approved equipment control system and site safety procedure."
+        ),
         response_type="read_only_boundary",
     )
 
@@ -39,8 +60,13 @@ def handle_control_turn_on(skill: "AVAROSSkill", message: Message) -> None:
 def handle_control_turn_off(skill: "AVAROSSkill", message: Message) -> None:
     """Explain the advisory-only control boundary without changing state."""
     speak_information(skill,
-        "AVAROS is read-only and cannot turn equipment off. "
-        "Use the approved equipment control system and site safety procedure.",
+        (
+            "AVAROS salt okunurdur ve ekipmanı kapatamaz. Onaylı ekipman kontrol "
+            "sistemini ve tesis güvenlik prosedürünü kullanın."
+            if _is_turkish_request(skill)
+            else "AVAROS is read-only and cannot turn equipment off. "
+            "Use the approved equipment control system and site safety procedure."
+        ),
         response_type="read_only_boundary",
     )
 
@@ -57,13 +83,21 @@ def handle_status_system_show(skill: "AVAROSSkill", message: Message) -> None:
         prevention_available = getattr(skill.dispatcher, "_prevention_client", None) is not None
         health = "connected" if connection.success else "not connected"
         freshness = _status_freshness_clause(skill, assets, metrics)
-        headline = (
-            f"The active data source is {health}. Profile: {active_profile}. "
-            f"Configured scope: {len(assets)} assets and {len(metrics)} metrics. "
-            f"{freshness} "
-            f"PREVENTION analytics is {'available' if prevention_available else 'unavailable'}. "
-            f"Connection check: {connection.message}"
-        )
+        if _is_turkish_request(skill):
+            headline = (
+                f"Etkin veri kaynağı {'bağlı' if connection.success else 'bağlı değil'}. "
+                f"Profil: {active_profile}. Yapılandırılmış kapsam: {len(assets)} varlık ve "
+                f"{len(metrics)} metrik. PREVENTION analitiği "
+                f"{'kullanılabilir' if prevention_available else 'kullanılamıyor'}."
+            )
+        else:
+            headline = (
+                f"The active data source is {health}. Profile: {active_profile}. "
+                f"Configured scope: {len(assets)} assets and {len(metrics)} metrics. "
+                f"{freshness} "
+                f"PREVENTION analytics is {'available' if prevention_available else 'unavailable'}. "
+                f"Connection check: {connection.message}"
+            )
         speak_information(
             skill,
             headline,
@@ -116,7 +150,11 @@ def handle_status_profile_show(skill: "AVAROSSkill", message: Message) -> None:
 
         speak_information(
             skill,
-            f"Current profile is {profile} on platform {platform}.",
+            (
+                f"Geçerli profil {profile}; platform {platform}."
+                if _is_turkish_request(skill)
+                else f"Current profile is {profile} on platform {platform}."
+            ),
             response_type="profile_status",
             evidence_rows=[{"profile": profile, "platform": platform}],
         )
@@ -134,7 +172,29 @@ def handle_help_capabilities_list(skill: "AVAROSSkill", message: Message) -> Non
             skill.settings_service,
             getattr(skill.dispatcher, "adapter", None),
         )
-        metric_names = [item["label"] for item in manifest["metrics"]]
+        metric_names = [
+            metric_display_name(
+                CanonicalMetric.from_string(item["id"]),
+                getattr(
+                    skill,
+                    "_response_language",
+                    getattr(skill, "lang", "en-US"),
+                ),
+            )
+            for item in manifest["metrics"]
+        ]
+        if _is_turkish_request(skill):
+            metric_part = ", ".join(metric_names[:5]) if metric_names else "yapılandırılmış KPI'lar"
+            more = len(metric_names) - 5
+            if more > 0:
+                metric_part += f" ve {more} metrik daha"
+            speak_information(
+                skill,
+                f"{metric_part} raporlayabilir; enerji karşılaştırabilir, eğilimleri ve "
+                "sistem durumunu gösterebilirim. Salt okunurum ve ekipmanı kontrol edemem.",
+                response_type="capabilities",
+            )
+            return
         capabilities: list[str] = []
         if metric_names:
             metric_part = ", ".join(metric_names[:5])
@@ -215,9 +275,17 @@ def handle_list_assets(skill: "AVAROSSkill", message: Message) -> None:
         if not assets:
             speak_information(
                 skill,
-                "No assets are configured in the active profile.",
+                (
+                    "Etkin profilde yapılandırılmış varlık yok."
+                    if _is_turkish_request(skill)
+                    else "No assets are configured in the active profile."
+                ),
                 response_type="asset_list",
-                warnings=["The active profile has no configured assets."],
+                warnings=[
+                    "Etkin profilde yapılandırılmış varlık yok."
+                    if _is_turkish_request(skill)
+                    else "The active profile has no configured assets."
+                ],
             )
             return
 

@@ -26,6 +26,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable
 
+from skill.services.language import is_turkish, metric_display_name
+
 if TYPE_CHECKING:
     from skill.domain.anomaly_models import DriftReport, ForecastReport
     from skill.domain.models import Anomaly, CanonicalMetric
@@ -733,3 +735,157 @@ class ResponseBuilder:
         if len(values) == 2:
             return f"{values[0]} and {values[1]}"
         return f"{', '.join(values[:-1])}, and {values[-1]}"
+
+
+class TurkishResponseBuilder(ResponseBuilder):
+    """Build operator-facing responses in Turkish while preserving result data."""
+
+    def format_kpi_result(self, result: KPIResult) -> str:
+        value = self._format_value(result.value, result.unit)
+        if self.verbosity == "brief":
+            return value
+        metric = metric_display_name(result.metric, "tr-TR")
+        asset = self._format_asset_name(result.asset_id)
+        if result.period.display_name == "latest available":
+            period = " en güncel ölçümde"
+        elif result.period.display_name in {"bugün", "dün", "en güncel", "şimdi", "şu anda"}:
+            period = f" {result.period.display_name}"
+        else:
+            period = f" {result.period.display_name} döneminde" if result.period.display_name else ""
+        observations = (
+            f", {result.sample_count} gözleme dayanıyor" if result.sample_count > 0 else ""
+        )
+        response = f"{asset} için {metric}{period} {value}{observations}."
+        if result.warnings:
+            response += f" Veri uyarısı: {result.warnings[0]}"
+        return response
+
+    def format_comparison_result(self, result: ComparisonResult) -> str:
+        winner = self._format_asset_name(result.winner_id)
+        metric = metric_display_name(result.metric, "tr-TR")
+        difference = (
+            f"{self._format_number(result.difference)} yüzde puan"
+            if result.unit == "%"
+            else self._format_comparison_value(result.difference, result.unit)
+        )
+        values = "; ".join(
+            f"{self._format_asset_name(item.asset_id)}: "
+            f"{self._format_comparison_value(item.value, result.unit)}"
+            for item in sorted(result.items, key=lambda item: item.rank)
+        )
+        outcome = (
+            f"{winner}, {difference} farkla daha verimli"
+            if self._is_lower_better(result.metric)
+            else f"{winner}, {difference} farkla önde"
+        )
+        return f"{result.period.display_name} için {metric}: {values}. {outcome}."
+
+    def format_trend_result(self, result: TrendResult) -> str:
+        metric = metric_display_name(result.metric, "tr-TR")
+        change = abs(result.change_percent)
+        direction = {"up": "yükseliyor", "down": "düşüyor", "stable": "sabit"}.get(
+            result.direction, result.direction
+        )
+        if self.verbosity == "brief":
+            return f"{direction}, yüzde {change:.1f}"
+        if result.direction == "stable":
+            return f"{metric}, {result.period.display_name} boyunca sabit."
+        return f"{metric}, {result.period.display_name} boyunca yüzde {change:.1f} {direction}."
+
+    def format_anomaly_result(self, result: AnomalyResult) -> str:
+        metric = metric_display_name(result.metric, "tr-TR")
+        if not result.is_anomalous:
+            return f"Olağan dışı bir örüntü bulunmadı. {metric.capitalize()} normal görünüyor."
+        first = result.anomalies[0] if result.anomalies else None
+        deviation = abs(first.deviation) if first else 0.0
+        return (
+            f"{result.asset_id} üzerinde {metric} için {result.severity} önem düzeyinde "
+            f"{deviation:.1f} sigma sapma bulundu."
+        )
+
+    def format_anomaly_scan_result(self, result: AnomalyScanResult) -> str:
+        if not result.has_anomalies:
+            if not result.has_complete_coverage:
+                return (
+                    "Anomali olmadığı sonucuna varamıyorum. "
+                    f"{result.attempted_pairs} kontrolün {result.successful_pairs} tanesi başarılı, "
+                    f"{result.failed_pairs} tanesi başarısız oldu."
+                )
+            return f"{result.checked_pairs} kontrolde olağan dışı bir örüntü bulunmadı."
+        return (
+            f"{result.checked_pairs} kontrolün {result.anomalous_pairs} tanesinde "
+            "anomali bulundu."
+        )
+
+    def format_drift_result(self, result: DriftReport) -> str:
+        metric = metric_display_name(result.metric, "tr-TR")
+        if not result.has_drift:
+            return f"Önemli bir sapma eğilimi bulunmadı. {metric.capitalize()} sabit."
+        direction = {
+            "improving": "iyileşiyor", "degrading": "kötüleşiyor", "stable": "sabit"
+        }.get(result.drift_direction, result.drift_direction)
+        return (
+            f"{metric} {direction}; {result.periods_analyzed} veri noktasında "
+            f"günlük değişim {abs(result.drift_rate):.3f}."
+        )
+
+    def format_forecast_result(self, result: ForecastReport) -> str:
+        metric = metric_display_name(result.metric, "tr-TR")
+        if not result.available or result.predicted_value is None:
+            return f"{metric} için kullanılabilir bir tahmin yok."
+        value = self._format_value(result.predicted_value, result.unit)
+        horizon = "sonraki dönem" if result.horizon_periods == 1 else (
+            "gelecek hafta" if result.horizon_periods == 7
+            else f"sonraki {result.horizon_periods} dönem"
+        )
+        confidence = int(result.confidence * 100)
+        asset = f" {result.asset_id} üzerinde" if result.asset_id else ""
+        return f"{horizon.capitalize()},{asset} {metric} tahmini {value}. Güven yüzde {confidence}."
+
+    def format_whatif_result(self, result: WhatIfResult) -> str:
+        metric = metric_display_name(result.target_metric, "tr-TR")
+        baseline = self._format_value(result.baseline, result.unit)
+        projected = self._format_value(result.projected, result.unit)
+        direction = "iyileşme" if result.is_improvement else "değişim"
+        return (
+            f"Karar destek senaryosu: {metric}, {baseline} değerinden {projected} "
+            f"değerine gelir; yaklaşık yüzde {abs(result.delta_percent):.1f} {direction}."
+        )
+
+    def _format_value(self, value: float, unit: str, decimals: int | None = None) -> str:
+        formatted = f"{value:.{decimals}f}" if decimals is not None else self._format_number(value)
+        units = {
+            "%": "yüzde", "kWh/unit": "kilovat saat/birim", "kWh": "kilovat saat",
+            "kW": "kilovat", "W": "vat", "sec": "saniye", "seconds": "saniye",
+            "min": "dakika", "minutes": "dakika", "days": "gün",
+        }
+        if unit == "%":
+            return f"yüzde {formatted}"
+        return f"{formatted} {units.get(unit, unit)}".strip()
+
+    def format_asset_list(self, asset_names: list[str], max_items: int = 10) -> str:
+        names = [name.strip() for name in asset_names if name and name.strip()]
+        if not names:
+            return "Henüz yapılandırılmış varlık yok. Web arayüzü ayarlarından varlık ekleyebilirsiniz."
+        shown = names[:max_items]
+        visible = self._join_list_for_voice(shown)
+        remaining = len(names) - len(shown)
+        if remaining:
+            return f"Yapılandırılmış {len(names)} varlık var: {visible} ve {remaining} tane daha."
+        return f"Yapılandırılmış {len(names)} varlık var: {visible}."
+
+    def _join_list_for_voice(self, values: list[str]) -> str:
+        if len(values) < 2:
+            return values[0] if values else ""
+        return f"{', '.join(values[:-1])} ve {values[-1]}"
+
+
+def create_response_builder(
+    language: str | None,
+    *,
+    verbosity: str = "normal",
+    asset_name_resolver: Callable[[str], str] | None = None,
+) -> ResponseBuilder:
+    """Create the response builder matching the active OVOS language."""
+    builder_type = TurkishResponseBuilder if is_turkish(language) else ResponseBuilder
+    return builder_type(verbosity=verbosity, asset_name_resolver=asset_name_resolver)

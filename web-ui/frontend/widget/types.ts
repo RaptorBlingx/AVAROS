@@ -49,6 +49,7 @@ export type WidgetConfig = {
   avarosUrl: string;
   wakeWordUrl: string;
   ttsEngine: WidgetTtsEngine;
+  language: string;
 };
 
 export type WidgetPublicApi = {

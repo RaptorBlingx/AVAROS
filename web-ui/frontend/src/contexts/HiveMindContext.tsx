@@ -41,7 +41,7 @@ interface HiveMindContextValue {
   /** Disconnect from HiveMind */
   disconnect: () => void;
   /** Send a text utterance to OVOS */
-  sendUtterance: (text: string) => Promise<void>;
+  sendUtterance: (text: string, language?: string) => Promise<void>;
   /** Stop the active OVOS request/session work and speech. */
   interrupt: () => Promise<void>;
   /** Last speak response from OVOS */
@@ -134,6 +134,10 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
             accessSecret: config.hivemind_secret,
             encryptionKey:
               cryptoKeyCandidate.length === 16 ? cryptoKeyCandidate : undefined,
+            language:
+              typeof window === "undefined"
+                ? "en-US"
+                : localStorage.getItem("avaros_voice_language") ?? "en-US",
           });
           setConnectionDetails(svc.getConnectionDetails());
 
@@ -202,11 +206,16 @@ export function HiveMindProvider({ children }: HiveMindProviderProps) {
     serviceRef.current?.disconnect();
   }, []);
 
-  const sendUtterance = useCallback(async (text: string) => {
+  const sendUtterance = useCallback(async (text: string, language?: string) => {
     if (!serviceRef.current) {
       throw new Error("HiveMind service not initialized");
     }
-    await serviceRef.current.sendUtterance(text);
+    const activeLanguage = language ?? (
+      typeof window === "undefined"
+        ? "en-US"
+        : localStorage.getItem("avaros_voice_language") ?? "en-US"
+    );
+    await serviceRef.current.sendUtterance(text, activeLanguage);
   }, []);
 
   const interrupt = useCallback(async () => {

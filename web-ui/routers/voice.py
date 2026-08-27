@@ -393,6 +393,10 @@ def _synthesize_wav(payload: SpeechRequest) -> bytes:
         raise HTTPException(status_code=503, detail="Server TTS is disabled")
 
     engine = SERVER_TTS_ENGINE or "auto"
+    # The bundled Piper model is English-only. Never synthesize Turkish text
+    # with that voice; espeak-ng ships a native Turkish voice instead.
+    if payload.language.strip().lower().startswith("tr"):
+        return _synthesize_wav_espeak(payload)
     if engine in {"auto", "piper"}:
         try:
             return _synthesize_wav_piper(payload)

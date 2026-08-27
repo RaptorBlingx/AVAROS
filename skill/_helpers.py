@@ -11,6 +11,8 @@ from skill._asset_resolution import (
 )
 from skill.domain.exceptions import ValidationError
 from skill.domain.models import Asset, CanonicalMetric, TimePeriod
+from skill.services.language import normalize_phrase
+from skill.services.language import normalize_language_tag
 from skill._intent_resolver import resolve_intent_name as _resolve_intent_name
 from skill._metric_resolver import resolve_metric_from_utterance as _resolve_metric_from_utterance
 from skill._slot_resolution import (  # noqa: F401 — re-exported for __init__.py
@@ -153,6 +155,17 @@ def parse_numeric_amount(self, raw_amount: str) -> float | None:
         "eight": 8.0,
         "nine": 9.0,
         "ten": 10.0,
+        "sıfır": 0.0,
+        "bir": 1.0,
+        "iki": 2.0,
+        "üç": 3.0,
+        "dört": 4.0,
+        "beş": 5.0,
+        "altı": 6.0,
+        "yedi": 7.0,
+        "sekiz": 8.0,
+        "dokuz": 9.0,
+        "on": 10.0,
     }
     if normalized in word_amounts:
         return word_amounts[normalized]
@@ -198,6 +211,7 @@ def resolve_temperature_amount(
 
 def extract_utterance_text(self, message: Message) -> str:
     """Extract raw utterance text from message payload/context."""
+    sync_response_language(self, message)
     data = getattr(message, "data", {}) or {}
     utterance = data.get("utterance")
     if isinstance(utterance, str):
@@ -208,6 +222,38 @@ def extract_utterance_text(self, message: Message) -> str:
         return utterances[0]
 
     return ""
+
+
+def sync_response_language(self, message: Message) -> str:
+    """Select the response formatter for the language carried by HiveMind."""
+    data = getattr(message, "data", {}) or {}
+    context = getattr(message, "context", {}) or {}
+    session = context.get("session", {}) if isinstance(context, dict) else {}
+    requested = data.get("lang") if isinstance(data, dict) else None
+    if not requested and isinstance(context, dict):
+        requested = context.get("lang")
+    if not requested and isinstance(session, dict):
+        requested = session.get("lang")
+    if not requested:
+        # Unit-test doubles and non-HiveMind OVOS messages often omit language.
+        # Keep the builder selected during skill initialization in that case.
+        current = getattr(self, "_response_language", None)
+        if isinstance(current, str) and current:
+            return normalize_language_tag(current)
+        return normalize_language_tag(getattr(self, "lang", "en-US"))
+
+    language = normalize_language_tag(requested)
+
+    if getattr(self, "_response_language", None) != language:
+        from skill.services.response_builder import create_response_builder
+
+        self.response_builder = create_response_builder(
+            language,
+            verbosity="normal",
+            asset_name_resolver=self._resolve_asset_name_for_voice,
+        )
+        self._response_language = language
+    return language
 
 
 def get_asset_registry(self, force_refresh: bool = False) -> list[Asset]:
@@ -234,8 +280,7 @@ def is_anomaly_query(self, utterance: str) -> bool:
     if not utterance:
         return False
 
-    normalized = re.sub(r"[^a-z0-9\s]", " ", utterance.lower())
-    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = normalize_phrase(utterance)
     anomaly_patterns = (
         "anomaly",
         "anomalies",
@@ -248,6 +293,10 @@ def is_anomaly_query(self, utterance: str) -> bool:
         "unusual patterns",
         "anything unusual",
         "spikes or issues",
+        "anomali",
+        "anomaliler",
+        "olağan dışı",
+        "alışılmadık örüntü",
     )
     return any(pattern in normalized for pattern in anomaly_patterns)
 
@@ -257,8 +306,7 @@ def is_drift_query(self, utterance: str) -> bool:
     if not utterance:
         return False
 
-    normalized = re.sub(r"[^a-z0-9\s]", " ", utterance.lower())
-    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = normalize_phrase(utterance)
     drift_patterns = (
         "drift",
         "drifting",
@@ -273,6 +321,11 @@ def is_drift_query(self, utterance: str) -> bool:
         "drift report",
         "any trends",
         "check for gradual",
+        "sapma",
+        "sapma eğilimi",
+        "kademeli değişiklik",
+        "kötüleşiyor",
+        "eğilim nasıl",
     )
     return any(pattern in normalized for pattern in drift_patterns)
 
@@ -282,14 +335,17 @@ def is_forecast_query(self, utterance: str) -> bool:
     if not utterance:
         return False
 
-    normalized = re.sub(r"[^a-z0-9\s]", " ", utterance.lower())
-    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = normalize_phrase(utterance)
     forecast_patterns = (
         "forecast",
         "predict",
         "prediction",
         "expected",
         "what is expected",
+        "tahmin",
+        "tahmini",
+        "öngör",
+        "beklenen",
     )
     return any(pattern in normalized for pattern in forecast_patterns)
 
@@ -299,8 +355,7 @@ def is_whatif_query(self, utterance: str) -> bool:
     if not utterance:
         return False
 
-    normalized = re.sub(r"[^a-z0-9%\s]", " ", utterance.lower())
-    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = normalize_phrase(utterance)
     whatif_patterns = (
         "what if",
         "what would happen if",
@@ -309,6 +364,9 @@ def is_whatif_query(self, utterance: str) -> bool:
         "project impact",
         "impact if",
         "if we",
+        "ne olur",
+        "simüle et",
+        "senaryo",
     )
     return any(pattern in normalized for pattern in whatif_patterns)
 

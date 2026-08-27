@@ -1,13 +1,14 @@
 # AVAROS Intents and Dialogue Contract
 
-Status: verified against AVAROS commit `8258ca95f61c17af444809f84e60ba55db941156`
-Verification date: 2026-08-10
+Status: verified on the Turkish-language feature branch
+Verification date: 2026-08-27
 
 ## Runtime intent model
 
-The OVOS skill registers 36 English intent files at runtime:
+The OVOS skill registers the same 44 intent files for English (`en-us`) and
+Turkish (`tr-tr`) at runtime:
 
-- 19 canonical KPI intents from `INTENT_METRIC_MAP`;
+- 27 canonical KPI intents from `INTENT_METRIC_MAP`;
 - 17 non-KPI intents from `NON_KPI_INTENT_MAP`.
 
 Registration occurs in `AVAROSSkill._register_intent_handlers()`. KPI intent
@@ -15,8 +16,10 @@ files share `_handle_generic_kpi`; non-KPI files bind to named handlers. Dynamic
 entity files for `asset`, `asset_a`, `asset_b`, and `period` are registered at
 the same time.
 
-The source directory contains 36 `.intent` files and 16 `.dialog` files under
-`skill/locale/en-us/` at the verified commit.
+Both `skill/locale/en-us/` and `skill/locale/tr-tr/` contain 44 `.intent`
+files, 16 `.dialog` files, and matching entity resources. The selected BCP-47
+language tag is propagated by the Web UI and embeddable widget through
+HiveMind to OVOS.
 
 ## KPI intent map
 
@@ -203,7 +206,7 @@ Typical verified failures include:
 
 - Registration: `skill/__init__.py::_register_intent_handlers`
 - Maps: `skill/_intent_maps.py`
-- Utterances: `skill/locale/en-us/*.intent`
+- Utterances: `skill/locale/{en-us,tr-tr}/*.intent`
 - KPI/analytics handlers: `skill/_metric_handlers.py`, `skill/_handlers.py`
 - System/control handlers: `skill/_system_handlers.py`
 - Metric and slot resolution: `skill/_metric_resolver.py`,

@@ -189,6 +189,7 @@ export function readWidgetConfig(script: HTMLScriptElement): {
         script.dataset.ttsEngine,
         script.dataset.meetingAudio,
       ),
+      language: script.dataset.language?.trim() || "en-US",
     },
     configError,
   };

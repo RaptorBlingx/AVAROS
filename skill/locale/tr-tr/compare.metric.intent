@@ -1,0 +1,5 @@
+{asset_a} ile {asset_b} için {metric} karşılaştır
+{asset_a} ve {asset_b} arasında {metric} karşılaştırması yap
+{asset_a} mi {asset_b} mi daha iyi {metric} değerine sahip
+{metric} karşılaştır
+hat 1 ile hat 2 için {metric} karşılaştır

@@ -190,6 +190,7 @@ export class ConnectionManager {
   private readonly accessKey: string;
   private readonly accessSecret: string;
   private readonly encryptionKey: string;
+  private readonly language: string;
   private readonly sessionId = makeSessionId();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
@@ -208,12 +209,14 @@ export class ConnectionManager {
     accessKey: string,
     accessSecret = "",
     encryptionKey = "",
+    language = "en-US",
   ) {
     this.host = host;
     this.clientName = clientName;
     this.accessKey = accessKey;
     this.accessSecret = accessSecret;
     this.encryptionKey = encryptionKey;
+    this.language = language.trim().replace("_", "-").toLowerCase() || "en-us";
   }
 
   onState(listener: StateListener): () => void {
@@ -379,7 +382,7 @@ export class ConnectionManager {
       type: "recognizer_loop:utterance",
       data: {
         utterances: [cleaned],
-        lang: "en-us",
+        lang: this.language,
       },
       context: {
         source: "avaros-widget",
@@ -388,7 +391,7 @@ export class ConnectionManager {
         session: {
           session_id: this.sessionId,
           site_id: DEFAULT_SESSION_SITE,
-          lang: "en-us",
+          lang: this.language,
           pipeline: [...OVOS_INTENT_PIPELINE],
         },
       },
@@ -421,7 +424,7 @@ export class ConnectionManager {
       session: {
         session_id: this.sessionId,
         site_id: DEFAULT_SESSION_SITE,
-        lang: "en-us",
+        lang: this.language,
         pipeline: [...OVOS_INTENT_PIPELINE],
       },
     };
@@ -480,7 +483,7 @@ export class ConnectionManager {
         session: {
           session_id: this.sessionId,
           site_id: DEFAULT_SESSION_SITE,
-          lang: "en-us",
+          lang: this.language,
           context: {},
           active_skills: [],
           utterance_states: {},

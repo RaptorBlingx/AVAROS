@@ -1,0 +1,5 @@
+{asset} için {metric} yüzde {amount} değişirse ne olur
+{asset} için {metric} yüzde {amount} iyileşirse ne olur
+{asset} için {metric} yüzde {amount} düşerse ne olur
+{asset} için {metric} yüzde {amount} artarsa ne olur
+{asset} için {metric} yüzde {amount} değişimini simüle et

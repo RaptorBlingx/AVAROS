@@ -85,7 +85,8 @@ def build_capability_manifest(settings_service, adapter=None) -> dict[str, Any]:
         "profile": profile,
         "display_name": display_name,
         "read_only": True,
-        "language": "en",
+        "language": "en-US",
+        "languages": ["en-US", "tr-TR"],
         "metrics": [
             {"id": metric.value, "label": metric.display_name, "unit": metric.default_unit}
             for metric in metrics

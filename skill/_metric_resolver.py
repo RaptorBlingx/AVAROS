@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from skill.domain.models import CanonicalMetric
+from skill.services.language import normalize_phrase
 
 _UTTERANCE_PHRASE_MAP: tuple[tuple[CanonicalMetric, tuple[str, ...]], ...] = (
     (
@@ -168,6 +169,36 @@ _UTTERANCE_PHRASE_MAP: tuple[tuple[CanonicalMetric, tuple[str, ...]], ...] = (
     ),
 )
 
+_TURKISH_PHRASE_MAP: tuple[tuple[CanonicalMetric, tuple[str, ...]], ...] = (
+    (CanonicalMetric.STORAGE_STATE_OF_CHARGE, ("batarya doluluk oranı", "batarya şarj seviyesi", "depolama şarj durumu")),
+    (CanonicalMetric.STORAGE_POWER, ("batarya gücü", "depolama gücü")),
+    (CanonicalMetric.ENERGY_GRID_IMPORT_TOTAL, ("şebekeden alınan enerji", "şebeke ithalat enerjisi")),
+    (CanonicalMetric.ENERGY_GRID_EXPORT_TOTAL, ("şebekeye verilen enerji", "şebeke ihracat enerjisi")),
+    (CanonicalMetric.GRID_POWER, ("şebeke gücü", "şebeke alışveriş gücü")),
+    (CanonicalMetric.ENERGY_PRODUCTION_TOTAL, ("toplam üretim enerjisi", "üretilen enerji")),
+    (CanonicalMetric.PRODUCTION_POWER, ("üretim gücü", "üretilen güç")),
+    (CanonicalMetric.CONSUMPTION_POWER, ("tüketim gücü", "güç tüketimi", "anlık tüketim")),
+    (CanonicalMetric.OEE, ("oee", "toplam ekipman etkinliği", "ekipman etkinliği")),
+    (CanonicalMetric.SCRAP_RATE, ("hurda oranı", "fire oranı", "atık oranı", "hurda", "fire")),
+    (CanonicalMetric.ENERGY_PER_UNIT, ("birim başına enerji", "birim enerji tüketimi", "özgül enerji")),
+    (CanonicalMetric.ENERGY_TOTAL, ("toplam enerji", "enerji tüketimi", "tüketilen enerji")),
+    (CanonicalMetric.PEAK_DEMAND, ("pik talep", "maksimum talep", "en yüksek talep")),
+    (CanonicalMetric.PEAK_TARIFF_EXPOSURE, ("pik tarife maruziyeti", "tarife maruziyeti")),
+    (CanonicalMetric.REWORK_RATE, ("yeniden işleme oranı", "tekrar işleme oranı")),
+    (CanonicalMetric.MATERIAL_EFFICIENCY, ("malzeme verimliliği",)),
+    (CanonicalMetric.RECYCLED_CONTENT, ("geri dönüştürülmüş içerik", "geri dönüşüm oranı")),
+    (CanonicalMetric.SUPPLIER_LEAD_TIME, ("tedarikçi teslim süresi", "tedarik süresi")),
+    (CanonicalMetric.SUPPLIER_DEFECT_RATE, ("tedarikçi hata oranı", "tedarikçi kusur oranı")),
+    (CanonicalMetric.SUPPLIER_ON_TIME, ("zamanında teslim oranı", "tedarikçi zamanında teslim")),
+    (CanonicalMetric.SUPPLIER_CO2_PER_KG, ("tedarikçi kilogram başına karbon", "tedarikçi kilogram başına co2")),
+    (CanonicalMetric.THROUGHPUT, ("üretim hızı", "çıktı hızı", "üretim miktarı")),
+    (CanonicalMetric.CYCLE_TIME, ("çevrim süresi", "döngü süresi")),
+    (CanonicalMetric.CHANGEOVER_TIME, ("ürün değişim süresi", "değişim süresi")),
+    (CanonicalMetric.CO2_PER_UNIT, ("birim başına co2", "birim başına karbon")),
+    (CanonicalMetric.CO2_TOTAL, ("toplam co2", "toplam karbon", "toplam karbon emisyonu")),
+    (CanonicalMetric.CO2_PER_BATCH, ("parti başına co2", "parti başına karbon")),
+)
+
 
 def resolve_metric_from_utterance(utterance: str) -> CanonicalMetric | None:
     """Resolve canonical metric from free-form utterance.
@@ -181,13 +212,7 @@ def resolve_metric_from_utterance(utterance: str) -> CanonicalMetric | None:
     if not utterance:
         return None
 
-    normalized_utterance = (
-        utterance.lower()
-        .replace("₂", "2")
-        .replace("₀", "0")
-    )
-    normalized = re.sub(r"[^a-z0-9\s]", " ", normalized_utterance)
-    normalized = re.sub(r"\s+", " ", normalized).strip()
+    normalized = normalize_phrase(utterance)
 
     co2_like = bool(
         re.search(r"\bco\s*2\b", normalized)
@@ -207,6 +232,10 @@ def resolve_metric_from_utterance(utterance: str) -> CanonicalMetric | None:
         return CanonicalMetric.CO2_TOTAL
     if co2_like and batch_like:
         return CanonicalMetric.CO2_PER_BATCH
+
+    for metric, phrases in _TURKISH_PHRASE_MAP:
+        if any(phrase in normalized for phrase in phrases):
+            return metric
 
     energy_total_like = (
         "per unit" not in normalized

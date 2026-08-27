@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from enum import Enum
 
 from skill.domain.models import Asset, CanonicalMetric, TimePeriod
+from skill._metric_resolver import resolve_metric_from_utterance
+from skill.services.language import normalize_phrase
 
 
 class QueryOperation(str, Enum):
@@ -100,7 +102,7 @@ def parse_structured_query(
     timezone_name: str = "UTC",
 ) -> StructuredQuery:
     """Resolve operation first, then every metric, asset, period, and scope."""
-    text = re.sub(r"\s+", " ", utterance.lower().strip())
+    text = normalize_phrase(utterance)
     operation = _resolve_operation(text)
     metrics = _resolve_metrics(text)
     if (
@@ -123,7 +125,7 @@ def parse_structured_query(
     }
     unknown_lines = [
         f"Line-{suffix}"
-        for suffix in re.findall(r"\bline[\s-]+(\d+)\b", text)
+        for suffix in re.findall(r"\b(?:line|hat)[\s-]+(\d+)\b", text)
         if _normalize(f"Line-{suffix}") not in configured_asset_keys
     ]
 
@@ -183,22 +185,22 @@ def is_manufacturing_query(query: StructuredQuery) -> bool:
 
 def _resolve_operation(text: str) -> QueryOperation:
     ordered = (
-        (QueryOperation.CONTROL, r"\b(turn on|turn off|start|stop|power on|power off)\b"),
-        (QueryOperation.WHAT_IF, r"\b(what if|simulate|scenario)\b"),
-        (QueryOperation.ANOMALY, r"\b(anomal|unusual pattern|spike)"),
-        (QueryOperation.DRIFT, r"\b(drift|degradation)"),
-        (QueryOperation.FORECAST, r"\b(forecast|predict|projection)"),
+        (QueryOperation.CONTROL, r"\b(turn on|turn off|start|stop|power on|power off|aç|kapat|çalıştır|durdur)\b"),
+        (QueryOperation.WHAT_IF, r"\b(what if|simulate|scenario|ne olur|simüle et|senaryo)\b"),
+        (QueryOperation.ANOMALY, r"\b(anomal|unusual pattern|spike|anomali|olağan dışı)"),
+        (QueryOperation.DRIFT, r"\b(drift|degradation|sapma|kademeli değiş)"),
+        (QueryOperation.FORECAST, r"\b(forecast|predict|projection|tahmin|öngör|beklenen)"),
         (QueryOperation.DIAGNOSE, r"\b(why|cause|diagnos|explain the change)\b"),
         (QueryOperation.RECOMMEND, r"\b(recommend|what should|how can|improve)\b"),
-        (QueryOperation.COMPARE, r"\b(compare|versus|vs\.?|difference between)\b"),
+        (QueryOperation.COMPARE, r"\b(compare|versus|vs\.?|difference between|karşılaştır|farkı)\b"),
         (QueryOperation.RANK, r"\b(rank|ranking|best|worst|top|bottom)\b"),
-        (QueryOperation.TREND, r"\b(trend|trended|trending|changed|change over|over time)\b"),
+        (QueryOperation.TREND, r"\b(trend|trended|trending|changed|change over|over time|eğilim|nasıl değişti)\b"),
         (QueryOperation.DEFINE, r"\b(define|definition|what is|what does|calculated|calculation|formula)\b"),
-        (QueryOperation.AVERAGE, r"\b(average|mean)\b"),
+        (QueryOperation.AVERAGE, r"\b(average|mean|ortalama)\b"),
         (QueryOperation.TARGET, r"\b(target|objective|goal|good|bad|acceptable|on track)\b"),
-        (QueryOperation.SUMMARY, r"\b(summary|overview|factory performance|how is the factory|headline)\b"),
-        (QueryOperation.STATUS, r"\b(system status|data status|connection status|freshness)\b"),
-        (QueryOperation.CAPABILITIES, r"\b(help|capabilities|what can you do)\b"),
+        (QueryOperation.SUMMARY, r"\b(summary|overview|factory performance|how is the factory|headline|özet|fabrika performansı)\b"),
+        (QueryOperation.STATUS, r"\b(system status|data status|connection status|freshness|sistem durumu|bağlantı durumu)\b"),
+        (QueryOperation.CAPABILITIES, r"\b(help|capabilities|what can you do|yardım|ne yapabilirsin|yetenekler)\b"),
     )
     for operation, pattern in ordered:
         if re.search(pattern, text):
@@ -254,7 +256,11 @@ def _resolve_metrics(text: str) -> list[CanonicalMetric]:
     if resolved:
         return resolved
 
-    tokens = re.findall(r"[a-z0-9]+", normalized)
+    turkish_metric = resolve_metric_from_utterance(normalized)
+    if turkish_metric is not None:
+        return [turkish_metric]
+
+    tokens = re.findall(r"[\w]+", normalized, flags=re.UNICODE)
     phrases = [alias for aliases in _METRIC_ALIASES.values() for alias in aliases]
     for width in (3, 2, 1):
         for index in range(len(tokens) - width + 1):
@@ -267,7 +273,7 @@ def _resolve_metrics(text: str) -> list[CanonicalMetric]:
 
 
 def _resolve_assets(text: str, assets: list[Asset]) -> tuple[list[str], str]:
-    if re.search(r"\b(all lines|every line|all assets|factory wide|factory-wide)\b", text):
+    if re.search(r"\b(all lines|every line|all assets|factory wide|factory-wide|tüm hatlar|bütün hatlar|tüm varlıklar)\b", text):
         return [asset.asset_id for asset in assets], "all_assets"
     found: list[tuple[int, str]] = []
     normalized_text = _normalize(text)
@@ -292,6 +298,9 @@ def _resolve_assets(text: str, assets: list[Asset]) -> tuple[list[str], str]:
 
 def _resolve_period(text: str, timezone_name: str) -> tuple[TimePeriod | None, str]:
     patterns = (
+        r"\b(?:bugün|dün|bu hafta|geçen hafta|son hafta|son (?:2|iki) hafta|bu ay|geçen ay|son ay|son (?:30|otuz) gün|şimdi|şu anda|en güncel)\b",
+        r"\b(?:ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık)\s+\d{4}\b",
+        r"\b\d{4}-\d{2}-\d{2}\s+(?:ile|ila)\s+\d{4}-\d{2}-\d{2}(?:\s+arası)?\b",
         r"\b(?:today|yesterday|this week|last week|this month|last month|past month|past \d+ days|last \d+ days|right now|latest|current)\b",
         r"\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}\b",
         r"\b\d{4}-\d{2}-\d{2}\s+(?:to|through|until)\s+\d{4}-\d{2}-\d{2}\b",
@@ -322,11 +331,11 @@ def _resolve_period(text: str, timezone_name: str) -> tuple[TimePeriod | None, s
 
 
 def _requested_aggregation(text: str) -> str:
-    if re.search(r"\b(total|sum)\b", text):
+    if re.search(r"\b(total|sum|toplam)\b", text):
         return "sum"
-    if re.search(r"\b(peak|maximum|max)\b", text):
+    if re.search(r"\b(peak|maximum|max|pik|maksimum)\b", text):
         return "max"
-    if re.search(r"\b(average|mean)\b", text):
+    if re.search(r"\b(average|mean|ortalama)\b", text):
         return "average"
     if re.search(r"\b(current|latest|right now)\b", text):
         return "latest"
@@ -338,7 +347,7 @@ def _looks_like_follow_up(text: str) -> bool:
 
 
 def _normalize(value: str) -> str:
-    normalized = re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+    normalized = normalize_phrase(value).replace("-", " ")
     number_words = {
         "one": "1",
         "two": "2",
@@ -349,6 +358,15 @@ def _normalize(value: str) -> str:
         "seven": "7",
         "eight": "8",
         "nine": "9",
+        "bir": "1",
+        "iki": "2",
+        "üç": "3",
+        "dört": "4",
+        "beş": "5",
+        "altı": "6",
+        "yedi": "7",
+        "sekiz": "8",
+        "dokuz": "9",
     }
     for word, digit in number_words.items():
         normalized = re.sub(rf"\b{word}\b", digit, normalized)

@@ -37,6 +37,8 @@ export interface HiveMindConfig {
   reconnectInterval?: number;
   /** Max reconnect attempts before giving up (default: 8) */
   maxReconnectAttempts?: number;
+  /** Active BCP-47 language tag used in the OVOS session. */
+  language?: string;
 }
 
 export interface OVOSMessage {
@@ -177,6 +179,7 @@ export class HiveMindService {
   private handshakeSent = false;
   private decryptionKeysPromise: Promise<string[]> | null = null;
   private activeRequestId: string | null = null;
+  private sessionLanguage: string;
   private readonly cancelledRequestIds = new Set<string>();
 
   constructor(config: HiveMindConfig) {
@@ -187,6 +190,7 @@ export class HiveMindService {
       maxReconnectAttempts: 8,
       ...config,
     };
+    this.sessionLanguage = this.normalizeLanguage(config.language ?? "en-US");
   }
 
   // ── Connection lifecycle ─────────────────────────────
@@ -308,8 +312,10 @@ export class HiveMindService {
 
   async sendUtterance(
     text: string,
-    lang = "en-us",
+    lang = this.sessionLanguage,
   ): Promise<void> {
+    this.sessionLanguage = this.normalizeLanguage(lang);
+    lang = this.sessionLanguage;
     const clientRequestId = makeClientRequestId();
     this.activeRequestId = clientRequestId;
     const session_id = this.sessionId ?? this.fallbackSessionId;
@@ -350,7 +356,7 @@ export class HiveMindService {
       session: {
         session_id,
         site_id: "default",
-        lang: "en-us",
+        lang: this.sessionLanguage,
         pipeline: [...OVOS_INTENT_PIPELINE],
       },
     };
@@ -538,7 +544,7 @@ export class HiveMindService {
         session: {
           session_id,
           site_id: "default",
-          lang: "en-us",
+          lang: this.sessionLanguage,
           context: {},
           active_skills: [],
           utterance_states: {},
@@ -736,5 +742,10 @@ export class HiveMindService {
     })();
 
     return this.decryptionKeysPromise;
+  }
+
+  private normalizeLanguage(language: string): string {
+    const normalized = language.trim().replace("_", "-").toLowerCase();
+    return normalized.startsWith("tr") ? "tr-tr" : normalized || "en-us";
   }
 }

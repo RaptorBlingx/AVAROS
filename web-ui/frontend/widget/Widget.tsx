@@ -108,13 +108,14 @@ function deriveTheme(theme: WidgetTheme): "light" | "dark" {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-function pickPreferredVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+function pickPreferredVoice(
+  voices: SpeechSynthesisVoice[],
+  language: string,
+): SpeechSynthesisVoice | null {
   if (!voices.length) return null;
-  const samantha = voices.find((voice) => voice.name.toLowerCase().includes("samantha"));
-  if (samantha) return samantha;
-
-  const english = voices.find((voice) => voice.lang.toLowerCase().startsWith("en"));
-  if (english) return english;
+  const languagePrefix = language.toLowerCase().split("-")[0];
+  const matching = voices.find((voice) => voice.lang.toLowerCase().startsWith(languagePrefix));
+  if (matching) return matching;
 
   return voices[0] ?? null;
 }
@@ -291,7 +292,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
           };
 
           const utterance = new SpeechSynthesisUtterance(cleaned);
-          utterance.lang = "en-US";
+          utterance.lang = config.language;
           const voice = ttsVoiceRef.current;
           if (voice) {
             utterance.voice = voice;
@@ -329,8 +330,8 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
         try {
           const response = await fetch(resolveServerTtsUrl(config.avarosUrl), {
             method: "POST",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: chunk,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: chunk, language: config.language }),
             signal: controller.signal,
           });
           if (!response.ok || playbackToken !== ttsPlaybackTokenRef.current) {
@@ -741,6 +742,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       clearFallbackTimer,
       configError,
       ensureConnected,
+      config.language,
     ],
   );
 
@@ -778,7 +780,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
 
     const recognition = new RecognitionCtor();
     recognitionRef.current = recognition;
-    recognition.lang = "en-US";
+    recognition.lang = config.language;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
     // Never use continuous mode. In wake-word mode the backend handles
@@ -842,6 +844,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       setMicError("Could not start microphone.");
     }
   }, [
+    config.language,
     configError,
     micPermission,
     requestMicPermission,
@@ -927,13 +930,13 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
 
     const syncVoices = () => {
       const voices = synth.getVoices();
-      setTtsVoice(pickPreferredVoice(voices));
+      setTtsVoice(pickPreferredVoice(voices, config.language));
     };
 
     syncVoices();
     synth.addEventListener("voiceschanged", syncVoices);
     return () => synth.removeEventListener("voiceschanged", syncVoices);
-  }, []);
+  }, [config.language]);
 
   useEffect(() => {
     if (!navigator.permissions) return;
@@ -968,6 +971,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       config.accessKey,
       config.accessSecret,
       config.encryptionKey,
+      config.language,
     );
     managerRef.current = manager;
     const offState = manager.onState((nextState) => {
@@ -1033,6 +1037,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     config.clientName,
     config.encryptionKey,
     config.host,
+    config.language,
     configError,
     disposeBackendWakeWord,
     resolveAssistantMessage,

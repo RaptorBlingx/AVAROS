@@ -541,9 +541,7 @@ export default function VoiceSettingsSection({
             >
               <option value="en-US">English (US)</option>
               <option value="en-GB">English (UK)</option>
-              <option value="tr-TR" disabled>
-                Turkish (Coming soon)
-              </option>
+              <option value="tr-TR">Turkish (Türkiye)</option>
             </select>
           </label>
 

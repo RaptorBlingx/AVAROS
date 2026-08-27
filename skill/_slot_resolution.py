@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from skill.domain.exceptions import AssetNotFoundError, ValidationError
 from skill.domain.models import Asset
+from skill.services.language import normalize_phrase
 
 if TYPE_CHECKING:
     from ovos_bus_client.message import Message
@@ -22,7 +23,10 @@ _NOISE_WORDS = frozenset(
     {"to", "too", "for", "on", "line", "trend", "trending", "production",
      "energy", "scrap", "carbon", "quality", "show", "check", "compare",
      "tell", "give", "how", "what", "which", "please", "me", "the", "a",
-     "an", "been", "gradually", "getting", "worse", "better", "is", "rate"},
+     "an", "been", "gradually", "getting", "worse", "better", "is", "rate"}
+    | {"için", "üzerinde", "hat", "eğilim", "üretim", "enerji", "hurda",
+       "karbon", "kalite", "göster", "kontrol", "karşılaştır", "söyle",
+       "ver", "nasıl", "ne", "hangi", "lütfen", "bana", "bir", "oranı"}
 )
 _NOISE_SLOT_WORDS = frozenset(
     {
@@ -72,6 +76,23 @@ _NOISE_SLOT_WORDS = frozenset(
         "what",
         "which",
         "worse",
+        "bana",
+        "bir",
+        "enerji",
+        "göster",
+        "hangi",
+        "hurda",
+        "için",
+        "karbon",
+        "karşılaştır",
+        "kontrol",
+        "lütfen",
+        "nasıl",
+        "ne",
+        "oranı",
+        "söyle",
+        "üretim",
+        "ver",
     },
 )
 _NOISE_SLOT_PREFIXES = (
@@ -84,13 +105,16 @@ _NOISE_SLOT_PREFIXES = (
     "trend ",
     "what ",
     "which ",
+    "göster ",
+    "karşılaştır ",
+    "kontrol et ",
+    "söyle ",
 )
 
 
 def _is_noisy_asset_slot(slot_value: str) -> bool:
     """Return True when parser produced non-asset phrase in asset slot."""
-    normalized = re.sub(r"[^a-z0-9\s-]", " ", slot_value.lower()).strip()
-    normalized = re.sub(r"\s+", " ", normalized)
+    normalized = normalize_phrase(slot_value)
     if not normalized:
         return True
     if normalized in _NOISE_WORDS:
@@ -113,8 +137,8 @@ def extract_line_assets_from_text(self, text: str) -> list[str]:
         return []
 
     matches = re.findall(
-        r"\bline[\s-]+(\d+|one|two|three|four|five|to|too)\b",
-        text.lower(),
+        r"\b(?:line|hat)[\s-]+(\d+|one|two|three|four|five|to|too|bir|iki|üç|dört|beş)\b",
+        normalize_phrase(text),
     )
     line_token_to_digit = {
         "one": "1",
@@ -124,6 +148,11 @@ def extract_line_assets_from_text(self, text: str) -> list[str]:
         "five": "5",
         "to": "2",
         "too": "2",
+        "bir": "1",
+        "iki": "2",
+        "üç": "3",
+        "dört": "4",
+        "beş": "5",
     }
     return list(dict.fromkeys(
         f"Line-{line_token_to_digit.get(value, value)}"
@@ -421,7 +450,4 @@ def _is_more_specific_utterance_asset(slot_value: str, utterance_text: str) -> b
 
 def _normalize_phrase(value: str) -> str:
     """Normalize phrase for loose token containment checks."""
-    lowered = value.lower().strip()
-    lowered = re.sub(r"[^a-z0-9\s-]", " ", lowered)
-    lowered = lowered.replace("-", " ")
-    return re.sub(r"\s+", " ", lowered).strip()
+    return normalize_phrase(value).replace("-", " ")

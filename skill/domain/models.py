@@ -354,6 +354,23 @@ class TimePeriod:
             "latest": cls.latest,
             "current": cls.latest,
             "right now": cls.latest,
+            "bugün": lambda: cls._with_display_name(cls.today(), "bugün"),
+            "dün": lambda: cls._with_display_name(cls.yesterday(), "dün"),
+            "bu hafta": lambda: cls._with_display_name(cls.this_week(), "bu hafta"),
+            "geçen hafta": lambda: cls._with_display_name(cls.last_week(), "geçen hafta"),
+            "son hafta": lambda: cls._with_display_name(cls.last_week(), "son hafta"),
+            "son 2 hafta": lambda: cls._with_display_name(cls.last_two_weeks(), "son 2 hafta"),
+            "son iki hafta": lambda: cls._with_display_name(cls.last_two_weeks(), "son iki hafta"),
+            "bu ay": lambda: cls._with_display_name(cls.this_month(), "bu ay"),
+            "geçen ay": lambda: cls._with_display_name(
+                cls.last_month(now=now, timezone_name=timezone_name), "geçen ay"
+            ),
+            "son ay": lambda: cls._with_display_name(cls.rolling_days(30, now=now), "son ay"),
+            "son 30 gün": lambda: cls._with_display_name(cls.rolling_days(30, now=now), "son 30 gün"),
+            "son otuz gün": lambda: cls._with_display_name(cls.rolling_days(30, now=now), "son otuz gün"),
+            "şimdi": lambda: cls._with_display_name(cls.latest(), "en güncel"),
+            "şu anda": lambda: cls._with_display_name(cls.latest(), "en güncel"),
+            "en güncel": lambda: cls._with_display_name(cls.latest(), "en güncel"),
         }
 
         factory = mapping.get(normalized)
@@ -374,6 +391,25 @@ class TimePeriod:
                 now=now,
             )
 
+        turkish_months = {
+            "ocak": 1, "şubat": 2, "mart": 3, "nisan": 4,
+            "mayıs": 5, "haziran": 6, "temmuz": 7, "ağustos": 8,
+            "eylül": 9, "ekim": 10, "kasım": 11, "aralık": 12,
+        }
+        turkish_month = re.fullmatch(
+            r"(" + "|".join(turkish_months) + r")\s+(\d{4})",
+            normalized,
+        )
+        if turkish_month:
+            month_name, year_text = turkish_month.groups()
+            period = cls._calendar_month(
+                year=int(year_text),
+                month=turkish_months[month_name],
+                timezone_name=timezone_name,
+                now=now,
+            )
+            return cls._with_display_name(period, f"{month_name} {year_text}")
+
         iso_range = re.fullmatch(
             r"(?:from\s+)?(\d{4}-\d{2}-\d{2})\s+(?:to|through|until)\s+(\d{4}-\d{2}-\d{2})",
             normalized,
@@ -386,11 +422,32 @@ class TimePeriod:
                 now=now,
             )
 
+        turkish_iso_range = re.fullmatch(
+            r"(?:.*?)?(\d{4}-\d{2}-\d{2})\s+(?:ile|ila)\s+(\d{4}-\d{2}-\d{2})(?:\s+arası)?",
+            normalized,
+        )
+        if turkish_iso_range:
+            period = cls._explicit_date_range(
+                turkish_iso_range.group(1),
+                turkish_iso_range.group(2),
+                timezone_name=timezone_name,
+                now=now,
+            )
+            return cls._with_display_name(
+                period,
+                f"{turkish_iso_range.group(1)} ile {turkish_iso_range.group(2)} arası",
+            )
+
         raise ValueError(
             "Unsupported time period. Try today, yesterday, last week, "
             "last month, past 30 days, a named month such as July 2026, "
             "or an ISO range such as 2026-07-01 to 2026-07-31."
         )
+
+    @classmethod
+    def _with_display_name(cls, period: TimePeriod, display_name: str) -> TimePeriod:
+        """Return an equivalent period with a localized display label."""
+        return cls(start=period.start, end=period.end, display_name=display_name)
 
     @staticmethod
     def _resolve_timezone(timezone_name: str):

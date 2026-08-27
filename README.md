@@ -13,6 +13,7 @@ License: **Apache-2.0**
 - Platform-agnostic REST integration wizard
 - Optional PREVENTION data export and analytics integration
 - Deterministic demo manufacturing API
+- English (`en-US`) and Turkish (`tr-TR`) OVOS voice support
 - Docker Compose deployment for standalone and WASABI OVOS environments
 
 PREVENTION is optional and is not bundled as a production platform image. DocuBoT is not part of this release.
@@ -81,6 +82,13 @@ The web wizard guides an operator through:
 
 AVAROS remains usable without PREVENTION; anomaly and drift commands are disabled when no PREVENTION endpoint is configured.
 AVAROS is deterministic, advisory, and read-only. It does not control equipment, infer process-parameter causality without a configured model, or judge performance without a configured objective.
+
+## Language selection
+
+English remains the default. Select Turkish (`tr-TR`) under **Settings → Voice → Language**
+to use Turkish speech recognition, OVOS intents, responses, and text-to-speech.
+Embeddable widgets can opt in with `data-language="tr-TR"` on the widget script;
+omitting the attribute keeps the existing English behavior.
 
 ## Documentation
 
