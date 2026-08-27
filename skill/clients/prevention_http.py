@@ -268,18 +268,20 @@ class HttpPreventionClient(PreventionClient):
         periods: int = 7,
         asset_id: str | None = None,
     ) -> DriftReport:
-        """Retrieve pre-computed drift results from PREVENTION.
+        """Retrieve PREVENTION drift results, with a live-series fallback.
 
         Args:
             metric: The canonical metric to monitor.
-            data_points: Accepted for interface compatibility (not sent).
+            data_points: Live series used if PREVENTION has no usable result.
             periods: Number of periods for context in the report.
 
         Returns:
             DriftReport from PREVENTION analytics.
 
-        Raises:
-            ConnectionError: If PREVENTION is unreachable.
+        PREVENTION is the preferred analytics provider. If it is temporarily
+        unavailable, or has no row for the requested metric and asset, apply
+        the same explainable linear-drift method to the real series supplied
+        by the active platform adapter.
         """
         category = _get_category_for_metric(metric)
         goal = _CATEGORY_TO_DRIFT_GOAL.get(category)
@@ -295,18 +297,37 @@ class HttpPreventionClient(PreventionClient):
 
         try:
             results = await self._fetch_results(goal)
-        except ConnectionError:
-            raise
         except Exception as exc:
-            logger.error("Drift query failed for %s: %s", goal, exc)
-            raise ConnectionError(
-                f"Failed to query PREVENTION for {goal}",
-            ) from exc
+            logger.warning(
+                "PREVENTION drift results unavailable for %s; "
+                "falling back to local linear drift analysis: %s",
+                goal,
+                exc,
+            )
+            return _fallback_drift_result_from_series(
+                metric,
+                data_points,
+                asset_id=asset_id,
+            )
 
-        return _parse_drift_results(
+        parsed = _parse_drift_results(
             results,
             metric,
             periods,
+            asset_id=asset_id,
+        )
+        if parsed.periods_analyzed > 0:
+            return parsed
+
+        logger.info(
+            "PREVENTION returned no drift row for %s%s; "
+            "using local linear drift fallback.",
+            metric.value,
+            f" on {asset_id}" if asset_id else "",
+        )
+        return _fallback_drift_result_from_series(
+            metric,
+            data_points,
             asset_id=asset_id,
         )
 
@@ -771,6 +792,78 @@ def _parse_drift_results(
     )
 
 
+def _fallback_drift_result_from_series(
+    metric: CanonicalMetric,
+    data_points: list[DataPoint],
+    asset_id: str | None = None,
+    min_points: int = 10,
+) -> DriftReport:
+    """Apply PREVENTION-compatible linear drift to adapter-supplied data."""
+    points = sorted(data_points, key=lambda point: point.timestamp)
+    values = [float(point.value) for point in points]
+    analyzed = len(values)
+    asset_text = f" on {asset_id}" if asset_id else ""
+
+    if analyzed < min_points:
+        return DriftReport(
+            metric=metric,
+            has_drift=False,
+            drift_direction="stable",
+            drift_rate=0.0,
+            periods_analyzed=0,
+            description=(
+                f"Insufficient live history for {metric.display_name}"
+                f"{asset_text}: {analyzed} points available, "
+                f"{min_points} required for drift analysis."
+            ),
+        )
+
+    x_values = list(range(analyzed))
+    x_mean = statistics.fmean(x_values)
+    y_mean = statistics.fmean(values)
+    denominator = sum((x - x_mean) ** 2 for x in x_values)
+    slope = (
+        sum((x - x_mean) * (y - y_mean) for x, y in zip(x_values, values))
+        / denominator
+        if denominator
+        else 0.0
+    )
+    intercept = y_mean - slope * x_mean
+    fitted = [slope * x + intercept for x in x_values]
+    ss_res = sum(
+        (actual - expected) ** 2
+        for actual, expected in zip(values, fitted)
+    )
+    ss_tot = sum((actual - y_mean) ** 2 for actual in values)
+    r_squared = 0.0 if ss_tot <= 1e-12 else 1.0 - (ss_res / ss_tot)
+    r_squared = max(0.0, min(1.0, r_squared))
+
+    # Match PREVENTION's LINEAR_DRIFT decision rule.
+    has_drift = abs(slope) > 0.001 and r_squared > 0.1
+    raw_direction = (
+        "increasing" if slope > 0.001
+        else "decreasing" if slope < -0.001
+        else "stable"
+    )
+    direction = (
+        _normalize_drift_direction(metric, raw_direction, slope)
+        if has_drift
+        else "stable"
+    )
+
+    return DriftReport(
+        metric=metric,
+        has_drift=has_drift,
+        drift_direction=direction,
+        drift_rate=round(float(slope), 6),
+        periods_analyzed=analyzed,
+        description=(
+            f"{metric.display_name}{asset_text}: {direction} based on live "
+            f"series fallback (slope={slope:.6f}, R2={r_squared:.4f})."
+        ),
+    )
+
+
 def _parse_forecast_results(
     results: list[dict],
     metric: CanonicalMetric,
@@ -867,7 +960,11 @@ def _fallback_forecast_result_from_series(
             available=False,
         )
 
-    x_values = list(range(training_points))
+    first_timestamp = points[0].timestamp
+    x_values = [
+        (point.timestamp - first_timestamp).total_seconds() / 86400.0
+        for point in points
+    ]
     x_mean = statistics.fmean(x_values)
     y_mean = statistics.fmean(values)
     denominator = sum((x - x_mean) ** 2 for x in x_values)
@@ -878,7 +975,8 @@ def _fallback_forecast_result_from_series(
         else 0.0
     )
     intercept = y_mean - slope * x_mean
-    predicted = max(0.0, slope * (training_points + horizon_periods) + intercept)
+    forecast_x = x_values[-1] + horizon_periods
+    predicted = max(0.0, slope * forecast_x + intercept)
 
     fitted = [slope * x + intercept for x in x_values]
     ss_res = sum((actual - expected) ** 2 for actual, expected in zip(values, fitted))
@@ -920,7 +1018,7 @@ def _fallback_forecast_result_from_series(
         forecast_timestamp=forecast_timestamp,
         description=(
             f"{metric.display_name}{asset_text}: {direction} forecast "
-            f"from live series fallback (slope={slope:.6f}, "
+            f"from live series fallback (daily slope={slope:.6f}, "
             f"R2={fit_quality:.4f})."
         ),
         recommended_action=action,

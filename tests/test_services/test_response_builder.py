@@ -868,7 +868,7 @@ class TestFormatForecastResult:
         assert "Next week" in result
         assert "energy per unit" in result.lower()
         assert "2.8" in result
-        assert "8.3 percent lower than the latest observed value" in result
+        assert "about 6.7 percent lower than the latest observed value" in result
         assert "possible improvement" in result
         assert "strong at 82 percent" in result
 
@@ -900,6 +900,35 @@ class TestFormatForecastResult:
         assert "Confidence is low" in result
         assert "10 percent confidence" not in result
         assert "verify it against live production data" in result
+
+    def test_format_forecast_percentage_matches_displayed_values(
+        self,
+        builder: ResponseBuilder,
+    ) -> None:
+        result_obj = ForecastReport(
+            metric=CanonicalMetric.ENERGY_PER_UNIT,
+            asset_id="Line-1",
+            horizon_periods=7,
+            predicted_value=2.034,
+            unit="kWh/unit",
+            confidence=0.1,
+            fit_quality=0.01,
+            training_points=100,
+            method_name="local_linear_forecast_fallback",
+            forecast_timestamp="2026-08-30T00:00:00+00:00",
+            description="Forecast available.",
+            recommended_action=None,
+            recent_value=0.9998,
+            change_from_recent=1.0342,
+            change_percent_from_recent=103.4407,
+            trend_direction="increasing",
+        )
+
+        result = builder.format_forecast_result(result_obj)
+
+        assert "2.0 kilowatt hours per unit" in result
+        assert "about 100.0 percent higher" in result
+        assert "103.4 percent" not in result
 
     def test_format_forecast_oee_drop_explains_risk(
         self,

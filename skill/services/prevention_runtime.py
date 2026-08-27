@@ -428,6 +428,38 @@ def resolve_prevention_data_status(
     except (TypeError, ValueError):
         record_count = None
 
+    manifest_profile = str(payload.get("profile", "")).strip()
+    active_profile = ""
+    if settings_service is not None:
+        try:
+            active_profile = settings_service.get_active_profile_name()
+        except Exception:
+            active_profile = ""
+    if manifest_profile and active_profile and manifest_profile != active_profile:
+        return PreventionDataStatus(
+            state="missing",
+            message=(
+                f"Latest PREVENTION export belongs to profile '{manifest_profile}', "
+                f"not active profile '{active_profile}'."
+            ),
+            updated_at=updated_at.isoformat(),
+            record_count=record_count,
+        )
+
+    # A current manifest with no rows is not analytics-ready. Treating it as
+    # merely "fresh" lets the UI advertise PREVENTION capabilities backed by
+    # an empty dataset (or, worse, stale results retained by the provider).
+    if record_count is not None and record_count <= 0:
+        return PreventionDataStatus(
+            state="missing",
+            message=(
+                "Latest PREVENTION export contains no records; "
+                "analytics are unavailable until native history is exported."
+            ),
+            updated_at=updated_at.isoformat(),
+            record_count=record_count,
+        )
+
     max_age_minutes = resolve_prevention_data_max_age_minutes(settings_service)
     age_minutes = (
         datetime.now(tz=timezone.utc) - updated_at

@@ -582,9 +582,10 @@ class ResponseBuilder:
         return f"in the next {horizon_periods} periods"
 
     def _format_forecast_context(self, result: ForecastReport) -> str:
-        """Explain what the predicted value means relative to recent data."""
+        """Explain the forecast using arithmetic consistent with shown values."""
         if (
-            result.recent_value is None
+            result.predicted_value is None
+            or result.recent_value is None
             or result.change_from_recent is None
             or result.change_percent_from_recent is None
         ):
@@ -593,20 +594,34 @@ class ResponseBuilder:
                 "not a guaranteed target."
             )
 
-        latest = self._format_value(result.recent_value, result.unit)
-        change_pct = abs(result.change_percent_from_recent)
+        shown_prediction = self._rounded_display_number(result.predicted_value)
+        shown_recent = self._rounded_display_number(result.recent_value)
+        latest = self._format_value(shown_recent, result.unit)
+        shown_change = shown_prediction - shown_recent
+        if shown_recent == 0:
+            return (
+                f"The latest observed value was {latest}, so a percentage "
+                "comparison would not be meaningful."
+            )
+
+        change_pct = abs((shown_change / shown_recent) * 100.0)
         if change_pct < 1.0:
             return (
                 f"That is roughly unchanged from the latest observed value "
                 f"of {latest}."
             )
 
-        direction = "higher" if result.change_from_recent > 0 else "lower"
+        direction = "higher" if shown_change > 0 else "lower"
         meaning = self._forecast_change_meaning(result)
         return (
-            f"That is {change_pct:.1f} percent {direction} than the latest "
+            f"That is about {change_pct:.1f} percent {direction} than the latest "
             f"observed value of {latest}. {meaning}"
         )
+
+    @classmethod
+    def _rounded_display_number(cls, value: float) -> float:
+        """Return the numeric value represented by ``_format_number``."""
+        return float(cls._format_number(value))
 
     def _forecast_change_meaning(self, result: ForecastReport) -> str:
         """Explain whether the forecasted movement is good or risky."""
