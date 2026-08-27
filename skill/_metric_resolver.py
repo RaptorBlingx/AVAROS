@@ -218,6 +218,26 @@ def resolve_metric_from_utterance(utterance: str) -> CanonicalMetric | None:
     if energy_total_like:
         return CanonicalMetric.ENERGY_TOTAL
 
+    # Resolve directional live-energy language before the broad bare
+    # ``energy``/``power`` fallbacks below. These word orders are common in
+    # natural questions but are not contiguous noun phrases.
+    if "power" in normalized and re.search(
+        r"\b(?:produc(?:e|es|ing|ed)|generat(?:e|es|ing|ed))\b", normalized
+    ):
+        return CanonicalMetric.PRODUCTION_POWER
+    if "energy" in normalized and "grid" in normalized and re.search(
+        r"\b(?:import(?:s|ing|ed)?|bought|buy)\b", normalized
+    ):
+        return CanonicalMetric.ENERGY_GRID_IMPORT_TOTAL
+    if "energy" in normalized and "grid" in normalized and re.search(
+        r"\b(?:export(?:s|ing|ed)?|sold|sell)\b", normalized
+    ):
+        return CanonicalMetric.ENERGY_GRID_EXPORT_TOTAL
+    if "energy" in normalized and re.search(
+        r"\b(?:produc(?:e|es|ing|ed)|generat(?:e|es|ing|ed))\b", normalized
+    ):
+        return CanonicalMetric.ENERGY_PRODUCTION_TOTAL
+
     # Verb phrasing commonly used for live energy systems does not contain
     # the noun "consumption", e.g. "How much power is the site consuming?".
     if "power" in normalized and re.search(r"\bconsum(?:e|es|ing|ed)\b", normalized):

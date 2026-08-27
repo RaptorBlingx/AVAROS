@@ -237,6 +237,12 @@ class AVAROSSkill(FallbackSkill):
     def _register_intent_handlers(self, *, force: bool = False) -> int:
         """Register intent files at runtime using data-driven mappings.
 
+        ``force`` replays Padatious registrations after OVOS Core restarts.
+        Existing handlers live in this standalone skill process, so replaying
+        them as well would attach a second handler and duplicate every spoken
+        response.  Files not previously registered still receive their normal
+        handler, which keeps force mode safe during first-time initialization.
+
         Returns:
             Number of freshly-registered intent files.
         """
@@ -246,8 +252,7 @@ class AVAROSSkill(FallbackSkill):
             if bus is not None:
                 intent_service.set_bus(bus)
 
-        if force:
-            self._registered_intent_files.clear()
+        already_registered = set(self._registered_intent_files)
 
         registered_count = 0
 
@@ -260,12 +265,17 @@ class AVAROSSkill(FallbackSkill):
             if not force and intent_file in self._registered_intent_files:
                 return
             try:
-                guarded_handler = (
-                    self._guard_intent_activation(intent_name, handler)
-                    if intent_name
-                    else handler
-                )
-                self.register_intent_file(intent_file, guarded_handler)
+                if force and intent_file in already_registered:
+                    # Core lost its Padatious model, but this process retained
+                    # the event handler.  Replay only the model registration.
+                    registration_handler = None
+                else:
+                    registration_handler = (
+                        self._guard_intent_activation(intent_name, handler)
+                        if intent_name
+                        else handler
+                    )
+                self.register_intent_file(intent_file, registration_handler)
             except RuntimeError as exc:
                 if "bus not set" not in str(exc):
                     raise

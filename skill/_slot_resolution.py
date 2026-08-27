@@ -22,7 +22,7 @@ _NOISE_WORDS = frozenset(
     {"to", "too", "for", "on", "line", "trend", "trending", "production",
      "energy", "scrap", "carbon", "quality", "show", "check", "compare",
      "tell", "give", "how", "what", "which", "please", "me", "the", "a",
-     "an", "been", "gradually", "getting", "worse", "better"},
+     "an", "been", "gradually", "getting", "worse", "better", "is", "rate"},
 )
 _NOISE_SLOT_WORDS = frozenset(
     {
@@ -57,6 +57,7 @@ _NOISE_SLOT_WORDS = frozenset(
         "please",
         "production",
         "quality",
+        "rate",
         "scrap",
         "show",
         "tell",
@@ -199,7 +200,7 @@ def resolve_asset_id(self, message: Message, default: str = "default") -> str:
 
 
 def resolve_compare_assets(self, message: Message) -> tuple[str, str]:
-    """Resolve comparison assets with utterance fallback for line references."""
+    """Resolve comparison assets from slots or configured names in speech."""
     data = getattr(message, "data", {}) or {}
     raw_a = str(data.get("asset_a", "")).strip()
     raw_b = str(data.get("asset_b", "")).strip()
@@ -225,6 +226,18 @@ def resolve_compare_assets(self, message: Message) -> tuple[str, str]:
     if len(utterance_assets) >= 2:
         return utterance_assets[0], utterance_assets[1]
 
+    # Platform adapters are free to expose names other than ``Line-N``
+    # (for example ThingsBoard devices or OpenEMS components).  Intent slot
+    # parsers can split multi-word names at metric words such as ``energy per
+    # unit``, so recover every explicitly mentioned configured asset from the
+    # original utterance before asking the user to clarify.
+    configured_assets = _extract_configured_assets_from_text(
+        self,
+        self._extract_utterance_text(message),
+    )
+    if len(configured_assets) >= 2:
+        return configured_assets[0], configured_assets[1]
+
     raise ValidationError(
         message="Comparison assets were not explicit",
         field="assets",
@@ -233,6 +246,47 @@ def resolve_compare_assets(self, message: Message) -> tuple[str, str]:
             "Please name at least two assets to compare, or say all lines."
         ),
     )
+
+
+def _extract_configured_assets_from_text(self, text: str) -> list[str]:
+    """Return configured assets explicitly named in utterance order.
+
+    Matching is case-, punctuation-, hyphen-, and underscore-insensitive and
+    considers canonical IDs, display names, and aliases.  The implementation
+    is adapter-neutral: it relies only on the active profile's asset registry.
+    """
+    normalized_text = _normalize_phrase(text)
+    if not normalized_text:
+        return []
+
+    try:
+        assets = self._get_asset_registry()
+    except Exception:
+        return []
+
+    padded_text = f" {normalized_text} "
+    matches: list[tuple[int, int, str]] = []
+    for asset in assets:
+        if not isinstance(asset, Asset):
+            continue
+        variants = (asset.asset_id, asset.display_name, *asset.aliases)
+        best: tuple[int, int, str] | None = None
+        for variant in variants:
+            normalized_variant = _normalize_phrase(str(variant))
+            if len(normalized_variant) < 2:
+                continue
+            marker = f" {normalized_variant} "
+            position = padded_text.find(marker)
+            if position < 0:
+                continue
+            candidate = (position, -len(normalized_variant), asset.asset_id)
+            if best is None or candidate < best:
+                best = candidate
+        if best is not None:
+            matches.append(best)
+
+    matches.sort()
+    return list(dict.fromkeys(asset_id for _, _, asset_id in matches))
 
 
 # ── Default asset resolution ─────────────────────────

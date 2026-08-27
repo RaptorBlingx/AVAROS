@@ -35,7 +35,12 @@ async def run_metric_mapping_test(
     target_url = _resolve_target_url(payload)
     if isinstance(target_url, MetricMappingTestResponse):
         return target_url
-    headers = _build_auth_headers(payload.auth_type, payload.auth_token)
+    headers = _build_auth_headers(
+        payload.auth_type,
+        payload.auth_token,
+        payload.auth_header_name,
+        payload.auth_header_prefix,
+    )
     fetch_result = await _try_fetch(target_url, headers)
     if isinstance(fetch_result, MetricMappingTestResponse):
         return fetch_result
@@ -81,10 +86,23 @@ def _build_request_url(base_url: str, endpoint: str) -> str:
     return f"{normalized_base}{normalized_endpoint}"
 
 
-def _build_auth_headers(auth_type: str, token: str) -> dict[str, str]:
+def _build_auth_headers(
+    auth_type: str,
+    token: str,
+    custom_header_name: str = "",
+    custom_header_prefix: str = "",
+) -> dict[str, str]:
     """Build outbound auth headers for mapping test request."""
     if auth_type == "none":
         return {}
+    if auth_type == "custom_header":
+        header_name = custom_header_name.strip()
+        if not header_name or any(char in header_name for char in "\r\n:"):
+            raise ValueError("custom_header requires a valid auth_header_name")
+        value = " ".join(
+            part for part in (custom_header_prefix.strip(), token) if part
+        )
+        return {header_name: value}
     if auth_type == "cookie":
         return {"Cookie": normalize_cookie_header_value(token)}
     if auth_type == "basic":

@@ -154,10 +154,20 @@ export default function useMetricMappingTest({
             ? "cookie"
             : config.extra_settings.auth_type === "basic"
             ? "basic"
+            : config.extra_settings.auth_type === "custom_header"
+            ? "custom_header"
             : config.extra_settings.auth_type === "none"
             ? "none"
             : "bearer",
         auth_token: config.api_key,
+        auth_header_name:
+          typeof config.extra_settings.auth_header_name === "string"
+            ? config.extra_settings.auth_header_name
+            : "",
+        auth_header_prefix:
+          typeof config.extra_settings.auth_header_prefix === "string"
+            ? config.extra_settings.auth_header_prefix
+            : "",
       });
       if (response.success && typeof response.value === "number") {
         setTestStateByRow((prev) => ({

@@ -84,17 +84,22 @@ def _status_freshness_clause(skill: "AVAROSSkill", assets, metrics) -> str:
     """Return an operator-facing timestamp from one live mapped observation."""
     if not assets or not metrics:
         return "No mapped observation is available for a freshness check."
-    asset_id = assets[0].asset_id
-    for metric in metrics:
-        try:
-            result = skill.dispatcher.get_kpi(metric, asset_id, TimePeriod.latest())
-        except Exception:
-            continue
-        observed = result.source_observed_at
-        if observed is None:
-            return "The source did not provide an observation timestamp."
-        quality = result.coverage_status or "complete"
-        return f"Latest checked observation: {observed.isoformat()} ({quality})."
+    for asset in assets:
+        asset_id = asset.asset_id
+        for metric in metrics:
+            try:
+                result = skill.dispatcher.get_kpi(
+                    metric,
+                    asset_id,
+                    TimePeriod.latest(),
+                )
+            except Exception:
+                continue
+            observed = result.source_observed_at
+            if observed is None:
+                return "The source did not provide an observation timestamp."
+            quality = result.coverage_status or "complete"
+            return f"Latest checked observation: {observed.isoformat()} ({quality})."
     return "No mapped observation could be read for a freshness check."
 
 

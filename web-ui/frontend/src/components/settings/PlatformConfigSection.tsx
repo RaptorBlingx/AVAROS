@@ -26,9 +26,9 @@ type PlatformConfigSectionProps = {
   onActiveProfileResolved?: (profileName: string) => void;
 };
 
-type AuthType = "api_key" | "basic" | "cookie" | "none";
+type AuthType = "api_key" | "basic" | "cookie" | "custom_header" | "none";
 
-function toBackendAuthType(authType: AuthType): "bearer" | "basic" | "cookie" | "none" {
+function toBackendAuthType(authType: AuthType): "bearer" | "basic" | "cookie" | "custom_header" | "none" {
   if (authType === "cookie") {
     return "cookie";
   }
@@ -37,6 +37,9 @@ function toBackendAuthType(authType: AuthType): "bearer" | "basic" | "cookie" | 
   }
   if (authType === "none") {
     return "none";
+  }
+  if (authType === "custom_header") {
+    return "custom_header";
   }
   return "bearer";
 }
@@ -50,6 +53,9 @@ function fromBackendAuthType(authType: string | undefined): AuthType {
   }
   if (authType === "none") {
     return "none";
+  }
+  if (authType === "custom_header") {
+    return "custom_header";
   }
   return "api_key";
 }
@@ -69,6 +75,12 @@ function createPayload(config: {
     api_key: shouldBlankApiKey ? "" : config.apiKey.trim(),
     extra_settings: {
       auth_type: toBackendAuthType(config.authType),
+      ...(config.authType === "custom_header"
+        ? {
+            auth_header_name: "X-Authorization",
+            auth_header_prefix: "ApiKey",
+          }
+        : {}),
     },
   };
 }
@@ -375,6 +387,7 @@ export default function PlatformConfigSection({
                     <option value="api_key">API Key</option>
                     <option value="basic">Basic Authentication</option>
                     <option value="cookie">Session Cookie</option>
+                    <option value="custom_header">X-Authorization API Key</option>
                     <option value="none">No Authentication</option>
                   </select>
                 </label>
