@@ -66,6 +66,7 @@ export default function VoiceWidget({
     connectionState,
     isConnected,
     sendUtterance,
+    interrupt,
     lastResponse,
     isSpeaking: isHiveSpeaking,
     isProcessing,
@@ -312,6 +313,8 @@ export default function VoiceWidget({
   const handleCancelRequest = useCallback(() => {
     cancelCurrentQuery();
     cancelProcessing();
+    stopSpeaking();
+    void interrupt().catch(() => undefined);
     setAwaitingResponse(false);
     setIgnoreStuckProcessing(true);
     setActiveResponse(null);
@@ -320,12 +323,34 @@ export default function VoiceWidget({
     const fallbackText = "Request cancelled.";
     setResponseFallback(fallbackText);
     addAvarosResponse(fallbackText);
-    speakAssistantFallback(fallbackText);
   }, [
     cancelCurrentQuery,
     cancelProcessing,
+    stopSpeaking,
+    interrupt,
     addAvarosResponse,
-    speakAssistantFallback,
+  ]);
+
+  const handleInterrupt = useCallback(() => {
+    const requestActive =
+      awaitingResponse ||
+      isConversationProcessing ||
+      visualState === "processing";
+
+    if (requestActive) {
+      handleCancelRequest();
+      return;
+    }
+
+    stopSpeaking();
+    void interrupt().catch(() => undefined);
+  }, [
+    awaitingResponse,
+    isConversationProcessing,
+    visualState,
+    handleCancelRequest,
+    stopSpeaking,
+    interrupt,
   ]);
 
   useEffect(() => {
@@ -700,6 +725,16 @@ export default function VoiceWidget({
             isConnected={isConnected && voiceEnabled}
             canReplay={ttsSupported}
             wakeWordLabel={wakeWordLabel}
+            interruptLabel={
+              awaitingResponse ||
+              isConversationProcessing ||
+              visualState === "processing"
+                ? "Cancel request"
+                : visualState === "speaking"
+                  ? "Stop response"
+                  : undefined
+            }
+            onInterrupt={handleInterrupt}
             onSendText={handleSendText}
             onReplayResponse={handleReplayMessage}
             onClearConversation={clearConversation}

@@ -660,9 +660,21 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     responseResolvedRef.current = true;
     clearFallbackTimer();
     clearCompletionTimer();
+    stopAssistantSpeech();
+    void managerRef.current?.interrupt().catch(() => undefined);
     setProcessing(false);
     appendMessage(makeMessage("avaros", "Request cancelled."));
-  }, [appendMessage, clearCompletionTimer, clearFallbackTimer]);
+  }, [
+    appendMessage,
+    clearCompletionTimer,
+    clearFallbackTimer,
+    stopAssistantSpeech,
+  ]);
+
+  const handleStopResponse = useCallback(() => {
+    stopAssistantSpeech();
+    void managerRef.current?.interrupt().catch(() => undefined);
+  }, [stopAssistantSpeech]);
 
   const stopListening = useCallback(() => {
     const recognition = recognitionRef.current;
@@ -1194,7 +1206,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
               void sendText(toSend);
             }}
             onClear={() => setMessages([])}
-            onStopSpeaking={stopAssistantSpeech}
+            onStopSpeaking={handleStopResponse}
             brandLogoSrc={config.logoSrc}
             wakeWordLabel={wakeWordLabel}
             avarosUrl={config.avarosUrl}
