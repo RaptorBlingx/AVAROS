@@ -160,6 +160,7 @@ def _browser_to_backend(raw: str, session: ReneryoSession) -> str:
                 "finding_id": session.finding_id,
                 "entity_id": session.entity_id,
                 "metric_name": session.metric_name,
+                "language": session.language,
             }
             nested = context.setdefault("session", {})
             if isinstance(nested, dict):

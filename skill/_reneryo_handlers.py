@@ -369,6 +369,9 @@ def _query_period(skill, utterance: str, current):
 def _signed_language(message) -> str:
     """Return the language asserted by the trusted Reneryo widget session."""
     context = getattr(message, "context", {}) or {}
+    reneryo = context.get("reneryo_context")
+    if isinstance(reneryo, dict) and reneryo.get("language"):
+        return str(reneryo["language"])
     session = context.get("session")
     if not isinstance(session, dict):
         return ""

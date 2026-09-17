@@ -62,6 +62,7 @@ def test_proxy_injects_signed_context_and_translates_encryption(monkeypatch):
         "finding_id": "finding-1",
         "entity_id": "resource-1",
         "metric_name": "Electricity",
+        "language": "en-US",
     }
     assert decrypted["payload"]["context"]["session"]["lang"] == "en-US"
 

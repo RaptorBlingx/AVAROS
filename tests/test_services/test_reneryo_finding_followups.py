@@ -95,6 +95,21 @@ def test_signed_language_is_read_from_trusted_session_context():
     assert _signed_language(message) == "tr-TR"
 
 
+def test_signed_language_prefers_reneryo_context_forwarded_by_proxy():
+    message = type(
+        "Message",
+        (),
+        {
+            "context": {
+                "reneryo_context": {"language": "tr-TR"},
+                "session": {"lang": "en-US"},
+            }
+        },
+    )()
+
+    assert _signed_language(message) == "tr-TR"
+
+
 def test_explicit_finding_list_overrides_active_finding_context():
     assert _is_finding_list("list decision support findings")
     assert _is_finding_list("karar destek bulgularını listele")
