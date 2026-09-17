@@ -988,6 +988,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       config.accessSecret,
       config.encryptionKey,
       config.language,
+      config.sessionToken,
     );
     managerRef.current = manager;
     const offState = manager.onState((nextState) => {
@@ -1054,6 +1055,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     config.encryptionKey,
     config.host,
     config.language,
+    config.sessionToken,
     configError,
     disposeBackendWakeWord,
     resolveAssistantMessage,
