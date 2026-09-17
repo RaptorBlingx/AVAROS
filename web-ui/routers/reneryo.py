@@ -12,6 +12,20 @@ from services.reneryo_sessions import issue_session
 router = APIRouter(prefix="/integrations/reneryo", tags=["reneryo-integration"])
 
 
+def _first_header_value(value: str | None) -> str:
+    return (value or "").split(",", maxsplit=1)[0].strip()
+
+
+def _public_urls(request: Request) -> tuple[str, str]:
+    """Build browser URLs from the TLS terminator's forwarded request."""
+    forwarded_proto = _first_header_value(request.headers.get("x-forwarded-proto"))
+    forwarded_host = _first_header_value(request.headers.get("x-forwarded-host"))
+    host = forwarded_host or request.headers.get("host") or request.url.netloc
+    scheme = forwarded_proto or request.url.scheme
+    websocket_scheme = "wss" if scheme in {"https", "wss"} else "ws"
+    return f"{scheme}://{host}/avaros-widget.js", f"{websocket_scheme}://{host}/hivemind/"
+
+
 class WidgetSessionRequest(BaseModel):
     organization_id: str = Field(min_length=1)
     finding_id: str = ""
@@ -49,10 +63,10 @@ def create_widget_session(
             "origin": origin,
         }
     )
-    base_url = str(request.base_url).rstrip("/")
+    widget_script_url, websocket_url = _public_urls(request)
     return {
         "sessionToken": token,
         "expiresAt": expires_at,
-        "widgetScriptUrl": f"{base_url}/avaros-widget.js",
-        "websocketUrl": f"{base_url}/hivemind/",
+        "widgetScriptUrl": widget_script_url,
+        "websocketUrl": websocket_url,
     }

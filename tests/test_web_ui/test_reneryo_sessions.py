@@ -5,12 +5,14 @@ import sys
 from pathlib import Path
 
 import pytest
+from starlette.requests import Request
 
 _WEB_UI_DIR = str(Path(__file__).resolve().parents[2] / "web-ui")
 if _WEB_UI_DIR not in sys.path:
     sys.path.insert(0, _WEB_UI_DIR)
 
 from routers.hivemind import _backend_to_browser, _browser_to_backend
+from routers.reneryo import _public_urls
 from services.reneryo_sessions import issue_session, validate_session
 
 
@@ -83,4 +85,24 @@ def test_proxy_preserves_private_plaintext_hivemind_transport(monkeypatch):
     forwarded = json.loads(_browser_to_backend(raw, session))
     assert (
         forwarded["payload"]["context"]["reneryo_context"]["finding_id"] == "finding-1"
+    )
+
+
+def test_widget_urls_use_forwarded_tls_scheme():
+    request = Request(
+        {
+            "type": "http",
+            "scheme": "http",
+            "server": ("avaros-web-ui", 8080),
+            "path": "/integrations/reneryo/widget-sessions",
+            "headers": [
+                (b"host", b"avaros.int.arti.ac"),
+                (b"x-forwarded-proto", b"https"),
+            ],
+        }
+    )
+
+    assert _public_urls(request) == (
+        "https://avaros.int.arti.ac/avaros-widget.js",
+        "wss://avaros.int.arti.ac/hivemind/",
     )
