@@ -63,6 +63,9 @@ def handle_reneryo_query(skill: AVAROSSkill, message: Message) -> bool:
             "meters",
             "sayac",
             "sayaç",
+            "metric",
+            "metrics",
+            "metrik",
             "list metrics",
             "metrikleri listele",
         )
@@ -188,7 +191,7 @@ def _finding_response(skill, message, service, state, text, language) -> bool:
     organization_id = state.organization_id or os.environ.get(
         "FUTUREGEN_ORGANIZATION_ID", ""
     )
-    finding_id = state.active_finding_id
+    finding_id = "" if _is_finding_list(text) else state.active_finding_id
     if finding_id:
         finding = skill.dispatcher._run_async(
             service.finding(organization_id, finding_id)
@@ -326,6 +329,18 @@ def _should_handle(text: str, state: DialogueState, reneryo_active: bool) -> boo
         return True
     return reneryo_active and any(
         normalize_phrase(word) in text for word in _DOMAIN_WORDS
+    )
+
+
+def _is_finding_list(text: str) -> bool:
+    return _has(
+        text,
+        "list findings",
+        "list decision support findings",
+        "findings list",
+        "bulgulari listele",
+        "bulguları listele",
+        "bulgular",
     )
 
 

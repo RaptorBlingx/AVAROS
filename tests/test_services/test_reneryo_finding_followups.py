@@ -1,6 +1,11 @@
 from datetime import datetime, timezone
 
-from skill._reneryo_handlers import _finding_headline, _query_period, _signed_language
+from skill._reneryo_handlers import (
+    _finding_headline,
+    _is_finding_list,
+    _query_period,
+    _signed_language,
+)
 from skill.domain.models import TimePeriod
 from skill.domain.reneryo_models import LocalizedText, MdspFinding
 
@@ -88,3 +93,9 @@ def test_signed_language_is_read_from_trusted_session_context():
     message = type("Message", (), {"context": {"session": {"lang": "tr-TR"}}})()
 
     assert _signed_language(message) == "tr-TR"
+
+
+def test_explicit_finding_list_overrides_active_finding_context():
+    assert _is_finding_list("list decision support findings")
+    assert _is_finding_list("karar destek bulgularını listele")
+    assert not _is_finding_list("explain this finding")
