@@ -743,6 +743,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       configError,
       ensureConnected,
       config.language,
+      config.sessionToken,
     ],
   );
 
@@ -845,12 +846,27 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     }
   }, [
     config.language,
+    config.sessionToken,
     configError,
     micPermission,
     requestMicPermission,
     sendText,
     stopListening,
   ]);
+
+  useEffect(() => {
+    if (!config.autoOpen) return;
+    setPanelOpen(true);
+    ensureConnected();
+  }, [config.autoOpen, ensureConnected]);
+
+  const initialPromptSentRef = useRef(false);
+  useEffect(() => {
+    if (!config.initialPrompt || initialPromptSentRef.current) return;
+    if (connectionState !== "connected") return;
+    initialPromptSentRef.current = true;
+    void sendText(config.initialPrompt);
+  }, [config.initialPrompt, connectionState, sendText]);
 
   useEffect(() => {
     restartRecognitionRef.current = startListening;

@@ -20,6 +20,7 @@ from routers.emission_factors import router as emission_factors_router
 from routers.intents import router as intents_router
 from routers.intent_bindings import router as intent_bindings_router
 from routers.hivemind import router as hivemind_router
+from routers.reneryo import router as reneryo_router
 from routers.metrics import router as metrics_router
 from routers.objectives import router as objectives_router
 from routers.kpi_progress import router as kpi_progress_router
@@ -160,6 +161,7 @@ def health() -> dict[str, str]:
 
 app.include_router(status_router)
 app.include_router(hivemind_router)
+app.include_router(reneryo_router)
 app.include_router(wakeword_router)
 app.include_router(assets_router)
 app.include_router(config_router)

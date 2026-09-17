@@ -36,6 +36,20 @@ describe("widget config", () => {
     expect(readWidgetConfig(script).config.language).toBe("tr-TR");
   });
 
+  it("accepts a short-lived session without a long-lived access key", () => {
+    const script = makeScript();
+    delete script.dataset.accessKey;
+    script.dataset.sessionToken = "signed-session";
+    script.dataset.initialPrompt = "Explain this finding.";
+    script.dataset.autoOpen = "true";
+
+    const { config, configError } = readWidgetConfig(script);
+    expect(configError).toBeNull();
+    expect(config.sessionToken).toBe("signed-session");
+    expect(config.initialPrompt).toBe("Explain this finding.");
+    expect(config.autoOpen).toBe(true);
+  });
+
   it("resolves widget assets relative to the script URL", () => {
     const script = makeScript("https://avaros.example.com/static/avaros-widget.js");
 

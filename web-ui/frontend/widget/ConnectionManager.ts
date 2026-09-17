@@ -191,6 +191,7 @@ export class ConnectionManager {
   private readonly accessSecret: string;
   private readonly encryptionKey: string;
   private readonly language: string;
+  private readonly sessionToken: string;
   private readonly sessionId = makeSessionId();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
@@ -210,6 +211,7 @@ export class ConnectionManager {
     accessSecret = "",
     encryptionKey = "",
     language = "en-US",
+    sessionToken = "",
   ) {
     this.host = host;
     this.clientName = clientName;
@@ -217,6 +219,7 @@ export class ConnectionManager {
     this.accessSecret = accessSecret;
     this.encryptionKey = encryptionKey;
     this.language = language.trim().replace("_", "-").toLowerCase() || "en-us";
+    this.sessionToken = sessionToken.trim();
   }
 
   onState(listener: StateListener): () => void {
@@ -648,6 +651,13 @@ export class ConnectionManager {
   private buildWebSocketUrls(): string[] {
     const normalizedHost = normalizeWsHost(this.host);
     const baseUrls = [normalizedHost];
+
+    if (this.sessionToken) {
+      return baseUrls.map((url) => {
+        const separator = url.includes("?") ? "&" : "?";
+        return `${url}${separator}session=${encodeURIComponent(this.sessionToken)}`;
+      });
+    }
 
     try {
       const parsed = new URL(normalizedHost);

@@ -10,6 +10,36 @@ describe("ConnectionManager", () => {
     vi.unstubAllGlobals();
   });
 
+  it("uses the short-lived session token instead of browser credentials", () => {
+    const sockets: string[] = [];
+    class MockWebSocket {
+      static readonly CONNECTING = 0;
+      static readonly OPEN = 1;
+      readonly readyState = MockWebSocket.CONNECTING;
+      constructor(url: string) {
+        sockets.push(url);
+      }
+    }
+    vi.stubGlobal("crypto", { randomUUID: () => "widget-test-session" });
+    vi.stubGlobal("WebSocket", MockWebSocket);
+
+    const manager = new ConnectionManager(
+      "wss://avaros.example.com/hivemind/",
+      "widget",
+      "",
+      "",
+      "",
+      "en-US",
+      "signed value",
+    );
+    manager.connect();
+
+    expect(sockets).toEqual([
+      "wss://avaros.example.com/hivemind/?session=signed%20value",
+    ]);
+    expect(sockets[0]).not.toContain("authorization=");
+  });
+
   it("reports an error instead of opening encrypted sockets without WebCrypto", () => {
     const sockets: string[] = [];
     class MockWebSocket {

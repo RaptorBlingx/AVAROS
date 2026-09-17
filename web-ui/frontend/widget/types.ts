@@ -35,6 +35,7 @@ export type WidgetConfig = {
   host: string;
   clientName: string;
   accessKey: string;
+  sessionToken?: string;
   accessSecret?: string;
   encryptionKey?: string;
   position: WidgetPosition;
@@ -50,6 +51,8 @@ export type WidgetConfig = {
   wakeWordUrl: string;
   ttsEngine: WidgetTtsEngine;
   language: string;
+  initialPrompt?: string;
+  autoOpen: boolean;
 };
 
 export type WidgetPublicApi = {

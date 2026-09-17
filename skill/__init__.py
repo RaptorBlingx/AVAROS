@@ -83,6 +83,7 @@ from skill.services.conversation_state import DialogueStateStore
 from skill.services.dia_dialogue import try_handle_structured_query
 from skill.services.dia_response import speak_information
 from skill.use_cases.query_dispatcher import QueryDispatcher
+from skill._reneryo_handlers import handle_reneryo_query as _handle_reneryo_query_impl
 
 if TYPE_CHECKING:
     from ovos_bus_client.message import Message
@@ -133,6 +134,7 @@ class AVAROSSkill(FallbackSkill):
     _handle_intent_failure = _handle_intent_failure_impl
     can_answer = _can_answer_impl
     handle_metric_query_fallback = fallback_handler(95)(_handle_metric_query_fallback_impl)
+    handle_reneryo_query = _handle_reneryo_query_impl
 
     def __init__(self, *args, **kwargs):
         """Initialize skill with default zero-config runtime attributes."""
@@ -161,6 +163,7 @@ class AVAROSSkill(FallbackSkill):
             ttl_minutes=15,
             max_sessions=256,
         )
+        self._futuregen_service = None
 
         super().__init__(*args, **kwargs)
 

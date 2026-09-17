@@ -30,6 +30,10 @@ def handle_metric_query_fallback(skill: "AVAROSSkill", message: Message) -> bool
     """Fallback: resolve metric KPI queries missed by strict intent parsing."""
     utterance = skill._extract_utterance_text(message).lower()
 
+    from skill._reneryo_handlers import handle_reneryo_query
+    if handle_reneryo_query(skill, message):
+        return True
+
     if skill._is_anomaly_query(utterance):
         return _fallback_anomaly(skill, message, utterance)
 

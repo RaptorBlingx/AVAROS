@@ -8,13 +8,16 @@ avoids exposing Docker-internal hostnames to the browser.
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import logging
 import os
 
 import aiohttp
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fastapi import APIRouter, WebSocket
+from services.reneryo_sessions import ReneryoSession, validate_session
 from starlette.websockets import WebSocketDisconnect
-
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -38,6 +41,19 @@ def _backend_ws_url() -> str:
 async def hivemind_proxy(websocket: WebSocket) -> None:
     """Bridge a browser WebSocket to the internal HiveMind service."""
     authorization = websocket.query_params.get("authorization", "").strip()
+    session_token = websocket.query_params.get("session", "").strip()
+    reneryo_session = None
+    if session_token:
+        try:
+            reneryo_session = validate_session(
+                session_token,
+                websocket.headers.get("origin", ""),
+            )
+            authorization = _server_hivemind_authorization()
+        except ValueError as exc:
+            await websocket.accept()
+            await websocket.close(code=1008, reason=str(exc))
+            return
     await websocket.accept()
 
     if not authorization:
@@ -49,13 +65,15 @@ async def hivemind_proxy(websocket: WebSocket) -> None:
         sock_connect=_BACKEND_TIMEOUT_SECONDS,
     )
     try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.ws_connect(
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.ws_connect(
                 _backend_ws_url(),
                 headers={"X-HiveMind-Auth": authorization},
                 max_msg_size=0,
-            ) as backend:
-                await _bridge_websockets(websocket, backend)
+            ) as backend,
+        ):
+            await _bridge_websockets(websocket, backend, reneryo_session)
     except (aiohttp.ClientError, ValueError) as exc:
         logger.warning("HiveMind websocket proxy failed: %s", exc)
         await websocket.close(code=1011, reason="HiveMind backend unavailable")
@@ -64,6 +82,7 @@ async def hivemind_proxy(websocket: WebSocket) -> None:
 async def _bridge_websockets(
     client: WebSocket,
     backend: aiohttp.ClientWebSocketResponse,
+    reneryo_session: ReneryoSession | None = None,
 ) -> None:
     """Forward text and binary frames in both directions."""
 
@@ -80,14 +99,20 @@ async def _bridge_websockets(
             if message.get("bytes") is not None:
                 await backend.send_bytes(message["bytes"])
             elif message.get("text") is not None:
-                await backend.send_str(message["text"])
+                text = message["text"]
+                if reneryo_session:
+                    text = _browser_to_backend(text, reneryo_session)
+                await backend.send_str(text)
 
         await backend.close()
 
     async def _backend_to_client() -> None:
         async for message in backend:
             if message.type == aiohttp.WSMsgType.TEXT:
-                await client.send_text(message.data)
+                text = message.data
+                if reneryo_session:
+                    text = _backend_to_browser(text)
+                await client.send_text(text)
             elif message.type == aiohttp.WSMsgType.BINARY:
                 await client.send_bytes(message.data)
             elif message.type in {
@@ -107,3 +132,58 @@ async def _bridge_websockets(
     for task in pending:
         task.cancel()
     await asyncio.gather(*done, *pending, return_exceptions=True)
+
+
+def _server_hivemind_authorization() -> str:
+    name = os.environ.get("HIVEMIND_CLIENT_NAME", "avaros-web-client")
+    key = os.environ.get("HIVEMIND_CLIENT_KEY", "")
+    if not key:
+        raise ValueError("Server HiveMind client is not configured")
+    return base64.b64encode(f"{name}:{key}".encode()).decode()
+
+
+def _browser_to_backend(raw: str, session: ReneryoSession) -> str:
+    payload = json.loads(raw)
+    envelope = payload
+    bus = envelope.get("payload") if isinstance(envelope, dict) else None
+    if isinstance(bus, dict):
+        context = bus.setdefault("context", {})
+        if isinstance(context, dict):
+            context["reneryo_context"] = {
+                "organization_id": session.organization_id,
+                "finding_id": session.finding_id,
+                "entity_id": session.entity_id,
+                "metric_name": session.metric_name,
+            }
+            nested = context.setdefault("session", {})
+            if isinstance(nested, dict):
+                nested["lang"] = session.language
+    return _encrypt(json.dumps(envelope, separators=(",", ":")))
+
+
+def _backend_to_browser(raw: str) -> str:
+    return _decrypt(raw)
+
+
+def _crypto_key() -> bytes:
+    key = os.environ.get("HIVEMIND_CLIENT_CRYPTO_KEY", "").encode()
+    if len(key) not in (16, 24, 32):
+        raise ValueError("HIVEMIND_CLIENT_CRYPTO_KEY must be an AES key")
+    return key
+
+
+def _encrypt(raw: str) -> str:
+    nonce = os.urandom(16)
+    ciphertext = AESGCM(_crypto_key()).encrypt(nonce, raw.encode(), None)
+    return json.dumps({"nonce": nonce.hex(), "ciphertext": ciphertext.hex()})
+
+
+def _decrypt(raw: str) -> str:
+    envelope = json.loads(raw)
+    if not isinstance(envelope, dict) or "ciphertext" not in envelope:
+        return raw
+    nonce = bytes.fromhex(str(envelope["nonce"]))
+    ciphertext = bytes.fromhex(str(envelope["ciphertext"]))
+    if envelope.get("tag"):
+        ciphertext += bytes.fromhex(str(envelope["tag"]))
+    return AESGCM(_crypto_key()).decrypt(nonce, ciphertext, None).decode()

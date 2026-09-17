@@ -152,11 +152,12 @@ export function readWidgetConfig(script: HTMLScriptElement): {
   const host = script.dataset.host?.trim() ?? "";
   const clientName = script.dataset.clientName?.trim() || "avaros-web-client";
   const accessKey = script.dataset.accessKey?.trim() ?? "";
+  const sessionToken = script.dataset.sessionToken?.trim() ?? "";
   const accessSecret = script.dataset.accessSecret?.trim() ?? "";
   const encryptionKey = script.dataset.encryptionKey?.trim() ?? "";
   const configError =
-    !host || !accessKey
-      ? "Configuration error: data-host and data-access-key required"
+    !host || (!accessKey && !sessionToken)
+      ? "Configuration error: data-host and an access key or session token are required"
       : null;
   const logoSrc = resolveWidgetAssetUrl(
     script,
@@ -172,6 +173,7 @@ export function readWidgetConfig(script: HTMLScriptElement): {
       host,
       clientName,
       accessKey,
+      sessionToken,
       accessSecret,
       encryptionKey,
       position: parsePosition(script.dataset.position),
@@ -190,6 +192,8 @@ export function readWidgetConfig(script: HTMLScriptElement): {
         script.dataset.meetingAudio,
       ),
       language: script.dataset.language?.trim() || "en-US",
+      initialPrompt: script.dataset.initialPrompt?.trim() || undefined,
+      autoOpen: script.dataset.autoOpen?.trim().toLowerCase() === "true",
     },
     configError,
   };

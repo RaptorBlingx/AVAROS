@@ -35,6 +35,7 @@ INTENT_METRIC_MAP: dict[str, CanonicalMetric] = {
 }
 
 NON_KPI_INTENT_MAP: tuple[tuple[str, str], ...] = (
+    ("reneryo.query.intent", "handle_reneryo_query"),
     ("greeting.intent", "handle_greeting"),
     ("help.intent", "handle_help"),
     ("compare.energy.intent", "handle_compare_energy"),

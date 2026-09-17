@@ -21,6 +21,10 @@ class DialogueState:
     operation: str = ""
     answer_evidence: tuple[dict[str, Any], ...] = ()
     pending_clarification: str = ""
+    organization_id: str = ""
+    active_finding_id: str = ""
+    entity_id: str = ""
+    metric_name: str = ""
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
