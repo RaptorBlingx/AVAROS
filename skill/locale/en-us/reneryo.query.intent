@@ -1,6 +1,8 @@
 show Future Gen meters
 list Reneryo metrics
 show the electricity trend
+show the cooling degree days trend
+show the cooling degree days trend for last month
 show regression analysis
 list decision support findings
 explain this finding
