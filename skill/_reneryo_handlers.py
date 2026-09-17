@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import replace
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -50,7 +51,7 @@ def handle_reneryo_query(skill: AVAROSSkill, message: Message) -> bool:
 
     def _execute() -> bool:
         service = _service(skill)
-        language = skill._response_language
+        language = _signed_language(message) or skill._response_language
         finding_follow_up = state.active_finding_id and not _has(
             text,
             "trend",
@@ -101,7 +102,7 @@ def handle_reneryo_query(skill: AVAROSSkill, message: Message) -> bool:
             _remember(skill, message, state, operation="regressions")
             return True
         if _has(text, "trend", "egilim", "eğilim", "change", "degisim", "değişim"):
-            period = skill._parse_period(utterance) or state.period or default_period()
+            period = _query_period(skill, utterance, state.period)
             trend = skill.dispatcher._run_async(
                 service.trend(utterance or state.metric_name, period)
             )
@@ -135,7 +136,7 @@ def handle_reneryo_query(skill: AVAROSSkill, message: Message) -> bool:
             )
             return True
         if _has(text, "meter", "meters", "sayac", "sayaç"):
-            period = skill._parse_period(utterance) or state.period or default_period()
+            period = _query_period(skill, utterance, state.period)
             rows = skill.dispatcher._run_async(service.meters(period))
             total = sum(row.consumption or 0 for row in rows)
             headline = (
@@ -326,6 +327,37 @@ def _should_handle(text: str, state: DialogueState, reneryo_active: bool) -> boo
     return reneryo_active and any(
         normalize_phrase(word) in text for word in _DOMAIN_WORDS
     )
+
+
+_PERIOD_PATTERN = re.compile(
+    r"\b(?:"
+    r"past 30 days|last 30 days|last two weeks|last 2 weeks|"
+    r"last month|past month|this month|last week|past week|this week|"
+    r"right now|today|yesterday|latest|current|"
+    r"son otuz gün|son 30 gün|son iki hafta|son 2 hafta|"
+    r"geçen hafta|son hafta|bu hafta|geçen ay|son ay|bu ay|"
+    r"şu anda|en güncel|bugün|dün"
+    r")\b"
+)
+
+
+def _query_period(skill, utterance: str, current):
+    """Extract a supported period phrase without sending the full query parser input."""
+    match = _PERIOD_PATTERN.search(normalize_phrase(utterance))
+    if match:
+        parsed = skill._parse_period(match.group(0))
+        if parsed:
+            return parsed
+    return current or default_period()
+
+
+def _signed_language(message) -> str:
+    """Return the language asserted by the trusted Reneryo widget session."""
+    context = getattr(message, "context", {}) or {}
+    session = context.get("session")
+    if not isinstance(session, dict):
+        return ""
+    return str(session.get("lang", "") or "")
 
 
 def _has(text: str, *words: str) -> bool:

@@ -147,6 +147,12 @@ def _browser_to_backend(raw: str, session: ReneryoSession) -> str:
     envelope = payload
     bus = envelope.get("payload") if isinstance(envelope, dict) else None
     if isinstance(bus, dict):
+        data = bus.get("data")
+        if isinstance(data, dict) and session.language.lower().startswith("tr"):
+            # The deployed OVOS intent pipeline is trained under en-US. Keep the
+            # signed Turkish locale in context for response localization while
+            # routing the bilingual Reneryo vocabulary through that pipeline.
+            data["lang"] = "en-US"
         context = bus.setdefault("context", {})
         if isinstance(context, dict):
             context["reneryo_context"] = {
