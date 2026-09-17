@@ -165,16 +165,21 @@ def _backend_to_browser(raw: str) -> str:
     return _decrypt(raw)
 
 
-def _crypto_key() -> bytes:
+def _crypto_key() -> bytes | None:
     key = os.environ.get("HIVEMIND_CLIENT_CRYPTO_KEY", "").encode()
+    if not key:
+        return None
     if len(key) not in (16, 24, 32):
         raise ValueError("HIVEMIND_CLIENT_CRYPTO_KEY must be an AES key")
     return key
 
 
 def _encrypt(raw: str) -> str:
+    key = _crypto_key()
+    if key is None:
+        return raw
     nonce = os.urandom(16)
-    ciphertext = AESGCM(_crypto_key()).encrypt(nonce, raw.encode(), None)
+    ciphertext = AESGCM(key).encrypt(nonce, raw.encode(), None)
     return json.dumps({"nonce": nonce.hex(), "ciphertext": ciphertext.hex()})
 
 
@@ -182,8 +187,11 @@ def _decrypt(raw: str) -> str:
     envelope = json.loads(raw)
     if not isinstance(envelope, dict) or "ciphertext" not in envelope:
         return raw
+    key = _crypto_key()
+    if key is None:
+        raise ValueError("Encrypted HiveMind response received without a crypto key")
     nonce = bytes.fromhex(str(envelope["nonce"]))
     ciphertext = bytes.fromhex(str(envelope["ciphertext"]))
     if envelope.get("tag"):
         ciphertext += bytes.fromhex(str(envelope["tag"]))
-    return AESGCM(_crypto_key()).decrypt(nonce, ciphertext, None).decode()
+    return AESGCM(key).decrypt(nonce, ciphertext, None).decode()

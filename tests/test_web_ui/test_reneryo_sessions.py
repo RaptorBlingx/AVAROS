@@ -61,3 +61,26 @@ def test_proxy_injects_signed_context_and_translates_encryption(monkeypatch):
         "entity_id": "resource-1",
         "metric_name": "Electricity",
     }
+
+
+def test_proxy_preserves_private_plaintext_hivemind_transport(monkeypatch):
+    monkeypatch.delenv("HIVEMIND_CLIENT_CRYPTO_KEY", raising=False)
+    monkeypatch.setenv("AVAROS_WIDGET_SESSION_SECRET", "x" * 32)
+    token, _ = issue_session(
+        {
+            "organization_id": "org-1",
+            "finding_id": "finding-1",
+            "origin": "https://futuregen.reneryo.com",
+        }
+    )
+    session = validate_session(token, "https://futuregen.reneryo.com")
+    raw = json.dumps(
+        {
+            "msg_type": "bus",
+            "payload": {"type": "recognizer_loop:utterance", "data": {}, "context": {}},
+        }
+    )
+    forwarded = json.loads(_browser_to_backend(raw, session))
+    assert (
+        forwarded["payload"]["context"]["reneryo_context"]["finding_id"] == "finding-1"
+    )
