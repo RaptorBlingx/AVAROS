@@ -79,26 +79,27 @@ def default_period(days: int = 30) -> TimePeriod:
 
 def _match_metric(utterance: str, metrics):
     normalized = normalize_phrase(utterance)
-    aliases = {
-        "electricity": ("electric", "elektrik", "energy", "enerji"),
-        "production": ("production", "uretim", "üretim"),
-        "temperature": ("temperature", "sicaklik", "sıcaklık"),
-        "humidity": ("humidity", "nem"),
-        "heating degree": ("heating degree", "isitma", "ısıtma"),
-        "cooling degree": ("cooling degree", "sogutma", "soğutma"),
-        "rain": ("rain", "yagmur", "yağmur"),
-    }
+    aliases = (
+        ("electric", "elektrik", "energy", "enerji"),
+        ("production", "uretim", "üretim"),
+        ("temperature", "sicaklik", "sıcaklık"),
+        ("humidity", "nem"),
+        ("heating degree", "isitma", "ısıtma"),
+        ("cooling degree", "sogutma", "soğutma"),
+        ("rain", "yagmur", "yağmur"),
+    )
     for metric in metrics:
         name = normalize_phrase(metric.name)
         if name and (name in normalized or normalized in name):
             return metric
-    for needle, terms in aliases.items():
-        if any(normalize_phrase(term) in normalized for term in terms):
+    for terms in aliases:
+        normalized_terms = tuple(normalize_phrase(term) for term in terms)
+        if any(term in normalized for term in normalized_terms):
             return next(
                 (
                     metric
                     for metric in metrics
-                    if needle in normalize_phrase(metric.name)
+                    if any(term in normalize_phrase(metric.name) for term in normalized_terms)
                 ),
                 None,
             )

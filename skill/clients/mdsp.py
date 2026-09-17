@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import ssl
 from datetime import datetime, timezone
 from typing import Any
 
@@ -28,10 +29,17 @@ def _datetime(value: Any) -> datetime | None:
 class MdspClient:
     """Read findings from MDSP with server-side credentials."""
 
-    def __init__(self, base_url: str, service_token: str, timeout: int = 30):
+    def __init__(
+        self,
+        base_url: str,
+        service_token: str,
+        timeout: int = 30,
+        tls_ca_path: str | None = None,
+    ):
         self._base_url = base_url.rstrip("/")
         self._service_token = service_token
         self._timeout = timeout
+        self._tls_ca_path = tls_ca_path
 
     @classmethod
     def from_environment(cls) -> MdspClient:
@@ -44,7 +52,11 @@ class MdspClient:
                 platform="mdsp",
                 user_message="Decision-support findings are not configured in AVAROS.",
             )
-        return cls(base_url, token)
+        return cls(
+            base_url,
+            token,
+            tls_ca_path=os.environ.get("MDSP_TLS_CA_PATH", "").strip() or None,
+        )
 
     async def list_findings(
         self,
@@ -100,7 +112,14 @@ class MdspClient:
             "Accept": "application/json",
         }
         timeout = aiohttp.ClientTimeout(total=self._timeout)
-        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+        connector = None
+        if self._tls_ca_path:
+            connector = aiohttp.TCPConnector(
+                ssl=ssl.create_default_context(cafile=self._tls_ca_path)
+            )
+        async with aiohttp.ClientSession(
+            timeout=timeout, headers=headers, connector=connector
+        ) as session:
             try:
                 async with session.get(
                     f"{self._base_url}{path}", params=params

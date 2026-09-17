@@ -29,6 +29,11 @@ host must be configured with a Future Gen read-only Reneryo access token, MDSP
 service credentials, the public Reneryo origin, a session-signing secret, and
 the matching Reneryo-to-AVAROS service token.
 
+When MDSP uses the scoped internal CA, set `MDSP_TLS_CA_HOST_PATH` to that CA
+certificate and include `docker/docker-compose.futuregen.yml` in Compose
+commands. The CA is mounted read-only into the skill container; certificate
+verification remains enabled.
+
 ## Supported MVP queries
 
 English and Turkish queries can list meters and metrics, summarize a named

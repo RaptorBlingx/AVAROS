@@ -1,0 +1,6 @@
+services:
+  avaros:
+    environment:
+      - MDSP_TLS_CA_PATH=/run/secrets/mdsp-ca.crt
+    volumes:
+      - ${MDSP_TLS_CA_HOST_PATH:?Set MDSP_TLS_CA_HOST_PATH to the trusted MDSP CA certificate}:/run/secrets/mdsp-ca.crt:ro
