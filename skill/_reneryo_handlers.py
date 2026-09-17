@@ -192,7 +192,7 @@ def _finding_response(skill, message, service, state, text, language) -> bool:
         finding = skill.dispatcher._run_async(
             service.finding(organization_id, finding_id)
         )
-        headline = f"{finding.title.for_language(language)} {finding.summary.for_language(language)}"
+        headline = _finding_headline(finding, text, language)
         evidence = [
             {
                 "finding_id": finding.finding_id,
@@ -239,6 +239,45 @@ def _finding_response(skill, message, service, state, text, language) -> bool:
     speak_information(skill, headline, response_type="findings", evidence_rows=evidence)
     _remember(skill, message, state, operation="findings")
     return True
+
+
+def _finding_headline(finding, text: str, language: str) -> str:
+    """Return a concise, deterministic answer for finding follow-ups."""
+    turkish = is_turkish(language)
+    if _has(text, "period", "window", "donem", "dönem", "zaman"):
+        start = finding.evaluation_start.strftime("%Y-%m-%d %H:%M UTC")
+        end = finding.evaluation_end.strftime("%Y-%m-%d %H:%M UTC")
+        return (
+            f"Bu bulgu {start} ile {end} arasındaki değerlendirme dönemini kapsıyor."
+            if turkish
+            else f"This finding covers the evaluation period from {start} to {end}."
+        )
+    if _has(text, "entity", "affect", "varlik", "varlık", "etkiliyor"):
+        label = finding.metric_name or finding.entity_type
+        return (
+            f"Bu bulgu {label} varlığını etkiliyor. Varlık kimliği {finding.entity_id}."
+            if turkish
+            else f"This finding affects {label}. Its entity ID is {finding.entity_id}."
+        )
+    if _has(text, "evidence", "kanit", "kanıt"):
+        facts = [
+            f"{key}: {value}"
+            for key, value in finding.evidence.items()
+            if isinstance(value, (str, int, float, bool))
+        ][:4]
+        detail = "; ".join(facts)
+        if not detail:
+            return (
+                "Bu bulgu için yapılandırılmış kanıt mevcut."
+                if turkish
+                else "Structured evidence is available for this finding."
+            )
+        return (
+            f"Bu bulgunun kanıtı: {detail}."
+            if turkish
+            else f"The evidence for this finding is: {detail}."
+        )
+    return f"{finding.title.for_language(language)} {finding.summary.for_language(language)}"
 
 
 def _context_state(skill, message) -> DialogueState:
