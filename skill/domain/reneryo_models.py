@@ -103,6 +103,8 @@ class MdspFinding:
     deep_link: str | None
     provisional: bool
     metric_name: str = ""
+    rule_id: str = ""
+    rule_version: int = 0
 
 
 @dataclass(frozen=True)

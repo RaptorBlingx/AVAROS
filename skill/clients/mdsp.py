@@ -197,4 +197,6 @@ class MdspClient:
             deep_link=str(row.get("deepLink")) if row.get("deepLink") else None,
             provisional=bool(row.get("provisional")),
             metric_name=metric_name,
+            rule_id=str(row.get("ruleId", "")),
+            rule_version=int(row.get("ruleVersion", 0) or 0),
         )

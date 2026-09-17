@@ -13,6 +13,7 @@ from skill.clients.reneryo import ReneryoClient
 from skill.domain.exceptions import AdapterError
 from skill.services.conversation_state import DialogueState, message_session_id
 from skill.services.dia_response import speak_information
+from skill.services.finding_explanation import finding_headline
 from skill.services.futuregen import FutureGenService, default_period
 from skill.services.language import is_turkish, normalize_phrase
 
@@ -48,10 +49,14 @@ def handle_reneryo_query(skill: AVAROSSkill, message: Message) -> bool:
     reneryo_active = getattr(skill, "_loaded_profile", "") == "reneryo"
     if not _should_handle(text, state, reneryo_active):
         return False
+    language = _conversation_language(
+        utterance, state, message, skill._response_language
+    )
+    state = replace(state, language=language)
+    _update_message_language(message, language)
 
     def _execute() -> bool:
         service = _service(skill)
-        language = _signed_language(message) or skill._response_language
         finding_follow_up = state.active_finding_id and not _has(
             text,
             "trend",
@@ -196,7 +201,7 @@ def _finding_response(skill, message, service, state, text, language) -> bool:
         finding = skill.dispatcher._run_async(
             service.finding(organization_id, finding_id)
         )
-        headline = _finding_headline(finding, text, language)
+        headline = finding_headline(finding, text, language)
         evidence = [
             {
                 "finding_id": finding.finding_id,
@@ -243,45 +248,6 @@ def _finding_response(skill, message, service, state, text, language) -> bool:
     speak_information(skill, headline, response_type="findings", evidence_rows=evidence)
     _remember(skill, message, state, operation="findings")
     return True
-
-
-def _finding_headline(finding, text: str, language: str) -> str:
-    """Return a concise, deterministic answer for finding follow-ups."""
-    turkish = is_turkish(language)
-    if _has(text, "period", "window", "donem", "dönem", "zaman"):
-        start = finding.evaluation_start.strftime("%Y-%m-%d %H:%M UTC")
-        end = finding.evaluation_end.strftime("%Y-%m-%d %H:%M UTC")
-        return (
-            f"Bu bulgu {start} ile {end} arasındaki değerlendirme dönemini kapsıyor."
-            if turkish
-            else f"This finding covers the evaluation period from {start} to {end}."
-        )
-    if _has(text, "entity", "affect", "varlik", "varlık", "etkiliyor"):
-        label = finding.metric_name or finding.entity_type
-        return (
-            f"Bu bulgu {label} varlığını etkiliyor. Varlık kimliği {finding.entity_id}."
-            if turkish
-            else f"This finding affects {label}. Its entity ID is {finding.entity_id}."
-        )
-    if _has(text, "evidence", "kanit", "kanıt"):
-        facts = [
-            f"{key}: {value}"
-            for key, value in finding.evidence.items()
-            if isinstance(value, (str, int, float, bool))
-        ][:4]
-        detail = "; ".join(facts)
-        if not detail:
-            return (
-                "Bu bulgu için yapılandırılmış kanıt mevcut."
-                if turkish
-                else "Structured evidence is available for this finding."
-            )
-        return (
-            f"Bu bulgunun kanıtı: {detail}."
-            if turkish
-            else f"The evidence for this finding is: {detail}."
-        )
-    return f"{finding.title.for_language(language)} {finding.summary.for_language(language)}"
 
 
 def _context_state(skill, message) -> DialogueState:
@@ -376,6 +342,78 @@ def _signed_language(message) -> str:
     if not isinstance(session, dict):
         return ""
     return str(session.get("lang", "") or "")
+
+
+_TURKISH_LANGUAGE_WORDS = {
+    "bu",
+    "bulgu",
+    "bulguyu",
+    "bulgular",
+    "hangi",
+    "neden",
+    "oluştu",
+    "kanıt",
+    "destekliyor",
+    "dönem",
+    "kapsıyor",
+    "varlığı",
+    "etkiliyor",
+    "göster",
+    "listele",
+    "metriklerini",
+    "regresyon",
+}
+_ENGLISH_LANGUAGE_WORDS = {
+    "this",
+    "finding",
+    "findings",
+    "what",
+    "why",
+    "which",
+    "explain",
+    "evidence",
+    "period",
+    "entity",
+    "show",
+    "list",
+    "trend",
+    "regression",
+}
+
+
+def _conversation_language(utterance, state, message, fallback: str) -> str:
+    """Prefer the current utterance, then bounded session and signed defaults."""
+    detected = _utterance_language(utterance)
+    return (
+        detected or state.language or _signed_language(message) or fallback or "en-US"
+    )
+
+
+def _utterance_language(utterance: str) -> str:
+    text = normalize_phrase(utterance)
+    words = set(text.split())
+    turkish_score = len(words & _TURKISH_LANGUAGE_WORDS)
+    english_score = len(words & _ENGLISH_LANGUAGE_WORDS)
+    if any(character in text for character in "çğıöşü"):
+        turkish_score += 2
+    if turkish_score > english_score:
+        return "tr-TR"
+    if english_score > turkish_score:
+        return "en-US"
+    return ""
+
+
+def _update_message_language(message, language: str) -> None:
+    """Expose the active turn language to later handlers and response metadata."""
+    context = getattr(message, "context", None)
+    if not isinstance(context, dict):
+        return
+    reneryo = context.get("reneryo_context")
+    if isinstance(reneryo, dict):
+        reneryo["language"] = language
+    session = context.get("session")
+    if isinstance(session, dict):
+        session["lang"] = language
 
 
 def _has(text: str, *words: str) -> bool:

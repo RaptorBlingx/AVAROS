@@ -25,6 +25,7 @@ class DialogueState:
     active_finding_id: str = ""
     entity_id: str = ""
     metric_name: str = ""
+    language: str = ""
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -66,7 +67,8 @@ class DialogueStateStore:
 
     def _purge(self, now: datetime) -> None:
         expired = [
-            key for key, state in self._items.items()
+            key
+            for key, state in self._items.items()
             if now - state.updated_at > self._ttl
         ]
         for key in expired:
