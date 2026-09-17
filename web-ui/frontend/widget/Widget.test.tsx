@@ -7,6 +7,7 @@ import { Widget } from "./Widget";
 import type { WidgetConfig } from "./types";
 
 const managerConstructorCalls = vi.hoisted(() => [] as unknown[][]);
+const managerConnect = vi.hoisted(() => vi.fn());
 
 vi.mock("./ConnectionManager", () => ({
   ConnectionManager: class {
@@ -27,7 +28,9 @@ vi.mock("./ConnectionManager", () => ({
       return () => undefined;
     }
 
-    connect() {}
+    connect() {
+      managerConnect();
+    }
     destroy() {}
     isConnected() {
       return false;
@@ -41,6 +44,7 @@ vi.mock("./WidgetPanel", () => ({ WidgetPanel: () => null }));
 describe("Widget connection configuration", () => {
   beforeEach(() => {
     managerConstructorCalls.length = 0;
+    managerConnect.mockClear();
     vi.stubGlobal("matchMedia", () => ({
       matches: false,
       addEventListener: vi.fn(),
@@ -67,12 +71,13 @@ describe("Widget connection configuration", () => {
       wakeWordUrl: "wss://avaros.example.com/wakeword/ws/detect",
       ttsEngine: "browser",
       language: "en-US",
-      autoOpen: false,
+      autoOpen: true,
     };
 
     render(<Widget config={config} configError={null} onReady={vi.fn()} />);
 
     await waitFor(() => expect(managerConstructorCalls).toHaveLength(1));
     expect(managerConstructorCalls[0][6]).toBe("signed-reneryo-session");
+    expect(managerConnect).toHaveBeenCalledOnce();
   });
 });

@@ -991,6 +991,9 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       config.sessionToken,
     );
     managerRef.current = manager;
+    if (config.autoOpen) {
+      manager.connect();
+    }
     const offState = manager.onState((nextState) => {
       setConnectionState(nextState);
     });
@@ -1051,6 +1054,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     clearFallbackTimer,
     config.accessKey,
     config.accessSecret,
+    config.autoOpen,
     config.clientName,
     config.encryptionKey,
     config.host,
