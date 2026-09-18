@@ -617,10 +617,10 @@ _ENGLISH_LANGUAGE_WORDS = {
 
 
 def _conversation_language(utterance, state, message, fallback: str) -> str:
-    """Prefer the current utterance, then bounded session and signed defaults."""
+    """Prefer lexical detection, then the trusted current-turn locale and memory."""
     detected = _utterance_language(utterance)
     return (
-        detected or state.language or _signed_language(message) or fallback or "en-US"
+        detected or _signed_language(message) or state.language or fallback or "en-US"
     )
 
 

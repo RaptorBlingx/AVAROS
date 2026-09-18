@@ -285,6 +285,20 @@ def test_turkish_to_english_switch_updates_same_session_context():
     )
 
 
+def test_current_signed_turn_language_wins_when_utterance_is_lexically_neutral():
+    state = DialogueState(language="tr-TR")
+    message = _message("en-US")
+
+    language = _conversation_language(
+        "Break down the inputs and fit of the daily statistical model.",
+        state,
+        message,
+        "tr-TR",
+    )
+
+    assert language == "en-US"
+
+
 class _PeriodParser:
     def __init__(self):
         self.values = []
