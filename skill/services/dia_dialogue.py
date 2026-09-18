@@ -108,7 +108,7 @@ def try_handle_structured_query(skill, message, *, include_simple_kpi: bool = Fa
     if query.operation is QueryOperation.CAPABILITIES:
         if _arbitrate_contextual_capabilities(skill, message, utterance, prior):
             return True
-        _handle_capabilities(skill)
+        _handle_capabilities(skill, message)
         _remember(store, session_id, query)
         return True
 
@@ -417,13 +417,22 @@ def _handle_trends(skill, metric, asset_ids, period) -> None:
     _speak_meta(skill, text, results, response_type="trend_comparison")
 
 
-def _handle_capabilities(skill) -> None:
+def _handle_capabilities(skill, message=None) -> None:
     if getattr(skill, "_loaded_profile", "") == "reneryo":
+        language = getattr(
+            skill, "_response_language", getattr(skill, "lang", "en-US")
+        )
+        context = getattr(message, "context", {}) if message is not None else {}
+        if isinstance(context, dict) and context.get(
+            "reneryo_widget_session_validated"
+        ):
+            reneryo = context.get("reneryo_context")
+            if isinstance(reneryo, dict):
+                language = str(reneryo.get("language") or language)
         speak_information(
             skill,
-            reneryo_capabilities_headline(
-                getattr(skill, "_response_language", getattr(skill, "lang", "en-US"))
-            ),
+            reneryo_capabilities_headline(language),
+            language=language,
             response_type="capabilities",
         )
         return

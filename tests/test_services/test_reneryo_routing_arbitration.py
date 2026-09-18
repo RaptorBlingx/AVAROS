@@ -347,7 +347,7 @@ def test_structured_explicit_capabilities_keeps_capabilities_with_context(monkey
 
     assert handled is True
     delegated.assert_not_called()
-    capabilities.assert_called_once_with(skill)
+    capabilities.assert_called_once_with(skill, message)
 
 
 def test_structured_turkish_capabilities_keeps_capabilities_with_context(monkeypatch):
@@ -365,7 +365,31 @@ def test_structured_turkish_capabilities_keeps_capabilities_with_context(monkeyp
 
     assert handled is True
     delegated.assert_not_called()
-    capabilities.assert_called_once_with(skill)
+    capabilities.assert_called_once_with(skill, message)
+
+
+def test_structured_turkish_capabilities_uses_current_signed_turn_language(
+    monkeypatch,
+):
+    skill = _skill(_resolution(SemanticAction.FINDING_EXPLAIN, language="tr-TR"))
+    message = _Message("Neler yapabilirsin?")
+    message.context.update(
+        {
+            "reneryo_widget_session_validated": True,
+            "reneryo_context": {
+                "organization_id": "futuregen",
+                "language": "tr-TR",
+            },
+        }
+    )
+    spoken = Mock()
+    skill.speak = spoken
+
+    handled = dialogue.try_handle_structured_query(skill, message)
+
+    assert handled is True
+    assert "Future Gen için sayaçları" in spoken.call_args.args[0]
+    assert spoken.call_args.kwargs["meta"]["language"] == "tr-TR"
 
 
 def test_signed_widget_semantics_precede_generic_structured_fallback(monkeypatch):

@@ -23,7 +23,10 @@ _PERIOD_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"\byesterday\b", "yesterday"),
         (r"\btoday\b", "today"),
         (r"\b(?:right now|latest|current)\b", "latest"),
-        (r"\bgeçen ay(?:ın|ı|a|da|dan)?\b", "geçen ay"),
+        (
+            r"\bgeçen (?:takvim )?ay(?:ın|ı|a|da|dan|ında|ındaki)?\b",
+            "geçen ay",
+        ),
         (r"\bson ay(?:ın|ı|a|da|dan)?\b", "son ay"),
         (r"\bson (?:dört|4) hafta(?:yı|ya|daki|da|dan|nın)?\b", "son dört hafta"),
         (r"\bson (?:otuz|30) gün(?:ü|e|de|den)?\b", "son 30 gün"),

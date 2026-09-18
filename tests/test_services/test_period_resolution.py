@@ -18,6 +18,7 @@ from skill.services.semantic_resolver import SemanticAction
         ("Compare the last 30 days.", "last 30 days"),
         ("What changed during the previous week?", "last week"),
         ("Geçen ayın eğilimini göster.", "geçen ay"),
+        ("Geçen takvim ayında nasıl değişmiş?", "geçen ay"),
         ("Son dört haftayı karşılaştır.", "son dört hafta"),
         ("Son 30 gün için eğilim nedir?", "son 30 gün"),
     ],
