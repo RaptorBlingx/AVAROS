@@ -21,23 +21,26 @@ def speak_information(
     skill,
     headline: str,
     *,
+    language: str | None = None,
     response_type: str = "information",
     evidence_rows: list[dict[str, Any]] | None = None,
     warnings: list[str] | None = None,
     suggestions: list[str] | None = None,
 ) -> None:
     """Speak non-result information with the same browser metadata contract."""
+    response = {
+        "response_type": response_type,
+        "query_id": str(uuid.uuid4()),
+        "headline": headline,
+        "language": language,
+        "evidence_rows": list(evidence_rows or []),
+        "warnings": list(warnings or []),
+        "assumptions": [],
+        "suggested_follow_ups": list(suggestions or []),
+    }
     skill.speak(
         headline,
-        meta={"avaros_response": {
-            "response_type": response_type,
-            "query_id": str(uuid.uuid4()),
-            "headline": headline,
-            "evidence_rows": list(evidence_rows or []),
-            "warnings": list(warnings or []),
-            "assumptions": [],
-            "suggested_follow_ups": list(suggestions or []),
-        }},
+        meta={"language": language, "avaros_response": response},
     )
 
 
@@ -116,15 +119,17 @@ def _kpi_metadata(headline: str, result: KPIResult) -> dict[str, Any]:
         coverage_status=result.coverage_status,
         warnings=result.warnings,
     )
-    payload["evidence_rows"] = [{
-        "metric": result.metric.value,
-        "metric_label": result.metric.display_name,
-        "asset_id": result.asset_id,
-        "value": result.value,
-        "unit": result.unit,
-        "sample_count": result.sample_count,
-        "observation_time": _iso(result.source_observed_at),
-    }]
+    payload["evidence_rows"] = [
+        {
+            "metric": result.metric.value,
+            "metric_label": result.metric.display_name,
+            "asset_id": result.asset_id,
+            "value": result.value,
+            "unit": result.unit,
+            "sample_count": result.sample_count,
+            "observation_time": _iso(result.source_observed_at),
+        }
+    ]
     payload["source_times"] = {
         "observed_at": _iso(result.source_observed_at),
         "first_observation": _iso(result.source_period_start),
@@ -190,8 +195,12 @@ def _trend_metadata(headline: str, result: TrendResult) -> dict[str, Any]:
         for point in result.data_points
     ]
     payload["source_times"] = {
-        "first_observation": _iso(result.data_points[0].timestamp) if result.data_points else None,
-        "last_observation": _iso(result.data_points[-1].timestamp) if result.data_points else None,
+        "first_observation": _iso(result.data_points[0].timestamp)
+        if result.data_points
+        else None,
+        "last_observation": _iso(result.data_points[-1].timestamp)
+        if result.data_points
+        else None,
     }
     return payload
 

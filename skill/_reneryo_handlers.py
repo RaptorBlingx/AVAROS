@@ -15,6 +15,12 @@ from skill.services.conversation_state import DialogueState, message_session_id
 from skill.services.dia_response import speak_information
 from skill.services.finding_explanation import finding_headline
 from skill.services.futuregen import FutureGenService, default_period
+from skill.services.futuregen_responses import (
+    finding_inventory_headline,
+    meter_inventory_headline,
+    metric_inventory_headline,
+    regression_inventory_headline,
+)
 from skill.services.language import is_turkish, normalize_phrase
 
 if TYPE_CHECKING:
@@ -87,11 +93,7 @@ def handle_reneryo_query(skill: AVAROSSkill, message: Message) -> bool:
             return _finding_response(skill, message, service, state, text, language)
         if _has(text, "regression", "regressions", "regresyon"):
             rows = skill.dispatcher._run_async(service.regressions())
-            headline = (
-                f"{len(rows)} kayıtlı regresyon modeli var."
-                if is_turkish(language)
-                else f"There are {len(rows)} saved regression models."
-            )
+            headline = regression_inventory_headline(rows, language)
             evidence = [
                 {
                     "id": row.regression_id,
@@ -105,7 +107,11 @@ def handle_reneryo_query(skill: AVAROSSkill, message: Message) -> bool:
                 for row in rows
             ]
             speak_information(
-                skill, headline, response_type="regression", evidence_rows=evidence
+                skill,
+                headline,
+                language=language,
+                response_type="regression",
+                evidence_rows=evidence,
             )
             _remember(skill, message, state, operation="regressions")
             return True
@@ -132,7 +138,11 @@ def handle_reneryo_query(skill: AVAROSSkill, message: Message) -> bool:
                 for p in trend.points
             ]
             speak_information(
-                skill, headline, response_type="trend", evidence_rows=evidence
+                skill,
+                headline,
+                language=language,
+                response_type="trend",
+                evidence_rows=evidence,
             )
             _remember(
                 skill,
@@ -146,12 +156,7 @@ def handle_reneryo_query(skill: AVAROSSkill, message: Message) -> bool:
         if _has(text, "meter", "meters", "sayac", "sayaç"):
             period = _query_period(skill, utterance, state.period)
             rows = skill.dispatcher._run_async(service.meters(period))
-            total = sum(row.consumption or 0 for row in rows)
-            headline = (
-                f"{len(rows)} sayaç var; dönem tüketimi toplamı {total:,.2f}."
-                if is_turkish(language)
-                else f"There are {len(rows)} meters; period consumption totals {total:,.2f}."
-            )
+            headline = meter_inventory_headline(rows, period, language)
             evidence = [
                 {
                     "id": r.meter_id,
@@ -162,16 +167,16 @@ def handle_reneryo_query(skill: AVAROSSkill, message: Message) -> bool:
                 for r in rows
             ]
             speak_information(
-                skill, headline, response_type="meters", evidence_rows=evidence
+                skill,
+                headline,
+                language=language,
+                response_type="meters",
+                evidence_rows=evidence,
             )
             _remember(skill, message, state, operation="meters", period=period)
             return True
         rows = skill.dispatcher._run_async(service.metrics())
-        headline = (
-            f"Future Gen için {len(rows)} metrik kullanılabilir."
-            if is_turkish(language)
-            else f"Future Gen has {len(rows)} available metrics."
-        )
+        headline = metric_inventory_headline(rows, language)
         evidence = [
             {
                 "id": r.metric_id,
@@ -183,7 +188,11 @@ def handle_reneryo_query(skill: AVAROSSkill, message: Message) -> bool:
             for r in rows
         ]
         speak_information(
-            skill, headline, response_type="metrics", evidence_rows=evidence
+            skill,
+            headline,
+            language=language,
+            response_type="metrics",
+            evidence_rows=evidence,
         )
         _remember(skill, message, state, operation="metrics")
         return True
@@ -216,6 +225,7 @@ def _finding_response(skill, message, service, state, text, language) -> bool:
         speak_information(
             skill,
             headline,
+            language=language,
             response_type="finding",
             evidence_rows=evidence,
             warnings=assumptions,
@@ -231,11 +241,7 @@ def _finding_response(skill, message, service, state, text, language) -> bool:
         )
         return True
     result = skill.dispatcher._run_async(service.findings(organization_id))
-    headline = (
-        f"{result.active_count} etkin bulgu var."
-        if is_turkish(language)
-        else f"There are {result.active_count} active findings."
-    )
+    headline = finding_inventory_headline(result, language)
     evidence = [
         {
             "id": f.finding_id,
@@ -245,7 +251,13 @@ def _finding_response(skill, message, service, state, text, language) -> bool:
         }
         for f in result.findings
     ]
-    speak_information(skill, headline, response_type="findings", evidence_rows=evidence)
+    speak_information(
+        skill,
+        headline,
+        language=language,
+        response_type="findings",
+        evidence_rows=evidence,
+    )
     _remember(skill, message, state, operation="findings")
     return True
 

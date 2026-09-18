@@ -11,6 +11,11 @@ import { normalizeUtteranceForIntent } from "../src/services/intent-normalizer";
 import { BackendWakeWordService } from "../src/services/wake-word-backend";
 import type { DetectionPayload } from "../src/services/wake-word-backend";
 import { ConnectionManager } from "./ConnectionManager";
+import {
+  detectWidgetLanguage,
+  normalizeWidgetLanguage,
+  responseLanguage,
+} from "./language";
 import { WidgetButton } from "./WidgetButton";
 import { WidgetPanel } from "./WidgetPanel";
 import { resolveServerTtsUrl, splitWidgetTtsText } from "./tts";
@@ -116,8 +121,7 @@ function pickPreferredVoice(
   const languagePrefix = language.toLowerCase().split("-")[0];
   const matching = voices.find((voice) => voice.lang.toLowerCase().startsWith(languagePrefix));
   if (matching) return matching;
-
-  return voices[0] ?? null;
+  return null;
 }
 
 export function Widget({ config, configError, onReady }: WidgetProps) {
@@ -140,6 +144,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   const wakeWordArmedRef = useRef(false);
   const responseResolvedRef = useRef(true);
   const ttsVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  const activeLanguageRef = useRef(normalizeWidgetLanguage(config.language));
   const backendWakeWordRef = useRef<BackendWakeWordService | null>(null);
   const wakeWordPromptCooldownRef = useRef(0);
   const lastAssistantSpeechRef = useRef<{ text: string; at: number }>({
@@ -147,7 +152,9 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     at: 0,
   });
   const appendMessageRef = useRef<(msg: ChatMessage) => void>(() => {});
-  const speakAssistantTextRef = useRef<(text: string) => Promise<void>>(
+  const speakAssistantTextRef = useRef<
+    (text: string, language?: string) => Promise<void>
+  >(
     async () => {},
   );
 
@@ -195,6 +202,12 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   useEffect(() => {
     ttsVoiceRef.current = ttsVoice;
   }, [ttsVoice]);
+
+  useEffect(() => {
+    const language = normalizeWidgetLanguage(config.language);
+    activeLanguageRef.current = language;
+    managerRef.current?.setLanguage(language);
+  }, [config.language]);
 
   const restartRecognitionRef = useRef<(() => void) | null>(null);
 
@@ -258,9 +271,12 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   }, [cleanupServerTtsAudio, clearTtsWatcher]);
 
   const speakAssistantText = useCallback(
-    async (text: string): Promise<void> => {
+    async (text: string, language = activeLanguageRef.current): Promise<void> => {
       const cleaned = text.trim();
       if (!cleaned) return;
+      const speechLanguage = normalizeWidgetLanguage(language);
+      activeLanguageRef.current = speechLanguage;
+      managerRef.current?.setLanguage(speechLanguage);
 
       stopAssistantSpeech();
       const playbackToken = ttsPlaybackTokenRef.current;
@@ -292,8 +308,12 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
           };
 
           const utterance = new SpeechSynthesisUtterance(cleaned);
-          utterance.lang = config.language;
-          const voice = ttsVoiceRef.current;
+          utterance.lang = speechLanguage;
+          const voice = pickPreferredVoice(
+            window.speechSynthesis.getVoices(),
+            speechLanguage,
+          );
+          ttsVoiceRef.current = voice;
           if (voice) {
             utterance.voice = voice;
           }
@@ -331,7 +351,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
           const response = await fetch(resolveServerTtsUrl(config.avarosUrl), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: chunk, language: config.language }),
+            body: JSON.stringify({ text: chunk, language: speechLanguage }),
             signal: controller.signal,
           });
           if (!response.ok || playbackToken !== ttsPlaybackTokenRef.current) {
@@ -637,9 +657,12 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   }, []);
 
   const resolveAssistantMessage = useCallback(
-    (text: string) => {
+    (text: string, language = activeLanguageRef.current) => {
       const cleaned = text.trim();
       if (!cleaned) return;
+      const responseLocale = normalizeWidgetLanguage(language);
+      activeLanguageRef.current = responseLocale;
+      managerRef.current?.setLanguage(responseLocale);
       responseResolvedRef.current = true;
       clearFallbackTimer();
       clearCompletionTimer();
@@ -651,7 +674,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
         now - lastAssistantSpeechRef.current.at < SPEECH_EVENT_DEDUP_MS;
       lastAssistantSpeechRef.current = { text: cleaned, at: now };
       if (!isDuplicateSpeech) {
-        void speakAssistantText(cleaned);
+        void speakAssistantText(cleaned, responseLocale);
       }
     },
     [appendMessage, clearCompletionTimer, clearFallbackTimer, speakAssistantText],
@@ -709,6 +732,12 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       if (!manager) return;
 
       const toSend = normalizeUtteranceForIntent(cleaned);
+      const requestLanguage = detectWidgetLanguage(
+        cleaned,
+        activeLanguageRef.current,
+      );
+      activeLanguageRef.current = requestLanguage;
+      manager.setLanguage(requestLanguage);
 
       appendMessage(makeMessage("user", cleaned));
       setProcessing(true);
@@ -727,7 +756,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       }, RESPONSE_FALLBACK_TIMEOUT_MS);
 
       try {
-        await manager.sendUtterance(toSend);
+        await manager.sendUtterance(toSend, requestLanguage);
       } catch {
         clearFallbackTimer();
         clearCompletionTimer();
@@ -781,7 +810,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
 
     const recognition = new RecognitionCtor();
     recognitionRef.current = recognition;
-    recognition.lang = config.language;
+    recognition.lang = activeLanguageRef.current;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
     // Never use continuous mode. In wake-word mode the backend handles
@@ -910,8 +939,13 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       setPanelOpen(true);
       wakeWordArmedRef.current = true;
       setWakeWordArmed(true);
-      appendMessageRef.current(makeMessage("avaros", "How can I help you?"));
-      void speakAssistantTextRef.current("How can I help you?").finally(() => {
+      const promptLanguage = activeLanguageRef.current;
+      const prompt =
+        promptLanguage === "tr-TR"
+          ? "Size nasıl yardımcı olabilirim?"
+          : "How can I help you?";
+      appendMessageRef.current(makeMessage("avaros", prompt));
+      void speakAssistantTextRef.current(prompt, promptLanguage).finally(() => {
         if (modeRef.current !== "wake-word") return;
         if (!wakeWordArmedRef.current) return;
         restartRecognitionRef.current?.();
@@ -946,7 +980,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
 
     const syncVoices = () => {
       const voices = synth.getVoices();
-      setTtsVoice(pickPreferredVoice(voices, config.language));
+      setTtsVoice(pickPreferredVoice(voices, activeLanguageRef.current));
     };
 
     syncVoices();
@@ -997,8 +1031,8 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     const offState = manager.onState((nextState) => {
       setConnectionState(nextState);
     });
-    const offSpeak = manager.onSpeak((text) => {
-      resolveAssistantMessage(text);
+    const offSpeak = manager.onSpeak((text, language) => {
+      resolveAssistantMessage(text, language);
     });
     const offMouthText = manager.on("enclosure.mouth.text", (message) => {
       const maybeText =
@@ -1006,7 +1040,10 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
         (message.data.utterance as string | undefined) ??
         "";
       if (!maybeText.trim()) return;
-      resolveAssistantMessage(maybeText);
+      resolveAssistantMessage(
+        maybeText,
+        responseLanguage(message, activeLanguageRef.current),
+      );
     });
     const offComplete = manager.on("mycroft.skill.handler.complete", (message) => {
       if (responseResolvedRef.current) return;

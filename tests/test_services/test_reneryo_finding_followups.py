@@ -26,6 +26,8 @@ def _finding() -> MdspFinding:
         summary=LocalizedText(en="The source trails.", tr="Kaynak geride kalıyor."),
         evidence={
             "lagHours": 566,
+            "allowedLagHours": 72,
+            "inferredCadenceSeconds": 86_400,
             "observedSampleCount": 968,
             "lastObservationAt": "2026-08-24T21:00:00.000Z",
             "sourceWatermark": "2026-09-17T10:38:13.000Z",
@@ -80,6 +82,44 @@ def _recent_gap_finding() -> MdspFinding:
     )
 
 
+def _regression_cadence_finding() -> MdspFinding:
+    return MdspFinding(
+        finding_id="regression-cadence",
+        status="ACTIVE",
+        severity="MEDIUM",
+        domain="REGRESSION",
+        entity_type="ADVANCED_REGRESSION_RESULT",
+        entity_id="regression-1",
+        title=LocalizedText(
+            en="Regression period is finer than its driver data",
+            tr="Regresyon dönemi sürücü verisinden daha ayrıntılı",
+        ),
+        summary=LocalizedText(
+            en="At least one driver updates too slowly.",
+            tr="En az bir sürücü çok yavaş güncelleniyor.",
+        ),
+        evidence={
+            "period": "DAILY",
+            "incompatibleDrivers": [
+                {
+                    "id": "production-metric",
+                    "name": "Tesis Toplam Üretim Miktarı",
+                    "fastestCadenceSeconds": 2_678_400,
+                    "regressionPeriodSeconds": 86_400,
+                }
+            ],
+        },
+        assumptions=(),
+        evaluation_start=datetime(2023, 9, 18, tzinfo=timezone.utc),
+        evaluation_end=datetime(2026, 9, 17, tzinfo=timezone.utc),
+        source_watermark=None,
+        deep_link=None,
+        provisional=True,
+        rule_id="regression-driver-cadence-compatibility",
+        rule_version=1,
+    )
+
+
 def test_english_finding_explanation_is_natural():
     answer = finding_headline(
         _recent_gap_finding(), "explain this decision-support finding", "en-US"
@@ -93,7 +133,7 @@ def test_english_finding_explanation_is_natural():
 
 
 def test_turkish_finding_explanation_is_natural():
-    answer = finding_headline(_recent_gap_finding(), "bu bulgu neden oluştu", "tr-TR")
+    answer = finding_headline(_recent_gap_finding(), "bu bulguyu açıkla", "tr-TR")
 
     assert "4 önemli veri boşluğu" in answer
     assert "5 OpenWeather kaynağını" in answer
@@ -148,6 +188,54 @@ def test_english_evidence_is_humanized_without_raw_keys():
     assert "recentGapCount" not in answer
 
 
+def test_regression_explain_and_trigger_have_distinct_meaning():
+    finding = _regression_cadence_finding()
+
+    explanation = finding_headline(
+        finding, "Explain this decision-support finding", "en-US"
+    )
+    trigger = finding_headline(finding, "Why did this finding trigger?", "en-US")
+
+    assert "model period is finer than its supporting data" in explanation
+    assert "slower than 1.5 times the model period" in trigger
+    assert "limit is 1.5 days" in trigger
+    assert explanation != trigger
+
+
+def test_source_lag_explain_and_trigger_have_distinct_meaning():
+    finding = _finding()
+
+    explanation = finding_headline(finding, "Explain this finding", "en-US")
+    trigger = finding_headline(finding, "Why did this finding trigger?", "en-US")
+
+    assert "about 566 hours behind" in explanation
+    assert "larger of 48 hours or three observed cadences" in trigger
+    assert "allowed lag was 72 hours" in trigger
+    assert "severity is low" in trigger
+    assert explanation != trigger
+
+
+def test_regression_trigger_is_natural_in_turkish():
+    answer = finding_headline(
+        _regression_cadence_finding(), "Bu bulgu neden oluştu?", "tr-TR"
+    )
+
+    assert "model döneminin 1,5 katından" in answer
+    assert "yaklaşık 31 günde bir" in answer
+    assert "izin verilen sınır 1,5 gündür" in answer
+
+
+def test_regression_entity_follow_up_retains_active_result_context():
+    answer = finding_headline(
+        _regression_cadence_finding(),
+        "Which entity does this finding affect?",
+        "en-US",
+    )
+
+    assert "daily advanced-regression result regression-1" in answer
+    assert "Tesis Toplam Üretim Miktarı" in answer
+
+
 def _message(language: str):
     return type(
         "Message",
@@ -172,7 +260,7 @@ def test_english_to_turkish_switch_updates_same_session_context():
     assert state.language == "tr-TR"
     assert message.context["reneryo_context"]["language"] == "tr-TR"
     assert message.context["session"]["lang"] == "tr-TR"
-    assert "önemli veri boşluğu" in finding_headline(
+    assert "tetiklenir" in finding_headline(
         _recent_gap_finding(), "Bu bulgu neden oluştu?", language
     )
 

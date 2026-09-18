@@ -25,6 +25,19 @@ def finding_headline(finding: MdspFinding, text: str, language: str) -> str:
         return _entity_explanation(finding, language)
     if _has(normalized, "evidence", "kanit", "kanıt"):
         return _evidence_explanation(finding, language)
+    if _has(
+        normalized,
+        "why",
+        "trigger",
+        "condition",
+        "neden",
+        "tetik",
+        "kosul",
+        "koşul",
+        "olustu",
+        "oluştu",
+    ):
+        return _trigger_explanation(finding, language)
     return _finding_explanation(finding, language)
 
 
@@ -218,6 +231,121 @@ def _evidence_explanation(finding: MdspFinding, language: str) -> str:
     )
 
 
+def _trigger_explanation(finding: MdspFinding, language: str) -> str:
+    """Explain the deterministic rule condition separately from its meaning."""
+    evidence = finding.evidence
+    turkish = is_turkish(language)
+    if finding.rule_id == _CONTINUITY_RULE:
+        gaps = _integer(evidence.get("recentGapCount"))
+        hours = _gap_hours(evidence.get("longestGap"))
+        if turkish:
+            return (
+                "Bu kural, son 30 günde bir boşluk hem gözlenen veri sıklığının "
+                "altı katını hem de altı saati aştığında tetiklenir. Bu kaynakta "
+                f"{gaps} boşluk eşiği aştı; en uzunu yaklaşık {hours} saat sürdü."
+            )
+        return (
+            "This rule triggers when a gap in the latest 30 days exceeds both "
+            "six observed cadences and six hours. Here, "
+            f"{gaps} gaps crossed that threshold, and the longest lasted about "
+            f"{hours} hours."
+        )
+    if finding.rule_id == _FRESHNESS_RULE:
+        lag = round(_number(evidence.get("lagHours")))
+        allowed = round(_number(evidence.get("allowedLagHours")))
+        cadence_hours = _number(evidence.get("inferredCadenceSeconds")) / 3600
+        sibling_current = bool(evidence.get("currentSiblingResourceId"))
+        cadence_text = _duration_hours(cadence_hours, turkish=turkish)
+        if turkish:
+            severity = (
+                "Aynı metrik için başka bir kaynak güncel olduğundan önem düzeyi düşüktür."
+                if sibling_current
+                else ""
+            )
+            return (
+                "Kural, kaynak gecikmesi 48 saat ile gözlenen veri sıklığının üç "
+                f"katından büyük olan sınırı aştığında tetiklenir. Gözlenen sıklık "
+                f"yaklaşık {cadence_text}, izin verilen gecikme {allowed} saat ve "
+                f"gerçek gecikme {lag} saatti. {severity}"
+            ).strip()
+        severity = (
+            " Another source for the same metric is current, so the severity is low."
+            if sibling_current
+            else ""
+        )
+        return (
+            "The rule triggers when source lag exceeds the larger of 48 hours "
+            "or three observed cadences. The observed cadence was about "
+            f"{cadence_text}, the allowed lag was {allowed} hours, and the actual "
+            f"lag was {lag} hours.{severity}"
+        )
+    if finding.rule_id == _REGRESSION_CADENCE_RULE:
+        driver = _first_driver(evidence)
+        driver_name = str(driver.get("name") or "the driver")
+        driver_days = _number(driver.get("fastestCadenceSeconds")) / 86400
+        model_days = _number(driver.get("regressionPeriodSeconds")) / 86400
+        limit_days = model_days * 1.5
+        if turkish:
+            return (
+                "Kural, bir sürücünün gözlenen veri sıklığı model döneminin 1,5 "
+                f"katından yavaş olduğunda tetiklenir. {driver_name} yaklaşık "
+                f"{_number_text(driver_days)} günde bir güncellenirken bu model için "
+                f"izin verilen sınır {_number_text(limit_days).replace('.', ',')} gündür."
+            )
+        return (
+            "The rule triggers when an observed driver cadence is slower than "
+            f"1.5 times the model period. {driver_name} updates about every "
+            f"{_number_text(driver_days)} days, while this model's limit is "
+            f"{_number_text(limit_days)} days."
+        )
+    if finding.rule_id == _REGRESSION_FIT_RULE:
+        r_squared = _optional_number(evidence.get("rSquared"))
+        min_r_squared = _number(evidence.get("minimumRSquared"))
+        normalized_rmse = _optional_number(evidence.get("normalizedRmsePct"))
+        max_rmse = _number(evidence.get("maximumNormalizedRmsePct"))
+        conditions: list[str] = []
+        if r_squared is None:
+            conditions.append("R² değeri yok" if turkish else "R-squared is missing")
+        elif r_squared < min_r_squared:
+            conditions.append(
+                f"R² {r_squared:.3f}, {min_r_squared:.2f} alt sınırının altında"
+                if turkish
+                else f"R-squared is {r_squared:.3f}, below {min_r_squared:.2f}"
+            )
+        if normalized_rmse is not None and normalized_rmse > max_rmse:
+            conditions.append(
+                f"normalize hata %{normalized_rmse:.1f}, %{max_rmse:.0f} üst sınırının üzerinde"
+                if turkish
+                else f"normalized error is {normalized_rmse:.1f}%, above {max_rmse:.0f}%"
+            )
+        joined = _join_conditions(conditions, turkish=turkish)
+        if turkish:
+            return (
+                "Bu geçici kural, R² 0,30'un altında olduğunda, R² olmadığında veya "
+                f"normalize hata %25'i aştığında tetiklenir. Bu modelde {joined}."
+            )
+        return (
+            "This provisional rule triggers when R-squared is below 0.30 or "
+            "missing, or normalized error exceeds 25%. For this model, "
+            f"{joined}."
+        )
+    if finding.rule_id == _REGRESSION_PRIMARY_RULE:
+        results = _integer(evidence.get("resultCount"))
+        primary = _integer(evidence.get("primaryCount"))
+        if turkish:
+            return (
+                "Kural, kayıtlı regresyon sonuçları bulunduğu halde hiçbiri "
+                f"birincil olmadığında tetiklenir. Burada {results} sonuç ve "
+                f"{primary} birincil model var."
+            )
+        return (
+            "The rule triggers when saved regression results exist but none is "
+            f"marked primary. Here, there are {results} results and {primary} "
+            "primary models."
+        )
+    return _finding_explanation(finding, language)
+
+
 def _period_explanation(finding: MdspFinding, language: str) -> str:
     turkish = is_turkish(language)
     if finding.rule_id == _CONTINUITY_RULE:
@@ -260,10 +388,46 @@ def _period_explanation(finding: MdspFinding, language: str) -> str:
 
 
 def _entity_explanation(finding: MdspFinding, language: str) -> str:
+    turkish = is_turkish(language)
+    if finding.rule_id == _CONTINUITY_RULE:
+        source = _source_name(finding.evidence.get("source"))
+        affected = finding.evidence.get("affectedMetrics")
+        names = []
+        if isinstance(affected, list):
+            names = [
+                str(item.get("name", "")).strip()
+                for item in affected
+                if isinstance(item, dict) and str(item.get("name", "")).strip()
+            ]
+        metrics = ", ".join(names)
+        if turkish:
+            return (
+                f"Bu bulgu {source} entegrasyon kaynağını ve {len(names)} metriği "
+                f"etkiliyor: {metrics}."
+            )
+        return (
+            f"This finding affects the {source} integration source and "
+            f"{len(names)} metrics: {metrics}."
+        )
+    if finding.rule_id in {_REGRESSION_CADENCE_RULE, _REGRESSION_FIT_RULE}:
+        period = _period_name(finding.evidence.get("period"), turkish=turkish)
+        drivers = _driver_names(finding.evidence)
+        driver_text = ", ".join(drivers) or (
+            "sürücü bilgisi yok" if turkish else "no named driver"
+        )
+        if turkish:
+            return (
+                f"Bu bulgu {finding.entity_id} kimlikli {period} gelişmiş regresyon "
+                f"sonucunu etkiliyor. Sürücü: {driver_text}."
+            )
+        return (
+            f"This finding affects the {period} advanced-regression result "
+            f"{finding.entity_id}. Its driver is {driver_text}."
+        )
     label = (
         finding.metric_name or _source_name(finding.entity_id) or finding.entity_type
     )
-    if is_turkish(language):
+    if turkish:
         return (
             f"Bu bulgu {label} varlığını etkiliyor. Varlık kimliği {finding.entity_id}."
         )
@@ -312,6 +476,17 @@ def _first_driver(evidence: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _driver_names(evidence: dict[str, Any]) -> list[str]:
+    values = evidence.get("drivers") or evidence.get("incompatibleDrivers")
+    if not isinstance(values, list):
+        return []
+    return [
+        str(item.get("name", "")).strip()
+        for item in values
+        if isinstance(item, dict) and str(item.get("name", "")).strip()
+    ]
+
+
 def _integer(value: Any) -> int:
     try:
         return int(float(value))
@@ -324,6 +499,33 @@ def _number(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _optional_number(value: Any) -> float | None:
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _number_text(value: float) -> str:
+    return f"{value:.1f}".rstrip("0").rstrip(".")
+
+
+def _duration_hours(value: float, *, turkish: bool) -> str:
+    if value >= 24:
+        days = value / 24
+        return f"{_number_text(days)} gün" if turkish else f"{_number_text(days)} days"
+    return f"{_number_text(value)} saat" if turkish else f"{_number_text(value)} hours"
+
+
+def _join_conditions(values: list[str], *, turkish: bool) -> str:
+    if not values:
+        return "eşik koşulu sağlandı" if turkish else "a review threshold was met"
+    if len(values) == 1:
+        return values[0]
+    conjunction = " ve " if turkish else " and "
+    return conjunction.join(values)
 
 
 def _gap_hours(value: Any) -> int:

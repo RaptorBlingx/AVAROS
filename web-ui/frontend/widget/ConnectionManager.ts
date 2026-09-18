@@ -1,4 +1,5 @@
 import type { WidgetConnectionState } from "./types";
+import { normalizeWidgetLanguage, responseLanguage } from "./language";
 
 type BusMessage = {
   type: string;
@@ -18,7 +19,7 @@ type EncryptedEnvelope = {
 };
 
 type StateListener = (state: WidgetConnectionState) => void;
-type SpeakListener = (text: string) => void;
+type SpeakListener = (text: string, language: string) => void;
 type EventListener = (message: BusMessage) => void;
 
 const DEFAULT_SESSION_SITE = "default";
@@ -190,7 +191,7 @@ export class ConnectionManager {
   private readonly accessKey: string;
   private readonly accessSecret: string;
   private readonly encryptionKey: string;
-  private readonly language: string;
+  private language: string;
   private readonly sessionToken: string;
   private readonly sessionId = makeSessionId();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -218,7 +219,7 @@ export class ConnectionManager {
     this.accessKey = accessKey;
     this.accessSecret = accessSecret;
     this.encryptionKey = encryptionKey;
-    this.language = language.trim().replace("_", "-").toLowerCase() || "en-us";
+    this.language = normalizeWidgetLanguage(language);
     this.sessionToken = sessionToken.trim();
   }
 
@@ -231,6 +232,10 @@ export class ConnectionManager {
   onSpeak(listener: SpeakListener): () => void {
     this.speakListeners.add(listener);
     return () => this.speakListeners.delete(listener);
+  }
+
+  setLanguage(language: string): void {
+    this.language = normalizeWidgetLanguage(language);
   }
 
   on(eventType: string, listener: EventListener): () => void {
@@ -371,9 +376,10 @@ export class ConnectionManager {
     this.eventListeners.clear();
   }
 
-  async sendUtterance(text: string): Promise<void> {
+  async sendUtterance(text: string, language = this.language): Promise<void> {
     const cleaned = text.trim();
     if (!cleaned) return;
+    this.setLanguage(language);
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       this.connect();
       await this.waitUntilConnected(SEND_CONNECT_TIMEOUT_MS);
@@ -584,9 +590,11 @@ export class ConnectionManager {
     const speakText = extractSpeakText(envelope.payload);
     if (!speakText) return;
 
+    const language = responseLanguage(envelope.payload, this.language);
+    this.setLanguage(language);
     this.speakListeners.forEach((listener) => {
       try {
-        listener(speakText);
+        listener(speakText, language);
       } catch {
         // Listener errors must not break dispatch.
       }

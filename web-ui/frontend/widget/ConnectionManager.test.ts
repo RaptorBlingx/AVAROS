@@ -165,4 +165,85 @@ describe("ConnectionManager", () => {
     await Promise.resolve();
     expect(spoken).toEqual([]);
   });
+
+  it("propagates the per-response locale and uses it for the next utterance", async () => {
+    class MockWebSocket {
+      static readonly CONNECTING = 0;
+      static readonly OPEN = 1;
+      static readonly CLOSED = 3;
+      readyState = MockWebSocket.CONNECTING;
+      sentMessages: string[] = [];
+      onopen: (() => void) | null = null;
+      onmessage: ((event: { data: string }) => void) | null = null;
+      onerror: (() => void) | null = null;
+      onclose: ((event: { code?: number }) => void) | null = null;
+
+      constructor() {
+        MockWebSocket.instances.push(this);
+      }
+
+      send(message: string): void {
+        this.sentMessages.push(message);
+      }
+
+      close(): void {
+        this.readyState = MockWebSocket.CLOSED;
+      }
+
+      simulateOpen(): void {
+        this.readyState = MockWebSocket.OPEN;
+        this.onopen?.();
+      }
+
+      static instances: MockWebSocket[] = [];
+    }
+
+    vi.stubGlobal("crypto", {
+      getRandomValues: (buffer: Uint8Array) => buffer,
+      randomUUID: () => "widget-language-session",
+    });
+    vi.stubGlobal("WebSocket", MockWebSocket);
+
+    const manager = new ConnectionManager(
+      "wss://avaros.example.com/hivemind/",
+      "widget",
+      "access-key",
+      "",
+      "",
+      "en-US",
+    );
+    const spoken: Array<[string, string]> = [];
+    manager.onSpeak((text, language) => spoken.push([text, language]));
+    manager.connect();
+    const socket = MockWebSocket.instances[0];
+    socket.simulateOpen();
+
+    socket.onmessage?.({
+      data: JSON.stringify({
+        msg_type: "bus",
+        payload: {
+          type: "speak",
+          data: {
+            utterance: "Beş kaynakta veri boşluğu bulundu.",
+            meta: {
+              avaros_response: { language: "tr-TR" },
+            },
+          },
+          context: {},
+        },
+      }),
+    });
+    await Promise.resolve();
+
+    expect(spoken).toEqual([
+      ["Beş kaynakta veri boşluğu bulundu.", "tr-TR"],
+    ]);
+
+    await manager.sendUtterance("kanıtı göster");
+    const utterance = socket.sentMessages
+      .map((raw) => JSON.parse(raw))
+      .find((message) => message.payload?.type === "recognizer_loop:utterance");
+    expect(utterance.payload.data.lang).toBe("tr-TR");
+    expect(utterance.payload.context.session.lang).toBe("tr-TR");
+  });
 });
