@@ -148,9 +148,16 @@ def _browser_to_backend(raw: str, session: ReneryoSession) -> str:
     bus = envelope.get("payload") if isinstance(envelope, dict) else None
     if isinstance(bus, dict):
         data = bus.get("data")
-        if isinstance(data, dict) and session.language.lower().startswith("tr"):
+        language = session.language
+        if isinstance(data, dict) and bus.get("type") == "recognizer_loop:utterance":
+            requested_language = str(data.get("lang", "")).strip().lower()
+            if requested_language.startswith("tr"):
+                language = "tr-TR"
+            elif requested_language.startswith("en"):
+                language = "en-US"
+        if isinstance(data, dict) and language.lower().startswith("tr"):
             # The deployed OVOS intent pipeline is trained under en-US. Keep the
-            # signed Turkish locale in context for response localization while
+            # current Turkish locale in context for response localization while
             # routing the bilingual Reneryo vocabulary through that pipeline.
             data["lang"] = "en-US"
         context = bus.setdefault("context", {})
@@ -160,11 +167,11 @@ def _browser_to_backend(raw: str, session: ReneryoSession) -> str:
                 "finding_id": session.finding_id,
                 "entity_id": session.entity_id,
                 "metric_name": session.metric_name,
-                "language": session.language,
+                "language": language,
             }
             nested = context.setdefault("session", {})
             if isinstance(nested, dict):
-                nested["lang"] = session.language
+                nested["lang"] = language
     return _encrypt(json.dumps(envelope, separators=(",", ":")))
 
 

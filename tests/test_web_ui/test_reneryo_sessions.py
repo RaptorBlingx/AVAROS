@@ -96,6 +96,70 @@ def test_proxy_routes_turkish_vocabulary_through_deployed_intent_pipeline(monkey
     assert forwarded["payload"]["context"]["session"]["lang"] == "tr-TR"
 
 
+def test_proxy_uses_current_turkish_utterance_after_english_session(monkeypatch):
+    monkeypatch.delenv("HIVEMIND_CLIENT_CRYPTO_KEY", raising=False)
+    monkeypatch.setenv("AVAROS_WIDGET_SESSION_SECRET", "x" * 32)
+    token, _ = issue_session(
+        {
+            "organization_id": "org-1",
+            "finding_id": "finding-1",
+            "origin": "https://futuregen.reneryo.com",
+            "language": "en-US",
+        }
+    )
+    session = validate_session(token, "https://futuregen.reneryo.com")
+    raw = json.dumps(
+        {
+            "msg_type": "bus",
+            "payload": {
+                "type": "recognizer_loop:utterance",
+                "data": {"utterances": ["bu bulguyu açıkla"], "lang": "tr-TR"},
+                "context": {},
+            },
+        }
+    )
+
+    forwarded = json.loads(_browser_to_backend(raw, session))
+
+    assert forwarded["payload"]["data"]["lang"] == "en-US"
+    assert forwarded["payload"]["context"]["session"]["lang"] == "tr-TR"
+    assert (
+        forwarded["payload"]["context"]["reneryo_context"]["language"] == "tr-TR"
+    )
+
+
+def test_proxy_uses_current_english_utterance_after_turkish_session(monkeypatch):
+    monkeypatch.delenv("HIVEMIND_CLIENT_CRYPTO_KEY", raising=False)
+    monkeypatch.setenv("AVAROS_WIDGET_SESSION_SECRET", "x" * 32)
+    token, _ = issue_session(
+        {
+            "organization_id": "org-1",
+            "finding_id": "finding-1",
+            "origin": "https://futuregen.reneryo.com",
+            "language": "tr-TR",
+        }
+    )
+    session = validate_session(token, "https://futuregen.reneryo.com")
+    raw = json.dumps(
+        {
+            "msg_type": "bus",
+            "payload": {
+                "type": "recognizer_loop:utterance",
+                "data": {"utterances": ["explain this finding"], "lang": "en-US"},
+                "context": {},
+            },
+        }
+    )
+
+    forwarded = json.loads(_browser_to_backend(raw, session))
+
+    assert forwarded["payload"]["data"]["lang"] == "en-US"
+    assert forwarded["payload"]["context"]["session"]["lang"] == "en-US"
+    assert (
+        forwarded["payload"]["context"]["reneryo_context"]["language"] == "en-US"
+    )
+
+
 def test_proxy_preserves_private_plaintext_hivemind_transport(monkeypatch):
     monkeypatch.delenv("HIVEMIND_CLIENT_CRYPTO_KEY", raising=False)
     monkeypatch.setenv("AVAROS_WIDGET_SESSION_SECRET", "x" * 32)
