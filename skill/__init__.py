@@ -83,7 +83,10 @@ from skill.services.conversation_state import DialogueStateStore
 from skill.services.dia_dialogue import try_handle_structured_query
 from skill.services.dia_response import speak_information
 from skill.use_cases.query_dispatcher import QueryDispatcher
-from skill._reneryo_handlers import handle_reneryo_query as _handle_reneryo_query_impl
+from skill._reneryo_handlers import (
+    handle_reneryo_query as _handle_reneryo_query_impl,
+    try_arbitrate_legacy_intent as _try_arbitrate_legacy_intent_impl,
+)
 
 if TYPE_CHECKING:
     from ovos_bus_client.message import Message
@@ -331,6 +334,10 @@ class AVAROSSkill(FallbackSkill):
                         intent_name,
                         exc,
                     )
+            if intent_name and _try_arbitrate_legacy_intent_impl(
+                self, message, intent_name
+            ):
+                return None
             return handler(message)
 
         return _guarded

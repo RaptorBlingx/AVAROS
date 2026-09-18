@@ -266,6 +266,16 @@ class TimePeriod:
         now = datetime.now(tz=timezone.utc)
         start = now - timedelta(days=14)
         return cls(start=start, end=now, display_name="last 2 weeks")
+
+    @classmethod
+    def last_four_weeks(cls) -> TimePeriod:
+        """Create a rolling period for the last 28 days."""
+        now = datetime.now(tz=timezone.utc)
+        return cls(
+            start=now - timedelta(days=28),
+            end=now,
+            display_name="last 4 weeks",
+        )
     
     @classmethod
     def last_month(
@@ -344,6 +354,16 @@ class TimePeriod:
             "past week": cls.last_week,
             "last 2 weeks": cls.last_two_weeks,
             "last two weeks": cls.last_two_weeks,
+            "last 4 weeks": cls.last_four_weeks,
+            "last four weeks": cls.last_four_weeks,
+            "preceding four weeks": cls.last_four_weeks,
+            "previous calendar month": lambda: cls.last_month(
+                now=now, timezone_name=timezone_name
+            ),
+            "previous month": lambda: cls.last_month(
+                now=now, timezone_name=timezone_name
+            ),
+            "previous week": cls.last_week,
             "last month": lambda: cls.last_month(
                 now=now,
                 timezone_name=timezone_name,
@@ -361,6 +381,8 @@ class TimePeriod:
             "son hafta": lambda: cls._with_display_name(cls.last_week(), "son hafta"),
             "son 2 hafta": lambda: cls._with_display_name(cls.last_two_weeks(), "son 2 hafta"),
             "son iki hafta": lambda: cls._with_display_name(cls.last_two_weeks(), "son iki hafta"),
+            "son 4 hafta": lambda: cls._with_display_name(cls.last_four_weeks(), "son dört hafta"),
+            "son dört hafta": lambda: cls._with_display_name(cls.last_four_weeks(), "son dört hafta"),
             "bu ay": lambda: cls._with_display_name(cls.this_month(), "bu ay"),
             "geçen ay": lambda: cls._with_display_name(
                 cls.last_month(now=now, timezone_name=timezone_name), "geçen ay"

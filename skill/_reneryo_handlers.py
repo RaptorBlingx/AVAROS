@@ -6,6 +6,8 @@ import os
 import re
 from dataclasses import replace
 from datetime import datetime
+from functools import cache
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from skill.clients.mdsp import MdspClient
@@ -24,6 +26,7 @@ from skill.services.futuregen_responses import (
     regression_inventory_headline,
 )
 from skill.services.language import is_turkish, normalize_phrase
+from skill.services.period_resolution import extract_period_phrase
 from skill.services.semantic_resolver import SemanticAction, SemanticResolution
 
 if TYPE_CHECKING:
@@ -49,6 +52,7 @@ def handle_reneryo_query(
     *,
     allow_semantic: bool = True,
     clarify_on_ambiguity: bool = True,
+    semantic_resolution: SemanticResolution | None = None,
 ) -> bool:
     """Route deterministic intents first, then use local semantic fallback."""
     utterance = skill._extract_utterance_text(message)
@@ -64,12 +68,12 @@ def handle_reneryo_query(
     _update_message_language(message, language)
 
     action = _deterministic_action(text, state)
-    resolution: SemanticResolution | None = None
+    resolution: SemanticResolution | None = semantic_resolution
     if action is None:
         if not allow_semantic:
             return False
         resolver = getattr(skill, "_semantic_resolver", None)
-        if resolver is not None:
+        if resolution is None and resolver is not None:
             resolution = resolver.resolve(
                 utterance,
                 state=state,
@@ -210,13 +214,22 @@ def handle_reneryo_query(
             return True
         rows = skill.dispatcher._run_async(service.metrics())
         selected_metric = None
-        if action is SemanticAction.METRIC_DETAIL and state.metric_name:
+        if action is SemanticAction.METRIC_DETAIL:
             expected = normalize_phrase(state.metric_name)
             selected_metric = next(
-                (row for row in rows if normalize_phrase(row.name) == expected), None
+                (
+                    row
+                    for row in rows
+                    if (expected and normalize_phrase(row.name) == expected)
+                    or (
+                        normalize_phrase(row.name)
+                        and normalize_phrase(row.name) in text
+                    )
+                ),
+                None,
             )
         if action is SemanticAction.METRIC_DETAIL and selected_metric is None:
-            _semantic_clarification(skill, language)
+            _metric_clarification(skill, rows, language)
             _remember(skill, message, state, operation="metric_clarification")
             return True
         response_rows = [selected_metric] if selected_metric is not None else rows
@@ -255,6 +268,113 @@ def handle_reneryo_query(
 
     handled = skill._safe_dispatch("handle_reneryo_query", _execute)
     return bool(handled)
+
+
+_ARBITRATABLE_LEGACY_INTENTS = frozenset(
+    {"help", "help.capabilities.list", "list.assets"}
+)
+_SEMANTIC_OVERRIDE_MARGIN = 0.008
+
+
+def try_arbitrate_legacy_intent(
+    skill: AVAROSSkill,
+    message: Message,
+    intent_name: str,
+) -> bool:
+    """Let constrained Reneryo semantics arbitrate broad legacy matches.
+
+    Exact registered phrases stay on their deterministic handler. Arbitration
+    is limited to signed Reneryo sessions and the semantic action allow-list;
+    execution still goes through the existing scoped Reneryo/MDSP clients.
+    """
+    if getattr(skill, "_loaded_profile", "") != "reneryo":
+        return False
+    if not (
+        intent_name in _ARBITRATABLE_LEGACY_INTENTS
+        or intent_name.startswith("kpi.")
+    ):
+        return False
+    context = getattr(message, "context", {}) or {}
+    signed = context.get("reneryo_context")
+    if not isinstance(signed, dict) or not signed.get("organization_id"):
+        return False
+
+    utterance = skill._extract_utterance_text(message)
+    text = normalize_phrase(utterance)
+    if not text or _matches_registered_utterance(intent_name, text):
+        return False
+
+    state = _context_state(skill, message)
+    language = _conversation_language(
+        utterance, state, message, skill._response_language
+    )
+    state = replace(state, language=language)
+    if _deterministic_action(text, state) is not None:
+        return handle_reneryo_query(skill, message, allow_semantic=False)
+
+    resolver = getattr(skill, "_semantic_resolver", None)
+    if resolver is None:
+        return False
+    resolution = resolver.resolve(utterance, state=state, language=language)
+    if not resolution.accepted:
+        _update_message_language(message, language)
+        _semantic_clarification(skill, language)
+        _remember(skill, message, state, operation="clarification")
+        return True
+
+    legacy_confidence = _legacy_intent_confidence(message)
+    required_margin = (
+        _SEMANTIC_OVERRIDE_MARGIN if legacy_confidence >= 0.85 else 0.004
+    )
+    if resolution.margin < required_margin:
+        _update_message_language(message, language)
+        _semantic_clarification(skill, language)
+        _remember(skill, message, state, operation="clarification")
+        return True
+    return handle_reneryo_query(
+        skill,
+        message,
+        semantic_resolution=resolution,
+    )
+
+
+def _legacy_intent_confidence(message) -> float:
+    data = getattr(message, "data", {}) or {}
+    intent = data.get("__intent__")
+    raw = intent.get("confidence", 0.0) if isinstance(intent, dict) else 0.0
+    try:
+        return min(max(float(raw), 0.0), 1.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+@cache
+def _registered_utterance_patterns(intent_name: str) -> tuple[re.Pattern[str], ...]:
+    patterns: list[re.Pattern[str]] = []
+    locale_root = Path(__file__).resolve().parent / "locale"
+    for locale in ("en-us", "tr-tr"):
+        path = locale_root / locale / f"{intent_name}.intent"
+        if not path.is_file():
+            continue
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = re.split(r"(\{[^}]+\})", line)
+            expression = "".join(
+                r".+?" if part.startswith("{") else re.escape(normalize_phrase(part))
+                for part in parts
+                if part
+            )
+            patterns.append(re.compile(rf"^{expression}$"))
+    return tuple(patterns)
+
+
+def _matches_registered_utterance(intent_name: str, normalized: str) -> bool:
+    return any(
+        pattern.fullmatch(normalized)
+        for pattern in _registered_utterance_patterns(intent_name)
+    )
 
 
 def _finding_response(skill, message, service, state, text, language, action) -> bool:
@@ -448,6 +568,23 @@ def _semantic_clarification(skill, language: str) -> None:
     )
 
 
+def _metric_clarification(skill, rows, language: str) -> None:
+    names = [row.name for row in rows[:3]]
+    if is_turkish(language):
+        headline = "Hangi Reneryo metriğini kastediyorsunuz? Metrik adını belirtin."
+        suggestions = [f"{name} metriğini açıkla" for name in names]
+    else:
+        headline = "Which Reneryo metric do you mean? Please name the metric."
+        suggestions = [f"Explain the {name} metric" for name in names]
+    speak_information(
+        skill,
+        headline,
+        language=language,
+        response_type="clarification",
+        suggestions=suggestions,
+    )
+
+
 def _select_regression(rows, text: str, resolution: SemanticResolution | None):
     period = resolution.slots.get("regression_period", "") if resolution else ""
     period = period or _regression_period_hint(text)
@@ -541,23 +678,11 @@ def _is_finding_list(text: str) -> bool:
     )
 
 
-_PERIOD_PATTERN = re.compile(
-    r"\b(?:"
-    r"past 30 days|last 30 days|last two weeks|last 2 weeks|"
-    r"last month|past month|this month|last week|past week|this week|"
-    r"right now|today|yesterday|latest|current|"
-    r"son otuz gün|son 30 gün|son iki hafta|son 2 hafta|"
-    r"geçen hafta|son hafta|bu hafta|geçen ay|son ay|bu ay|"
-    r"şu anda|en güncel|bugün|dün"
-    r")\b"
-)
-
-
 def _query_period(skill, utterance: str, current, semantic_period: str = ""):
     """Extract a supported period phrase without sending the full query parser input."""
-    match = _PERIOD_PATTERN.search(normalize_phrase(utterance))
-    if match:
-        parsed = skill._parse_period(match.group(0))
+    phrase = extract_period_phrase(utterance)
+    if phrase:
+        parsed = skill._parse_period(phrase)
         if parsed:
             return parsed
     if semantic_period:

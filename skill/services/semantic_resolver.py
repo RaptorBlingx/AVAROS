@@ -19,6 +19,7 @@ from typing import Any, Protocol
 
 from skill.services.conversation_state import DialogueState
 from skill.services.language import normalize_phrase
+from skill.services.period_resolution import extract_period_phrase
 
 LOGGER = logging.getLogger(__name__)
 
@@ -166,39 +167,6 @@ _CONFUSABLE_ACTION_PAIRS = {
     frozenset({SemanticAction.METRICS_LIST, SemanticAction.METERS_LIST}): 0.012,
 }
 
-_PERIOD_DESCRIPTIONS: dict[str, tuple[str, str]] = {
-    "today": ("today, the current calendar day", "bugün, içinde bulunulan gün"),
-    "yesterday": ("yesterday, the previous calendar day", "dün, bir önceki gün"),
-    "this week": (
-        "this week, the current calendar week",
-        "bu hafta, içinde bulunulan hafta",
-    ),
-    "last week": (
-        "last week, the previous calendar week",
-        "geçen hafta, bir önceki hafta",
-    ),
-    "last 2 weeks": (
-        "the previous two weeks, the past fortnight, or past fourteen days",
-        "son iki hafta veya geçmiş on dört gün",
-    ),
-    "this month": (
-        "this month, the current calendar month",
-        "bu ay, içinde bulunulan ay",
-    ),
-    "last month": (
-        "last month, the previous calendar month",
-        "geçen ay, bir önceki ay",
-    ),
-    "last 30 days": ("the most recent thirty days", "son otuz gün"),
-}
-
-_NO_PERIOD_DESCRIPTIONS = (
-    "A trend request without any time period.",
-    "A metric request with no requested dates.",
-    "Herhangi bir zaman dönemi olmayan eğilim isteği.",
-    "İstenen tarihleri olmayan bir metrik isteği.",
-)
-
 _FINDING_ACTIONS = frozenset(
     {
         SemanticAction.FINDING_EXPLAIN,
@@ -275,10 +243,6 @@ class SemanticResolver:
             max_workers=1, thread_name_prefix="semantic-router"
         )
         self._action_vectors = self._embed_catalog(_ACTION_DESCRIPTIONS)
-        self._period_vectors = self._embed_catalog(_PERIOD_DESCRIPTIONS)
-        self._no_period_vectors = self._encoder.embed(
-            [f"passage: {description}" for description in _NO_PERIOD_DESCRIPTIONS]
-        )
         self._out_of_scope_vectors = self._encoder.embed(
             [f"passage: {description}" for description in _OUT_OF_SCOPE_DESCRIPTIONS]
         )
@@ -370,7 +334,7 @@ class SemanticResolver:
         ambiguous = confidence < self._min_confidence or margin < required_margin
         slots: dict[str, str] = {}
         if action is SemanticAction.TREND_SHOW:
-            period = self._semantic_period(vector)
+            period = extract_period_phrase(utterance)
             if period:
                 slots["period"] = period
             if state.metric_name:
@@ -395,31 +359,10 @@ class SemanticResolver:
         actions = set(_ACTION_DESCRIPTIONS)
         if not state.active_finding_id:
             actions.difference_update(_FINDING_ACTIONS)
-        if not state.metric_name:
-            actions.discard(SemanticAction.METRIC_DETAIL)
         # With a selected finding, all canonical domains remain available so a
         # natural semantic switch (for example "the related indicator") can
         # move into a trend without requiring a literal domain keyword.
         return tuple(sorted(actions, key=lambda action: action.value))
-
-    def _semantic_period(self, utterance_vector: list[float]) -> str:
-        ranked = sorted(
-            (
-                (period, max(_dot(utterance_vector, anchor) for anchor in anchors))
-                for period, anchors in self._period_vectors.items()
-            ),
-            key=lambda item: item[1],
-            reverse=True,
-        )
-        if not ranked:
-            return ""
-        confidence = ranked[0][1]
-        runner_up = ranked[1][1] if len(ranked) > 1 else 0.0
-        no_period = max(
-            _dot(utterance_vector, anchor) for anchor in self._no_period_vectors
-        )
-        margin = confidence - max(runner_up, no_period)
-        return ranked[0][0] if confidence >= 0.78 and margin >= 0.015 else ""
 
     def _embed_catalog(
         self, catalog: dict[Any, tuple[str, ...]]

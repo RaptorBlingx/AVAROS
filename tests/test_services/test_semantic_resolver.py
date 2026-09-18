@@ -54,6 +54,7 @@ def test_finding_actions_are_not_available_without_finding_context():
     assert SemanticAction.FINDING_EXPLAIN not in candidates
     assert SemanticAction.FINDING_PERIOD not in candidates
     assert SemanticAction.FINDINGS_LIST in candidates
+    assert SemanticAction.METRIC_DETAIL in candidates
 
 
 def test_runtime_inference_failure_returns_ambiguity_instead_of_raising():
@@ -134,6 +135,11 @@ _FINDING_STATE = DialogueState(
             SemanticAction.FINDING_EXPLAIN,
         ),
         (
+            "Help me understand the selected operational issue.",
+            "en-US",
+            SemanticAction.FINDING_EXPLAIN,
+        ),
+        (
             "Seçili uyarının ne anlama geldiğini söyler misin?",
             "tr-TR",
             SemanticAction.FINDING_EXPLAIN,
@@ -198,7 +204,17 @@ def test_contextual_finding_paraphrases(local_resolver, utterance, language, exp
             SemanticAction.METRICS_LIST,
         ),
         ("Show the energy measuring devices.", "en-US", SemanticAction.METERS_LIST),
+        (
+            "Which monitoring instruments are available for energy use?",
+            "en-US",
+            SemanticAction.METERS_LIST,
+        ),
         ("Elektriği ölçen cihazları listele.", "tr-TR", SemanticAction.METERS_LIST),
+        (
+            "Enerji kullanımını izleyen donanımlar hangileri?",
+            "tr-TR",
+            SemanticAction.METERS_LIST,
+        ),
         (
             "What statistical models have been saved?",
             "en-US",
