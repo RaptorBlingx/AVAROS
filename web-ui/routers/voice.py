@@ -24,6 +24,8 @@ from config import (
     PIPER_MODEL_PATH,
     PIPER_NOISE_SCALE,
     PIPER_NOISE_W_SCALE,
+    PIPER_TR_CONFIG_PATH,
+    PIPER_TR_MODEL_PATH,
     SERVER_TTS_ENABLED,
     SERVER_TTS_ENGINE,
     SERVER_TTS_MAX_CHARS,
@@ -62,8 +64,7 @@ _PIPER_OUTPUT_GAIN = 0.65
 _PIPER_SENTENCE_SILENCE_SECONDS = 0.15
 _PIPER_VOICE_LOCK = threading.Lock()
 _PIPER_SYNTH_LOCK = threading.Lock()
-_PIPER_VOICE: Any | None = None
-_PIPER_VOICE_KEY: tuple[str, str | None] | None = None
+_PIPER_VOICES: dict[tuple[str, str | None], Any] = {}
 
 
 class SpeechRequest(BaseModel):
@@ -193,43 +194,52 @@ def _synthesize_wav_espeak(payload: SpeechRequest) -> bytes:
         path.unlink(missing_ok=True)
 
 
-def _piper_engine_path() -> str | None:
+def _is_turkish(language: str) -> bool:
+    """Return whether a BCP-47 language tag selects Turkish speech."""
+    return language.strip().lower().startswith("tr")
+
+
+def _piper_paths_for_language(language: str) -> tuple[Path, Path]:
+    """Return the configured Piper model and config for a language."""
+    if _is_turkish(language):
+        return Path(PIPER_TR_MODEL_PATH), Path(PIPER_TR_CONFIG_PATH)
+    return Path(PIPER_MODEL_PATH), Path(PIPER_CONFIG_PATH)
+
+
+def _piper_engine_path(language: str) -> str | None:
     """Return the Piper binary path when the voice model is available."""
     engine = shutil.which("piper")
-    model_path = Path(PIPER_MODEL_PATH)
+    model_path, _ = _piper_paths_for_language(language)
     if not engine or not model_path.exists():
         return None
     return engine
 
 
-def _piper_model_paths() -> tuple[Path, Path | None]:
+def _piper_model_paths(language: str) -> tuple[Path, Path | None]:
     """Return configured Piper model/config paths when the model exists."""
-    model_path = Path(PIPER_MODEL_PATH)
+    model_path, config_path = _piper_paths_for_language(language)
     if not model_path.exists():
         raise HTTPException(status_code=503, detail="Piper TTS engine unavailable")
-    config_path = Path(PIPER_CONFIG_PATH)
     return model_path, config_path if config_path.exists() else None
 
 
-def _load_piper_voice() -> Any:
+def _load_piper_voice(language: str) -> Any:
     """Load and cache the Piper voice model in-process."""
-    global _PIPER_VOICE, _PIPER_VOICE_KEY
-
-    model_path, config_path = _piper_model_paths()
+    model_path, config_path = _piper_model_paths(language)
     key = (str(model_path), str(config_path) if config_path else None)
     with _PIPER_VOICE_LOCK:
-        if _PIPER_VOICE is not None and _PIPER_VOICE_KEY == key:
-            return _PIPER_VOICE
+        if key in _PIPER_VOICES:
+            return _PIPER_VOICES[key]
 
         from piper import PiperVoice
 
         logger.info("Loading Piper voice model once: %s", model_path)
-        _PIPER_VOICE = PiperVoice.load(
+        voice = PiperVoice.load(
             model_path,
             config_path=config_path,
         )
-        _PIPER_VOICE_KEY = key
-        return _PIPER_VOICE
+        _PIPER_VOICES[key] = voice
+        return voice
 
 
 def preload_server_tts() -> None:
@@ -238,10 +248,11 @@ def preload_server_tts() -> None:
         return
     if SERVER_TTS_ENGINE not in {"", "auto", "piper"}:
         return
-    try:
-        _load_piper_voice()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Piper TTS preload skipped: %s", exc)
+    for language in ("en-US", "tr-TR"):
+        try:
+            _load_piper_voice(language)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Piper TTS preload skipped for %s: %s", language, exc)
 
 
 def _piper_synthesis_config(payload: SpeechRequest) -> Any:
@@ -287,7 +298,7 @@ def _wav_from_piper_chunks(chunks: list[Any]) -> bytes:
 
 def _synthesize_wav_piper_in_process(payload: SpeechRequest) -> bytes:
     """Generate WAV bytes with a cached in-process Piper voice."""
-    voice = _load_piper_voice()
+    voice = _load_piper_voice(payload.language)
     syn_config = _piper_synthesis_config(payload)
     with _PIPER_SYNTH_LOCK:
         chunks = list(voice.synthesize(payload.text, syn_config=syn_config))
@@ -296,15 +307,15 @@ def _synthesize_wav_piper_in_process(payload: SpeechRequest) -> bytes:
 
 def _synthesize_wav_piper_cli(payload: SpeechRequest) -> bytes:
     """Generate WAV bytes by spawning Piper CLI as a compatibility fallback."""
-    engine = _piper_engine_path()
+    engine = _piper_engine_path(payload.language)
     if not engine:
         raise HTTPException(status_code=503, detail="Piper TTS engine unavailable")
 
     fd, wav_path = tempfile.mkstemp(prefix="avaros-tts-", suffix=".wav")
     os.close(fd)
     path = Path(wav_path)
-    model_path = Path(PIPER_MODEL_PATH)
-    config_path = Path(PIPER_CONFIG_PATH)
+    model_path, configured_config_path = _piper_paths_for_language(payload.language)
+    config_path = configured_config_path
     length_scale = max(0.5, min(2.0, PIPER_LENGTH_SCALE / payload.rate))
     # Keep the generated waveform below Piper's clipping edge; the browser
     # still applies the user's playback volume to the resulting page media.
@@ -393,9 +404,15 @@ def _synthesize_wav(payload: SpeechRequest) -> bytes:
         raise HTTPException(status_code=503, detail="Server TTS is disabled")
 
     engine = SERVER_TTS_ENGINE or "auto"
-    # The bundled Piper model is English-only. Never synthesize Turkish text
-    # with that voice; espeak-ng ships a native Turkish voice instead.
-    if payload.language.strip().lower().startswith("tr"):
+    if _is_turkish(payload.language):
+        if engine in {"auto", "piper"}:
+            try:
+                return _synthesize_wav_piper(payload)
+            except HTTPException as exc:
+                logger.warning(
+                    "Turkish Piper unavailable; falling back to espeak-ng: %s",
+                    exc.detail,
+                )
         return _synthesize_wav_espeak(payload)
     if engine in {"auto", "piper"}:
         try:

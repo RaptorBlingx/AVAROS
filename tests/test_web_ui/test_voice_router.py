@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 import wave
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 # Ensure web-ui is importable
@@ -444,7 +445,35 @@ class TestVoiceTTS:
         assert response.content.startswith(b"RIFF")
         assert commands[0][0] == "/usr/bin/piper"
 
-    def test_turkish_tts_uses_turkish_espeak_voice(
+    def test_turkish_tts_prefers_turkish_piper_model(
+        self, client: TestClient, monkeypatch, tmp_path: Path
+    ) -> None:
+        model_path = tmp_path / "tr_TR-voice.onnx"
+        config_path = tmp_path / "tr_TR-voice.onnx.json"
+        model_path.write_bytes(b"model")
+        config_path.write_text("{}", encoding="utf-8")
+        seen_languages: list[str] = []
+
+        monkeypatch.setattr(voice_router, "SERVER_TTS_ENGINE", "auto")
+        monkeypatch.setattr(voice_router, "PIPER_TR_MODEL_PATH", str(model_path))
+        monkeypatch.setattr(voice_router, "PIPER_TR_CONFIG_PATH", str(config_path))
+
+        def fake_piper(payload):
+            seen_languages.append(payload.language)
+            return b"RIFF----WAVEfmt "
+
+        monkeypatch.setattr(voice_router, "_synthesize_wav_piper", fake_piper)
+
+        response = client.post(
+            "/api/v1/voice/tts",
+            json={"text": "Merhaba", "language": "tr-TR"},
+        )
+
+        assert response.status_code == 200
+        assert seen_languages == ["tr-TR"]
+        assert response.content.startswith(b"RIFF")
+
+    def test_turkish_tts_falls_back_to_turkish_espeak_voice(
         self, client: TestClient, monkeypatch
     ) -> None:
         commands: list[list[str]] = []
@@ -455,6 +484,13 @@ class TestVoiceTTS:
             wav_path.write_bytes(b"RIFF----WAVEfmt ")
 
         monkeypatch.setattr(voice_router, "SERVER_TTS_ENGINE", "auto")
+        monkeypatch.setattr(
+            voice_router,
+            "_synthesize_wav_piper",
+            lambda _payload: (_ for _ in ()).throw(
+                HTTPException(status_code=503, detail="missing Turkish model")
+            ),
+        )
         monkeypatch.setattr(
             voice_router.shutil,
             "which",

@@ -61,6 +61,14 @@ PIPER_CONFIG_PATH = os.environ.get(
     "AVAROS_PIPER_CONFIG_PATH",
     "/opt/avaros/tts/piper/en_US-lessac-medium.onnx.json",
 )
+PIPER_TR_MODEL_PATH = os.environ.get(
+    "AVAROS_PIPER_TR_MODEL_PATH",
+    "/opt/avaros/tts/piper/tr_TR-dfki-medium.onnx",
+)
+PIPER_TR_CONFIG_PATH = os.environ.get(
+    "AVAROS_PIPER_TR_CONFIG_PATH",
+    "/opt/avaros/tts/piper/tr_TR-dfki-medium.onnx.json",
+)
 PIPER_LENGTH_SCALE = float(os.environ.get("AVAROS_PIPER_LENGTH_SCALE", "1.0"))
 PIPER_NOISE_SCALE = float(os.environ.get("AVAROS_PIPER_NOISE_SCALE", "0.667"))
 PIPER_NOISE_W_SCALE = float(os.environ.get("AVAROS_PIPER_NOISE_W_SCALE", "0.8"))
