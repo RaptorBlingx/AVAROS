@@ -83,24 +83,13 @@ call.
 
 ## Configuration catalogue versus runtime catalogue
 
-`skill/services/settings.py::KNOWN_INTENTS` contains 28 configurable intent
-identifiers. `skill/_intent_maps.py` registers 36 runtime intent files. The
-following runtime intents are not present in `KNOWN_INTENTS` at the verified
-commit:
-
-- `greeting`
-- `help`
-- `compare.metric`
-- `trend.metric`
-- `drift.production.check`
-- `forecast.metric`
-- `whatif.scenario`
-- `list.assets`
-
-Consequently, `GET /api/v1/config/intents` is a 28-item configuration catalogue,
-not a complete inventory of runtime OVOS intent files. `GET /api/v1/status`
-counts `.intent` files from the locale directory and therefore reports the
-runtime file count independently.
+`skill/services/settings.py::KNOWN_INTENTS` and the English/Turkish runtime
+intent files describe the same capability set. Every registered intent has a
+category, a metric-requirements entry (empty where the capability resolves its
+own Reneryo data), and a profile-scoped activation state. `GET
+/api/v1/config/intents` is therefore the configuration and discovery catalogue
+for all runtime OVOS intent files. `GET /api/v1/status` independently counts
+the locale files as a runtime health signal.
 
 ## Query operations
 
