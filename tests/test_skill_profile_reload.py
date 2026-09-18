@@ -1426,6 +1426,20 @@ class TestFallbackEligibility:
 
         assert skill.can_answer(msg) is True
 
+    def test_signed_hivemind_widget_ping_is_claimed_without_utterance_data(self):
+        """The later fallback request supplies the utterance after this ping."""
+        skill = _make_skill()
+        msg = Mock()
+        msg.data = {}
+        msg.context = {
+            "source": "hive",
+            "platform": "AVAROS-Widget-v1",
+            "reneryo_widget_session_validated": True,
+            "reneryo_context": {"organization_id": "futuregen"},
+        }
+
+        assert skill.can_answer(msg) is True
+
     def test_unvalidated_embedded_widget_does_not_claim_unknown_utterance(self):
         skill = _make_skill()
         msg = Mock()

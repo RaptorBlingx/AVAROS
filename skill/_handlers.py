@@ -218,6 +218,13 @@ def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
 
 def can_answer(skill: "AVAROSSkill", message: Message) -> bool:
     """Tell OVOS fallback service when this skill can answer utterance."""
+    # HiveMind's fallback ping carries the signed widget context but may not
+    # include the utterance itself.  The following fallback request does.
+    # Claim the authenticated widget conversation before requiring text so the
+    # local semantic resolver can handle that request.
+    if is_browser_message(message):
+        return True
+
     data = getattr(message, "data", {}) or {}
     utterances = data.get("utterances")
     if isinstance(utterances, list) and utterances:
@@ -227,9 +234,6 @@ def can_answer(skill: "AVAROSSkill", message: Message) -> bool:
 
     if not text.strip():
         return False
-
-    if is_browser_message(message):
-        return True
 
     return (
         skill._resolve_metric_from_utterance(text) is not None
