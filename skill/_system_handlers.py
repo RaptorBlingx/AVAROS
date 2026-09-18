@@ -40,6 +40,8 @@ def handle_greeting(skill: "AVAROSSkill", message: Message) -> None:
 
 def handle_help(skill: "AVAROSSkill", message: Message) -> None:
     """Handle generic help requests."""
+    if _arbitrate_broad_reneryo_intent(skill, message, "help"):
+        return
     handle_help_capabilities_list(skill, message)
 
 
@@ -164,6 +166,8 @@ def handle_status_profile_show(skill: "AVAROSSkill", message: Message) -> None:
 
 def handle_help_capabilities_list(skill: "AVAROSSkill", message: Message) -> None:
     """Handle capability help using mapped metrics and active profile intents."""
+    if _arbitrate_broad_reneryo_intent(skill, message, "help.capabilities.list"):
+        return
 
     def _execute() -> None:
         from skill.services.capability_manifest import build_capability_manifest
@@ -263,6 +267,8 @@ def _intent_is_active(skill: "AVAROSSkill", intent_name: str) -> bool:
 
 def handle_list_assets(skill: "AVAROSSkill", message: Message) -> None:
     """Handle voice request to list configured assets."""
+    if _arbitrate_broad_reneryo_intent(skill, message, "list.assets"):
+        return
     # Broad analytics wording can overlap Padatious' "all assets" list
     # patterns. Give the deterministic operation parser first refusal.
     from skill.services.dia_dialogue import try_handle_structured_query
@@ -303,3 +309,15 @@ def handle_list_assets(skill: "AVAROSSkill", message: Message) -> None:
         )
 
     skill._safe_dispatch("handle_list_assets", _execute)
+
+
+def _arbitrate_broad_reneryo_intent(skill: "AVAROSSkill", message: Message, intent_name: str) -> bool:
+    """Use the shared semantic arbiter even when a legacy handler is direct.
+
+    Padatious can invoke a registered handler without retaining the wrapper
+    used at registration time. This keeps that legacy path subject to the
+    same signed-context arbitration as the normal guarded path.
+    """
+    from skill._reneryo_handlers import try_arbitrate_legacy_intent
+
+    return try_arbitrate_legacy_intent(skill, message, intent_name)

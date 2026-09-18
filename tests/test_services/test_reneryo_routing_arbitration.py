@@ -45,12 +45,13 @@ def _skill(resolution):
     )
 
 
-def _resolution(action, *, margin=0.03):
+def _resolution(action, *, margin=0.03, language="en-US", ambiguous=False):
     return SemanticResolution(
         action=action,
-        language="en-US",
+        language=language,
         confidence=0.88,
         margin=margin,
+        ambiguous=ambiguous,
     )
 
 
@@ -99,6 +100,75 @@ def test_signed_broad_help_match_can_route_to_contextual_finding(monkeypatch):
     assert handled is True
     delegated.assert_called_once()
     assert delegated.call_args.kwargs["semantic_resolution"].action is SemanticAction.FINDING_EXPLAIN
+
+
+@pytest.mark.parametrize(
+    ("utterance", "language"),
+    [
+        ("Help me understand this selected issue.", "en-US"),
+        ("Bu seçili uyarıyı anlamama yardım et.", "tr-TR"),
+    ],
+)
+def test_active_finding_arbitrates_broad_help_to_explanation(
+    monkeypatch, utterance, language
+):
+    skill = _skill(_resolution(SemanticAction.FINDING_EXPLAIN, language=language))
+    skill._dialogue_state_store.put(
+        "session-1", handlers.DialogueState(active_finding_id="finding-1"),
+    )
+    delegated = Mock(return_value=True)
+    monkeypatch.setattr(handlers, "handle_reneryo_query", delegated)
+
+    handled = handlers.try_arbitrate_legacy_intent(skill, _Message(utterance), "help")
+
+    assert handled is True
+    assert delegated.call_args.kwargs["semantic_resolution"].action is SemanticAction.FINDING_EXPLAIN
+
+
+def test_active_metric_arbitrates_broad_help_to_metric_detail(monkeypatch):
+    skill = _skill(_resolution(SemanticAction.METRIC_DETAIL))
+    skill._dialogue_state_store.put(
+        "session-1", handlers.DialogueState(metric_name="Cooling degree days"),
+    )
+    delegated = Mock(return_value=True)
+    monkeypatch.setattr(handlers, "handle_reneryo_query", delegated)
+
+    handled = handlers.try_arbitrate_legacy_intent(
+        skill, _Message("Tell me about this indicator."), "help.capabilities.list"
+    )
+
+    assert handled is True
+    assert delegated.call_args.kwargs["semantic_resolution"].action is SemanticAction.METRIC_DETAIL
+
+
+def test_explicit_help_without_reneryo_context_keeps_capabilities_fast_path(monkeypatch):
+    skill = _skill(_resolution(SemanticAction.FINDINGS_LIST))
+    delegated = Mock(return_value=True)
+    monkeypatch.setattr(handlers, "handle_reneryo_query", delegated)
+
+    handled = handlers.try_arbitrate_legacy_intent(
+        skill, _Message("What can you do?"), "help"
+    )
+
+    assert handled is False
+    skill._semantic_resolver.resolve.assert_not_called()
+    delegated.assert_not_called()
+
+
+def test_ambiguous_contextual_help_clarifies_instead_of_using_capabilities(monkeypatch):
+    skill = _skill(_resolution(None, ambiguous=True, language="tr-TR"))
+    skill._dialogue_state_store.put(
+        "session-1", handlers.DialogueState(active_finding_id="finding-1"),
+    )
+    message = _Message("Peki bununla ilgili ne var?")
+    message.context["reneryo_context"]["language"] = "tr-TR"
+    clarification = Mock()
+    monkeypatch.setattr(handlers, "_semantic_clarification", clarification)
+
+    handled = handlers.try_arbitrate_legacy_intent(skill, message, "help")
+
+    assert handled is True
+    clarification.assert_called_once_with(skill, "tr-TR")
 
 
 def test_broad_asset_match_can_route_to_reneryo_meter_inventory(monkeypatch):
