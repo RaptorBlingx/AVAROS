@@ -5,6 +5,7 @@ from unittest.mock import Mock
 import pytest
 
 import skill._reneryo_handlers as handlers
+import skill.services.dia_dialogue as dialogue
 from skill.services.conversation_state import DialogueStateStore
 from skill.services.dia_dialogue import is_browser_message
 from skill.services.semantic_resolver import SemanticAction, SemanticResolution
@@ -42,6 +43,8 @@ def _skill(resolution):
         _dialogue_state_store=DialogueStateStore(),
         _semantic_resolver=resolver,
         _extract_utterance_text=lambda message: message.data["utterance"],
+        _get_asset_registry=list,
+        settings_service=None,
     )
 
 
@@ -302,3 +305,45 @@ def test_legacy_web_ui_eligibility_is_unchanged():
     message.context["source"] = "avaros-web-ui"
 
     assert is_browser_message(message) is True
+
+
+@pytest.mark.parametrize(
+    "utterance",
+    [
+        "Help me understand this selected issue.",
+        "Bu seçili bulguyu anlamama yardım et.",
+    ],
+)
+def test_structured_capabilities_path_arbitrates_signed_finding_context(
+    monkeypatch, utterance
+):
+    """Exercise the live parser -> CAPABILITIES -> arbitration dispatch path."""
+    skill = _skill(_resolution(SemanticAction.FINDING_EXPLAIN))
+    message = _Message(utterance)
+    message.context["reneryo_context"]["finding_id"] = "finding-1"
+    delegated = Mock(return_value=True)
+    capabilities = Mock()
+    monkeypatch.setattr(handlers, "handle_reneryo_query", delegated)
+    monkeypatch.setattr(dialogue, "_handle_capabilities", capabilities)
+
+    handled = dialogue.try_handle_structured_query(skill, message)
+
+    assert handled is True
+    delegated.assert_called_once_with(skill, message)
+    capabilities.assert_not_called()
+
+
+def test_structured_explicit_capabilities_keeps_capabilities_with_context(monkeypatch):
+    skill = _skill(_resolution(SemanticAction.FINDING_EXPLAIN))
+    message = _Message("What can you do?")
+    message.context["reneryo_context"]["finding_id"] = "finding-1"
+    delegated = Mock(return_value=True)
+    capabilities = Mock()
+    monkeypatch.setattr(handlers, "handle_reneryo_query", delegated)
+    monkeypatch.setattr(dialogue, "_handle_capabilities", capabilities)
+
+    handled = dialogue.try_handle_structured_query(skill, message)
+
+    assert handled is True
+    delegated.assert_not_called()
+    capabilities.assert_called_once_with(skill)

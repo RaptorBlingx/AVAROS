@@ -16,6 +16,7 @@ from skill.services.dia_response import (
     speak_information,
     speak_with_evidence,
 )
+from skill.services.language import normalize_phrase
 from skill.services.metric_knowledge import get_metric_knowledge
 
 _HEADLINE_METRICS = (
