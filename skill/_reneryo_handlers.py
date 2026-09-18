@@ -180,10 +180,11 @@ def handle_reneryo_query(
                 "decreasing": "azalıyor",
                 "stable": "sabit",
             }.get(trend.direction, trend.direction)
+            period_label = _localized_period_label(trend.period_label, language)
             if is_turkish(language):
-                headline = f"{trend.metric.name}, {trend.period_label} döneminde %{abs(trend.change_percent):.1f} oranında {direction}."
+                headline = f"{trend.metric.name}, {period_label} döneminde %{abs(trend.change_percent):.1f} oranında {direction}."
             else:
-                headline = f"{trend.metric.name} is {trend.direction} by {abs(trend.change_percent):.1f}% over {trend.period_label}."
+                headline = f"{trend.metric.name} is {trend.direction} by {abs(trend.change_percent):.1f}% over {period_label}."
             evidence = [
                 {
                     "time": p.timestamp.isoformat(),
@@ -535,6 +536,8 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
             "kanit",
             "kanıt",
             "dayanak",
+            "destekleyen gercek",
+            "destekleyen gerçek",
             "destekleyen veri",
         ):
             return SemanticAction.FINDING_EVIDENCE
@@ -865,10 +868,32 @@ def _looks_like_trend(text: str) -> bool:
         "change over",
         "egilim",
         "eğilim",
-        "seyir",
+        "seyr",
         "degis",
         "değiş",
     )
+
+
+def _localized_period_label(value: str, language: str) -> str:
+    normalized = normalize_phrase(value)
+    if is_turkish(language):
+        return {
+            "last month": "geçen ay",
+            "last 4 weeks": "son dört hafta",
+            "last 30 days": "son 30 gün",
+            "past 30 days": "son 30 gün",
+            "last week": "geçen hafta",
+        }.get(normalized, value)
+    return {
+        "gecen ay": "last month",
+        "geçen ay": "last month",
+        "son dort hafta": "last 4 weeks",
+        "son dört hafta": "last 4 weeks",
+        "son 30 gun": "last 30 days",
+        "son 30 gün": "last 30 days",
+        "gecen hafta": "last week",
+        "geçen hafta": "last week",
+    }.get(normalized, value)
 
 
 def _signed_language(message) -> str:

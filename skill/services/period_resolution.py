@@ -9,7 +9,7 @@ from skill.services.language import normalize_phrase
 _PERIOD_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
     (re.compile(pattern), canonical)
     for pattern, canonical in (
-        (r"\bprevious calendar month\b", "last month"),
+        (r"\b(?:previous|prior) calendar month\b", "last month"),
         (r"\b(?:previous|last) month\b", "last month"),
         (r"\bpast month\b", "past month"),
         (r"\b(?:preceding|previous|last|past) four weeks\b", "last 4 weeks"),

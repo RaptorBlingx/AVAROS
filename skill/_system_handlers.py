@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from skill.domain.models import CanonicalMetric, TimePeriod
 from skill.services.dia_response import speak_information
+from skill.services.futuregen_responses import reneryo_capabilities_headline
 from skill.services.language import is_turkish, metric_display_name, normalize_phrase
 
 if TYPE_CHECKING:
@@ -173,16 +174,8 @@ def handle_help_capabilities_list(skill: "AVAROSSkill", message: Message) -> Non
         from skill.services.capability_manifest import build_capability_manifest
 
         if getattr(skill, "_loaded_profile", "") == "reneryo":
-            headline = (
-                "Future Gen için sayaçları, metrikleri, eğilimleri, regresyon "
-                "analizlerini ve etkin MDSP bulgularını açıklayabilirim. Seçili "
-                "bir bulgunun nedenini, kanıtını, dönemini ve ilgili varlığı da "
-                "takip edebilirim. Türkçe ve İngilizce çalışırım; salt okunurum."
-                if _is_turkish_request(skill)
-                else "For Future Gen, I can explain meters, metrics, trends, "
-                "regression analyses, and active MDSP findings. I can also follow "
-                "a selected finding through its trigger, evidence, period, affected "
-                "entity, and related metric. I work in English and Turkish and am read-only."
+            headline = reneryo_capabilities_headline(
+                getattr(skill, "_response_language", getattr(skill, "lang", "en-US"))
             )
             speak_information(skill, headline, response_type="capabilities")
             return

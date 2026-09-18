@@ -14,6 +14,7 @@ from skill.services.futuregen_responses import (
     meter_inventory_headline,
     metric_detail_headline,
     metric_inventory_headline,
+    reneryo_capabilities_headline,
     regression_detail_headline,
     regression_inventory_headline,
 )
@@ -48,6 +49,16 @@ def test_regression_inventory_uses_available_metadata_instead_of_count_only():
     assert "Tesis Toplam Üretim Miktarı" in answer
     assert "R-squared ranges from 0.180 to 0.720" in answer
     assert "None is marked as the primary model" in answer
+
+
+def test_futuregen_capabilities_are_bilingual_and_domain_scoped():
+    english = reneryo_capabilities_headline("en-US")
+    turkish = reneryo_capabilities_headline("tr-TR")
+
+    assert "active MDSP findings" in english
+    assert "English and Turkish" in english
+    assert "etkin MDSP bulgularını" in turkish
+    assert "Türkçe ve İngilizce" in turkish
 
 
 def test_regression_inventory_is_natural_in_turkish():

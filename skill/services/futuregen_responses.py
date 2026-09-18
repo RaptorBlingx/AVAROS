@@ -16,6 +16,23 @@ from skill.domain.reneryo_models import (
 from skill.services.language import is_turkish
 
 
+def reneryo_capabilities_headline(language: str) -> str:
+    """Describe only the conversational capabilities in the Future Gen slice."""
+    if is_turkish(language):
+        return (
+            "Future Gen için sayaçları, metrikleri, eğilimleri, regresyon "
+            "analizlerini ve etkin MDSP bulgularını açıklayabilirim. Seçili bir "
+            "bulgunun nedenini, kanıtını, dönemini ve ilgili varlığı da takip "
+            "edebilirim. Türkçe ve İngilizce çalışırım; salt okunurum."
+        )
+    return (
+        "For Future Gen, I can explain meters, metrics, trends, regression "
+        "analyses, and active MDSP findings. I can also follow a selected "
+        "finding through its trigger, evidence, period, affected entity, and "
+        "related metric. I work in English and Turkish and am read-only."
+    )
+
+
 def regression_inventory_headline(
     rows: Iterable[ReneryoRegression], language: str
 ) -> str:

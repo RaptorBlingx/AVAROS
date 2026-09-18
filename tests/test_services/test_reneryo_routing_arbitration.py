@@ -350,6 +350,24 @@ def test_structured_explicit_capabilities_keeps_capabilities_with_context(monkey
     capabilities.assert_called_once_with(skill)
 
 
+def test_structured_turkish_capabilities_keeps_capabilities_with_context(monkeypatch):
+    skill = _skill(_resolution(SemanticAction.FINDING_EXPLAIN, language="tr-TR"))
+    message = _Message("Neler yapabilirsin?")
+    message.context["reneryo_context"].update(
+        {"finding_id": "finding-1", "language": "tr-TR"}
+    )
+    delegated = Mock(return_value=True)
+    capabilities = Mock()
+    monkeypatch.setattr(handlers, "handle_reneryo_query", delegated)
+    monkeypatch.setattr(dialogue, "_handle_capabilities", capabilities)
+
+    handled = dialogue.try_handle_structured_query(skill, message)
+
+    assert handled is True
+    delegated.assert_not_called()
+    capabilities.assert_called_once_with(skill)
+
+
 def test_signed_widget_semantics_precede_generic_structured_fallback(monkeypatch):
     message = _Message("Give me an overview of current operational alerts.")
     message.context["reneryo_widget_session_validated"] = True
@@ -448,3 +466,23 @@ def test_saved_predictive_model_inventory_routes_to_regressions():
     )
 
     assert action is SemanticAction.REGRESSIONS_LIST
+
+
+def test_turkish_supporting_facts_route_to_finding_evidence():
+    action = handlers._deterministic_action(
+        handlers.normalize_phrase("Bu bulguyu destekleyen gerçekler neler?"),
+        handlers.DialogueState(active_finding_id="finding-1"),
+    )
+
+    assert action is SemanticAction.FINDING_EVIDENCE
+
+
+def test_turkish_course_word_routes_to_trend():
+    action = handlers._deterministic_action(
+        handlers.normalize_phrase(
+            "Soğutma derece günlerinin son dört haftadaki seyrini göster."
+        ),
+        handlers.DialogueState(),
+    )
+
+    assert action is SemanticAction.TREND_SHOW

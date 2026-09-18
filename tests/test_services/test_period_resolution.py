@@ -13,6 +13,7 @@ from skill.services.semantic_resolver import SemanticAction
     ("utterance", "expected"),
     [
         ("Show the trend for the previous calendar month.", "last month"),
+        ("Show the trend for the prior calendar month.", "last month"),
         ("Use the preceding four weeks.", "last 4 weeks"),
         ("Compare the last 30 days.", "last 30 days"),
         ("What changed during the previous week?", "last week"),

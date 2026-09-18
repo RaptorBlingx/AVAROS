@@ -391,6 +391,7 @@ class SemanticResolver:
             "change over",
             "egilim",
             "eğilim",
+            "seyr",
             "degis",
             "değiş",
         )

@@ -200,7 +200,7 @@ def _resolve_operation(text: str) -> QueryOperation:
         (QueryOperation.TARGET, r"\b(target|objective|goal|good|bad|acceptable|on track)\b"),
         (QueryOperation.SUMMARY, r"\b(summary|overview|factory performance|how is the factory|headline|özet|fabrika performansı)\b"),
         (QueryOperation.STATUS, r"\b(system status|data status|connection status|freshness|sistem durumu|bağlantı durumu)\b"),
-        (QueryOperation.CAPABILITIES, r"\b(help|capabilities|what can you do|yardım|ne yapabilirsin|yetenekler)\b"),
+        (QueryOperation.CAPABILITIES, r"\b(help|capabilities|what can you do|yardım|ne(?:ler)? yapabilirsin|yetenekler)\b"),
     )
     for operation, pattern in ordered:
         if re.search(pattern, text):

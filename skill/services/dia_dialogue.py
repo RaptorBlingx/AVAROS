@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from statistics import mean
 from typing import Any
@@ -16,6 +17,7 @@ from skill.services.dia_response import (
     speak_information,
     speak_with_evidence,
 )
+from skill.services.futuregen_responses import reneryo_capabilities_headline
 from skill.services.language import normalize_phrase
 from skill.services.metric_knowledge import get_metric_knowledge
 
@@ -221,9 +223,19 @@ def _arbitrate_contextual_capabilities(skill, message, utterance: str, prior) ->
     if any(
         _matches_registered_utterance(intent, normalized)
         for intent in ("help", "help.capabilities.list")
-    ):
+    ) or _is_explicit_capabilities_request(normalized):
         return False
     return handle_reneryo_query(skill, message)
+
+
+def _is_explicit_capabilities_request(text: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:what can (?:you|avaros) do|(?:ne|neler) yapabilirsin|"
+            r"capabilities|yetenekler(?:in)?|komutlar(?:ı|i)?n?)\b",
+            text,
+        )
+    )
 
 
 def _handle_kpis(skill, metrics, asset_ids, period) -> None:
@@ -405,6 +417,15 @@ def _handle_trends(skill, metric, asset_ids, period) -> None:
 
 
 def _handle_capabilities(skill) -> None:
+    if getattr(skill, "_loaded_profile", "") == "reneryo":
+        speak_information(
+            skill,
+            reneryo_capabilities_headline(
+                getattr(skill, "_response_language", getattr(skill, "lang", "en-US"))
+            ),
+            response_type="capabilities",
+        )
+        return
     manifest = build_capability_manifest(skill.settings_service, skill.dispatcher.adapter)
     names = ", ".join(item["label"] for item in manifest["metrics"])
     analytics = manifest["prevention"]["available"]
