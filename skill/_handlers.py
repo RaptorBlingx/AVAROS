@@ -222,7 +222,17 @@ def can_answer(skill: "AVAROSSkill", message: Message) -> bool:
     # include the utterance itself.  The following fallback request does.
     # Claim the authenticated widget conversation before requiring text so the
     # local semantic resolver can handle that request.
-    if is_browser_message(message):
+    browser_eligible = is_browser_message(message)
+    context = getattr(message, "context", {}) or {}
+    skill.log.info(
+        "Fallback eligibility: browser=%s source=%r platform=%r signed=%s validated=%s",
+        browser_eligible,
+        context.get("source"),
+        context.get("platform"),
+        isinstance(context.get("reneryo_context"), dict),
+        context.get("reneryo_widget_session_validated") is True,
+    )
+    if browser_eligible:
         return True
 
     data = getattr(message, "data", {}) or {}
