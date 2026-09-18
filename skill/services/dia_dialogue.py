@@ -103,6 +103,8 @@ def try_handle_structured_query(skill, message, *, include_simple_kpi: bool = Fa
         return True
 
     if query.operation is QueryOperation.CAPABILITIES:
+        if _arbitrate_contextual_capabilities(skill, message, utterance, prior):
+            return True
         _handle_capabilities(skill)
         _remember(store, session_id, query)
         return True
@@ -188,6 +190,39 @@ def try_handle_structured_query(skill, message, *, include_simple_kpi: bool = Fa
     if store is not None:
         store.put(session_id, remembered)
     return True
+
+
+def _arbitrate_contextual_capabilities(skill, message, utterance: str, prior) -> bool:
+    """Prevent a broad capability parse from eclipsing signed Reneryo context."""
+    from skill._reneryo_handlers import (
+        _matches_registered_utterance,
+        handle_reneryo_query,
+    )
+
+    context = getattr(message, "context", {}) or {}
+    signed = context.get("reneryo_context")
+    if not isinstance(signed, dict) or not signed.get("organization_id"):
+        return False
+    contextual = any(
+        (
+            signed.get("finding_id"),
+            signed.get("metric_name"),
+            signed.get("entity_id"),
+            getattr(prior, "active_finding_id", ""),
+            getattr(prior, "metric_name", ""),
+            getattr(prior, "entity_id", ""),
+            getattr(prior, "period", None),
+        )
+    )
+    if not contextual:
+        return False
+    normalized = normalize_phrase(utterance)
+    if any(
+        _matches_registered_utterance(intent, normalized)
+        for intent in ("help", "help.capabilities.list")
+    ):
+        return False
+    return handle_reneryo_query(skill, message)
 
 
 def _handle_kpis(skill, metrics, asset_ids, period) -> None:
