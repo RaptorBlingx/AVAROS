@@ -229,6 +229,7 @@ def _arbitrate_contextual_capabilities(skill, message, utterance: str, prior) ->
 
 
 def _is_explicit_capabilities_request(text: str) -> bool:
+    text = normalize_phrase(text)
     return bool(
         re.search(
             r"\b(?:what can (?:you|avaros) do|(?:ne|neler) yapabilirsin|"

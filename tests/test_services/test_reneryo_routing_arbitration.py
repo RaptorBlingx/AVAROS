@@ -391,6 +391,28 @@ def test_signed_widget_semantics_precede_generic_structured_fallback(monkeypatch
     structured.assert_not_called()
 
 
+def test_explicit_turkish_capabilities_precede_semantic_fallback(monkeypatch):
+    message = _Message("Neler yapabilirsin?")
+    message.context["reneryo_widget_session_validated"] = True
+    skill = SimpleNamespace(
+        _extract_utterance_text=lambda current: current.data["utterance"],
+        _is_anomaly_query=lambda _text: False,
+        _is_drift_query=lambda _text: False,
+        _is_forecast_query=lambda _text: False,
+        _is_whatif_query=lambda _text: False,
+    )
+    reneryo = Mock(return_value=False)
+    structured = Mock(return_value=True)
+    monkeypatch.setattr(handlers, "handle_reneryo_query", reneryo)
+    monkeypatch.setattr(fallback_handlers, "try_handle_structured_query", structured)
+
+    handled = fallback_handlers.handle_metric_query_fallback(skill, message)
+
+    assert handled is True
+    reneryo.assert_called_once_with(skill, message, allow_semantic=False)
+    structured.assert_called_once_with(skill, message, include_simple_kpi=True)
+
+
 def test_widget_identifiers_without_proxy_marker_do_not_get_priority(monkeypatch):
     message = _Message("Give me an overview of current operational alerts.")
     message.context.update({"source": "avaros-widget", "platform": "AVAROS-Widget-v1"})
