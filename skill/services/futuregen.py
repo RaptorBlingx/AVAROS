@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 
 from skill.clients.mdsp import MdspClient
@@ -95,16 +96,21 @@ def match_metric(utterance: str, metrics):
             return metric
     for terms in aliases:
         normalized_terms = tuple(normalize_phrase(term) for term in terms)
-        if any(term in normalized for term in normalized_terms):
+        if any(_contains_alias(normalized, term) for term in normalized_terms):
             return next(
                 (
                     metric
                     for metric in metrics
                     if any(
-                        term in normalize_phrase(metric.name)
+                        _contains_alias(normalize_phrase(metric.name), term)
                         for term in normalized_terms
                     )
                 ),
                 None,
             )
     return None
+
+
+def _contains_alias(text: str, alias: str) -> bool:
+    """Match an alias at a word start, avoiding fragments such as nem/döneme."""
+    return re.search(rf"(?<!\w){re.escape(alias)}", text) is not None

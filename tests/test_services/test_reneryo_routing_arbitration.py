@@ -103,7 +103,7 @@ def test_signed_broad_help_match_can_route_to_contextual_finding(monkeypatch):
 
     assert handled is True
     delegated.assert_called_once()
-    assert delegated.call_args.kwargs["semantic_resolution"].action is SemanticAction.FINDING_EXPLAIN
+    assert delegated.call_args.kwargs == {"allow_semantic": False}
 
 
 @pytest.mark.parametrize(
@@ -126,7 +126,7 @@ def test_active_finding_arbitrates_broad_help_to_explanation(
     handled = handlers.try_arbitrate_legacy_intent(skill, _Message(utterance), "help")
 
     assert handled is True
-    assert delegated.call_args.kwargs["semantic_resolution"].action is SemanticAction.FINDING_EXPLAIN
+    assert delegated.call_args.kwargs == {"allow_semantic": False}
 
 
 def test_active_metric_arbitrates_broad_help_to_metric_detail(monkeypatch):
@@ -422,3 +422,29 @@ def test_recent_regression_context_reuses_selected_model_for_fit_followup():
     )
 
     assert action is SemanticAction.REGRESSION_DETAIL
+
+
+@pytest.mark.parametrize(
+    "utterance",
+    [
+        "Which electricity measuring devices are configured?",
+        "Tesisteki elektrik ölçüm cihazlarını özetler misin?",
+    ],
+)
+def test_physical_measurement_device_language_routes_to_meters(utterance):
+    action = handlers._deterministic_action(
+        handlers.normalize_phrase(utterance), handlers.DialogueState()
+    )
+
+    assert action is SemanticAction.METERS_LIST
+
+
+def test_saved_predictive_model_inventory_routes_to_regressions():
+    action = handlers._deterministic_action(
+        handlers.normalize_phrase(
+            "What predictive models have been saved for this factory?"
+        ),
+        handlers.DialogueState(),
+    )
+
+    assert action is SemanticAction.REGRESSIONS_LIST

@@ -4,7 +4,7 @@ import pytest
 
 from skill.domain.models import TimePeriod
 from skill.domain.reneryo_models import ReneryoMetric, ReneryoTrendPoint
-from skill.services.futuregen import FutureGenService
+from skill.services.futuregen import FutureGenService, match_metric
 
 
 class FakeReneryo:
@@ -55,3 +55,11 @@ async def test_trend_alias_matches_tenant_metric_in_other_language():
         "electricity trend", period
     )
     assert result.metric.metric_id == "electricity-id"
+
+
+def test_short_metric_alias_does_not_match_inside_unrelated_word():
+    metrics = [ReneryoMetric("humidity-id", "Humidity - Open Weather", "GAUGE", "HUMIDITY")]
+
+    result = match_metric("Bu değişim hangi döneme ait?", metrics)
+
+    assert result is None

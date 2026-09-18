@@ -172,6 +172,21 @@ def handle_help_capabilities_list(skill: "AVAROSSkill", message: Message) -> Non
     def _execute() -> None:
         from skill.services.capability_manifest import build_capability_manifest
 
+        if getattr(skill, "_loaded_profile", "") == "reneryo":
+            headline = (
+                "Future Gen için sayaçları, metrikleri, eğilimleri, regresyon "
+                "analizlerini ve etkin MDSP bulgularını açıklayabilirim. Seçili "
+                "bir bulgunun nedenini, kanıtını, dönemini ve ilgili varlığı da "
+                "takip edebilirim. Türkçe ve İngilizce çalışırım; salt okunurum."
+                if _is_turkish_request(skill)
+                else "For Future Gen, I can explain meters, metrics, trends, "
+                "regression analyses, and active MDSP findings. I can also follow "
+                "a selected finding through its trigger, evidence, period, affected "
+                "entity, and related metric. I work in English and Turkish and am read-only."
+            )
+            speak_information(skill, headline, response_type="capabilities")
+            return
+
         manifest = build_capability_manifest(
             skill.settings_service,
             getattr(skill.dispatcher, "adapter", None),

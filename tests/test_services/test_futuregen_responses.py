@@ -75,6 +75,15 @@ def test_regression_detail_uses_only_available_model_metadata():
     assert "RMSE is 10.000" in answer
 
 
+def test_regression_detail_localizes_model_type_in_turkish():
+    answer = regression_detail_headline(
+        _regression("Tesis Toplam Üretim Miktarı", "DAILY", 0.72), "tr-TR"
+    )
+
+    assert "gelişmiş regresyon modeli" in answer
+    assert "advanced" not in answer
+
+
 def test_meter_inventory_qualifies_zero_default_period():
     period = TimePeriod(
         datetime.now(timezone.utc) - timedelta(days=30),

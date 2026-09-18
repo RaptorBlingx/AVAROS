@@ -81,8 +81,12 @@ def regression_detail_headline(row: ReneryoRegression, language: str) -> str:
     rmse = f"{row.rmse:.3f}" if row.rmse is not None else "—"
     if turkish:
         primary = "birincil" if row.primary else "birincil değil"
+        regression_type = {
+            "advanced": "gelişmiş",
+            "linear": "doğrusal",
+        }.get(row.regression_type.lower(), row.regression_type)
         return (
-            f"Bu {row.regression_type} regresyon modeli {period} dönemlidir ve {primary}. "
+            f"Bu {regression_type} regresyon modeli {period} dönemlidir ve {primary}. "
             f"Sürücüler: {drivers}. Bağlı dilimler: {slices}. Eğitim dönemi {training}; "
             f"R² {r_squared}, RMSE {rmse}."
         )

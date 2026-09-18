@@ -166,7 +166,9 @@ def handle_reneryo_query(
             semantic_period = resolution.slots.get("period", "") if resolution else ""
             period = _query_period(skill, utterance, state.period, semantic_period)
             metric_query = utterance
-            context_metric = resolution.slots.get("context_metric", "") if resolution else ""
+            context_metric = (
+                resolution.slots.get("context_metric", "") if resolution else ""
+            ) or state.metric_name
             try:
                 trend = skill.dispatcher._run_async(service.trend(metric_query, period))
             except (AdapterError, ValidationError):
@@ -578,8 +580,53 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
         )
         if _has(text, "finding", "bulgu"):
             return SemanticAction.FINDING_EXPLAIN
+        if _has(
+            text, "alert", "issue", "warning", "uyari", "uyarı", "sorun"
+        ) and _has(
+            text,
+            "understand",
+            "interpret",
+            "summarize",
+            "anlam",
+            "yorumla",
+            "ozet",
+            "özet",
+        ):
+            return SemanticAction.FINDING_EXPLAIN
         if not explicit_domain_switch and _has(text, "explain", "acikla", "açıkla"):
             return SemanticAction.FINDING_EXPLAIN
+    if _has(
+        text,
+        "meter",
+        "meters",
+        "measuring device",
+        "measurement device",
+        "measuring instrument",
+        "sayac",
+        "sayaç",
+        "olcum cihaz",
+        "ölçüm cihaz",
+        "olcum donanim",
+        "ölçüm donanım",
+    ):
+        return SemanticAction.METERS_LIST
+    if _has(text, "model", "models", "modeller") and _has(
+        text,
+        "saved",
+        "available",
+        "predictive",
+        "statistical",
+        "inventory",
+        "list",
+        "kayitli",
+        "kayıtlı",
+        "mevcut",
+        "tahmin",
+        "istatistik",
+        "liste",
+        "envanter",
+    ):
+        return SemanticAction.REGRESSIONS_LIST
     if _has(text, "regression", "regressions", "regresyon"):
         if _has(
             text,
@@ -604,8 +651,6 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
         return SemanticAction.REGRESSIONS_LIST
     if _looks_like_trend(text):
         return SemanticAction.TREND_SHOW
-    if _has(text, "meter", "meters", "sayac", "sayaç"):
-        return SemanticAction.METERS_LIST
     if _has(text, "metric", "metrics", "metrik"):
         return SemanticAction.METRICS_LIST
     if _has(text, "findings", "bulgular", "decision support", "karar destek"):
@@ -788,6 +833,21 @@ def has_signed_widget_context(message) -> bool:
 
 def _ground_metric_reference(skill, utterance: str):
     """Resolve named/aliased metrics only from the live Reneryo inventory."""
+    text = normalize_phrase(utterance)
+    if _has(
+        text,
+        "meter",
+        "measuring device",
+        "measurement device",
+        "measuring instrument",
+        "sayac",
+        "sayaç",
+        "olcum cihaz",
+        "ölçüm cihaz",
+        "olcum donanim",
+        "ölçüm donanım",
+    ):
+        return None
     try:
         rows = skill.dispatcher._run_async(_service(skill).metrics())
     except (AdapterError, ValidationError):
@@ -805,6 +865,7 @@ def _looks_like_trend(text: str) -> bool:
         "change over",
         "egilim",
         "eğilim",
+        "seyir",
         "degis",
         "değiş",
     )
