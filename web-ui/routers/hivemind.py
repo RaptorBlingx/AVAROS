@@ -162,6 +162,11 @@ def _browser_to_backend(raw: str, session: ReneryoSession) -> str:
             data["lang"] = "en-US"
         context = bus.setdefault("context", {})
         if isinstance(context, dict):
+            # This marker is added only after this proxy has verified the
+            # origin-bound signed widget session.  The skill uses it solely
+            # for conversational-fallback eligibility; claims below remain
+            # the authority for organization and finding scope.
+            context["reneryo_widget_session_validated"] = True
             context["reneryo_context"] = {
                 "organization_id": session.organization_id,
                 "finding_id": session.finding_id,

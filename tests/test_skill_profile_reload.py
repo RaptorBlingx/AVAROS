@@ -1399,6 +1399,43 @@ class TestIntentFailureRecovery:
 class TestFallbackEligibility:
     """Tests for FallbackSkill can_answer implementation."""
 
+    @pytest.mark.parametrize(
+        "utterance",
+        [
+            "Help me understand this selected issue.",
+            "Bu bulgunun kanıtlarını açıkla.",
+            "Tell me something useful.",
+            "Book a flight tomorrow.",
+        ],
+    )
+    def test_signed_embedded_widget_claims_unknown_utterances_for_resolution(
+        self, utterance
+    ):
+        """Unknown widget turns reach semantic resolution, then clarification."""
+        skill = _make_skill()
+        msg = Mock()
+        msg.data = {"utterances": [utterance]}
+        msg.context = {
+            "source": "avaros-widget",
+            "platform": "AVAROS-Widget-v1",
+            "reneryo_widget_session_validated": True,
+            "reneryo_context": {"organization_id": "futuregen"},
+        }
+
+        assert skill.can_answer(msg) is True
+
+    def test_unvalidated_embedded_widget_does_not_claim_unknown_utterance(self):
+        skill = _make_skill()
+        msg = Mock()
+        msg.data = {"utterances": ["Help me understand this selected issue."]}
+        msg.context = {
+            "source": "avaros-widget",
+            "platform": "AVAROS-Widget-v1",
+            "reneryo_context": {"organization_id": "forged"},
+        }
+
+        assert skill.can_answer(msg) is False
+
     def test_can_answer_true_for_total_energy_utterance(self):
         """Fallback ping should report True for total energy phrasing."""
         skill = _make_skill()

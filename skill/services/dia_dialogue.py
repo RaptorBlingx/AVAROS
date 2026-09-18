@@ -544,5 +544,24 @@ def _conversation_candidates(prior, asset_ids: list[str], utterance: str) -> tup
 
 
 def is_browser_message(message) -> bool:
+    """Return whether a message may use browser conversational fallback.
+
+    The legacy Web UI keeps its existing eligibility behavior.  The embedded
+    Reneryo widget is eligible only after the HiveMind proxy has validated its
+    signed session and injected an organization claim; ``source`` and
+    ``platform`` are routing hints, never an authority boundary.
+    """
     context = getattr(message, "context", {}) or {}
-    return context.get("source") == "avaros-web-ui" or str(context.get("platform", "")).startswith("AVAROS-WebUI")
+    source = context.get("source")
+    platform = str(context.get("platform", ""))
+    if source == "avaros-web-ui" or platform.startswith("AVAROS-WebUI"):
+        return True
+
+    signed = context.get("reneryo_context")
+    return (
+        source == "avaros-widget"
+        and platform.startswith("AVAROS-Widget")
+        and isinstance(signed, dict)
+        and bool(signed.get("organization_id"))
+        and context.get("reneryo_widget_session_validated") is True
+    )

@@ -51,7 +51,14 @@ def test_proxy_injects_signed_context_and_translates_encryption(monkeypatch):
     raw = json.dumps(
         {
             "msg_type": "bus",
-            "payload": {"type": "recognizer_loop:utterance", "data": {}, "context": {}},
+            "payload": {
+                "type": "recognizer_loop:utterance",
+                "data": {},
+                "context": {
+                    "source": "avaros-widget",
+                    "platform": "AVAROS-Widget-v1",
+                },
+            },
         }
     )
     encrypted = _browser_to_backend(raw, session)
@@ -65,6 +72,47 @@ def test_proxy_injects_signed_context_and_translates_encryption(monkeypatch):
         "language": "en-US",
     }
     assert decrypted["payload"]["context"]["session"]["lang"] == "en-US"
+    assert (
+        decrypted["payload"]["context"]["reneryo_widget_session_validated"]
+        is True
+    )
+
+
+def test_proxy_overrides_forged_widget_context_with_signed_claims(monkeypatch):
+    monkeypatch.delenv("HIVEMIND_CLIENT_CRYPTO_KEY", raising=False)
+    monkeypatch.setenv("AVAROS_WIDGET_SESSION_SECRET", "x" * 32)
+    token, _ = issue_session(
+        {
+            "organization_id": "org-signed",
+            "finding_id": "finding-signed",
+            "origin": "https://futuregen.reneryo.com",
+            "language": "en-US",
+        }
+    )
+    session = validate_session(token, "https://futuregen.reneryo.com")
+    raw = json.dumps(
+        {
+            "msg_type": "bus",
+            "payload": {
+                "type": "recognizer_loop:utterance",
+                "data": {"utterances": ["Explain this finding."]},
+                "context": {
+                    "source": "avaros-widget",
+                    "platform": "AVAROS-Widget-v1",
+                    "reneryo_context": {
+                        "organization_id": "forged-org",
+                        "finding_id": "forged-finding",
+                    },
+                },
+            },
+        }
+    )
+
+    forwarded = json.loads(_browser_to_backend(raw, session))
+    signed = forwarded["payload"]["context"]["reneryo_context"]
+
+    assert signed["organization_id"] == "org-signed"
+    assert signed["finding_id"] == "finding-signed"
 
 
 def test_proxy_routes_turkish_vocabulary_through_deployed_intent_pipeline(monkeypatch):

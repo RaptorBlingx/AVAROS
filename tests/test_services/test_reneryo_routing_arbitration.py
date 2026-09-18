@@ -6,6 +6,7 @@ import pytest
 
 import skill._reneryo_handlers as handlers
 from skill.services.conversation_state import DialogueStateStore
+from skill.services.dia_dialogue import is_browser_message
 from skill.services.semantic_resolver import SemanticAction, SemanticResolution
 
 
@@ -174,3 +175,46 @@ def test_weak_semantic_disagreement_clarifies_instead_of_misrouting(monkeypatch)
     assert handled is True
     delegated.assert_not_called()
     clarification.assert_called_once_with(skill, "en-US")
+
+
+@pytest.mark.parametrize(
+    "utterance",
+    [
+        "Help me understand this selected issue.",
+        "Bu bulgunun kanıtlarını açıkla.",
+        "Tell me something useful.",
+        "Book a flight tomorrow.",
+    ],
+)
+def test_signed_embedded_widget_is_eligible_for_semantic_fallback(utterance):
+    """The real widget reaches fallback; resolver still owns action/clarity."""
+    message = _Message(utterance)
+    message.context.update(
+        {
+            "source": "avaros-widget",
+            "platform": "AVAROS-Widget-v1",
+            "reneryo_widget_session_validated": True,
+        }
+    )
+
+    assert is_browser_message(message) is True
+
+
+def test_embedded_widget_identifiers_alone_do_not_grant_fallback_eligibility():
+    message = _Message("Help me understand this selected issue.", signed=False)
+    message.context.update(
+        {
+            "source": "avaros-widget",
+            "platform": "AVAROS-Widget-v1",
+            "reneryo_widget_session_validated": True,
+        }
+    )
+
+    assert is_browser_message(message) is False
+
+
+def test_legacy_web_ui_eligibility_is_unchanged():
+    message = _Message("Tell me something useful.", signed=False)
+    message.context["source"] = "avaros-web-ui"
+
+    assert is_browser_message(message) is True
