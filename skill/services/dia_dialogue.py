@@ -559,7 +559,9 @@ def is_browser_message(message) -> bool:
 
     signed = context.get("reneryo_context")
     return (
-        source == "avaros-widget"
+        # HiveMind labels fallback pings as ``hive`` while preserving the
+        # authenticated widget platform and proxy-injected claims.
+        source in {"avaros-widget", "hive"}
         and platform.startswith("AVAROS-Widget")
         and isinstance(signed, dict)
         and bool(signed.get("organization_id"))

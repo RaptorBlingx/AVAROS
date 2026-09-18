@@ -200,6 +200,20 @@ def test_signed_embedded_widget_is_eligible_for_semantic_fallback(utterance):
     assert is_browser_message(message) is True
 
 
+def test_signed_hivemind_widget_fallback_ping_is_eligible():
+    """HiveMind replaces source while retaining proxy-authenticated context."""
+    message = _Message("Help me understand this selected issue.")
+    message.context.update(
+        {
+            "source": "hive",
+            "platform": "AVAROS-Widget-v1",
+            "reneryo_widget_session_validated": True,
+        }
+    )
+
+    assert is_browser_message(message) is True
+
+
 def test_embedded_widget_identifiers_alone_do_not_grant_fallback_eligibility():
     message = _Message("Help me understand this selected issue.", signed=False)
     message.context.update(
