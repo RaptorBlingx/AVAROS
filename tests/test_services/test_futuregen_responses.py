@@ -12,8 +12,10 @@ from skill.domain.reneryo_models import (
 from skill.services.futuregen_responses import (
     finding_inventory_headline,
     meter_inventory_headline,
+    metric_detail_headline,
     metric_inventory_headline,
     regression_inventory_headline,
+    regression_detail_headline,
 )
 
 
@@ -59,6 +61,18 @@ def test_regression_inventory_is_natural_in_turkish():
     assert "2 kayıtlı regresyon modeli" in answer
     assert "günlük ve aylık" in answer
     assert "Hiçbiri birincil model olarak işaretli değil" in answer
+
+
+def test_regression_detail_uses_only_available_model_metadata():
+    row = _regression("Tesis Toplam Üretim Miktarı", "DAILY", 0.72)
+
+    answer = regression_detail_headline(row, "en-US")
+
+    assert "advanced regression model" in answer
+    assert "daily period" in answer
+    assert "Tesis Toplam Üretim Miktarı" in answer
+    assert "R-squared is 0.720" in answer
+    assert "RMSE is 10.000" in answer
 
 
 def test_meter_inventory_qualifies_zero_default_period():
@@ -110,6 +124,25 @@ def test_metric_inventory_names_domains_and_watermark():
     assert "2 metrics" in answer
     assert "Tesis Toplam Elektrik Tüketimi" in answer
     assert "Temperature - Open Weather" in answer
+    assert "2026-09-17 11:21 UTC" in answer
+
+
+def test_metric_detail_uses_context_selected_reneryo_metadata():
+    metric = ReneryoMetric(
+        "metric-1",
+        "Cooling degree days - Open Weather",
+        "GAUGE",
+        "TEMPERATURE",
+        last_value=5.15,
+        last_value_at=datetime(2026, 9, 17, 11, 21, tzinfo=timezone.utc),
+    )
+
+    answer = metric_detail_headline(metric, "en-US")
+
+    assert "Cooling degree days - Open Weather" in answer
+    assert "GAUGE" in answer
+    assert "TEMPERATURE" in answer
+    assert "5.15" in answer
     assert "2026-09-17 11:21 UTC" in answer
 
 

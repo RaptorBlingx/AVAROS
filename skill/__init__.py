@@ -164,6 +164,7 @@ class AVAROSSkill(FallbackSkill):
             max_sessions=256,
         )
         self._futuregen_service = None
+        self._semantic_resolver = None
 
         super().__init__(*args, **kwargs)
 
@@ -218,6 +219,7 @@ class AVAROSSkill(FallbackSkill):
 
         self._loaded_profile = self._resolve_active_profile()
         self._loaded_platform = adapter.platform_name.lower()
+        self._initialize_semantic_resolver()
         self._register_intent_handlers()
 
         if not self._bus_event_handlers_registered:
@@ -602,6 +604,21 @@ class AVAROSSkill(FallbackSkill):
             )
             self._force_unconfigured_fallback()
 
+    def _initialize_semantic_resolver(self) -> None:
+        """Preload the optional local router only for the Reneryo profile."""
+        if self._loaded_profile != "reneryo" or self._semantic_resolver is not None:
+            return
+        from skill.services.semantic_resolver import SemanticResolver
+
+        self._semantic_resolver = SemanticResolver.from_environment()
+        if self._semantic_resolver is None:
+            self.log.warning(
+                "Local semantic routing is disabled or unavailable; "
+                "deterministic intents remain active"
+            )
+        else:
+            self.log.info("Local multilingual semantic routing is ready")
+
     def _handle_asset_entities_updated(self, message: Message) -> None:
         """Regenerate and re-register entity files after asset changes.
 
@@ -684,6 +701,7 @@ class AVAROSSkill(FallbackSkill):
             )
         self._loaded_profile = self._resolve_active_profile()
         self._loaded_platform = new_adapter.platform_name.lower()
+        self._initialize_semantic_resolver()
         self._asset_registry_cache = None
         self._asset_registry_profile = ""
         self.log.info(

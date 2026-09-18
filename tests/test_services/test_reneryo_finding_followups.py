@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from skill._reneryo_handlers import (
     _conversation_language,
+    _deterministic_action,
     _is_finding_list,
     _query_period,
     _signed_language,
@@ -12,6 +13,7 @@ from skill.domain.models import TimePeriod
 from skill.domain.reneryo_models import LocalizedText, MdspFinding
 from skill.services.conversation_state import DialogueState
 from skill.services.finding_explanation import finding_headline
+from skill.services.semantic_resolver import SemanticAction
 
 
 def _finding() -> MdspFinding:
@@ -318,6 +320,44 @@ def test_signed_language_is_read_from_trusted_session_context():
     message = type("Message", (), {"context": {"session": {"lang": "tr-TR"}}})()
 
     assert _signed_language(message) == "tr-TR"
+
+
+def test_established_finding_period_forms_remain_deterministic_first():
+    state = DialogueState(active_finding_id="finding-1")
+
+    assert (
+        _deterministic_action("tell me when this finding was evaluated", state)
+        is SemanticAction.FINDING_PERIOD
+    )
+    assert (
+        _deterministic_action("bu bulgunun dönemini açıkla", state)
+        is SemanticAction.FINDING_PERIOD
+    )
+
+
+def test_explicit_regression_switch_wins_over_active_finding_explain():
+    state = DialogueState(active_finding_id="finding-1")
+
+    assert (
+        _deterministic_action("aylık regresyonun uyumunu açıkla", state)
+        is SemanticAction.REGRESSION_DETAIL
+    )
+
+
+def test_related_metric_follow_up_uses_bounded_finding_context():
+    state = DialogueState(
+        active_finding_id="finding-1",
+        metric_name="Cooling degree days - Open Weather",
+    )
+
+    assert (
+        _deterministic_action("what about the related metric", state)
+        is SemanticAction.METRIC_DETAIL
+    )
+    assert (
+        _deterministic_action("peki ilgili metrik", state)
+        is SemanticAction.METRIC_DETAIL
+    )
 
 
 def test_signed_language_prefers_reneryo_context_forwarded_by_proxy():

@@ -31,7 +31,7 @@ def handle_metric_query_fallback(skill: "AVAROSSkill", message: Message) -> bool
     utterance = skill._extract_utterance_text(message).lower()
 
     from skill._reneryo_handlers import handle_reneryo_query
-    if handle_reneryo_query(skill, message):
+    if handle_reneryo_query(skill, message, allow_semantic=False):
         return True
 
     if skill._is_anomaly_query(utterance):
@@ -47,6 +47,9 @@ def handle_metric_query_fallback(skill: "AVAROSSkill", message: Message) -> bool
         return _fallback_whatif(skill, message, utterance)
 
     if try_handle_structured_query(skill, message, include_simple_kpi=True):
+        return True
+
+    if handle_reneryo_query(skill, message, clarify_on_ambiguity=False):
         return True
 
     metric = skill._resolve_metric_from_utterance(utterance)
@@ -150,6 +153,10 @@ def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
     """Recover KPI queries from global intent-failure events."""
     utterance = skill._extract_utterance_text(message).lower()
 
+    from skill._reneryo_handlers import handle_reneryo_query
+    if handle_reneryo_query(skill, message, allow_semantic=False):
+        return
+
     if skill._is_anomaly_query(utterance):
         _fallback_anomaly(skill, message, utterance)
         return
@@ -167,6 +174,9 @@ def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
         return
 
     if try_handle_structured_query(skill, message, include_simple_kpi=True):
+        return
+
+    if handle_reneryo_query(skill, message):
         return
 
     metric = skill._resolve_metric_from_utterance(utterance)

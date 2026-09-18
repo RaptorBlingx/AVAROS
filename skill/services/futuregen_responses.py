@@ -70,6 +70,30 @@ def regression_inventory_headline(
     return headline
 
 
+def regression_detail_headline(row: ReneryoRegression, language: str) -> str:
+    """Describe one saved model using only Reneryo-owned metadata."""
+    turkish = is_turkish(language)
+    drivers = _natural_join(list(row.driver_names), turkish=turkish) or "—"
+    slices = _natural_join(list(row.slice_names), turkish=turkish) or "—"
+    period = _localized_period(row.period, turkish=turkish)
+    training = f"{row.train_start.date()} – {row.train_end.date()}"
+    r_squared = f"{row.r_squared:.3f}" if row.r_squared is not None else "—"
+    rmse = f"{row.rmse:.3f}" if row.rmse is not None else "—"
+    if turkish:
+        primary = "birincil" if row.primary else "birincil değil"
+        return (
+            f"Bu {row.regression_type} regresyon modeli {period} dönemlidir ve {primary}. "
+            f"Sürücüler: {drivers}. Bağlı dilimler: {slices}. Eğitim dönemi {training}; "
+            f"R² {r_squared}, RMSE {rmse}."
+        )
+    primary = "primary" if row.primary else "not primary"
+    return (
+        f"This {row.regression_type} regression model has a {period} period and is {primary}. "
+        f"Drivers: {drivers}. Linked slices: {slices}. Its training period is {training}; "
+        f"R-squared is {r_squared} and RMSE is {rmse}."
+    )
+
+
 def meter_inventory_headline(
     rows: Iterable[ReneryoMeter], period: TimePeriod, language: str
 ) -> str:
@@ -156,6 +180,31 @@ def metric_inventory_headline(rows: Iterable[ReneryoMetric], language: str) -> s
         headline += (
             f" The newest metric observation in this inventory is {_timestamp(newest)}."
         )
+    return headline
+
+
+def metric_detail_headline(row: ReneryoMetric, language: str) -> str:
+    """Describe one context-selected metric using Reneryo-owned metadata."""
+    observed = _timestamp(row.last_value_at) if row.last_value_at else None
+    value = f"{row.last_value:,.2f}" if row.last_value is not None else None
+    if is_turkish(language):
+        headline = (
+            f"İlgili metrik {row.name}; türü {row.metric_type}, "
+            f"kaynak grubu {row.unit_group}."
+        )
+        if value and observed:
+            headline += f" Son gözlemi {observed} tarihinde {value}."
+        elif observed:
+            headline += f" Son gözlem zamanı {observed}."
+        return headline
+    headline = (
+        f"The related metric is {row.name}; its type is {row.metric_type} "
+        f"and its resource group is {row.unit_group}."
+    )
+    if value and observed:
+        headline += f" Its latest observation was {value} at {observed}."
+    elif observed:
+        headline += f" Its latest observation time was {observed}."
     return headline
 
 

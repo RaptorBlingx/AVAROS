@@ -156,11 +156,33 @@ intent files, it provides:
 1. a skill fallback that checks whether the utterance resolves to a metric or
    analytical keyword;
 2. an intent-failure recovery handler for KPI, anomaly, drift, forecast, and
-   what-if requests; and
-3. guards in the generic KPI handler for analytical phrases.
+   what-if requests;
+3. guards in the generic KPI handler for analytical phrases; and
+4. for the Reneryo profile only, a local multilingual semantic router after
+   those deterministic paths have declined the request.
 
 Fallback handling returns `False` when no metric or supported analytical form
 is recognized, allowing OVOS to continue to other skills.
+
+### Reneryo semantic fallback
+
+The semantic fallback embeds an unresolved English or Turkish utterance with a
+bundled INT8 `multilingual-e5-small` ONNX model and compares it with bilingual
+descriptions of an allow-listed set of canonical Reneryo actions. It does not
+generate text, query data, or calculate an answer. An accepted action is passed
+to the existing deterministic Reneryo/MDSP client and response code.
+
+Candidate actions are constrained by bounded session context. Finding-detail
+actions require an active signed/session finding; short follow-ups can reuse
+the active finding, metric, entity, period, organization, and language. Both an
+absolute similarity threshold and a top-two margin must pass. Low-confidence,
+ambiguous, timed-out, or unavailable-model results produce a bilingual
+clarification (or yield to the next normal fallback where appropriate).
+
+The model is pinned and bundled into the skill image. Runtime inference is
+local and does not require an API key, outbound network access, or a generative
+LLM. Configuration is exposed through the `AVAROS_SEMANTIC_*` environment
+variables documented in `.env.example`.
 
 ## Dialogue and response construction
 
@@ -212,6 +234,8 @@ Typical verified failures include:
 - Metric and slot resolution: `skill/_metric_resolver.py`,
   `skill/_slot_resolution.py`, `skill/_asset_resolution.py`
 - Dialogue formatting: `skill/services/response_builder.py`
+- Reneryo semantic routing: `skill/services/semantic_resolver.py`,
+  `skill/_reneryo_handlers.py`
 - Configuration catalogue: `skill/services/settings.py::KNOWN_INTENTS`
 - Tests: `tests/test_use_cases/`, `tests/test_services/`,
   `tests/test_integration/test_skill_initialization.py`

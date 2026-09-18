@@ -16,7 +16,8 @@ LABEL org.opencontainers.image.title="AVAROS OVOS Skill" \
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    AVAROS_SEMANTIC_MODEL_PATH=/opt/avaros/models/multilingual-e5-small
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -35,6 +36,11 @@ WORKDIR /opt/avaros
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Bundle the pinned, MIT-licensed multilingual E5-small INT8 model so runtime
+# semantic routing is fully local and never downloads from the network.
+RUN python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='Xenova/multilingual-e5-small', revision='761b726dd34fb83930e26aab4e9ac3899aa1fa78', local_dir='/opt/avaros/models/multilingual-e5-small', allow_patterns=['README.md','config.json','special_tokens_map.json','tokenizer.json','tokenizer_config.json','onnx/model_int8.onnx'])" \
+    && echo "4d24e2bc01a447951524466ef533e52944bf48509e6552810bcee1a2711cb02c  /opt/avaros/models/multilingual-e5-small/onnx/model_int8.onnx" | sha256sum -c -
 
 # Create directories for OVOS configuration
 RUN mkdir -p /home/ovos/.config/mycroft /tmp/mycroft /opt/avaros/logs && \
@@ -62,4 +68,3 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
 # Default command: Run the skill launcher
 # This will connect to OVOS messagebus and register intents
 CMD ["python", "/opt/avaros/launch_skill.py"]
-

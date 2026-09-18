@@ -40,3 +40,32 @@ English and Turkish queries can list meters and metrics, summarize a named
 metric trend, list saved regression models, list active MDSP findings, explain
 the selected finding, and continue with the selected finding/metric/period as
 session context. Responses include structured evidence for the widget.
+
+## Local semantic routing
+
+Registered OVOS/Padatious intents and existing deterministic fallback checks
+remain the first routing path. If they cannot resolve a Reneryo request, the
+skill may use the locally bundled
+[`intfloat/multilingual-e5-small`](https://huggingface.co/intfloat/multilingual-e5-small)
+embedding model (MIT license) to choose among the existing canonical Future
+Gen actions. The image uses the pinned
+[`Xenova/multilingual-e5-small`](https://huggingface.co/Xenova/multilingual-e5-small)
+INT8 ONNX conversion; its model checksum is verified during the build.
+
+The semantic layer returns only an action, language, supported period slot,
+and confidence/ambiguity metadata. It never answers a Reneryo question itself
+and receives no raw factory records. Existing organization-scoped clients and
+deterministic formatters remain authoritative. Finding follow-ups are available
+only with an active finding in the bounded signed/session context. Requests
+below the configured confidence or separation margin are clarified instead of
+guessed.
+
+All inference is CPU-local after image build. No inference API key or runtime
+cloud connection is used. `AVAROS_SEMANTIC_ROUTING_ENABLED=false` disables the
+optional layer without affecting deterministic intents.
+
+The bundled model directory is about 129 MiB (118 MiB ONNX file). In the
+prototype container on the AVAROS-class two-CPU host, resolver initialization
+took about 1.7 seconds, 50 sequential classifications had a 7.8 ms median and
+11.3 ms p95, and the isolated process peaked near 588 MiB RSS. These figures are
+capacity guidance rather than an application-level memory delta.

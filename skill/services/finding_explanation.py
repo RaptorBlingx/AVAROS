@@ -16,16 +16,26 @@ _REGRESSION_FIT_RULE = "regression-model-fit-quality"
 _REGRESSION_PRIMARY_RULE = "regression-primary-model-availability"
 
 
-def finding_headline(finding: MdspFinding, text: str, language: str) -> str:
+def finding_headline(
+    finding: MdspFinding,
+    text: str,
+    language: str,
+    *,
+    action: str = "",
+) -> str:
     """Return a natural deterministic answer for one finding turn."""
     normalized = normalize_phrase(text)
-    if _has(normalized, "period", "window", "donem", "dönem", "zaman"):
+    if action == "finding.period" or _has(
+        normalized, "period", "window", "donem", "dönem", "zaman"
+    ):
         return _period_explanation(finding, language)
-    if _has(normalized, "entity", "affect", "varlik", "varlık", "etkiliyor"):
+    if action == "finding.entity" or _has(
+        normalized, "entity", "affect", "varlik", "varlık", "etkiliyor"
+    ):
         return _entity_explanation(finding, language)
-    if _has(normalized, "evidence", "kanit", "kanıt"):
+    if action == "finding.evidence" or _has(normalized, "evidence", "kanit", "kanıt"):
         return _evidence_explanation(finding, language)
-    if _has(
+    if action == "finding.trigger" or _has(
         normalized,
         "why",
         "trigger",
