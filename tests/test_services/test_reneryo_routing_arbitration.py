@@ -4,6 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
+import skill._handlers as fallback_handlers
 import skill._reneryo_handlers as handlers
 import skill.services.dia_dialogue as dialogue
 from skill.services.conversation_state import DialogueStateStore
@@ -347,3 +348,77 @@ def test_structured_explicit_capabilities_keeps_capabilities_with_context(monkey
     assert handled is True
     delegated.assert_not_called()
     capabilities.assert_called_once_with(skill)
+
+
+def test_signed_widget_semantics_precede_generic_structured_fallback(monkeypatch):
+    message = _Message("Give me an overview of current operational alerts.")
+    message.context["reneryo_widget_session_validated"] = True
+    skill = SimpleNamespace(
+        _extract_utterance_text=lambda current: current.data["utterance"],
+        _is_anomaly_query=lambda _text: False,
+        _is_drift_query=lambda _text: False,
+        _is_forecast_query=lambda _text: False,
+        _is_whatif_query=lambda _text: False,
+    )
+    reneryo = Mock(side_effect=[False, True])
+    structured = Mock(return_value=True)
+    monkeypatch.setattr(handlers, "handle_reneryo_query", reneryo)
+    monkeypatch.setattr(fallback_handlers, "try_handle_structured_query", structured)
+
+    handled = fallback_handlers.handle_metric_query_fallback(skill, message)
+
+    assert handled is True
+    assert reneryo.call_count == 2
+    assert reneryo.call_args_list[0].kwargs == {"allow_semantic": False}
+    structured.assert_not_called()
+
+
+def test_widget_identifiers_without_proxy_marker_do_not_get_priority(monkeypatch):
+    message = _Message("Give me an overview of current operational alerts.")
+    message.context.update({"source": "avaros-widget", "platform": "AVAROS-Widget-v1"})
+    skill = SimpleNamespace(
+        _extract_utterance_text=lambda current: current.data["utterance"],
+        _is_anomaly_query=lambda _text: False,
+        _is_drift_query=lambda _text: False,
+        _is_forecast_query=lambda _text: False,
+        _is_whatif_query=lambda _text: False,
+    )
+    reneryo = Mock(return_value=False)
+    structured = Mock(return_value=True)
+    monkeypatch.setattr(handlers, "handle_reneryo_query", reneryo)
+    monkeypatch.setattr(fallback_handlers, "try_handle_structured_query", structured)
+
+    handled = fallback_handlers.handle_metric_query_fallback(skill, message)
+
+    assert handled is True
+    reneryo.assert_called_once_with(skill, message, allow_semantic=False)
+    structured.assert_called_once()
+
+
+def test_recent_metric_context_beats_retained_finding_for_trend_followup():
+    state = handlers.DialogueState(
+        active_finding_id="finding-1",
+        metric_name="Cooling degree days - Open Weather",
+        operation="trend",
+    )
+
+    action = handlers._deterministic_action(
+        handlers.normalize_phrase("Peki bu metrik son 30 günde nasıl değişti?"),
+        state,
+    )
+
+    assert action is SemanticAction.TREND_SHOW
+
+
+def test_recent_regression_context_reuses_selected_model_for_fit_followup():
+    state = handlers.DialogueState(
+        entity_id="daily-model",
+        operation="regression_detail",
+    )
+
+    action = handlers._deterministic_action(
+        handlers.normalize_phrase("What is its fit quality?"),
+        state,
+    )
+
+    assert action is SemanticAction.REGRESSION_DETAIL

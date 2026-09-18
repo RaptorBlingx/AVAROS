@@ -14,8 +14,8 @@ from skill.services.futuregen_responses import (
     meter_inventory_headline,
     metric_detail_headline,
     metric_inventory_headline,
-    regression_inventory_headline,
     regression_detail_headline,
+    regression_inventory_headline,
 )
 
 
@@ -99,6 +99,30 @@ def test_meter_inventory_qualifies_zero_default_period():
     assert "linked to Tesis Toplam Elektrik Tüketimi" in answer
     assert "0.00" in answer
     assert "does not mean" in answer
+
+
+def test_meter_inventory_localizes_latest_available_period_in_turkish():
+    period = TimePeriod(
+        datetime.now(timezone.utc) - timedelta(days=30),
+        datetime.now(timezone.utc),
+        "latest available",
+    )
+    rows = [
+        ReneryoMeter(
+            meter_id="meter-1",
+            name="Future Gen Ana Elektrik Sayacı",
+            energy_resource="ELECTRICITY",
+            consumption=12.5,
+            metric_id="metric-1",
+            metric_name="Tesis Toplam Elektrik Tüketimi",
+            slice_names=("Future Gen Ana Tesis",),
+        )
+    ]
+
+    answer = meter_inventory_headline(rows, period, "tr-TR")
+
+    assert "mevcut en güncel dönemi" in answer
+    assert "latest available" not in answer
 
 
 def test_metric_inventory_names_domains_and_watermark():

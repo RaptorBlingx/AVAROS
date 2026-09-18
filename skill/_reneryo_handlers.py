@@ -16,7 +16,7 @@ from skill.domain.exceptions import AdapterError, ValidationError
 from skill.services.conversation_state import DialogueState, message_session_id
 from skill.services.dia_response import speak_information
 from skill.services.finding_explanation import finding_headline
-from skill.services.futuregen import FutureGenService, default_period
+from skill.services.futuregen import FutureGenService, default_period, match_metric
 from skill.services.futuregen_responses import (
     finding_inventory_headline,
     meter_inventory_headline,
@@ -81,6 +81,26 @@ def handle_reneryo_query(
             )
             action = resolution.action
         if action is None:
+            grounded_metric = _ground_metric_reference(skill, utterance)
+            if grounded_metric is not None:
+                action = (
+                    SemanticAction.TREND_SHOW
+                    if _looks_like_trend(text)
+                    else SemanticAction.METRIC_DETAIL
+                )
+                slots = {"metric_name": grounded_metric.name}
+                period = extract_period_phrase(utterance)
+                if period:
+                    slots["period"] = period
+                resolution = SemanticResolution(
+                    action=action,
+                    language=language,
+                    confidence=1.0,
+                    margin=1.0,
+                    slots=slots,
+                    reason="grounded_metric",
+                )
+        if action is None:
             if not clarify_on_ambiguity:
                 return False
             _semantic_clarification(skill, language)
@@ -104,7 +124,7 @@ def handle_reneryo_query(
             SemanticAction.REGRESSION_DETAIL,
         }:
             rows = skill.dispatcher._run_async(service.regressions())
-            selected = _select_regression(rows, text, resolution)
+            selected = _select_regression(rows, text, resolution, state)
             if action is SemanticAction.REGRESSION_DETAIL and selected is None:
                 _regression_clarification(skill, rows, language)
                 _remember(skill, message, state, operation="regression_clarification")
@@ -215,19 +235,12 @@ def handle_reneryo_query(
         rows = skill.dispatcher._run_async(service.metrics())
         selected_metric = None
         if action is SemanticAction.METRIC_DETAIL:
-            expected = normalize_phrase(state.metric_name)
-            selected_metric = next(
-                (
-                    row
-                    for row in rows
-                    if (expected and normalize_phrase(row.name) == expected)
-                    or (
-                        normalize_phrase(row.name)
-                        and normalize_phrase(row.name) in text
-                    )
-                ),
-                None,
-            )
+            expected = (
+                resolution.slots.get("metric_name", "")
+                if resolution is not None
+                else ""
+            ) or state.metric_name
+            selected_metric = match_metric(expected or text, rows)
         if action is SemanticAction.METRIC_DETAIL and selected_metric is None:
             _metric_clarification(skill, rows, language)
             _remember(skill, message, state, operation="metric_clarification")
@@ -446,18 +459,82 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
     """Map established lexical forms without invoking the semantic model."""
     if _is_finding_list(text):
         return SemanticAction.FINDINGS_LIST
+    if (
+        state.operation == "regression_detail"
+        and not _has(
+            text,
+            "finding",
+            "bulgu",
+            "metric",
+            "metrik",
+            "meter",
+            "sayac",
+            "sayaç",
+        )
+        and _has(
+            text,
+            "model",
+            "fit",
+            "quality",
+            "error",
+            "driver",
+            "training",
+            "its",
+            "regresyon",
+            "uyum",
+            "kalite",
+            "hata",
+            "surucu",
+            "sürücü",
+            "egitim",
+            "eğitim",
+            "bunun",
+        )
+    ):
+        return SemanticAction.REGRESSION_DETAIL
+    if state.metric_name and state.operation in {"metric_detail", "trend"}:
+        if _looks_like_trend(text):
+            return SemanticAction.TREND_SHOW
+        if _has(
+            text,
+            "this metric",
+            "this indicator",
+            "related metric",
+            "related indicator",
+            "bu metrik",
+            "bu gosterge",
+            "bu gösterge",
+            "ilgili metrik",
+            "ilgili gosterge",
+            "ilgili gösterge",
+        ):
+            return SemanticAction.METRIC_DETAIL
     if state.active_finding_id:
+        if state.metric_name and _looks_like_trend(text):
+            return SemanticAction.TREND_SHOW
         if state.metric_name and _has(
             text,
             "related metric",
+            "related indicator",
             "this metric",
+            "this indicator",
             "ilgili metrik",
             "bu metrik",
             "ilgili gösterge",
             "bu gösterge",
         ):
             return SemanticAction.METRIC_DETAIL
-        if _has(text, "evidence", "kanit", "kanıt"):
+        if _has(
+            text,
+            "evidence",
+            "supporting fact",
+            "facts support",
+            "data justify",
+            "kanit",
+            "kanıt",
+            "dayanak",
+            "destekleyen veri",
+        ):
             return SemanticAction.FINDING_EVIDENCE
         if _has(
             text,
@@ -525,7 +602,7 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
         ):
             return SemanticAction.REGRESSION_DETAIL
         return SemanticAction.REGRESSIONS_LIST
-    if _has(text, "trend", "egilim", "eğilim", "change", "degisim", "değişim"):
+    if _looks_like_trend(text):
         return SemanticAction.TREND_SHOW
     if _has(text, "meter", "meters", "sayac", "sayaç"):
         return SemanticAction.METERS_LIST
@@ -585,13 +662,19 @@ def _metric_clarification(skill, rows, language: str) -> None:
     )
 
 
-def _select_regression(rows, text: str, resolution: SemanticResolution | None):
+def _select_regression(
+    rows, text: str, resolution: SemanticResolution | None, state: DialogueState
+):
     period = resolution.slots.get("regression_period", "") if resolution else ""
     period = period or _regression_period_hint(text)
     if period:
         matches = [row for row in rows if row.period.upper() == period]
         if len(matches) == 1:
             return matches[0]
+    if state.operation == "regression_detail" and state.entity_id:
+        contextual = [row for row in rows if row.regression_id == state.entity_id]
+        if len(contextual) == 1:
+            return contextual[0]
     normalized = normalize_phrase(text)
     matches = [
         row
@@ -690,6 +773,41 @@ def _query_period(skill, utterance: str, current, semantic_period: str = ""):
         if parsed:
             return parsed
     return current or default_period()
+
+
+def has_signed_widget_context(message) -> bool:
+    """Return whether the trusted proxy injected a scoped Reneryo session."""
+    context = getattr(message, "context", {}) or {}
+    signed = context.get("reneryo_context")
+    return (
+        context.get("reneryo_widget_session_validated") is True
+        and isinstance(signed, dict)
+        and bool(signed.get("organization_id"))
+    )
+
+
+def _ground_metric_reference(skill, utterance: str):
+    """Resolve named/aliased metrics only from the live Reneryo inventory."""
+    try:
+        rows = skill.dispatcher._run_async(_service(skill).metrics())
+    except (AdapterError, ValidationError):
+        return None
+    return match_metric(utterance, rows)
+
+
+def _looks_like_trend(text: str) -> bool:
+    return _has(
+        text,
+        "trend",
+        "evolve",
+        "move over",
+        "changed",
+        "change over",
+        "egilim",
+        "eğilim",
+        "degis",
+        "değiş",
+    )
 
 
 def _signed_language(message) -> str:

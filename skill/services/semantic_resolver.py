@@ -297,6 +297,10 @@ class SemanticResolver:
     def _resolve_sync(
         self, utterance: str, state: DialogueState, language: str
     ) -> SemanticResolution:
+        if _is_vague_contextual_followup(utterance, state):
+            return SemanticResolution(
+                None, language, ambiguous=True, reason="vague_context"
+            )
         vector = self._encoder.embed([f"query: {utterance}"])[0]
         candidates = self._candidate_actions(utterance, state)
         ranked = sorted(
@@ -324,7 +328,12 @@ class SemanticResolver:
         runner_up = max(action_runner_up, out_of_scope)
         margin = confidence - runner_up
         required_margin = self._min_margin
-        if len(ranked) > 1:
+        if len(ranked) == 1:
+            # A bounded context or an explicit domain cue can constrain the
+            # allow-list to one action. Still require it to beat out-of-scope,
+            # but do not apply the general multi-action separation margin.
+            required_margin = 0.0
+        else:
             required_margin = max(
                 required_margin,
                 _CONFUSABLE_ACTION_PAIRS.get(
@@ -354,14 +363,128 @@ class SemanticResolver:
         )
 
     def _candidate_actions(
-        self, _utterance: str, state: DialogueState
+        self, utterance: str, state: DialogueState
     ) -> tuple[SemanticAction, ...]:
         actions = set(_ACTION_DESCRIPTIONS)
         if not state.active_finding_id:
             actions.difference_update(_FINDING_ACTIONS)
-        # With a selected finding, all canonical domains remain available so a
-        # natural semantic switch (for example "the related indicator") can
-        # move into a trend without requiring a literal domain keyword.
+        text = normalize_phrase(utterance)
+        finding_reference = _has_any(
+            text,
+            "finding",
+            "alert",
+            "issue",
+            "warning",
+            "bulgu",
+            "uyari",
+            "uyarı",
+            "sorun",
+        )
+        metric_reference = _has_any(
+            text, "metric", "indicator", "metri", "gosterge", "gösterge"
+        )
+        trend_reference = _has_any(
+            text,
+            "trend",
+            "evolve",
+            "changed",
+            "change over",
+            "egilim",
+            "eğilim",
+            "degis",
+            "değiş",
+        )
+        meter_reference = _has_any(text, "meter", "sayac", "sayaç")
+        regression_reference = _has_any(
+            text, "regression", "model", "fit", "regresyon", "uyum"
+        )
+        findings_inventory = _has_any(
+            text,
+            "findings",
+            "alerts",
+            "issues",
+            "bulgular",
+            "uyarilar",
+            "uyarılar",
+            "sorunlar",
+        )
+        inventory_request = _has_any(
+            text,
+            "list",
+            "all",
+            "available",
+            "inventory",
+            "what are",
+            "which",
+            "listele",
+            "tum",
+            "tüm",
+            "mevcut",
+            "kullanilabilir",
+            "kullanılabilir",
+            "hangi",
+            "neler",
+        )
+
+        # Bound pronoun-heavy follow-ups to the active domain. Explicit domain
+        # words still allow a deliberate finding -> metric/trend switch.
+        explicit_switch = any(
+            (
+                metric_reference,
+                trend_reference,
+                meter_reference,
+                regression_reference,
+                findings_inventory,
+            )
+        )
+        if findings_inventory:
+            actions.intersection_update({SemanticAction.FINDINGS_LIST})
+        elif (
+            state.operation == "regression_detail"
+            and not explicit_switch
+            and not finding_reference
+        ):
+            actions.intersection_update(
+                {SemanticAction.REGRESSION_DETAIL, SemanticAction.REGRESSIONS_LIST}
+            )
+        elif (
+            state.metric_name
+            and state.operation in {"metric_detail", "trend"}
+            and not finding_reference
+        ):
+            actions.intersection_update(
+                {SemanticAction.METRIC_DETAIL, SemanticAction.TREND_SHOW}
+            )
+        elif state.active_finding_id and (
+            not explicit_switch
+            or (
+                finding_reference
+                and not any(
+                    (
+                        metric_reference,
+                        trend_reference,
+                        meter_reference,
+                        regression_reference,
+                    )
+                )
+            )
+        ):
+            actions.intersection_update(_FINDING_ACTIONS)
+
+        if (
+            metric_reference
+            and not trend_reference
+            and not any((meter_reference, regression_reference, findings_inventory))
+        ):
+            actions.intersection_update(
+                {
+                    SemanticAction.METRICS_LIST
+                    if inventory_request
+                    else SemanticAction.METRIC_DETAIL
+                }
+            )
+        elif trend_reference and not any((meter_reference, regression_reference)):
+            actions.intersection_update({SemanticAction.TREND_SHOW})
         return tuple(sorted(actions, key=lambda action: action.value))
 
     def _embed_catalog(
@@ -391,3 +514,81 @@ def _regression_period(utterance: str) -> str:
     if re.search(r"\b(?:monthly|aylik|aylık)\b", text):
         return "MONTHLY"
     return ""
+
+
+def _has_any(text: str, *phrases: str) -> bool:
+    return any(normalize_phrase(phrase) in text for phrase in phrases)
+
+
+def _is_vague_contextual_followup(utterance: str, state: DialogueState) -> bool:
+    if not any(
+        (
+            state.active_finding_id,
+            state.metric_name,
+            state.entity_id,
+            state.period,
+            state.operation,
+        )
+    ):
+        return False
+    text = normalize_phrase(utterance)
+    if len(text.split()) > 6:
+        return False
+    return not _has_any(
+        text,
+        "finding",
+        "alert",
+        "issue",
+        "warning",
+        "why",
+        "cause",
+        "trigger",
+        "evidence",
+        "fact",
+        "period",
+        "when",
+        "date",
+        "entity",
+        "source",
+        "affect",
+        "explain",
+        "understand",
+        "metric",
+        "indicator",
+        "trend",
+        "meter",
+        "regression",
+        "model",
+        "fit",
+        "bulgu",
+        "uyari",
+        "uyarı",
+        "sorun",
+        "neden",
+        "sebep",
+        "tetik",
+        "kanit",
+        "kanıt",
+        "dayanak",
+        "donem",
+        "dönem",
+        "zaman",
+        "tarih",
+        "varlik",
+        "varlık",
+        "kaynak",
+        "etkile",
+        "acikla",
+        "açıkla",
+        "anlam",
+        "metri",
+        "gosterge",
+        "gösterge",
+        "egilim",
+        "eğilim",
+        "sayac",
+        "sayaç",
+        "regresyon",
+        "model",
+        "uyum",
+    )

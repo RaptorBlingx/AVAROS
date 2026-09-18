@@ -27,7 +27,7 @@ class FutureGenService:
 
     async def trend(self, utterance: str, period: TimePeriod) -> ReneryoTrend:
         metrics = await self.metrics()
-        metric = _match_metric(utterance, metrics)
+        metric = match_metric(utterance, metrics)
         if metric is None:
             raise ValidationError(
                 message="No Future Gen metric matched the request",
@@ -77,7 +77,8 @@ def default_period(days: int = 30) -> TimePeriod:
     )
 
 
-def _match_metric(utterance: str, metrics):
+def match_metric(utterance: str, metrics):
+    """Ground a natural metric reference in Reneryo-owned inventory data."""
     normalized = normalize_phrase(utterance)
     aliases = (
         ("electric", "elektrik", "energy", "enerji"),
@@ -99,7 +100,10 @@ def _match_metric(utterance: str, metrics):
                 (
                     metric
                     for metric in metrics
-                    if any(term in normalize_phrase(metric.name) for term in normalized_terms)
+                    if any(
+                        term in normalize_phrase(metric.name)
+                        for term in normalized_terms
+                    )
                 ),
                 None,
             )

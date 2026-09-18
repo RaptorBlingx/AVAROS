@@ -30,8 +30,19 @@ def handle_metric_query_fallback(skill: "AVAROSSkill", message: Message) -> bool
     """Fallback: resolve metric KPI queries missed by strict intent parsing."""
     utterance = skill._extract_utterance_text(message).lower()
 
-    from skill._reneryo_handlers import handle_reneryo_query
+    from skill._reneryo_handlers import (
+        handle_reneryo_query,
+        has_signed_widget_context,
+    )
+
     if handle_reneryo_query(skill, message, allow_semantic=False):
+        return True
+
+    # The signed Future Gen widget is a Reneryo surface. Give its constrained
+    # local resolver first refusal before generic manufacturing structured
+    # parsing, whose broad summary/definition forms otherwise steal natural
+    # Reneryo inventory and detail questions.
+    if has_signed_widget_context(message) and handle_reneryo_query(skill, message):
         return True
 
     if skill._is_anomaly_query(utterance):
@@ -153,8 +164,15 @@ def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
     """Recover KPI queries from global intent-failure events."""
     utterance = skill._extract_utterance_text(message).lower()
 
-    from skill._reneryo_handlers import handle_reneryo_query
+    from skill._reneryo_handlers import (
+        handle_reneryo_query,
+        has_signed_widget_context,
+    )
+
     if handle_reneryo_query(skill, message, allow_semantic=False):
+        return
+
+    if has_signed_widget_context(message) and handle_reneryo_query(skill, message):
         return
 
     if skill._is_anomaly_query(utterance):

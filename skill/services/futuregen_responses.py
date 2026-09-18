@@ -115,6 +115,7 @@ def meter_inventory_headline(
     has_positive_consumption = any((row.consumption or 0) > 0 for row in meters)
 
     if turkish:
+        period_name = _turkish_period_label(period.display_name)
         headline = (
             f"Reneryo'da {len(meters)} sayaç var: {_natural_join(names, turkish=True)}."
         )
@@ -125,10 +126,10 @@ def meter_inventory_headline(
         if slices:
             headline += f" Kapsadığı bölüm: {_natural_join(slices, turkish=True)}."
         if has_positive_consumption:
-            headline += f" {period.display_name} dönemi tüketimi {total:,.2f}."
+            headline += f" {period_name} dönemi tüketimi {total:,.2f}."
         else:
             headline += (
-                f" {period.display_name} dönemi için dönen tüketim 0,00; bu, "
+                f" {period_name} dönemi için dönen tüketim 0,00; bu, "
                 "sayacın mevcut olmadığını veya fabrikanın hiç tüketim yapmadığını göstermez."
             )
         return headline
@@ -268,6 +269,17 @@ def _localized_period(value: str, *, turkish: bool) -> str:
             normalized, value.lower()
         )
     return normalized.lower()
+
+
+def _turkish_period_label(value: str) -> str:
+    normalized = value.strip().lower()
+    return {
+        "latest available": "mevcut en güncel",
+        "last month": "geçen ay",
+        "last 4 weeks": "son dört hafta",
+        "past 30 days": "son 30 gün",
+        "last 30 days": "son 30 gün",
+    }.get(normalized, value)
 
 
 def _unique(values: Iterable[str]) -> list[str]:

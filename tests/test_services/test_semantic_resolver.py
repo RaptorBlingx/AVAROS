@@ -33,7 +33,7 @@ def test_equal_semantic_scores_are_treated_as_ambiguous():
 
     result = resolver.resolve(
         "Could you deal with this?",
-        state=DialogueState(active_finding_id="finding-1"),
+        state=DialogueState(),
         language="en-US",
     )
 
@@ -90,6 +90,33 @@ def test_runtime_inference_timeout_returns_ambiguity_instead_of_blocking():
     assert result.action is None
     assert result.ambiguous is True
     assert result.reason == "timeout"
+
+
+@pytest.mark.parametrize(
+    ("utterance", "language"),
+    [
+        ("Could you elaborate?", "en-US"),
+        ("Bununla ilgili biraz daha bilgi ver.", "tr-TR"),
+    ],
+)
+def test_short_contextual_request_without_action_cue_is_clarified(
+    utterance, language
+):
+    resolver = SemanticResolver(
+        encoder=_ConstantEncoder(),
+        min_confidence=0.5,
+        min_margin=0.0,
+    )
+
+    result = resolver.resolve(
+        utterance,
+        state=DialogueState(active_finding_id="finding-1"),
+        language=language,
+    )
+
+    assert result.action is None
+    assert result.ambiguous is True
+    assert result.reason == "vague_context"
 
 
 _MODEL_PATH = os.environ.get("AVAROS_SEMANTIC_MODEL_PATH", "")
