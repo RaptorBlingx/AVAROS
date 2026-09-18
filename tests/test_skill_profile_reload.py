@@ -1416,9 +1416,9 @@ class TestFallbackEligibility:
         msg = Mock()
         msg.data = {"utterances": [utterance]}
         msg.context = {
-            # HiveMind's fallback ping has this source, while retaining the
-            # widget platform and proxy-injected signed-session markers.
-            "source": "hive",
+            # HiveMind rewrites fallback pings to a connection-specific source
+            # while retaining proxy-injected signed-session markers.
+            "source": "avaros-client::1::avaros-client::session-1",
             "platform": "AVAROS-Widget-v1",
             "reneryo_widget_session_validated": True,
             "reneryo_context": {"organization_id": "futuregen"},
@@ -1432,7 +1432,7 @@ class TestFallbackEligibility:
         msg = Mock()
         msg.data = {}
         msg.context = {
-            "source": "hive",
+            "source": "avaros-client::1::avaros-client::session-1",
             "platform": "AVAROS-Widget-v1",
             "reneryo_widget_session_validated": True,
             "reneryo_context": {"organization_id": "futuregen"},

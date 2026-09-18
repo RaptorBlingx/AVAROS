@@ -201,11 +201,11 @@ def test_signed_embedded_widget_is_eligible_for_semantic_fallback(utterance):
 
 
 def test_signed_hivemind_widget_fallback_ping_is_eligible():
-    """HiveMind replaces source while retaining proxy-authenticated context."""
+    """HiveMind rewrites source while retaining proxy-authenticated context."""
     message = _Message("Help me understand this selected issue.")
     message.context.update(
         {
-            "source": "hive",
+            "source": "avaros-client::1::avaros-client::session-1",
             "platform": "AVAROS-Widget-v1",
             "reneryo_widget_session_validated": True,
         }
