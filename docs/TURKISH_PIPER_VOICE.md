@@ -12,6 +12,10 @@ AVAROS falls back to the installed `espeak-ng` Turkish voice.
 
 ## License and permitted use
 
+For the Future Gen MVP, `tr_TR-dfki-medium` is a temporary demonstration voice,
+not the final production voice choice. Reevaluate both voice quality and license
+suitability before any production rollout.
+
 The `dfki` Piper model is trained from the DFKI OT Turkish speech database.
 The dataset is Copyright 2009 DFKI GmbH and licensed under
 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).
