@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from skill.domain.models import CanonicalMetric, TimePeriod
 from skill.services.dia_response import speak_information
-from skill.services.language import is_turkish, metric_display_name
+from skill.services.language import is_turkish, metric_display_name, normalize_phrase
 
 if TYPE_CHECKING:
     from ovos_bus_client.message import Message
@@ -318,6 +318,25 @@ def _arbitrate_broad_reneryo_intent(skill: "AVAROSSkill", message: Message, inte
     used at registration time. This keeps that legacy path subject to the
     same signed-context arbitration as the normal guarded path.
     """
-    from skill._reneryo_handlers import try_arbitrate_legacy_intent
+    from skill._reneryo_handlers import (
+        _context_state,
+        _matches_registered_utterance,
+        handle_reneryo_query,
+        try_arbitrate_legacy_intent,
+    )
 
-    return try_arbitrate_legacy_intent(skill, message, intent_name)
+    if try_arbitrate_legacy_intent(skill, message, intent_name):
+        return True
+
+    # Some Padatious dispatches arrive through direct registered handlers and
+    # lose the broad-intent metadata used by the registration wrapper. Give a
+    # bounded, signed contextual turn the same deterministic/semantic route.
+    utterance = skill._extract_utterance_text(message)
+    state = _context_state(skill, message)
+    if (
+        state.organization_id
+        and any((state.active_finding_id, state.metric_name, state.entity_id, state.period))
+        and not _matches_registered_utterance(intent_name, normalize_phrase(utterance))
+    ):
+        return handle_reneryo_query(skill, message)
+    return False
