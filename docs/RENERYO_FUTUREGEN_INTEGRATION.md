@@ -34,6 +34,30 @@ certificate and include `docker/docker-compose.futuregen.yml` in Compose
 commands. The CA is mounted read-only into the skill container; certificate
 verification remains enabled.
 
+## Embedded hands-free voice
+
+The Reneryo widget can opt into the existing server-side `hey_jarvis`
+openWakeWord socket while it remains collapsed. Browser `getUserMedia` audio
+is resampled to 16 kHz PCM by the existing worklet and crosses the same
+origin-bound signed-session boundary before reaching the private wake service.
+The widget shows an explicit `Wake on` indicator whenever that microphone
+stream is armed.
+
+After detection, the server discards the wake-phrase tail and uses adaptive
+energy VAD to capture the following utterance. A pinned local multilingual
+whisper.cpp base Q5 model transcribes that request and independently detects
+English or Turkish; the wake phrase never chooses the request language. The
+transcript and detected locale enter the existing signed HiveMind connection,
+so organization/finding context, conversational routing, semantic fallback,
+and EN/TR TTS are unchanged. Microphone streaming stays paused during routing
+and TTS, then re-arms after playback to prevent self-triggering.
+
+Server-side post-wake capture is a per-socket opt-in used by the embedded
+widget. Detection-only clients, including the existing full AVAROS UI flow,
+retain their prior behavior. Browser SpeechRecognition remains only the
+manual push-to-talk fallback; wake turns never depend on its fixed locale or
+optional server-based browser recognition.
+
 ## Supported MVP queries
 
 English and Turkish queries can list meters and metrics, summarize a named

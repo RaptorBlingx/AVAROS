@@ -36,7 +36,7 @@ OVOS presentation is in `skill/`; and the HTTP presentation layer is in
 | OVOS core | pinned `smartgic/ovos-core` image | Intent pipeline and voice-assistant runtime | `ovos-config` volume |
 | FastAPI + React | `web-ui/` | Configuration UI/API, status, voice config/TTS, asset and metric configuration, production data, KPI progress, proxy routes | Shared AVAROS DB |
 | HiveMind | HiveMind container in Compose | Browser-to-OVOS WebSocket gateway | HiveMind data/state volumes where declared |
-| Wake-word service | `services/wakeword/` | Browser audio wake-word detection | No application DB |
+| Wake-word service | `services/wakeword/` | Browser PCM wake detection, post-wake VAD, and local multilingual EN/TR ASR | No application DB; ephemeral transcription files only |
 | Generic REST adapter | `skill/adapters/generic_rest/` | Profile-driven upstream HTTP calls and canonical result conversion | Reads active profile settings |
 | PREVENTION exporter | `tools/prevention-data-sync/exporter.py` | Periodically exports normalized time series into category JSON files and a manifest | Mounted PREVENTION addon data directory |
 | PREVENTION client | `skill/clients/prevention_http.py` | Reads precomputed analytics from PREVENTION GraphQL | PREVENTION owns its analytics store |
@@ -124,6 +124,10 @@ refresh notifications to OVOS where implemented.
   reference.
 - HiveMind requires its `authorization` WebSocket query parameter. The FastAPI
   proxy forwards it as `X-HiveMind-Auth` to the backend.
+- The embedded Reneryo widget uses the same short-lived signed, origin-bound
+  session for both HiveMind context and its wake-word WebSocket. The FastAPI
+  wake proxy validates cross-origin sockets before any microphone PCM reaches
+  the private wake service. Direct same-origin AVAROS UI sockets are retained.
 - Upstream platform authentication is profile-scoped. The generic REST adapter
   supports the auth modes implemented by its HTTP mixin and configured by the
   wizard; the Reneryo deployment uses the verified cookie configuration

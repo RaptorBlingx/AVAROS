@@ -57,4 +57,39 @@ describe("embedded WidgetPanel interruption", () => {
 
     expect(onStopSpeaking).toHaveBeenCalledOnce();
   });
+
+  it("offers an explicit wake-word enable action from text mode", () => {
+    const onModeChange = vi.fn();
+    render(
+      <WidgetPanel
+        mode="text"
+        disabledModes={[]}
+        messages={[]}
+        connectionState="connected"
+        listeningSupported
+        listeningActive={false}
+        micError={null}
+        inputValue=""
+        processing={false}
+        sendDisabled
+        visualState="idle"
+        onListenToggle={vi.fn()}
+        onInputChange={vi.fn()}
+        onSend={vi.fn()}
+        onModeChange={onModeChange}
+        onClear={vi.fn()}
+        brandLogoSrc="/logo.svg"
+        wakeWordLabel="Hey Jarvis"
+        avarosUrl="https://avaros.example.com/"
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /switch to wake-word mode/i,
+      }),
+    );
+
+    expect(onModeChange).toHaveBeenCalledWith("wake-word");
+  });
 });

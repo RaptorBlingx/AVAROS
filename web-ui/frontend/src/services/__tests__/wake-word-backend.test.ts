@@ -403,7 +403,12 @@ describe("BackendWakeWordService", () => {
       });
     });
 
-    it("test_detection_sets_detected_state_then_returns_to_listening", async () => {
+    it("test_detection_enters_post_wake_capture", async () => {
+      service.dispose();
+      service = new BackendWakeWordService({
+        wsUrl: "ws://test:9999/ws/detect",
+        captureUtterance: true,
+      });
       const states: BackendWakeWordState[] = [];
       service.onStateChange((s) => states.push(s));
 
@@ -422,11 +427,92 @@ describe("BackendWakeWordService", () => {
         }),
       );
 
-      expect(states[0]).toBe("detected");
+      expect(states[0]).toBe("capturing");
+      expect(service.state).toBe("capturing");
+    });
 
-      // After 500ms the state should return to listening
-      vi.advanceTimersByTime(500);
-      expect(service.state).toBe("listening");
+    it("test_transcript_reports_server_detected_language", async () => {
+      const transcript = vi.fn();
+      service.onTranscript(transcript);
+      const listenPromise = service.startListening();
+      MockWebSocket.lastInstance()!.simulateOpen();
+      await listenPromise;
+
+      MockWebSocket.lastInstance()!.simulateMessage(
+        JSON.stringify({
+          event: "transcript",
+          text: "Geçen ay ne değişti?",
+          language: "tr-TR",
+          language_confidence: 0.98,
+          ended_by: "complete",
+        }),
+      );
+
+      expect(transcript).toHaveBeenCalledWith({
+        text: "Geçen ay ne değişti?",
+        language: "tr-TR",
+        languageConfidence: 0.98,
+        endedBy: "complete",
+      });
+      expect(service.state).toBe("idle");
+    });
+
+    it("test_embedded_session_is_first_socket_control_message", async () => {
+      service.dispose();
+      service = new BackendWakeWordService({
+        wsUrl: "wss://avaros.example/wakeword/ws/detect",
+        sessionToken: "signed value",
+        captureUtterance: true,
+      });
+      const initPromise = service.initialize();
+      expect(MockWebSocket.lastInstance()!.url).toBe(
+        "wss://avaros.example/wakeword/ws/detect",
+      );
+      MockWebSocket.lastInstance()!.simulateOpen();
+      await initPromise;
+      expect(
+        JSON.parse(MockWebSocket.lastInstance()!.sentMessages[0] as string),
+      ).toEqual({
+        command: "authenticate_widget",
+        session: "signed value",
+      });
+      expect(
+        JSON.parse(MockWebSocket.lastInstance()!.sentMessages[1] as string),
+      ).toEqual({
+        command: "set_utterance_capture",
+        enabled: true,
+      });
+    });
+
+    it("test_consecutive_transcripts_can_switch_en_tr_en", async () => {
+      const transcript = vi.fn();
+      service.onTranscript(transcript);
+      const initPromise = service.initialize();
+      const socket = MockWebSocket.lastInstance()!;
+      socket.simulateOpen();
+      await initPromise;
+
+      for (const [text, language] of [
+        ["What changed?", "en-US"],
+        ["Ne değişti?", "tr-TR"],
+        ["Show the trend", "en-US"],
+      ] as const) {
+        socket.simulateMessage(
+          JSON.stringify({
+            event: "transcript",
+            text,
+            language,
+            language_confidence: 0.99,
+            ended_by: "complete",
+          }),
+        );
+      }
+
+      expect(transcript.mock.calls.map(([payload]) => payload.language)).toEqual([
+        "en-US",
+        "tr-TR",
+        "en-US",
+      ]);
     });
 
     it("test_unsubscribe_stops_callback", async () => {

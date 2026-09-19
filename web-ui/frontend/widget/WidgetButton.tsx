@@ -12,6 +12,8 @@ type WidgetButtonProps = {
   open: boolean;
   onClick: () => void;
   tooltip: string;
+  wakeWordEnabled: boolean;
+  wakeWordLabel: string;
 };
 
 const SIZE_TO_PX: Record<WidgetSize, number> = {
@@ -119,6 +121,8 @@ export function WidgetButton({
   open,
   onClick,
   tooltip,
+  wakeWordEnabled,
+  wakeWordLabel,
 }: WidgetButtonProps) {
   const showRecordingIndicator =
     visualState === "listening" || visualState === "speaking";
@@ -140,7 +144,9 @@ export function WidgetButton({
       style={{ width: SIZE_TO_PX[size], height: SIZE_TO_PX[size] }}
       onClick={onClick}
       title={tooltip}
-      aria-label={open ? "Close AVAROS widget" : "Open AVAROS widget"}
+      aria-label={`${open ? "Close" : "Open"} AVAROS widget${
+        wakeWordEnabled ? `; wake word enabled, listening for ${wakeWordLabel}` : ""
+      }`}
     >
       <RecordingIndicator
         active={showRecordingIndicator}
@@ -154,6 +160,11 @@ export function WidgetButton({
         aria-hidden="true"
       />
       {label ? <span className="aw-widget-label">{label}</span> : null}
+      {wakeWordEnabled ? (
+        <span className="aw-widget-wake-badge" aria-hidden="true">
+          Wake on
+        </span>
+      ) : null}
     </button>
   );
 }

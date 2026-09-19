@@ -1,7 +1,10 @@
 # AVAROS Wake-Word Detection Service
 
-Lightweight microservice wrapping [openWakeWord](https://github.com/dscripka/openWakeWord)
-for browser-based wake-word detection over WebSocket.
+Browser-audio voice gateway wrapping
+[openWakeWord](https://github.com/dscripka/openWakeWord) for wake detection and
+a pinned local [whisper.cpp](https://github.com/ggml-org/whisper.cpp) build for
+English/Turkish transcription and request-language detection. No audio or text
+is sent to a paid inference API.
 
 ## Quick Start
 
@@ -28,6 +31,14 @@ docker compose -f docker/docker-compose.avaros.yml up avaros-wakeword
 | `WAKEWORD_PRELOAD_MODELS` | `0` | When `1`, preload registry model files at service startup to avoid first-connection download delay. |
 | `WAKEWORD_CONFIRMATION_FRAMES` | `3` | Consecutive above-threshold frames required before emitting a detection event. At 80 ms/frame, 3 = 240 ms sustained confidence. |
 | `WAKEWORD_DETECTION_COOLDOWN_SECONDS` | `1.2` | Suppresses duplicate detection events from the same spoken wake phrase. Useful when `WAKEWORD_CONFIRMATION_FRAMES=1` for demo responsiveness. |
+| `ASR_THREADS` | `2` | CPU threads used by the serial local whisper.cpp worker. |
+| `ASR_TIMEOUT_SECONDS` | `20` | Hard timeout for one local transcription. |
+| `ASR_MIN_LANGUAGE_CONFIDENCE` | `0.55` | Minimum auto-detection probability for accepting English or Turkish. |
+| `UTTERANCE_START_TIMEOUT_MS` | `6000` | Maximum wait for speech after the wake phrase. |
+| `UTTERANCE_MAX_DURATION_MS` | `15000` | Maximum post-wake request capture. |
+| `UTTERANCE_END_SILENCE_MS` | `800` | Silence that ends a started request. |
+| `UTTERANCE_ENERGY_FLOOR` | `300` | Minimum RMS energy for the adaptive speech gate. |
+| `UTTERANCE_ENERGY_RATIO` | `2.5` | Speech threshold relative to the observed noise floor. |
 
 If `WAKEWORD_MODEL_PATH` is configured but the file does not exist, service startup falls back to the registry model. If that model is unavailable, it falls back to `hey_jarvis`.
 
@@ -55,7 +66,7 @@ Readiness probe.
 {
   "status": "ok",
   "models_loaded": ["hey_avaros"],
-  "version": "0.1.0",
+  "version": "0.2.0",
   "model_mode": "custom_path",
   "configured_threshold": 0.85,
   "threshold": 0.85,
@@ -71,8 +82,11 @@ Readiness probe.
 
 ### `WS /ws/detect`
 
-Stream raw 16 kHz signed-16-bit-LE PCM binary frames. Server replies
-with a JSON message **only** when a wake word is detected:
+Stream raw 16 kHz signed-16-bit-LE mono PCM binary frames continuously. The
+embedded widget first opts into post-wake capture with
+`{"command":"set_utterance_capture","enabled":true}`. Without that opt-in,
+the endpoint retains its original detection-only behavior for the full AVAROS
+UI. The service first emits the wake event:
 
 ```json
 {
@@ -82,6 +96,26 @@ with a JSON message **only** when a wake word is detected:
   "timestamp": "2026-03-04T12:00:00+00:00"
 }
 ```
+
+It then discards the wake-phrase tail, captures only the following request,
+and emits `utterance_processing` when VAD reaches the end of the turn. The
+browser must stop sending microphone audio at that point but keep the socket
+open. A successful local transcription is returned as:
+
+```json
+{
+  "event": "transcript",
+  "text": "Geçen ay ne değişti?",
+  "language": "tr-TR",
+  "language_confidence": 0.9948,
+  "ended_by": "complete"
+}
+```
+
+Recoverable failures use `{"event":"utterance_error","code":"..."}`. Codes
+are `silence_timeout`, `no_speech`, `language_ambiguous`, `asr_timeout`,
+`asr_unavailable`, and `asr_failed`. The next wake cycle begins only after the
+client calls `startListening()` again; that command resets detector state.
 
 ## Architecture Notes
 
@@ -103,6 +137,14 @@ with a JSON message **only** when a wake word is detected:
   WebSocket. The backend maps this to a threshold update using an
   inverted scale: `threshold = 1.0 - sensitivity`. A direct
   `set_threshold` command is also available for ops use.
+- **Language separation.** openWakeWord sees the wake phrase. A fresh capture
+  window feeds only the following utterance to multilingual whisper.cpp with
+  `language=auto`, so “Hey Jarvis” cannot choose the request language.
+- **End-of-turn.** A lightweight adaptive RMS gate provides onset, pre-roll,
+  800 ms end-silence, a six-second no-speech timeout, and a 15-second cap.
+- **Bounded inference.** whisper.cpp runs with the quantized multilingual base
+  model, two CPU threads, a global one-request-at-a-time lock, and private
+  temporary WAV/JSON files that are deleted after every request.
 
 ## Custom Model Deployment
 

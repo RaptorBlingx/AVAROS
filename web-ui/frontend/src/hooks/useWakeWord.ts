@@ -184,13 +184,15 @@ export function useWakeWord(options: UseWakeWordOptions): UseWakeWordResult {
         connecting: "loading",
         listening: "listening",
         detected: "detected",
+        capturing: "capturing",
+        processing: "processing",
         error: "error",
         unsupported: "unsupported",
       };
       setWakeWordState(stateMap[state]);
       setIsModelLoading(state === "connecting");
       setIsBackendWakeWord(
-        state === "listening" || state === "detected",
+        state === "listening" || state === "detected" || state === "capturing",
       );
     });
 

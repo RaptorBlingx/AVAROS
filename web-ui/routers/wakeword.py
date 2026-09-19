@@ -9,13 +9,15 @@ demos and development. These routes make both entry points behave the same.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
+from urllib.parse import urlsplit
 
 import aiohttp
 from fastapi import APIRouter, HTTPException, Response, WebSocket
+from services.reneryo_sessions import validate_session
 from starlette.websockets import WebSocketDisconnect
-
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -23,6 +25,7 @@ router = APIRouter(prefix="/wakeword", tags=["wakeword"])
 
 _DEFAULT_BACKEND_URL = "http://avaros-wakeword:9999"
 _BACKEND_TIMEOUT_SECONDS = 5
+_AUTH_TIMEOUT_SECONDS = 5
 
 
 def _backend_http_url() -> str:
@@ -38,6 +41,22 @@ def _backend_ws_url() -> str:
     if base_url.startswith("http://"):
         return f"ws://{base_url.removeprefix('http://')}/ws/detect"
     return f"{base_url}/ws/detect"
+
+
+def _is_same_origin_socket(websocket: WebSocket) -> bool:
+    """Allow the first-party AVAROS UI without a Reneryo widget session."""
+    origin = urlsplit(websocket.headers.get("origin", ""))
+    forwarded_proto = (
+        websocket.headers.get("x-forwarded-proto", "").split(",", 1)[0].strip()
+    )
+    forwarded_host = (
+        websocket.headers.get("x-forwarded-host", "").split(",", 1)[0].strip()
+    )
+    request_scheme = forwarded_proto or websocket.url.scheme.replace("ws", "http", 1)
+    request_host = forwarded_host or websocket.headers.get("host", "")
+    if not origin.scheme or not origin.netloc or not request_host:
+        return False
+    return origin.scheme == request_scheme and origin.netloc == request_host
 
 
 @router.get("/health")
@@ -65,7 +84,37 @@ async def wakeword_health() -> Response:
 @router.websocket("/ws/detect")
 async def wakeword_detect(websocket: WebSocket) -> None:
     """Proxy browser wake-word WebSocket traffic to the backend service."""
+    session_token = websocket.query_params.get("session", "").strip()
+    same_origin = _is_same_origin_socket(websocket)
     await websocket.accept()
+
+    if not same_origin and not session_token:
+        try:
+            message = await asyncio.wait_for(
+                websocket.receive_text(),
+                timeout=_AUTH_TIMEOUT_SECONDS,
+            )
+            payload = json.loads(message)
+            candidate_token = str(payload.get("session", "")).strip()
+            if (
+                payload.get("command") != "authenticate_widget"
+                or not candidate_token
+            ):
+                raise ValueError("A signed widget session is required")
+            session_token = candidate_token
+        except (asyncio.TimeoutError, json.JSONDecodeError, ValueError):
+            await websocket.close(
+                code=1008,
+                reason="A signed widget session is required",
+            )
+            return
+
+    if session_token:
+        try:
+            validate_session(session_token, websocket.headers.get("origin", ""))
+        except ValueError as exc:
+            await websocket.close(code=1008, reason=str(exc))
+            return
     timeout = aiohttp.ClientTimeout(total=None, sock_connect=_BACKEND_TIMEOUT_SECONDS)
 
     try:

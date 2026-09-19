@@ -79,11 +79,13 @@ function getVoiceToggleTarget(mode: WidgetMode, disabledModes: WidgetMode[]): Wi
 
 function getVoiceToggleLabel(mode: WidgetMode): string {
   if (mode === "wake-word") return "Wake-word on";
+  if (mode === "text") return "Wake-word off";
   return "Push-to-talk on";
 }
 
 function getVoiceToggleDetail(mode: WidgetMode, wakeWordLabel: string): string {
   if (mode === "wake-word") return `Listening for "${wakeWordLabel}"`;
+  if (mode === "text") return `Enable "${wakeWordLabel}"`;
   return "Mic opens only when you ask";
 }
 
@@ -209,7 +211,7 @@ export function WidgetPanel({
     connectionState === "error" ||
     connectionState === "disconnected";
   const voiceToggleTarget = getVoiceToggleTarget(mode, disabledModes);
-  const voiceToggleDisabled = mode === "text" || voiceToggleTarget === null;
+  const voiceToggleDisabled = voiceToggleTarget === null;
   const interruptLabel = processing
     ? "Cancel request"
     : visualState === "speaking"

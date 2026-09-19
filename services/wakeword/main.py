@@ -8,6 +8,7 @@ Endpoints
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -27,6 +28,8 @@ if __package__:
         _ensure_openwakeword_assets,
         _resolve_model_path,
     )
+    from .transcriber import LocalWhisperTranscriber, TranscriptionError
+    from .utterance import CaptureStatus, UtteranceCapture
 else:
     # Script-style import path (used by container CMD: uvicorn main:app).
     from detector import (  # type: ignore[no-redef]
@@ -35,8 +38,13 @@ else:
         _ensure_openwakeword_assets,
         _resolve_model_path,
     )
+    from transcriber import (  # type: ignore[no-redef]
+        LocalWhisperTranscriber,
+        TranscriptionError,
+    )
+    from utterance import CaptureStatus, UtteranceCapture  # type: ignore[no-redef]
 
-SERVICE_VERSION = "0.1.0"
+SERVICE_VERSION = "0.2.0"
 DEFAULT_DETECTION_COOLDOWN_SECONDS = 1.2
 
 logging.basicConfig(
@@ -49,6 +57,7 @@ MAX_WS_CLOSE_REASON_BYTES = 120
 _THRESHOLD_LOCK = threading.Lock()
 _SESSION_THRESHOLDS: dict[str, float] = {}
 _FALLBACK_MODEL_NAME = "hey_jarvis"
+_TRANSCRIBER = LocalWhisperTranscriber()
 
 
 def _preload_registry_assets_enabled() -> bool:
@@ -172,7 +181,11 @@ def _model_label(
     label = os.environ.get("WAKEWORD_MODEL_LABEL")
     if label:
         return label
-    custom_path = custom_model_path if custom_model_path is not None else _custom_model_path()
+    custom_path = (
+        custom_model_path
+        if custom_model_path is not None
+        else _custom_model_path()
+    )
     if custom_path:
         return os.path.splitext(os.path.basename(custom_path))[0]
     return model_name or _model_name()
@@ -346,6 +359,13 @@ def health() -> dict[str, Any]:
         "active_session_threshold_avg": threshold_avg,
         "confirmation_frames": _confirmation_frames(),
         "detection_cooldown_seconds": _detection_cooldown_seconds(),
+        "asr": {
+            "available": _TRANSCRIBER.available,
+            "engine": "whisper.cpp",
+            "model": os.path.basename(_TRANSCRIBER.model_path),
+            "languages": ["en-US", "tr-TR"],
+            "threads": _TRANSCRIBER.threads,
+        },
     }
 
 
@@ -383,6 +403,21 @@ async def ws_detect(websocket: WebSocket) -> None:
 
     last_detection_monotonic: float | None = None
     detection_cooldown = _detection_cooldown_seconds()
+    utterance_capture: UtteranceCapture | None = None
+    utterance_capture_enabled = False
+
+    def _reset_detector(active_detector: WakeWordDetector) -> WakeWordDetector:
+        active_threshold = _detector_threshold(active_detector)
+        active_detector.close()
+        replacement = WakeWordDetector(
+            model_name=model_name,
+            display_name=model_label,
+            threshold=active_threshold,
+            custom_model_path=custom_model_path,
+            confirmation_frames=_confirmation_frames(),
+        )
+        _update_session_threshold(session_id, replacement)
+        return replacement
 
     try:
         while True:
@@ -449,18 +484,15 @@ async def ws_detect(websocket: WebSocket) -> None:
                             new_threshold,
                         )
                     continue
+                if command == "set_utterance_capture":
+                    utterance_capture_enabled = payload.get("enabled") is True
+                    if not utterance_capture_enabled:
+                        utterance_capture = None
+                    continue
                 if command == "reset_detector":
                     reason = payload.get("reason", "unspecified")
-                    active_threshold = _detector_threshold(detector)
-                    detector.close()
                     try:
-                        detector = WakeWordDetector(
-                            model_name=model_name,
-                            display_name=model_label,
-                            threshold=active_threshold,
-                            custom_model_path=custom_model_path,
-                            confirmation_frames=_confirmation_frames(),
-                        )
+                        detector = _reset_detector(detector)
                     except ValueError as exc:
                         logger.error(
                             "Detector reset failed for session=%s reason=%s: %s",
@@ -473,20 +505,60 @@ async def ws_detect(websocket: WebSocket) -> None:
                             reason=_safe_close_reason("detector reset failed"),
                         )
                         break
-                    _update_session_threshold(session_id, detector)
+                    utterance_capture = None
                     last_detection_monotonic = None
                     logger.info(
                         "Detector reset: session=%s reason=%s threshold=%.2f",
                         session_id,
                         reason,
-                        active_threshold,
+                        _detector_threshold(detector),
                     )
+                    continue
+                if command == "cancel_utterance":
+                    utterance_capture = None
+                    detector = _reset_detector(detector)
                     continue
                 logger.debug("Ignoring unsupported websocket command: %s", payload)
                 continue
 
             pcm_frame = message.get("bytes")
             if not pcm_frame:
+                continue
+
+            if utterance_capture is not None:
+                capture_result = utterance_capture.process_audio(pcm_frame)
+                if capture_result is None:
+                    continue
+                utterance_capture = None
+                if capture_result.status == CaptureStatus.SILENCE_TIMEOUT:
+                    await websocket.send_json(
+                        {"event": "utterance_error", "code": "silence_timeout"}
+                    )
+                    detector = _reset_detector(detector)
+                    continue
+
+                await websocket.send_json({"event": "utterance_processing"})
+                try:
+                    transcript = await asyncio.to_thread(
+                        _TRANSCRIBER.transcribe,
+                        capture_result.pcm,
+                    )
+                    await websocket.send_json(
+                        {
+                            "event": "transcript",
+                            "text": transcript.text,
+                            "language": transcript.language,
+                            "language_confidence": round(
+                                transcript.language_confidence, 4
+                            ),
+                            "ended_by": capture_result.status.value,
+                        }
+                    )
+                except TranscriptionError as exc:
+                    await websocket.send_json(
+                        {"event": "utterance_error", "code": exc.code}
+                    )
+                detector = _reset_detector(detector)
                 continue
 
             event = detector.process_audio(pcm_frame)
@@ -519,7 +591,8 @@ async def ws_detect(websocket: WebSocket) -> None:
                 )
                 last_detection_monotonic = now
                 logger.warning(
-                    "DETECTION FIRED: model=%s score=%.4f threshold=%.2f session=%s since_last=%s",
+                    "DETECTION FIRED: model=%s score=%.4f threshold=%.2f "
+                    "session=%s since_last=%s",
                     event.model,
                     event.score,
                     _detector_threshold(detector),
@@ -527,6 +600,11 @@ async def ws_detect(websocket: WebSocket) -> None:
                     since_last,
                 )
                 await websocket.send_json(asdict(event))
+                # Wake detection and request-language detection are separate:
+                # begin a fresh, bounded capture after the wake event and let
+                # multilingual ASR classify only the following utterance.
+                if utterance_capture_enabled:
+                    utterance_capture = UtteranceCapture()
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected: %s", websocket.client)
     finally:

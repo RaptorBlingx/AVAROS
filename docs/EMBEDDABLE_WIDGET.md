@@ -1,19 +1,20 @@
 # Embeddable AVAROS Widget
 
-AVAROS provides a single-file browser widget for trusted factory dashboards,
-MES screens, and internal intranet portals. The widget connects directly to
-HiveMind over WebSocket and sends the same text or push-to-talk utterances that
-the AVAROS Web UI sends to OVOS.
+AVAROS provides a single-file browser widget for the authenticated Reneryo
+application. Reneryo issues a short-lived, origin-bound signed widget session;
+AVAROS validates it before proxying the widget's HiveMind and cross-origin
+wake-word WebSockets.
 
 ## Trust Model
 
-The current widget is an internal/trusted deployment model. The HiveMind access
-key and encryption key are visible in the page source because the browser must
-use them to open the WebSocket connection and decode AVAROS responses. Use this
-version only on controlled internal pages, not public internet sites.
-
-For public websites, add a backend-issued short-lived widget session token and
-origin allow-list before exposing the widget.
+The Reneryo embed does not receive reusable HiveMind credentials. The signed
+session is bounded to organization/finding context, expected browser origin,
+and a short expiry. Same-origin AVAROS UI wake sockets remain supported;
+cross-origin wake sockets require a valid signed session. Microphone PCM is
+transported over TLS only after the signed session is validated as the first
+WebSocket control message, keeping the token out of URLs and access logs. Audio
+is processed locally in the AVAROS deployment and is not persisted, except for
+private transcription temporary files deleted when the local process exits.
 
 ## Generate The Script Tag
 
@@ -40,13 +41,13 @@ Example:
   data-theme="auto"
   data-size="medium"
   data-label="Ask AVAROS"
-  data-disabled-modes="wake-word">
+  data-disabled-modes="none">
 </script>
 ```
 
-Wake-word mode is disabled by default for embedded v1. Users can always type in
-the widget and can use push-to-talk voice when microphone access is available.
-The `data-avaros-url` value powers the widget's Open AVAROS shortcut.
+The Reneryo integration starts in text mode. The user explicitly enables wake
+mode in the widget; after microphone permission is granted, a visible badge
+remains on the collapsed button. Text and push-to-talk remain available.
 
 ## Required Runtime Conditions
 
@@ -57,6 +58,12 @@ The `data-avaros-url` value powers the widget's Open AVAROS shortcut.
   encrypted; the Settings generator includes it as `data-encryption-key`.
 - Microphone features require HTTPS or `localhost`.
 - The host page must allow WebSocket connections to the AVAROS/HiveMind URL.
+- Wake mode requires the page to remain open. Background-tab throttling,
+  suspended laptops, mobile screen locking, and browser power policies can
+  pause audio processing; this is not an OS-level/background assistant.
+- Browsers may require the wake-mode click before microphone capture and audio
+  playback. A denied permission is surfaced in the widget and does not remove
+  text/push-to-talk fallbacks.
 
 ## Public API
 
@@ -78,8 +85,14 @@ window.AvarosWidget.destroy();
 3. Confirm the floating bubble appears above the page content.
 4. Open the bubble and send `forecast energy for Line 1`.
 5. Confirm AVAROS replies in the panel.
-6. Click the microphone action and test push-to-talk on HTTPS or localhost.
-7. In the browser console, run:
+6. Enable wake-word mode and collapse the widget. Confirm the visible `Wake on`
+   badge, say `Hey Jarvis`, and ask an English question.
+7. After the spoken response finishes and wake mode re-arms, say `Hey Jarvis`
+   and ask a Turkish question, then repeat in English. Confirm EN -> TR -> EN
+   transcription, responses, and voices without changing a language selector.
+8. Confirm silence, microphone denial, and a temporary socket interruption are
+   reported cleanly and that text/push-to-talk remain usable.
+9. In the browser console, run:
 
 ```js
 window.AvarosWidget.open();

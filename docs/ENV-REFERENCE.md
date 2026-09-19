@@ -80,6 +80,14 @@ Platform connection is configured from the Web UI wizard and stored per profile 
 | `HIVEMIND_WS_URL` | No | `auto` | Web UI | Public websocket URL returned to browser clients for HiveMind connections. `auto` derives `ws(s)://<current-host>/hivemind/` from the request and is recommended behind the AVAROS proxy. |
 | `HIVEMIND_CLIENT_ALLOWED_TYPES` | No | built-in allowlist | HiveMind | Comma-separated OVOS message types allowed for the browser client. |
 | `WAKEWORD_BACKEND_URL` | No | `http://avaros-wakeword:9999` | Web UI | Internal wake-word backend URL used by the Web UI same-origin `/wakeword/*` proxy. Keep the Docker default unless the wake-word service is deployed separately. |
+| `ASR_THREADS` | No | `2` | Wake-word service | CPU threads for serial local whisper.cpp EN/TR transcription. |
+| `ASR_TIMEOUT_SECONDS` | No | `20` | Wake-word service | Hard timeout for one post-wake transcription. |
+| `ASR_MIN_LANGUAGE_CONFIDENCE` | No | `0.55` | Wake-word service | Minimum auto-detection probability for accepting English or Turkish. |
+| `UTTERANCE_START_TIMEOUT_MS` | No | `6000` | Wake-word service | Wait for request speech after wake detection before reporting silence. |
+| `UTTERANCE_MAX_DURATION_MS` | No | `15000` | Wake-word service | Maximum request capture duration. |
+| `UTTERANCE_END_SILENCE_MS` | No | `800` | Wake-word service | Post-speech silence used to end the request. |
+| `UTTERANCE_ENERGY_FLOOR` | No | `300` | Wake-word service | Minimum RMS value for adaptive speech onset/end detection. |
+| `UTTERANCE_ENERGY_RATIO` | No | `2.5` | Wake-word service | Speech threshold multiplier above the observed noise floor. |
 
 ## Mock RENERYO Server
 

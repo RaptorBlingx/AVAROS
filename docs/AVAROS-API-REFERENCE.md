@@ -277,11 +277,12 @@ widget follows the trusted-host model in `EMBEDDABLE_WIDGET.md`.
 |---|---|---|---|
 | WEBSOCKET | `/hivemind/` | required `authorization` query parameter | Same-origin bidirectional proxy; forwards authorization as `X-HiveMind-Auth` |
 | GET | `/wakeword/health` | none at FastAPI middleware | Proxies wake-word backend health; backend errors return `503` |
-| WEBSOCKET | `/wakeword/ws/detect` | none at FastAPI middleware | Proxies binary/text frames to wake-word detector |
+| WEBSOCKET | `/wakeword/ws/detect` | signed session for cross-origin embeds; same-origin AVAROS UI allowed | Proxies 16 kHz PCM/control frames to wake detection, post-wake VAD, and local EN/TR ASR |
 
 The HiveMind proxy accepts the browser socket before validation; absent
-authorization causes close code `1008`. Backend connection failures use close
-code `1011`.
+authorization causes close code `1008`. Cross-origin wake sockets also close
+with `1008` when the signed widget session is missing, expired, invalid, or
+bound to another origin. Backend connection failures use close code `1011`.
 
 ## Interfaces that do not exist
 

@@ -89,8 +89,9 @@ async function fetchInheritedVoiceMode(avarosUrl: string): Promise<WidgetMode | 
   }
 }
 
-/** Cooldown to avoid re-prompting "How can I help you?" from TTS echo. */
+/** Cooldown to suppress duplicate events from one spoken wake phrase. */
 const WAKE_WORD_PROMPT_COOLDOWN_MS = 3000;
+const WAKE_WORD_REARM_DELAY_MS = 600;
 const RESPONSE_FALLBACK_TIMEOUT_MS = 25000;
 const SPEECH_EVENT_DEDUP_MS = 1200;
 const SERVER_TTS_FETCH_TIMEOUT_MS = 15000;
@@ -152,11 +153,10 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     at: 0,
   });
   const appendMessageRef = useRef<(msg: ChatMessage) => void>(() => {});
-  const speakAssistantTextRef = useRef<
-    (text: string, language?: string) => Promise<void>
-  >(
+  const sendTextRef = useRef<(text: string, language?: string) => Promise<void>>(
     async () => {},
   );
+  const resumeWakeWordRef = useRef<() => void>(() => {});
 
   const [panelOpen, setPanelOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
@@ -208,8 +208,6 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     activeLanguageRef.current = language;
     managerRef.current?.setLanguage(language);
   }, [config.language]);
-
-  const restartRecognitionRef = useRef<(() => void) | null>(null);
 
   const ttsWatcherRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -674,7 +672,11 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
         now - lastAssistantSpeechRef.current.at < SPEECH_EVENT_DEDUP_MS;
       lastAssistantSpeechRef.current = { text: cleaned, at: now };
       if (!isDuplicateSpeech) {
-        void speakAssistantText(cleaned, responseLocale);
+        void speakAssistantText(cleaned, responseLocale).finally(() => {
+          resumeWakeWordRef.current();
+        });
+      } else {
+        resumeWakeWordRef.current();
       }
     },
     [appendMessage, clearCompletionTimer, clearFallbackTimer, speakAssistantText],
@@ -688,6 +690,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     void managerRef.current?.interrupt().catch(() => undefined);
     setProcessing(false);
     appendMessage(makeMessage("avaros", "Request cancelled."));
+    resumeWakeWordRef.current();
   }, [
     appendMessage,
     clearCompletionTimer,
@@ -701,6 +704,14 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   }, [stopAssistantSpeech]);
 
   const stopListening = useCallback(() => {
+    if (modeRef.current === "wake-word") {
+      backendWakeWordRef.current?.stopListening();
+      wakeWordArmedRef.current = false;
+      setWakeWordArmed(false);
+      setMicActive(false);
+      return;
+    }
+
     const recognition = recognitionRef.current;
     if (!recognition) {
       setMicActive(false);
@@ -723,7 +734,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   }, []);
 
   const sendText = useCallback(
-    async (text: string) => {
+    async (text: string, explicitLanguage?: string) => {
       const cleaned = text.trim();
       if (!cleaned) return;
       if (configError) return;
@@ -732,10 +743,9 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       if (!manager) return;
 
       const toSend = normalizeUtteranceForIntent(cleaned);
-      const requestLanguage = detectWidgetLanguage(
-        cleaned,
-        activeLanguageRef.current,
-      );
+      const requestLanguage = explicitLanguage
+        ? normalizeWidgetLanguage(explicitLanguage)
+        : detectWidgetLanguage(cleaned, activeLanguageRef.current);
       activeLanguageRef.current = requestLanguage;
       manager.setLanguage(requestLanguage);
 
@@ -753,6 +763,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
             "No response from AVAROS for this command. Check platform connectivity.",
           ),
         );
+        resumeWakeWordRef.current();
       }, RESPONSE_FALLBACK_TIMEOUT_MS);
 
       try {
@@ -763,6 +774,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
         responseResolvedRef.current = true;
         setProcessing(false);
         appendMessage(makeMessage("avaros", "Send failed. Check connection."));
+        resumeWakeWordRef.current();
       }
     },
     [
@@ -795,6 +807,24 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
         setMicError("Allow microphone first.");
         return;
       }
+    }
+
+    if (activeMode === "wake-word") {
+      const wakeWord = backendWakeWordRef.current;
+      if (!wakeWord) {
+        setMicError("Wake-word service is reconnecting. Try again shortly.");
+        return;
+      }
+      try {
+        await wakeWord.initialize();
+        await wakeWord.startListening();
+        setMicActive(true);
+        setMicError(null);
+      } catch {
+        setMicActive(false);
+        setMicError("Wake-word service unavailable. Use push-to-talk or text.");
+      }
+      return;
     }
 
     const RecognitionCtor = getSpeechRecognitionCtor();
@@ -898,10 +928,6 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   }, [config.initialPrompt, connectionState, sendText]);
 
   useEffect(() => {
-    restartRecognitionRef.current = startListening;
-  }, [startListening]);
-
-  useEffect(() => {
     modeRef.current = mode;
   }, [mode]);
 
@@ -911,7 +937,28 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
 
   // Keep refs current so the onDetected handler never captures stale callbacks.
   appendMessageRef.current = appendMessage;
-  speakAssistantTextRef.current = speakAssistantText;
+  sendTextRef.current = sendText;
+
+  resumeWakeWordRef.current = () => {
+    if (modeRef.current !== "wake-word") return;
+    if (isTtsSpeakingRef.current) return;
+    window.setTimeout(() => {
+      if (modeRef.current !== "wake-word" || isTtsSpeakingRef.current) return;
+      const wakeWord = backendWakeWordRef.current;
+      if (!wakeWord) return;
+      void wakeWord
+        .initialize()
+        .then(() => wakeWord.startListening())
+        .then(() => {
+          setMicActive(true);
+          setMicError(null);
+        })
+        .catch(() => {
+          setMicActive(false);
+          setMicError("Wake-word service disconnected. Use push-to-talk or text.");
+        });
+    }, WAKE_WORD_REARM_DELAY_MS);
+  };
 
   // ── Backend Wake Word: lifecycle + detection (single effect) ──
   useEffect(() => {
@@ -922,8 +969,24 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     }
 
     if (backendWakeWordRef.current) return;
-    const bww = new BackendWakeWordService({ wsUrl: config.wakeWordUrl });
+    const bww = new BackendWakeWordService({
+      wsUrl: config.wakeWordUrl,
+      sessionToken: config.sessionToken,
+      captureUtterance: true,
+    });
     backendWakeWordRef.current = bww;
+
+    const unsubState = bww.onStateChange((state) => {
+      if (state === "listening" || state === "capturing") {
+        setMicActive(true);
+        setMicError(null);
+      } else if (state === "processing" || state === "idle") {
+        setMicActive(false);
+      } else if (state === "error") {
+        setMicActive(false);
+        setMicError("Wake-word service disconnected. Reconnecting…");
+      }
+    });
 
     // Wire onDetected BEFORE startListening to avoid losing events.
     const unsubDetected = bww.onDetected((_payload: DetectionPayload) => {
@@ -939,17 +1002,34 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       setPanelOpen(true);
       wakeWordArmedRef.current = true;
       setWakeWordArmed(true);
-      const promptLanguage = activeLanguageRef.current;
-      const prompt =
-        promptLanguage === "tr-TR"
-          ? "Size nasıl yardımcı olabilirim?"
-          : "How can I help you?";
-      appendMessageRef.current(makeMessage("avaros", prompt));
-      void speakAssistantTextRef.current(prompt, promptLanguage).finally(() => {
-        if (modeRef.current !== "wake-word") return;
-        if (!wakeWordArmedRef.current) return;
-        restartRecognitionRef.current?.();
-      });
+      ensureConnected();
+    });
+    const unsubTranscript = bww.onTranscript((payload) => {
+      wakeWordArmedRef.current = false;
+      setWakeWordArmed(false);
+      setMicActive(false);
+      if (!payload.text) {
+        resumeWakeWordRef.current();
+        return;
+      }
+      void sendTextRef.current(payload.text, payload.language);
+    });
+    const unsubUtteranceError = bww.onUtteranceError((payload) => {
+      wakeWordArmedRef.current = false;
+      setWakeWordArmed(false);
+      setMicActive(false);
+      const isTurkish = activeLanguageRef.current === "tr-TR";
+      const message =
+        payload.code === "silence_timeout" || payload.code === "no_speech"
+          ? isTurkish
+            ? "Konuşma duyulmadı. Lütfen tekrar \"Hey Jarvis\" deyin."
+            : `I didn't hear a request. Please say "${bww.getWakeWordLabel()}" again.`
+          : payload.code === "language_ambiguous"
+            ? "I couldn't confidently identify English or Turkish. / İngilizce veya Türkçe dili güvenle belirleyemedim."
+            : "Local speech recognition failed. Please try again or use push-to-talk/text.";
+      setMicError(message);
+      appendMessageRef.current(makeMessage("avaros", message));
+      resumeWakeWordRef.current();
     });
 
     // Initialize and start listening after handler is wired.
@@ -958,10 +1038,19 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
         await bww.initialize();
         setWakeWordLabel(await bww.refreshWakeWordLabel());
         await bww.startListening();
-      } catch {
+      } catch (error) {
         // Backend unavailable — degrade to push-to-talk.
         bww.dispose();
         backendWakeWordRef.current = null;
+        if (
+          error instanceof DOMException &&
+          (error.name === "NotAllowedError" || error.name === "PermissionDeniedError")
+        ) {
+          setMicPermission("denied");
+          setMicError("Microphone permission blocked. Allow access and retry.");
+        } else {
+          setMicError("Wake-word service unavailable. Push-to-talk is still available.");
+        }
         setMode((prev) => (prev === "wake-word" ? "push-to-talk" : prev));
         modeRef.current = "push-to-talk";
       }
@@ -969,10 +1058,13 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
 
     return () => {
       unsubDetected();
+      unsubTranscript();
+      unsubUtteranceError();
+      unsubState();
       bww.dispose();
       backendWakeWordRef.current = null;
     };
-  }, [config.wakeWordUrl, mode]);
+  }, [config.sessionToken, config.wakeWordUrl, ensureConnected, mode]);
 
   useEffect(() => {
     if (!("speechSynthesis" in window)) return;
@@ -1184,7 +1276,11 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
         setPanelOpen(true);
         void sendText(text);
       },
-      isConnected: () => managerRef.current?.isConnected() ?? false,
+      isConnected: () => {
+        if (!managerRef.current?.isConnected()) return false;
+        if (modeRef.current !== "wake-word") return true;
+        return backendWakeWordRef.current?.isAvailable() ?? false;
+      },
     });
   }, [
     config.disabledModes,
@@ -1204,7 +1300,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       mode === "wake-word" && micActive && !wakeWordArmed && !panelOpen;
     if (isPassiveWakeWordListening) return "idle";
     if (micActive || (mode === "wake-word" && panelOpen)) return "listening";
-    if (connectionState === "disconnected") return "error";
+    if (connectionState === "disconnected" && mode !== "wake-word") return "error";
     return "idle";
   }, [
     configError,
@@ -1293,6 +1389,8 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
         label={config.label}
         open={panelOpen}
         tooltip={connectionTooltip}
+        wakeWordEnabled={mode === "wake-word" && micActive && !configError}
+        wakeWordLabel={wakeWordLabel}
         onClick={() => {
           ensureConnected();
           setPanelOpen((prev) => !prev);

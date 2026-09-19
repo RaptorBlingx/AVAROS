@@ -11,12 +11,12 @@ import os
 import threading
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from services.wakeword import main as wakeword_main
-from services.wakeword.detector import DEFAULT_CONFIRMATION_FRAMES
-from services.wakeword.detector import DetectionEvent
+from services.wakeword.detector import DEFAULT_CONFIRMATION_FRAMES, DetectionEvent
+from services.wakeword.transcriber import TranscriptionResult
+from services.wakeword.utterance import CaptureResult, CaptureStatus
 
 app = wakeword_main.app
 
@@ -57,6 +57,8 @@ class TestHealthEndpoint:
         assert "threshold" in body
         assert "threshold_source" in body
         assert "confirmation_frames" in body
+        assert body["asr"]["engine"] == "whisper.cpp"
+        assert body["asr"]["languages"] == ["en-US", "tr-TR"]
 
     def test_health_reflects_configured_model(self) -> None:
         """Health reports the model configured via env var."""
@@ -114,7 +116,7 @@ class TestWebSocketEndpoint:
         client = TestClient(app)
 
         # Act & Assert — no exception on connect/disconnect
-        with client.websocket_connect("/ws/detect") as ws:
+        with client.websocket_connect("/ws/detect"):
             pass  # connect then immediately disconnect
 
     def test_websocket_detection_sends_json(self) -> None:
@@ -147,58 +149,118 @@ class TestWebSocketEndpoint:
         assert data["score"] == 0.92
         assert "timestamp" in data
 
-    def test_websocket_suppresses_duplicate_detection_inside_cooldown(self) -> None:
-        """Immediate duplicate detector events are not forwarded to clients."""
-        # Arrange
-        events = [
-            DetectionEvent(
-                event="detected",
-                model="hey_avaros",
-                score=0.91,
-                timestamp="2026-03-04T12:00:00+00:00",
-            ),
-            DetectionEvent(
-                event="detected",
-                model="hey_avaros",
-                score=0.92,
-                timestamp="2026-03-04T12:00:00.400000+00:00",
-            ),
-            DetectionEvent(
-                event="detected",
-                model="hey_avaros",
-                score=0.93,
-                timestamp="2026-03-04T12:00:01.500000+00:00",
-            ),
-        ]
+    def test_detection_only_client_does_not_start_server_asr(self) -> None:
+        """Existing full-UI clients retain their pre-widget wake behavior."""
         mock_detector = MagicMock()
-        mock_detector.process_audio.side_effect = events
+        mock_detector.process_audio.return_value = DetectionEvent(
+            event="detected",
+            model="hey_avaros",
+            score=0.92,
+            timestamp="2026-03-04T12:00:00+00:00",
+        )
         mock_detector.close.return_value = None
+        client = TestClient(app)
+
+        with patch(
+            "services.wakeword.main.WakeWordDetector",
+            return_value=mock_detector,
+        ), patch("services.wakeword.main.UtteranceCapture") as capture_cls:
+            with client.websocket_connect("/ws/detect") as ws:
+                ws.send_bytes(b"\x00" * 2560)
+                assert ws.receive_json()["event"] == "detected"
+
+        capture_cls.assert_not_called()
+
+    def test_websocket_routes_post_wake_audio_to_utterance_capture(self) -> None:
+        """The wake phrase is not re-run through detection as request audio."""
+        # Arrange
+        mock_detector = MagicMock()
+        mock_detector.process_audio.return_value = DetectionEvent(
+            event="detected",
+            model="hey_avaros",
+            score=0.91,
+            timestamp="2026-03-04T12:00:00+00:00",
+        )
+        mock_detector.close.return_value = None
+        mock_capture = MagicMock()
+        mock_capture.process_audio.return_value = CaptureResult(
+            CaptureStatus.SILENCE_TIMEOUT
+        )
 
         client = TestClient(app)
 
         # Act
-        with patch.dict(
-            "os.environ",
-            {"WAKEWORD_DETECTION_COOLDOWN_SECONDS": "1.0"},
-            clear=False,
+        with patch(
+            "services.wakeword.main.WakeWordDetector",
+            return_value=mock_detector,
+        ), patch(
+            "services.wakeword.main.UtteranceCapture",
+            return_value=mock_capture,
         ):
-            with patch(
-                "services.wakeword.main.WakeWordDetector",
-                return_value=mock_detector,
-            ), patch(
-                "services.wakeword.main._now_monotonic",
-                side_effect=[100.0, 100.4, 101.5],
-            ):
-                with client.websocket_connect("/ws/detect") as ws:
-                    ws.send_bytes(b"\x00" * 2560)
-                    first = ws.receive_json()
-                    ws.send_bytes(b"\x00" * 2560)
-                    ws.send_bytes(b"\x00" * 2560)
-                    second = ws.receive_json()
+            with client.websocket_connect("/ws/detect") as ws:
+                ws.send_text(
+                    '{"command":"set_utterance_capture","enabled":true}'
+                )
+                ws.send_bytes(b"\x00" * 2560)
+                first = ws.receive_json()
+                ws.send_bytes(b"\x01" * 2560)
+                second = ws.receive_json()
 
         # Assert
         assert first["score"] == 0.91
-        assert second["score"] == 0.93
+        assert second == {"event": "utterance_error", "code": "silence_timeout"}
+        mock_detector.process_audio.assert_called_once()
+        mock_capture.process_audio.assert_called_once_with(b"\x01" * 2560)
+
+    def test_websocket_returns_local_transcript_and_detected_language(self) -> None:
+        """Completed request audio is locally transcribed before detector reset."""
+        mock_detector = MagicMock()
+        mock_detector.process_audio.return_value = DetectionEvent(
+            event="detected",
+            model="hey_jarvis",
+            score=0.94,
+            timestamp="2026-03-04T12:00:00+00:00",
+        )
+        mock_detector.close.return_value = None
+        mock_capture = MagicMock()
+        mock_capture.process_audio.return_value = CaptureResult(
+            CaptureStatus.COMPLETE,
+            b"\x01\x00" * 16_000,
+        )
+
+        client = TestClient(app)
+        with patch(
+            "services.wakeword.main.WakeWordDetector",
+            return_value=mock_detector,
+        ), patch(
+            "services.wakeword.main.UtteranceCapture",
+            return_value=mock_capture,
+        ), patch.object(
+            wakeword_main._TRANSCRIBER,
+            "transcribe",
+            return_value=TranscriptionResult(
+                "Geçen ay ne değişti?",
+                "tr-TR",
+                0.98,
+            ),
+        ):
+            with client.websocket_connect("/ws/detect") as ws:
+                ws.send_text(
+                    '{"command":"set_utterance_capture","enabled":true}'
+                )
+                ws.send_bytes(b"\x00" * 2560)
+                assert ws.receive_json()["event"] == "detected"
+                ws.send_bytes(b"\x01" * 2560)
+                assert ws.receive_json() == {"event": "utterance_processing"}
+                transcript = ws.receive_json()
+
+        assert transcript == {
+            "event": "transcript",
+            "text": "Geçen ay ne değişti?",
+            "language": "tr-TR",
+            "language_confidence": 0.98,
+            "ended_by": "complete",
+        }
 
     def test_websocket_silence_no_response(self) -> None:
         """When detector returns None, server sends nothing."""

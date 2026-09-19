@@ -22,6 +22,8 @@ export type BackendWakeWordState =
   | "connecting"
   | "listening"
   | "detected"
+  | "capturing"
+  | "processing"
   | "error"
   | "unsupported";
 
@@ -36,6 +38,8 @@ export type WakeWordState =
   | "loading"
   | "listening"
   | "detected"
+  | "capturing"
+  | "processing"
   | "error"
   | "unsupported";
 
@@ -50,6 +54,10 @@ export interface BackendWakeWordConfig {
    * easier to trigger (lower threshold).
    */
   sensitivity: number;
+  /** Optional short-lived signed session for embedded browser audio. */
+  sessionToken?: string;
+  /** Enable server-side post-wake VAD and transcription for the widget. */
+  captureUtterance?: boolean;
 }
 
 interface WakeWordHealthResponse {
@@ -67,13 +75,24 @@ export interface DetectionPayload {
 }
 
 type DetectionCallback = (payload: DetectionPayload) => void;
+type TranscriptCallback = (payload: TranscriptPayload) => void;
+type UtteranceErrorCallback = (payload: UtteranceErrorPayload) => void;
 
-/** Shape of a detection event from the backend. */
-interface DetectionEvent {
-  event: "detected";
-  model: string;
-  score: number;
-  timestamp: string;
+export interface TranscriptPayload {
+  text: string;
+  language: "en-US" | "tr-TR";
+  languageConfidence: number;
+  endedBy: "complete" | "max_duration";
+}
+
+export interface UtteranceErrorPayload {
+  code:
+    | "silence_timeout"
+    | "no_speech"
+    | "language_ambiguous"
+    | "asr_timeout"
+    | "asr_unavailable"
+    | "asr_failed";
 }
 
 // ── Defaults ───────────────────────────────────────────
@@ -130,6 +149,7 @@ function resolveHealthUrl(wsUrl: string): string | null {
     if (parsed.protocol === "ws:") parsed.protocol = "http:";
     if (parsed.protocol === "wss:") parsed.protocol = "https:";
     parsed.pathname = parsed.pathname.replace(/\/ws\/detect$/, "/health");
+    parsed.search = "";
     return parsed.toString();
   } catch {
     return null;
@@ -175,6 +195,8 @@ export class BackendWakeWordService {
   private _state: BackendWakeWordState = "idle";
   private config: BackendWakeWordConfig;
   private detectedCallbacks: DetectionCallback[] = [];
+  private transcriptCallbacks: TranscriptCallback[] = [];
+  private utteranceErrorCallbacks: UtteranceErrorCallback[] = [];
   private stateCallbacks: StateCallback[] = [];
 
   // WebSocket
@@ -283,9 +305,19 @@ export class BackendWakeWordService {
   stopListening(): void {
     this.stopAudioCapture({ keepAudioContext: true });
     this.sendControlCommand("reset_detector", { reason: "stop_listening" });
-    if (this._state === "listening" || this._state === "detected") {
+    if (
+      this._state === "listening" ||
+      this._state === "detected" ||
+      this._state === "capturing"
+    ) {
       this.setState("idle");
     }
+  }
+
+  /** Release the microphone while keeping the socket/result callbacks alive. */
+  pauseAudioCapture(): void {
+    this.stopAudioCapture({ keepAudioContext: true });
+    this.setState("processing");
   }
 
   /**
@@ -297,6 +329,8 @@ export class BackendWakeWordService {
     this.stopAudioCapture({ keepAudioContext: false });
     this.closeWebSocket();
     this.detectedCallbacks = [];
+    this.transcriptCallbacks = [];
+    this.utteranceErrorCallbacks = [];
     this.stateCallbacks = [];
     this.setState("idle");
   }
@@ -313,6 +347,24 @@ export class BackendWakeWordService {
     this.detectedCallbacks.push(callback);
     return () => {
       this.detectedCallbacks = this.detectedCallbacks.filter(
+        (cb) => cb !== callback,
+      );
+    };
+  }
+
+  onTranscript(callback: TranscriptCallback): VoidCallback {
+    this.transcriptCallbacks.push(callback);
+    return () => {
+      this.transcriptCallbacks = this.transcriptCallbacks.filter(
+        (cb) => cb !== callback,
+      );
+    };
+  }
+
+  onUtteranceError(callback: UtteranceErrorCallback): VoidCallback {
+    this.utteranceErrorCallbacks.push(callback);
+    return () => {
+      this.utteranceErrorCallbacks = this.utteranceErrorCallbacks.filter(
         (cb) => cb !== callback,
       );
     };
@@ -400,6 +452,22 @@ export class BackendWakeWordService {
 
       this.ws.onopen = () => {
         this.reconnectDelay = BACKOFF_INITIAL_MS;
+        if (this.config.sessionToken) {
+          this.ws?.send(
+            JSON.stringify({
+              command: "authenticate_widget",
+              session: this.config.sessionToken,
+            }),
+          );
+        }
+        if (this.config.captureUtterance) {
+          this.ws?.send(
+            JSON.stringify({
+              command: "set_utterance_capture",
+              enabled: true,
+            }),
+          );
+        }
         this.sendSensitivity();
         if (this.mediaStream || this.workletNode || this.scriptProcessor) {
           this.setState("listening");
@@ -436,24 +504,47 @@ export class BackendWakeWordService {
     if (typeof event.data !== "string") return;
 
     try {
-      const payload = JSON.parse(event.data) as DetectionEvent;
+      const payload = JSON.parse(event.data) as Record<string, unknown>;
       if (payload.event === "detected") {
         console.log(
-          `[AVAROS-DEBUG] wake-word backend event: model=${payload.model}, score=${payload.score.toFixed(4)}`,
+          `[AVAROS-DEBUG] wake-word backend event: model=${String(payload.model)}, score=${Number(payload.score).toFixed(4)}`,
         );
-        this.wakeWordLabel = toDisplayWakeWordLabel(payload.model);
-        this.setState("detected");
+        this.wakeWordLabel = toDisplayWakeWordLabel(String(payload.model));
+        this.setState(this.config.captureUtterance ? "capturing" : "detected");
         this.fireDetected({
-          model: payload.model,
-          score: payload.score,
+          model: String(payload.model),
+          score: Number(payload.score),
         });
-
-        // Return to listening state after brief detection indicator
-        setTimeout(() => {
-          if (this._state === "detected") {
-            this.setState("listening");
-          }
-        }, 500);
+        if (!this.config.captureUtterance) {
+          setTimeout(() => {
+            if (this._state === "detected") {
+              this.setState("listening");
+            }
+          }, 500);
+        }
+        return;
+      }
+      if (payload.event === "utterance_processing") {
+        this.pauseAudioCapture();
+        return;
+      }
+      if (payload.event === "transcript") {
+        const language = payload.language === "tr-TR" ? "tr-TR" : "en-US";
+        this.setState("idle");
+        this.fireTranscript({
+          text: String(payload.text ?? "").trim(),
+          language,
+          languageConfidence: Number(payload.language_confidence ?? 0),
+          endedBy: payload.ended_by === "max_duration" ? "max_duration" : "complete",
+        });
+        return;
+      }
+      if (payload.event === "utterance_error") {
+        this.stopAudioCapture({ keepAudioContext: true });
+        this.setState("idle");
+        this.fireUtteranceError({
+          code: String(payload.code ?? "asr_failed") as UtteranceErrorPayload["code"],
+        });
       }
     } catch {
       // Ignore malformed messages
@@ -765,5 +856,13 @@ export class BackendWakeWordService {
     for (const cb of this.detectedCallbacks) {
       cb(payload);
     }
+  }
+
+  private fireTranscript(payload: TranscriptPayload): void {
+    for (const cb of this.transcriptCallbacks) cb(payload);
+  }
+
+  private fireUtteranceError(payload: UtteranceErrorPayload): void {
+    for (const cb of this.utteranceErrorCallbacks) cb(payload);
   }
 }

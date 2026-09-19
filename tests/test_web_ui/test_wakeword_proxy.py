@@ -6,8 +6,9 @@ import sys
 from pathlib import Path
 
 import aiohttp
+import pytest
 from fastapi.testclient import TestClient
-
+from starlette.websockets import WebSocketDisconnect
 
 _WEB_UI_DIR = str(Path(__file__).resolve().parents[2] / "web-ui")
 if _WEB_UI_DIR not in sys.path:
@@ -91,3 +92,57 @@ def test_backend_ws_url_derives_from_backend_http_url(monkeypatch) -> None:
     monkeypatch.setenv("WAKEWORD_BACKEND_URL", "https://wakeword.example")
     assert wakeword._backend_ws_url() == "wss://wakeword.example/ws/detect"
 
+
+def test_embedded_wake_socket_rejects_invalid_signed_session(
+    client_no_auth: TestClient,
+    monkeypatch,
+) -> None:
+    """Embedded microphone audio must retain the signed origin boundary."""
+    monkeypatch.setattr(
+        wakeword,
+        "validate_session",
+        lambda _token, _origin: (_ for _ in ()).throw(
+            ValueError("Invalid widget session")
+        ),
+    )
+
+    with pytest.raises(WebSocketDisconnect) as caught:
+        with client_no_auth.websocket_connect(
+            "/wakeword/ws/detect",
+            headers={"origin": "https://futuregen.reneryo.com"},
+        ) as socket:
+            socket.send_json(
+                {"command": "authenticate_widget", "session": "invalid"}
+            )
+            socket.receive_json()
+
+    assert caught.value.code == 1008
+
+
+def test_cross_origin_wake_socket_requires_signed_session(
+    client_no_auth: TestClient,
+) -> None:
+    """A cross-origin page cannot bypass widget session validation."""
+    with pytest.raises(WebSocketDisconnect) as caught:
+        with client_no_auth.websocket_connect(
+            "/wakeword/ws/detect",
+            headers={"origin": "https://futuregen.reneryo.com"},
+        ) as socket:
+            socket.send_json({"command": "set_sensitivity", "value": 0.75})
+            socket.receive_json()
+
+    assert caught.value.code == 1008
+
+
+def test_same_origin_socket_detection_honors_forwarded_headers() -> None:
+    """The direct AVAROS UI remains usable behind the TLS proxy."""
+    class _Socket:
+        headers = {
+            "origin": "https://avaros.reneryo.com",
+            "host": "web-ui:8000",
+            "x-forwarded-host": "avaros.reneryo.com",
+            "x-forwarded-proto": "https",
+        }
+        url = type("URL", (), {"scheme": "ws"})()
+
+    assert wakeword._is_same_origin_socket(_Socket())
