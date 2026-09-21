@@ -21,11 +21,13 @@ type WidgetPanelProps = {
   sendDisabled: boolean;
   visualState: WidgetVisualState;
   voiceTurnStatus: VoiceTurnStatus | null;
+  wakeVoiceLanguage: "en-US" | "tr-TR";
   onListenToggle: () => void;
   onCancelRequest?: () => void;
   onInputChange: (value: string) => void;
   onSend: () => void;
   onModeChange: (mode: WidgetMode) => void;
+  onWakeVoiceLanguageChange: (language: "en-US" | "tr-TR") => void;
   onClear: () => void;
   onStopSpeaking?: () => void;
   brandLogoSrc: string;
@@ -191,11 +193,13 @@ export function WidgetPanel({
   sendDisabled,
   visualState,
   voiceTurnStatus,
+  wakeVoiceLanguage,
   onListenToggle,
   onCancelRequest,
   onInputChange,
   onSend,
   onModeChange,
+  onWakeVoiceLanguageChange,
   onClear,
   onStopSpeaking,
   brandLogoSrc,
@@ -366,6 +370,29 @@ export function WidgetPanel({
               </span>
             </button>
           </div>
+          {mode === "wake-word" ? (
+            <div className="voice-language-control">
+              <span className="voice-language-control__label">Hands-free language</span>
+              <div className="voice-language-control__options" role="group" aria-label="Hands-free language">
+                <button
+                  type="button"
+                  className="voice-language-control__option"
+                  aria-pressed={wakeVoiceLanguage === "en-US"}
+                  onClick={() => onWakeVoiceLanguageChange("en-US")}
+                >
+                  EN
+                </button>
+                <button
+                  type="button"
+                  className="voice-language-control__option"
+                  aria-pressed={wakeVoiceLanguage === "tr-TR"}
+                  onClick={() => onWakeVoiceLanguageChange("tr-TR")}
+                >
+                  TR
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="voice-chat-history">

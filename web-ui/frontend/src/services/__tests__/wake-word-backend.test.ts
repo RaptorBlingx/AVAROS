@@ -446,18 +446,18 @@ describe("BackendWakeWordService", () => {
         JSON.stringify({ event: "detected", model: "hey_jarvis", score: 0.9 }),
       );
       service.pauseAudioCapture();
-      const capturePromise = service.startUtteranceCapture();
+      const capturePromise = service.startUtteranceCapture("en-US");
       await capturePromise;
 
       expect(
         MockWebSocket.lastInstance()!.sentMessages.map((message) =>
           typeof message === "string" ? JSON.parse(message) : message,
         ),
-      ).toContainEqual({ command: "start_utterance_capture" });
+      ).toContainEqual({ command: "start_utterance_capture", language: "en-US" });
       expect(service.state).toBe("capturing");
     });
 
-    it("test_transcript_reports_server_detected_language", async () => {
+    it("reports the selected transcription language", async () => {
       const transcript = vi.fn();
       service.onTranscript(transcript);
       const listenPromise = service.startListening();
@@ -469,7 +469,6 @@ describe("BackendWakeWordService", () => {
           event: "transcript",
           text: "Geçen ay ne değişti?",
           language: "tr-TR",
-          language_confidence: 0.98,
           ended_by: "complete",
         }),
       );
@@ -477,7 +476,6 @@ describe("BackendWakeWordService", () => {
       expect(transcript).toHaveBeenCalledWith({
         text: "Geçen ay ne değişti?",
         language: "tr-TR",
-        languageConfidence: 0.98,
         endedBy: "complete",
       });
       expect(service.state).toBe("idle");
@@ -510,7 +508,7 @@ describe("BackendWakeWordService", () => {
       });
     });
 
-    it("test_consecutive_transcripts_can_switch_en_tr_en", async () => {
+    it("reports the language selected for each independent voice turn", async () => {
       const transcript = vi.fn();
       service.onTranscript(transcript);
       const initPromise = service.initialize();
@@ -528,7 +526,6 @@ describe("BackendWakeWordService", () => {
             event: "transcript",
             text,
             language,
-            language_confidence: 0.99,
             ended_by: "complete",
           }),
         );

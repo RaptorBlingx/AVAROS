@@ -58,6 +58,7 @@ _THRESHOLD_LOCK = threading.Lock()
 _SESSION_THRESHOLDS: dict[str, float] = {}
 _FALLBACK_MODEL_NAME = "hey_jarvis"
 _TRANSCRIBER = LocalWhisperTranscriber()
+_VOICE_LANGUAGES = {"en-US", "tr-TR"}
 
 
 def _preload_registry_assets_enabled() -> bool:
@@ -404,6 +405,7 @@ async def ws_detect(websocket: WebSocket) -> None:
     last_detection_monotonic: float | None = None
     detection_cooldown = _detection_cooldown_seconds()
     utterance_capture: UtteranceCapture | None = None
+    utterance_language: str | None = None
     utterance_capture_enabled = False
     awaiting_utterance_start = False
     capture_speech_onset_logged = False
@@ -506,12 +508,26 @@ async def ws_detect(websocket: WebSocket) -> None:
                             awaiting_utterance_start,
                         )
                         continue
+                    language = payload.get("language")
+                    if not isinstance(language, str) or language not in _VOICE_LANGUAGES:
+                        logger.warning(
+                            "POST_WAKE_CAPTURE_LANGUAGE_REJECTED: session=%s",
+                            session_id,
+                        )
+                        await websocket.send_json(
+                            {"event": "utterance_error", "code": "language_invalid"}
+                        )
+                        detector = _reset_detector(detector)
+                        awaiting_utterance_start = False
+                        continue
                     utterance_capture = UtteranceCapture()
+                    utterance_language = language
                     awaiting_utterance_start = False
                     capture_speech_onset_logged = False
                     logger.info(
-                        "POST_WAKE_CAPTURE_READY: session=%s start_timeout_ms=%s max_duration_ms=%s end_silence_ms=%s",
+                        "POST_WAKE_CAPTURE_READY: session=%s language=%s start_timeout_ms=%s max_duration_ms=%s end_silence_ms=%s",
                         session_id,
+                        utterance_language,
                         utterance_capture.config.start_timeout_ms,
                         utterance_capture.config.max_duration_ms,
                         utterance_capture.config.end_silence_ms,
@@ -534,6 +550,7 @@ async def ws_detect(websocket: WebSocket) -> None:
                         )
                         break
                     utterance_capture = None
+                    utterance_language = None
                     awaiting_utterance_start = False
                     last_detection_monotonic = None
                     logger.info(
@@ -545,6 +562,7 @@ async def ws_detect(websocket: WebSocket) -> None:
                     continue
                 if command == "cancel_utterance":
                     utterance_capture = None
+                    utterance_language = None
                     awaiting_utterance_start = False
                     detector = _reset_detector(detector)
                     logger.info("POST_WAKE_CAPTURE_CANCELLED: session=%s", session_id)
@@ -570,6 +588,12 @@ async def ws_detect(websocket: WebSocket) -> None:
                 if capture_result is None:
                     continue
                 utterance_capture = None
+                capture_language = utterance_language
+                utterance_language = None
+                # A capture window is only constructed after validating the
+                # selected language above; retain the invariant for typing
+                # and defensive future edits.
+                assert capture_language in _VOICE_LANGUAGES
                 diagnostics = capture_result.diagnostics
                 diagnostic_fields = (
                     "duration_ms=%s speech_ms=%s last_speech_ms=%s "
@@ -606,22 +630,19 @@ async def ws_detect(websocket: WebSocket) -> None:
                     transcript = await asyncio.to_thread(
                         _TRANSCRIBER.transcribe,
                         capture_result.pcm,
+                        capture_language,
                     )
                     logger.info(
-                        "POST_WAKE_ASR_RESULT: session=%s duration_ms=%s language=%s confidence=%.3f",
+                        "POST_WAKE_ASR_RESULT: session=%s duration_ms=%s language=%s",
                         session_id,
                         round((_now_monotonic() - asr_started) * 1_000),
                         transcript.language,
-                        transcript.language_confidence,
                     )
                     await websocket.send_json(
                         {
                             "event": "transcript",
                             "text": transcript.text,
                             "language": transcript.language,
-                            "language_confidence": round(
-                                transcript.language_confidence, 4
-                            ),
                             "ended_by": capture_result.status.value,
                         }
                     )

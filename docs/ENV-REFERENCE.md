@@ -82,7 +82,6 @@ Platform connection is configured from the Web UI wizard and stored per profile 
 | `WAKEWORD_BACKEND_URL` | No | `http://avaros-wakeword:9999` | Web UI | Internal wake-word backend URL used by the Web UI same-origin `/wakeword/*` proxy. Keep the Docker default unless the wake-word service is deployed separately. |
 | `ASR_THREADS` | No | `2` | Wake-word service | CPU threads for serial local whisper.cpp EN/TR transcription. |
 | `ASR_TIMEOUT_SECONDS` | No | `20` | Wake-word service | Hard timeout for one post-wake transcription. |
-| `ASR_MIN_LANGUAGE_CONFIDENCE` | No | `0.55` | Wake-word service | Minimum auto-detection probability for accepting English or Turkish. |
 | `UTTERANCE_START_TIMEOUT_MS` | No | `10000` | Wake-word service | Wait for request speech after AVAROS's readiness acknowledgement before reporting silence. |
 | `UTTERANCE_MAX_DURATION_MS` | No | `20000` | Wake-word service | Maximum request capture duration. |
 | `UTTERANCE_END_SILENCE_MS` | No | `1200` | Wake-word service | Post-speech silence used to end the request. |

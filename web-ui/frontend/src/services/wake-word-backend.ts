@@ -81,7 +81,6 @@ type UtteranceErrorCallback = (payload: UtteranceErrorPayload) => void;
 export interface TranscriptPayload {
   text: string;
   language: "en-US" | "tr-TR";
-  languageConfidence: number;
   endedBy: "complete" | "max_duration";
 }
 
@@ -89,7 +88,7 @@ export interface UtteranceErrorPayload {
   code:
     | "silence_timeout"
     | "no_speech"
-    | "language_ambiguous"
+    | "language_invalid"
     | "asr_timeout"
     | "asr_unavailable"
     | "asr_failed";
@@ -327,7 +326,7 @@ export class BackendWakeWordService {
    * Only after that cue finishes do we ask the server to construct the local
    * VAD and resume browser microphone streaming.
    */
-  async startUtteranceCapture(): Promise<void> {
+  async startUtteranceCapture(language: "en-US" | "tr-TR"): Promise<void> {
     if (!this.config.captureUtterance) {
       throw new Error("Post-wake capture is not enabled for this service");
     }
@@ -335,7 +334,7 @@ export class BackendWakeWordService {
       await this.initialize();
     }
     this.stopAudioCapture({ keepAudioContext: true });
-    this.sendControlCommand("start_utterance_capture");
+    this.sendControlCommand("start_utterance_capture", { language });
     await this.startAudioCapture();
     this.setState("capturing");
   }
@@ -554,7 +553,6 @@ export class BackendWakeWordService {
         this.fireTranscript({
           text: String(payload.text ?? "").trim(),
           language,
-          languageConfidence: Number(payload.language_confidence ?? 0),
           endedBy: payload.ended_by === "max_duration" ? "max_duration" : "complete",
         });
         return;

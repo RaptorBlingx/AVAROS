@@ -33,7 +33,6 @@ docker compose -f docker/docker-compose.avaros.yml up avaros-wakeword
 | `WAKEWORD_DETECTION_COOLDOWN_SECONDS` | `1.2` | Suppresses duplicate detection events from the same spoken wake phrase. Useful when `WAKEWORD_CONFIRMATION_FRAMES=1` for demo responsiveness. |
 | `ASR_THREADS` | `2` | CPU threads used by the serial local whisper.cpp worker. |
 | `ASR_TIMEOUT_SECONDS` | `20` | Hard timeout for one local transcription. |
-| `ASR_MIN_LANGUAGE_CONFIDENCE` | `0.55` | Minimum auto-detection probability for accepting English or Turkish. |
 | `UTTERANCE_START_TIMEOUT_MS` | `10000` | Maximum wait for speech after AVAROS's readiness acknowledgement. |
 | `UTTERANCE_MAX_DURATION_MS` | `20000` | Maximum post-wake request capture. |
 | `UTTERANCE_END_SILENCE_MS` | `1200` | Local-VAD silence that ends a started request. |
@@ -97,7 +96,8 @@ UI. The service first emits the wake event:
 ```
 
 The widget pauses microphone streaming, speaks its readiness acknowledgement,
-then sends `{"command":"start_utterance_capture"}`. The service captures only
+then sends `{"command":"start_utterance_capture","language":"en-US"}` (or
+`tr-TR`). The service captures only
 the following request and emits `utterance_processing` when VAD reaches the
 end of the turn. The browser must stop sending microphone audio at that point
 but keep the socket open. A successful local transcription is returned as:
@@ -107,13 +107,12 @@ but keep the socket open. A successful local transcription is returned as:
   "event": "transcript",
   "text": "Geçen ay ne değişti?",
   "language": "tr-TR",
-  "language_confidence": 0.9948,
   "ended_by": "complete"
 }
 ```
 
 Recoverable failures use `{"event":"utterance_error","code":"..."}`. Codes
-are `silence_timeout`, `no_speech`, `language_ambiguous`, `asr_timeout`,
+are `silence_timeout`, `no_speech`, `language_invalid`, `asr_timeout`,
 `asr_unavailable`, and `asr_failed`. The next wake cycle begins only after the
 client calls `startListening()` again; that command resets detector state.
 
@@ -137,9 +136,10 @@ client calls `startListening()` again; that command resets detector state.
   WebSocket. The backend maps this to a threshold update using an
   inverted scale: `threshold = 1.0 - sensitivity`. A direct
   `set_threshold` command is also available for ops use.
-- **Language separation.** openWakeWord sees the wake phrase. A fresh capture
-  window feeds only the following utterance to multilingual whisper.cpp with
-  `language=auto`, so “Hey Jarvis” cannot choose the request language.
+- **Language separation.** openWakeWord sees the wake phrase. The widget's
+  explicit EN/TR hands-free selection accompanies a fresh capture window and
+  is passed to local whisper.cpp, so “Hey Jarvis” never becomes part of the
+  request and each request has an intentional transcription language.
 - **End-of-turn.** The local Silero VAD bundled with openWakeWord provides
   probability-based onset and endpointing, pre-roll, 1.2-second end silence,
   a ten-second no-speech timeout, and a 20-second cap. The service logs only

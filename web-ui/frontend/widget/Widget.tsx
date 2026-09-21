@@ -45,6 +45,12 @@ type BrowserAudioContextCtor = {
   new (): AudioContext;
 };
 
+type WakeVoiceLanguage = "en-US" | "tr-TR";
+
+function normalizeWakeVoiceLanguage(value: unknown): WakeVoiceLanguage {
+  return normalizeWidgetLanguage(value) as WakeVoiceLanguage;
+}
+
 function getSpeechRecognitionCtor(): BrowserSpeechRecognitionCtor | null {
   const speechWindow = window as typeof window & {
     SpeechRecognition?: BrowserSpeechRecognitionCtor;
@@ -149,6 +155,11 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     pickInitialMode(config.disabledModes, config.defaultMode),
   );
   const wakeWordArmedRef = useRef(false);
+  // Text turns may keep using bilingual dialogue routing. Hands-free turns
+  // deliberately retain the user's explicit EN/TR choice across text/session
+  // locale changes.
+  const wakeVoiceLanguageRef = useRef(normalizeWakeVoiceLanguage(config.language));
+  const pendingVoiceResponseLanguageRef = useRef<WakeVoiceLanguage | null>(null);
   const responseResolvedRef = useRef(true);
   const ttsVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const activeLanguageRef = useRef(normalizeWidgetLanguage(config.language));
@@ -192,6 +203,9 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   const [micError, setMicError] = useState<string | null>(null);
   const [wakeWordArmed, setWakeWordArmed] = useState(false);
   const [wakeWordLabel, setWakeWordLabel] = useState("Hey Jarvis");
+  const [wakeVoiceLanguage, setWakeVoiceLanguage] = useState<WakeVoiceLanguage>(
+    normalizeWakeVoiceLanguage(config.language),
+  );
   const [ttsVoice, setTtsVoice] = useState<SpeechSynthesisVoice | null>(null);
   const [voiceTurnStatus, setVoiceTurnStatus] = useState<VoiceTurnStatus | null>(null);
 
@@ -217,9 +231,17 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
 
   useEffect(() => {
     const language = normalizeWidgetLanguage(config.language);
+    const wakeLanguage = normalizeWakeVoiceLanguage(config.language);
     activeLanguageRef.current = language;
+    wakeVoiceLanguageRef.current = wakeLanguage;
+    setWakeVoiceLanguage(wakeLanguage);
     managerRef.current?.setLanguage(language);
   }, [config.language]);
+
+  const selectWakeVoiceLanguage = useCallback((language: WakeVoiceLanguage) => {
+    wakeVoiceLanguageRef.current = language;
+    setWakeVoiceLanguage(language);
+  }, []);
 
   const ttsWatcherRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -672,7 +694,9 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     (text: string, language = activeLanguageRef.current) => {
       const cleaned = text.trim();
       if (!cleaned) return;
-      const responseLocale = normalizeWidgetLanguage(language);
+      const responseLocale = pendingVoiceResponseLanguageRef.current
+        ?? normalizeWidgetLanguage(language);
+      pendingVoiceResponseLanguageRef.current = null;
       activeLanguageRef.current = responseLocale;
       managerRef.current?.setLanguage(responseLocale);
       responseResolvedRef.current = true;
@@ -707,6 +731,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
 
   const handleCancelRequest = useCallback(() => {
     responseResolvedRef.current = true;
+    pendingVoiceResponseLanguageRef.current = null;
     clearFallbackTimer();
     clearCompletionTimer();
     stopAssistantSpeech();
@@ -775,6 +800,9 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
         : detectWidgetLanguage(cleaned, activeLanguageRef.current);
       activeLanguageRef.current = requestLanguage;
       manager.setLanguage(requestLanguage);
+      if (inputKind === "voice") {
+        pendingVoiceResponseLanguageRef.current = normalizeWakeVoiceLanguage(requestLanguage);
+      }
 
       appendMessage(
         makeMessage("user", cleaned, {
@@ -796,6 +824,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       clearCompletionTimer();
       fallbackTimerRef.current = window.setTimeout(() => {
         responseResolvedRef.current = true;
+        pendingVoiceResponseLanguageRef.current = null;
         setProcessing(false);
         appendMessage(
           makeMessage(
@@ -812,6 +841,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
         clearFallbackTimer();
         clearCompletionTimer();
         responseResolvedRef.current = true;
+        pendingVoiceResponseLanguageRef.current = null;
         setProcessing(false);
         appendMessage(makeMessage("avaros", "Send failed. Check connection."));
         resumeWakeWordRef.current();
@@ -1059,7 +1089,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       setWakeWordArmed(true);
       setVoiceTurnStatus("wake-detected");
       ensureConnected();
-      const promptLanguage = activeLanguageRef.current;
+      const promptLanguage = wakeVoiceLanguageRef.current;
       const prompt =
         promptLanguage === "tr-TR"
           ? "Size nasıl yardımcı olabilirim?"
@@ -1069,7 +1099,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       void speakAssistantTextRef.current(prompt, promptLanguage).finally(() => {
         if (modeRef.current !== "wake-word" || !wakeWordArmedRef.current) return;
         if (isTtsSpeakingRef.current) return;
-        void bww.startUtteranceCapture().catch(() => {
+        void bww.startUtteranceCapture(wakeVoiceLanguageRef.current).catch(() => {
           wakeWordArmedRef.current = false;
           setWakeWordArmed(false);
           setMicActive(false);
@@ -1088,21 +1118,19 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       }
       // The final local-ASR result is already known here. Show exactly what
       // was heard before conversational routing begins.
-      void sendTextRef.current(payload.text, payload.language, "voice");
+      void sendTextRef.current(payload.text, wakeVoiceLanguageRef.current, "voice");
     });
     const unsubUtteranceError = bww.onUtteranceError((payload) => {
       wakeWordArmedRef.current = false;
       setWakeWordArmed(false);
       setMicActive(false);
-      const isTurkish = activeLanguageRef.current === "tr-TR";
+      const isTurkish = wakeVoiceLanguageRef.current === "tr-TR";
       const message =
         payload.code === "silence_timeout" || payload.code === "no_speech"
           ? isTurkish
             ? "Konuşma duyulmadı. Lütfen tekrar \"Hey Jarvis\" deyin."
             : `I didn't hear a request. Please say "${bww.getWakeWordLabel()}" again.`
-          : payload.code === "language_ambiguous"
-            ? "I couldn't confidently identify English or Turkish. / İngilizce veya Türkçe dili güvenle belirleyemedim."
-            : "Local speech recognition failed. Please try again or use push-to-talk/text.";
+          : "Local speech recognition failed. Please try again or use push-to-talk/text.";
       setMicError(message);
       appendMessageRef.current(makeMessage("avaros", message));
       setVoiceTurnStatus("rearming");
@@ -1448,6 +1476,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
             sendDisabled={sendDisabled}
             visualState={visualState}
             voiceTurnStatus={voiceTurnStatus}
+            wakeVoiceLanguage={wakeVoiceLanguage}
             onListenToggle={() => {
               if (micActive) {
                 stopListening();
@@ -1475,6 +1504,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
                 setWakeWordArmed(false);
               }
             }}
+            onWakeVoiceLanguageChange={selectWakeVoiceLanguage}
           />
         </div>
       ) : null}

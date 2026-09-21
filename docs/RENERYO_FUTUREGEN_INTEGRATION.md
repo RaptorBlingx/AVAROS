@@ -45,11 +45,12 @@ stream is armed.
 
 After detection, the widget pauses its microphone stream, gives a localized
 readiness acknowledgement, then opens a fresh Silero-VAD capture window for
-the following utterance. A pinned local multilingual whisper.cpp base Q5 model
-transcribes that request and independently detects English or Turkish; the
-wake phrase never chooses the request language. The transcript and detected
-locale enter the existing signed HiveMind connection, so organization/finding
-context, conversational routing, semantic fallback, and EN/TR TTS are
+the following utterance. The user selects English or Turkish in the compact
+hands-free control; the pinned local multilingual whisper.cpp base Q5 model
+transcribes with that explicit language. The wake phrase never becomes part of
+the request. The transcript and selected locale enter the existing signed
+HiveMind connection, so organization/finding context, conversational routing,
+semantic fallback, and EN/TR TTS are
 unchanged. Microphone streaming stays paused during routing and TTS, then
 re-arms after playback to prevent self-triggering.
 

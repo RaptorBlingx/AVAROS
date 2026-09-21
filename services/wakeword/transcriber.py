@@ -1,11 +1,10 @@
-"""Local multilingual transcription through a pinned whisper.cpp binary."""
+"""Local selected-language transcription through a pinned whisper.cpp binary."""
 
 from __future__ import annotations
 
 import json
 import logging
 import os
-import re
 import subprocess
 import tempfile
 import threading
@@ -20,11 +19,7 @@ except ImportError:  # container imports main.py as a top-level module
 
 logger = logging.getLogger(__name__)
 
-_LANGUAGE_RE = re.compile(
-    r"auto-detected language:\s*([a-z]{2,3})\s*\(p\s*=\s*([0-9.]+)\)",
-    re.IGNORECASE,
-)
-_LANGUAGE_MAP = {"en": "en-US", "tr": "tr-TR"}
+_WHISPER_LANGUAGE = {"en-US": "en", "tr-TR": "tr"}
 
 
 class TranscriptionError(RuntimeError):
@@ -39,7 +34,6 @@ class TranscriptionError(RuntimeError):
 class TranscriptionResult:
     text: str
     language: str
-    language_confidence: float
 
 
 class LocalWhisperTranscriber:
@@ -63,19 +57,19 @@ class LocalWhisperTranscriber:
         )
         self.threads = _env_int("ASR_THREADS", 2, 1, 4)
         self.timeout_seconds = _env_int("ASR_TIMEOUT_SECONDS", 20, 5, 60)
-        self.min_language_confidence = _env_float(
-            "ASR_MIN_LANGUAGE_CONFIDENCE", 0.55, 0.0, 1.0
-        )
 
     @property
     def available(self) -> bool:
         return Path(self.executable).is_file() and Path(self.model_path).is_file()
 
-    def transcribe(self, pcm: bytes) -> TranscriptionResult:
+    def transcribe(self, pcm: bytes, language: str) -> TranscriptionResult:
         if not self.available:
             raise TranscriptionError("asr_unavailable")
         if not pcm:
             raise TranscriptionError("no_speech")
+        whisper_language = _WHISPER_LANGUAGE.get(language)
+        if whisper_language is None:
+            raise TranscriptionError("language_invalid")
 
         with self._inference_lock, tempfile.TemporaryDirectory(
             prefix="avaros-asr-"
@@ -96,7 +90,7 @@ class LocalWhisperTranscriber:
                 "-f",
                 str(wav_path),
                 "-l",
-                "auto",
+                whisper_language,
                 "-t",
                 str(self.threads),
                 "-nt",
@@ -133,7 +127,6 @@ class LocalWhisperTranscriber:
 
             try:
                 payload = json.loads(output_path.with_suffix(".json").read_text())
-                detected = str(payload["result"]["language"]).lower()
                 text = " ".join(
                     str(segment.get("text", "")).strip()
                     for segment in payload.get("transcription", [])
@@ -142,31 +135,14 @@ class LocalWhisperTranscriber:
             except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
                 raise TranscriptionError("asr_failed") from exc
 
-            probability_match = _LANGUAGE_RE.search(completed.stderr)
-            confidence = (
-                float(probability_match.group(2))
-                if probability_match and probability_match.group(1).lower() == detected
-                else 0.0
-            )
-            language = _LANGUAGE_MAP.get(detected)
-            if language is None or confidence < self.min_language_confidence:
-                raise TranscriptionError("language_ambiguous")
             if not text:
                 raise TranscriptionError("no_speech")
-            return TranscriptionResult(text, language, confidence)
+            return TranscriptionResult(text, language)
 
 
 def _env_int(name: str, default: int, minimum: int, maximum: int) -> int:
     try:
         value = int(os.environ.get(name, str(default)))
-    except ValueError:
-        value = default
-    return max(minimum, min(maximum, value))
-
-
-def _env_float(name: str, default: float, minimum: float, maximum: float) -> float:
-    try:
-        value = float(os.environ.get(name, str(default)))
     except ValueError:
         value = default
     return max(minimum, min(maximum, value))

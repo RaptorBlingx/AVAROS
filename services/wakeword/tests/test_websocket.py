@@ -203,10 +203,7 @@ class TestWebSocketEndpoint:
                 )
                 ws.send_bytes(b"\x00" * 2560)
                 first = ws.receive_json()
-                # Audio while AVAROS acknowledges the wake is deliberately
-                # ignored, so a natural pause cannot consume the timeout.
-                ws.send_bytes(b"\x01" * 2560)
-                ws.send_text('{"command":"start_utterance_capture"}')
+                ws.send_text('{"command":"start_utterance_capture","language":"en-US"}')
                 ws.send_bytes(b"\x01" * 2560)
                 second = ws.receive_json()
 
@@ -216,7 +213,7 @@ class TestWebSocketEndpoint:
         mock_detector.process_audio.assert_called_once()
         mock_capture.process_audio.assert_called_once_with(b"\x01" * 2560)
 
-    def test_websocket_returns_local_transcript_and_detected_language(self) -> None:
+    def test_websocket_returns_local_transcript_in_selected_language(self) -> None:
         """Completed request audio is locally transcribed before detector reset."""
         mock_detector = MagicMock()
         mock_detector.process_audio.return_value = DetectionEvent(
@@ -245,16 +242,15 @@ class TestWebSocketEndpoint:
             return_value=TranscriptionResult(
                 "Geçen ay ne değişti?",
                 "tr-TR",
-                0.98,
             ),
-        ):
+        ) as transcribe:
             with client.websocket_connect("/ws/detect") as ws:
                 ws.send_text(
                     '{"command":"set_utterance_capture","enabled":true}'
                 )
                 ws.send_bytes(b"\x00" * 2560)
                 assert ws.receive_json()["event"] == "detected"
-                ws.send_text('{"command":"start_utterance_capture"}')
+                ws.send_text('{"command":"start_utterance_capture","language":"tr-TR"}')
                 ws.send_bytes(b"\x01" * 2560)
                 assert ws.receive_json() == {"event": "utterance_processing"}
                 transcript = ws.receive_json()
@@ -263,9 +259,37 @@ class TestWebSocketEndpoint:
             "event": "transcript",
             "text": "Geçen ay ne değişti?",
             "language": "tr-TR",
-            "language_confidence": 0.98,
             "ended_by": "complete",
         }
+        transcribe.assert_called_once_with(
+            b"\x01\x00" * 16_000,
+            "tr-TR",
+        )
+
+    def test_websocket_rejects_a_missing_selected_language(self) -> None:
+        mock_detector = MagicMock()
+        mock_detector.process_audio.return_value = DetectionEvent(
+            event="detected",
+            model="hey_jarvis",
+            score=0.94,
+            timestamp="2026-03-04T12:00:00+00:00",
+        )
+        mock_detector.close.return_value = None
+        client = TestClient(app)
+
+        with patch(
+            "services.wakeword.main.WakeWordDetector",
+            return_value=mock_detector,
+        ):
+            with client.websocket_connect("/ws/detect") as ws:
+                ws.send_text('{"command":"set_utterance_capture","enabled":true}')
+                ws.send_bytes(b"\x00" * 2560)
+                assert ws.receive_json()["event"] == "detected"
+                ws.send_text('{"command":"start_utterance_capture"}')
+                assert ws.receive_json() == {
+                    "event": "utterance_error",
+                    "code": "language_invalid",
+                }
 
     def test_websocket_silence_no_response(self) -> None:
         """When detector returns None, server sends nothing."""

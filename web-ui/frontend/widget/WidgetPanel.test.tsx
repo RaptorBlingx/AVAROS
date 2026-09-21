@@ -26,11 +26,13 @@ function renderPanel(
       sendDisabled
       visualState={visualState}
       voiceTurnStatus={null}
+      wakeVoiceLanguage="en-US"
       onListenToggle={vi.fn()}
       onCancelRequest={onCancelRequest}
       onInputChange={vi.fn()}
       onSend={vi.fn()}
       onModeChange={vi.fn()}
+      onWakeVoiceLanguageChange={vi.fn()}
       onClear={vi.fn()}
       onStopSpeaking={onStopSpeaking}
       brandLogoSrc="/logo.svg"
@@ -75,10 +77,12 @@ describe("embedded WidgetPanel interruption", () => {
         sendDisabled
         visualState="idle"
         voiceTurnStatus={null}
+        wakeVoiceLanguage="en-US"
         onListenToggle={vi.fn()}
         onInputChange={vi.fn()}
         onSend={vi.fn()}
         onModeChange={onModeChange}
+        onWakeVoiceLanguageChange={vi.fn()}
         onClear={vi.fn()}
         brandLogoSrc="/logo.svg"
         wakeWordLabel="Hey Jarvis"
@@ -119,10 +123,12 @@ describe("embedded WidgetPanel interruption", () => {
         sendDisabled
         visualState="processing"
         voiceTurnStatus="processing"
+        wakeVoiceLanguage="tr-TR"
         onListenToggle={vi.fn()}
         onInputChange={vi.fn()}
         onSend={vi.fn()}
         onModeChange={vi.fn()}
+        onWakeVoiceLanguageChange={vi.fn()}
         onClear={vi.fn()}
         brandLogoSrc="/logo.svg"
         wakeWordLabel="Hey Jarvis"
@@ -133,5 +139,39 @@ describe("embedded WidgetPanel interruption", () => {
     expect(screen.getByText("Aktif bulguları göster")).toBeTruthy();
     expect(screen.getByLabelText("Recognized Turkish").textContent).toBe("TR");
     expect(screen.getByText("Understanding your request…")).toBeTruthy();
+  });
+
+  it("lets the user choose the fixed hands-free transcription language", () => {
+    const onWakeVoiceLanguageChange = vi.fn();
+    render(
+      <WidgetPanel
+        mode="wake-word"
+        disabledModes={[]}
+        messages={[]}
+        connectionState="connected"
+        listeningSupported
+        listeningActive={false}
+        micError={null}
+        inputValue=""
+        processing={false}
+        sendDisabled={false}
+        visualState="idle"
+        voiceTurnStatus="armed"
+        wakeVoiceLanguage="en-US"
+        onListenToggle={vi.fn()}
+        onInputChange={vi.fn()}
+        onSend={vi.fn()}
+        onModeChange={vi.fn()}
+        onWakeVoiceLanguageChange={onWakeVoiceLanguageChange}
+        onClear={vi.fn()}
+        brandLogoSrc="/logo.svg"
+        wakeWordLabel="Hey Jarvis"
+        avarosUrl="https://avaros.example.com/"
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "EN" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "TR" }));
+    expect(onWakeVoiceLanguageChange).toHaveBeenCalledWith("tr-TR");
   });
 });
