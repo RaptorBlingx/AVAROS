@@ -37,6 +37,7 @@ class SemanticAction(str, Enum):
     FINDING_PERIOD = "finding.period"
     FINDING_ENTITY = "finding.entity"
     FINDINGS_LIST = "findings.list"
+    FINDINGS_EVALUATE = "findings.evaluate"
     METRICS_LIST = "metrics.list"
     METRIC_DETAIL = "metric.detail"
     METERS_LIST = "meters.list"
@@ -107,6 +108,12 @@ _ACTION_DESCRIPTIONS: dict[SemanticAction, tuple[str, ...]] = {
         "Etkin karar destek bulgularının, sorunların veya uyarıların listesi ve özeti.",
         "Show all current operational issues and decision-support alerts.",
         "Mevcut operasyonel sorunların ve karar destek uyarılarının tümünü göster.",
+    ),
+    SemanticAction.FINDINGS_EVALUATE: (
+        "Run a fresh decision-support analysis of current Reneryo data and report what needs attention.",
+        "Güncel Reneryo verileri için yeni bir karar destek analizi çalıştır ve dikkat gerektirenleri anlat.",
+        "Evaluate current operational data now, then explain the resulting findings.",
+        "Mevcut operasyon verisini şimdi değerlendir ve oluşan bulguları açıkla.",
     ),
     SemanticAction.METRICS_LIST: (
         "Inventory and summary of available Reneryo metrics, measurements, and indicators.",

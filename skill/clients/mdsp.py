@@ -10,7 +10,12 @@ from typing import Any
 import aiohttp
 
 from skill.domain.exceptions import AdapterError
-from skill.domain.reneryo_models import LocalizedText, MdspFinding, MdspFindingList
+from skill.domain.reneryo_models import (
+    LocalizedText,
+    MdspEvaluation,
+    MdspFinding,
+    MdspFindingList,
+)
 
 
 def _datetime(value: Any) -> datetime | None:
@@ -63,11 +68,18 @@ class MdspClient:
         organization_id: str,
         *,
         status: str = "ACTIVE",
+        severity: str = "",
+        domain: str = "",
     ) -> MdspFindingList:
+        params = {"status": status}
+        if severity:
+            params["severity"] = severity
+        if domain:
+            params["domain"] = domain
         payload = await self._get(
             "/v1/findings",
             organization_id,
-            {"status": status},
+            params,
         )
         records = payload.get("records", [])
         summary = payload.get("summary", {})
@@ -100,8 +112,28 @@ class MdspClient:
             await self._get(f"/v1/findings/{finding_id}", organization_id)
         )
 
+    async def evaluate(self, organization_id: str) -> MdspEvaluation:
+        """Ask MDSP to run its existing evaluation, then expose its result."""
+        payload = await self._request("POST", "/v1/evaluations/manual", organization_id)
+        return MdspEvaluation(
+            run_id=str(payload.get("runId", "")),
+            source_watermark=_datetime(payload.get("sourceWatermark")),
+            evaluated_resource_count=int(payload.get("evaluatedResourceCount") or 0),
+            active_finding_count=int(payload.get("activeFindingCount") or 0),
+            resolved_finding_count=int(payload.get("resolvedFindingCount") or 0),
+        )
+
     async def _get(
         self,
+        path: str,
+        organization_id: str,
+        params: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        return await self._request("GET", path, organization_id, params)
+
+    async def _request(
+        self,
+        method: str,
         path: str,
         organization_id: str,
         params: dict[str, str] | None = None,
@@ -121,7 +153,8 @@ class MdspClient:
             timeout=timeout, headers=headers, connector=connector
         ) as session:
             try:
-                async with session.get(
+                async with session.request(
+                    method,
                     f"{self._base_url}{path}", params=params
                 ) as response:
                     if response.status == 404:

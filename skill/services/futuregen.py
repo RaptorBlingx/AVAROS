@@ -65,10 +65,29 @@ class FutureGenService:
             raise RuntimeError("MDSP is not configured")
         return await self.mdsp.list_findings(organization_id)
 
+    async def filtered_findings(
+        self,
+        organization_id: str,
+        *,
+        status: str = "ACTIVE",
+        severity: str = "",
+        domain: str = "",
+    ) -> MdspFindingList:
+        if self.mdsp is None:
+            raise RuntimeError("MDSP is not configured")
+        return await self.mdsp.list_findings(
+            organization_id, status=status, severity=severity, domain=domain
+        )
+
     async def finding(self, organization_id: str, finding_id: str) -> MdspFinding:
         if self.mdsp is None:
             raise RuntimeError("MDSP is not configured")
         return await self.mdsp.get_finding(organization_id, finding_id)
+
+    async def evaluate(self, organization_id: str):
+        if self.mdsp is None:
+            raise RuntimeError("MDSP is not configured")
+        return await self.mdsp.evaluate(organization_id)
 
 
 def default_period(days: int = 30) -> TimePeriod:

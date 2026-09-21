@@ -15,10 +15,18 @@ from skill.clients.reneryo import ReneryoClient
 from skill.domain.exceptions import AdapterError, ValidationError
 from skill.services.conversation_state import DialogueState, message_session_id
 from skill.services.dia_response import speak_information
+from skill.services.finding_collection import (
+    FindingFilters,
+    collection_headline,
+    evaluation_headline,
+    filters_for,
+    is_collection_request,
+    is_evaluation_request,
+    selection_index,
+)
 from skill.services.finding_explanation import finding_headline
 from skill.services.futuregen import FutureGenService, default_period, match_metric
 from skill.services.futuregen_responses import (
-    finding_inventory_headline,
     meter_inventory_headline,
     metric_detail_headline,
     metric_inventory_headline,
@@ -109,6 +117,8 @@ def handle_reneryo_query(
 
     def _execute() -> bool:
         service = _service(skill)
+        if action is SemanticAction.FINDINGS_EVALUATE:
+            return _evaluation_response(skill, message, service, state, language)
         if action in _FINDING_ACTIONS or action is SemanticAction.FINDINGS_LIST:
             return _finding_response(
                 skill,
@@ -397,10 +407,15 @@ def _finding_response(skill, message, service, state, text, language, action) ->
     organization_id = state.organization_id or os.environ.get(
         "FUTUREGEN_ORGANIZATION_ID", ""
     )
+    selected_index = selection_index(text, state)
     finding_id = (
-        ""
-        if action is SemanticAction.FINDINGS_LIST or _is_finding_list(text)
-        else state.active_finding_id
+        state.finding_ids[selected_index]
+        if selected_index is not None
+        else (
+            ""
+            if action is SemanticAction.FINDINGS_LIST or _is_finding_list(text)
+            else state.active_finding_id
+        )
     )
     if finding_id:
         finding = skill.dispatcher._run_async(
@@ -434,10 +449,21 @@ def _finding_response(skill, message, service, state, text, language, action) ->
             active_finding_id=finding.finding_id,
             entity_id=finding.entity_id,
             metric_name=finding.metric_name,
+            selected_finding_from_collection=(
+                state.selected_finding_from_collection or selected_index is not None
+            ),
         )
         return True
-    result = skill.dispatcher._run_async(service.findings(organization_id))
-    headline = finding_inventory_headline(result, language)
+    filters = filters_for(text, state)
+    result = skill.dispatcher._run_async(
+        service.filtered_findings(
+            organization_id,
+            status=filters.status,
+            severity=filters.severity,
+            domain=filters.domain,
+        )
+    )
+    headline = collection_headline(result, filters, language)
     evidence = [
         {
             "id": f.finding_id,
@@ -454,12 +480,78 @@ def _finding_response(skill, message, service, state, text, language, action) ->
         response_type="findings",
         evidence_rows=evidence,
     )
-    _remember(skill, message, state, operation="findings")
+    _remember(
+        skill,
+        message,
+        state,
+        operation="findings",
+        active_finding_id="",
+        finding_status=filters.status,
+        finding_severity=filters.severity,
+        finding_domain=filters.domain,
+        finding_ids=tuple(f.finding_id for f in result.findings),
+        selected_finding_from_collection=False,
+    )
+    return True
+
+
+def _evaluation_response(skill, message, service, state, language) -> bool:
+    """Run the existing MDSP evaluation, then narrate its returned findings."""
+    organization_id = state.organization_id or os.environ.get(
+        "FUTUREGEN_ORGANIZATION_ID", ""
+    )
+    evaluation = skill.dispatcher._run_async(service.evaluate(organization_id))
+    filters = FindingFilters(status="ACTIVE")
+    result = skill.dispatcher._run_async(
+        service.filtered_findings(organization_id, status=filters.status)
+    )
+    headline = evaluation_headline(evaluation, result, filters, language)
+    speak_information(
+        skill,
+        headline,
+        language=language,
+        response_type="evaluation",
+        evidence_rows=[
+            {
+                "run_id": evaluation.run_id,
+                "evaluated_resource_count": evaluation.evaluated_resource_count,
+                "active_finding_count": evaluation.active_finding_count,
+                "resolved_finding_count": evaluation.resolved_finding_count,
+            },
+            *[
+                {
+                    "id": finding.finding_id,
+                    "severity": finding.severity,
+                    "domain": finding.domain,
+                    "title": finding.title.for_language(language),
+                }
+                for finding in result.findings
+            ],
+        ],
+    )
+    _remember(
+        skill,
+        message,
+        state,
+        operation="evaluation",
+        active_finding_id="",
+        finding_status=filters.status,
+        finding_severity="",
+        finding_domain="",
+        finding_ids=tuple(finding.finding_id for finding in result.findings),
+        selected_finding_from_collection=False,
+    )
     return True
 
 
 def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | None:
     """Map established lexical forms without invoking the semantic model."""
+    if selection_index(text, state) is not None:
+        return SemanticAction.FINDING_EXPLAIN
+    if is_evaluation_request(text):
+        return SemanticAction.FINDINGS_EVALUATE
+    if is_collection_request(text, state):
+        return SemanticAction.FINDINGS_LIST
     if _is_finding_list(text):
         return SemanticAction.FINDINGS_LIST
     if (
@@ -769,8 +861,12 @@ def _context_state(skill, message) -> DialogueState:
         organization_id=str(
             signed.get("organization_id", "") or current.organization_id
         ),
-        active_finding_id=str(
-            signed.get("finding_id", "") or current.active_finding_id
+        active_finding_id=(
+            # A selected item can only originate from the org-scoped MDSP result
+            # IDs retained in this bounded session state.
+            current.active_finding_id
+            if current.selected_finding_from_collection
+            else str(signed.get("finding_id", "") or current.active_finding_id)
         ),
         entity_id=str(signed.get("entity_id", "") or current.entity_id),
         metric_name=str(signed.get("metric_name", "") or current.metric_name),

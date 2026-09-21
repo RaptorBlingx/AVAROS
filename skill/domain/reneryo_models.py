@@ -115,3 +115,14 @@ class MdspFindingList:
     active_count: int
     resolved_count: int
     severity_counts: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class MdspEvaluation:
+    """Completed MDSP evaluation; rules and findings remain MDSP-owned."""
+
+    run_id: str
+    source_watermark: datetime | None
+    evaluated_resource_count: int
+    active_finding_count: int
+    resolved_finding_count: int

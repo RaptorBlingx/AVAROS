@@ -25,6 +25,11 @@ class DialogueState:
     active_finding_id: str = ""
     entity_id: str = ""
     metric_name: str = ""
+    finding_status: str = ""
+    finding_severity: str = ""
+    finding_domain: str = ""
+    finding_ids: tuple[str, ...] = ()
+    selected_finding_from_collection: bool = False
     language: str = ""
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
