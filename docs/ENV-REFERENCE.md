@@ -87,7 +87,6 @@ Platform connection is configured from the Web UI wizard and stored per profile 
 | `UTTERANCE_MAX_DURATION_MS` | No | `20000` | Wake-word service | Maximum request capture duration. |
 | `UTTERANCE_END_SILENCE_MS` | No | `1200` | Wake-word service | Post-speech silence used to end the request. |
 | `UTTERANCE_SPEECH_START_PROBABILITY` | No | `0.55` | Wake-word service | Local Silero VAD probability required to begin a request. |
-| `UTTERANCE_SPEECH_CONTINUE_PROBABILITY` | No | `0.35` | Wake-word service | Local Silero VAD probability required to continue a started request. |
 
 ## Mock RENERYO Server
 

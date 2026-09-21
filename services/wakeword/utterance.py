@@ -34,7 +34,10 @@ class CaptureDiagnostics:
 
     duration_ms: int
     speech_ms: int
+    last_speech_ms: int
+    last_speech_probability: float
     trailing_silence_ms: int
+    trailing_max_voice_probability: float
     max_voice_probability: float
     last_voice_probability: float
 
@@ -57,7 +60,6 @@ class CaptureConfig:
     wake_tail_ms: int = 0
     pre_roll_ms: int = 240
     speech_start_probability: float = 0.55
-    speech_continue_probability: float = 0.35
     onset_frames: int = 2
 
     @classmethod
@@ -70,7 +72,6 @@ class CaptureConfig:
             wake_tail_ms=_env_int("UTTERANCE_WAKE_TAIL_MS", 0, 0, 1_000),
             pre_roll_ms=_env_int("UTTERANCE_PRE_ROLL_MS", 240, 0, 1_000),
             speech_start_probability=_env_float("UTTERANCE_SPEECH_START_PROBABILITY", 0.55, 0.1, 0.95),
-            speech_continue_probability=_env_float("UTTERANCE_SPEECH_CONTINUE_PROBABILITY", 0.35, 0.05, 0.9),
             onset_frames=_env_int("UTTERANCE_ONSET_FRAMES", 2, 1, 10),
         )
 
@@ -110,7 +111,10 @@ class UtteranceCapture:
         self.onset_count = 0
         self.started = False
         self.speech_samples = 0
+        self.last_speech_samples = 0
+        self.last_speech_probability = 0.0
         self.trailing_silence_samples = 0
+        self.trailing_max_voice_probability = 0.0
         self.pre_roll: deque[bytes] = deque()
         self.pre_roll_size = 0
         self.captured = bytearray()
@@ -139,12 +143,12 @@ class UtteranceCapture:
         probability = max(0.0, min(1.0, self._voice_probability(samples)))
         self._last_voice_probability = probability
         self._max_voice_probability = max(self._max_voice_probability, probability)
-        threshold = (
-            self.config.speech_continue_probability
-            if self.started
-            else self.config.speech_start_probability
-        )
-        voiced = probability >= threshold
+        # A single semantic voice threshold is deliberately used for both
+        # onset and endpointing. The earlier 0.35 continuation threshold
+        # allowed weak non-speech posterior values to reset silence forever.
+        # Natural pauses remain protected by end_silence_ms, not by treating
+        # uncertain audio as continuing speech.
+        voiced = probability >= self.config.speech_start_probability
 
         if not self.started:
             self._append_pre_roll(pcm)
@@ -153,7 +157,10 @@ class UtteranceCapture:
                 self.started = True
                 self.captured.extend(b"".join(self.pre_roll))
                 self.speech_samples = self.pre_roll_size
+                self.last_speech_samples = self.total_samples
+                self.last_speech_probability = probability
                 self.trailing_silence_samples = 0
+                self.trailing_max_voice_probability = 0.0
                 return None
             if self.total_samples >= self.start_timeout_samples:
                 return CaptureResult(CaptureStatus.SILENCE_TIMEOUT, diagnostics=self.diagnostics())
@@ -162,9 +169,16 @@ class UtteranceCapture:
         self.captured.extend(pcm)
         if voiced:
             self.speech_samples += VAD_FRAME_SAMPLES
+            self.last_speech_samples = self.total_samples
+            self.last_speech_probability = probability
             self.trailing_silence_samples = 0
+            self.trailing_max_voice_probability = 0.0
         else:
             self.trailing_silence_samples += VAD_FRAME_SAMPLES
+            self.trailing_max_voice_probability = max(
+                self.trailing_max_voice_probability,
+                probability,
+            )
 
         if self.total_samples >= self.max_samples:
             return CaptureResult(CaptureStatus.MAX_DURATION, bytes(self.captured), self.diagnostics())
@@ -176,7 +190,13 @@ class UtteranceCapture:
         return CaptureDiagnostics(
             duration_ms=_milliseconds(self.total_samples),
             speech_ms=_milliseconds(self.speech_samples),
+            last_speech_ms=_milliseconds(self.last_speech_samples),
+            last_speech_probability=round(self.last_speech_probability, 3),
             trailing_silence_ms=_milliseconds(self.trailing_silence_samples),
+            trailing_max_voice_probability=round(
+                self.trailing_max_voice_probability,
+                3,
+            ),
             max_voice_probability=round(self._max_voice_probability, 3),
             last_voice_probability=round(self._last_voice_probability, 3),
         )

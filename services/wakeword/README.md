@@ -37,8 +37,7 @@ docker compose -f docker/docker-compose.avaros.yml up avaros-wakeword
 | `UTTERANCE_START_TIMEOUT_MS` | `10000` | Maximum wait for speech after AVAROS's readiness acknowledgement. |
 | `UTTERANCE_MAX_DURATION_MS` | `20000` | Maximum post-wake request capture. |
 | `UTTERANCE_END_SILENCE_MS` | `1200` | Local-VAD silence that ends a started request. |
-| `UTTERANCE_SPEECH_START_PROBABILITY` | `0.55` | Silero probability required to begin a request. |
-| `UTTERANCE_SPEECH_CONTINUE_PROBABILITY` | `0.35` | Silero probability required to continue a started request. |
+| `UTTERANCE_SPEECH_START_PROBABILITY` | `0.55` | Silero probability required to classify a frame as speech. |
 
 If `WAKEWORD_MODEL_PATH` is configured but the file does not exist, service startup falls back to the registry model. If that model is unavailable, it falls back to `hey_jarvis`.
 
@@ -144,8 +143,8 @@ client calls `startListening()` again; that command resets detector state.
 - **End-of-turn.** The local Silero VAD bundled with openWakeWord provides
   probability-based onset and endpointing, pre-roll, 1.2-second end silence,
   a ten-second no-speech timeout, and a 20-second cap. The service logs only
-  timing, VAD probabilities, end reason, and ASR language/duration—never raw
-  audio or transcription text.
+  timing, last-speech/trailing VAD probabilities, end reason, and ASR
+  language/duration—never raw audio or transcription text.
 - **Bounded inference.** whisper.cpp runs with the quantized multilingual base
   model, two CPU threads, a global one-request-at-a-time lock, and private
   temporary WAV/JSON files that are deleted after every request.

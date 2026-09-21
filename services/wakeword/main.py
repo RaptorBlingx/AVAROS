@@ -565,23 +565,28 @@ async def ws_detect(websocket: WebSocket) -> None:
                         "POST_WAKE_SPEECH_ONSET: session=%s elapsed_ms=%s probability=%.3f",
                         session_id,
                         diagnostics.duration_ms,
-                        diagnostics.last_voice_probability,
+                        diagnostics.last_speech_probability,
                     )
                 if capture_result is None:
                     continue
                 utterance_capture = None
                 diagnostics = capture_result.diagnostics
                 diagnostic_fields = (
-                    "duration_ms=%s speech_ms=%s trailing_silence_ms=%s "
+                    "duration_ms=%s speech_ms=%s last_speech_ms=%s "
+                    "last_speech_probability=%.3f trailing_silence_ms=%s "
+                    "trailing_max_voice_probability=%.3f "
                     "max_voice_probability=%.3f last_voice_probability=%.3f"
                 )
                 diagnostic_values: tuple[object, ...] = (
                     diagnostics.duration_ms,
                     diagnostics.speech_ms,
+                    diagnostics.last_speech_ms,
+                    diagnostics.last_speech_probability,
                     diagnostics.trailing_silence_ms,
+                    diagnostics.trailing_max_voice_probability,
                     diagnostics.max_voice_probability,
                     diagnostics.last_voice_probability,
-                ) if diagnostics else (0, 0, 0, 0.0, 0.0)
+                ) if diagnostics else (0, 0, 0, 0.0, 0, 0.0, 0.0, 0.0)
                 logger.info(
                     "POST_WAKE_CAPTURE_END: session=%s reason=%s " + diagnostic_fields,
                     session_id,
