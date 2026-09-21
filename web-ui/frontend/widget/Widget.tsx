@@ -28,6 +28,7 @@ import type {
   WidgetPublicApi,
   WidgetTheme,
   WidgetVisualState,
+  VoiceTurnStatus,
 } from "./types";
 
 type WidgetProps = {
@@ -96,7 +97,11 @@ const RESPONSE_FALLBACK_TIMEOUT_MS = 25000;
 const SPEECH_EVENT_DEDUP_MS = 1200;
 const SERVER_TTS_FETCH_TIMEOUT_MS = 15000;
 
-function makeMessage(source: "user" | "avaros", text: string): ChatMessage {
+function makeMessage(
+  source: "user" | "avaros",
+  text: string,
+  details: Pick<ChatMessage, "inputKind" | "language"> = {},
+): ChatMessage {
   return {
     id:
       typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -105,6 +110,7 @@ function makeMessage(source: "user" | "avaros", text: string): ChatMessage {
     source,
     text,
     timestamp: new Date(),
+    ...details,
   };
 }
 
@@ -156,7 +162,9 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   const speakAssistantTextRef = useRef<
     (text: string, language?: string) => Promise<void>
   >(async () => {});
-  const sendTextRef = useRef<(text: string, language?: string) => Promise<void>>(
+  const sendTextRef = useRef<
+    (text: string, language?: string, inputKind?: "text" | "voice") => Promise<void>
+  >(
     async () => {},
   );
   const resumeWakeWordRef = useRef<() => void>(() => {});
@@ -185,6 +193,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   const [wakeWordArmed, setWakeWordArmed] = useState(false);
   const [wakeWordLabel, setWakeWordLabel] = useState("Hey Jarvis");
   const [ttsVoice, setTtsVoice] = useState<SpeechSynthesisVoice | null>(null);
+  const [voiceTurnStatus, setVoiceTurnStatus] = useState<VoiceTurnStatus | null>(null);
 
   useEffect(() => {
     if (config.defaultMode !== "inherit") return;
@@ -670,6 +679,9 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       clearFallbackTimer();
       clearCompletionTimer();
       setProcessing(false);
+      if (modeRef.current === "wake-word") {
+        setVoiceTurnStatus("responding");
+      }
       appendMessage(makeMessage("avaros", cleaned));
       const now = Date.now();
       const isDuplicateSpeech =
@@ -678,9 +690,15 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       lastAssistantSpeechRef.current = { text: cleaned, at: now };
       if (!isDuplicateSpeech) {
         void speakAssistantText(cleaned, responseLocale).finally(() => {
+          if (modeRef.current === "wake-word") {
+            setVoiceTurnStatus("rearming");
+          }
           resumeWakeWordRef.current();
         });
       } else {
+        if (modeRef.current === "wake-word") {
+          setVoiceTurnStatus("rearming");
+        }
         resumeWakeWordRef.current();
       }
     },
@@ -739,7 +757,11 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   }, []);
 
   const sendText = useCallback(
-    async (text: string, explicitLanguage?: string) => {
+    async (
+      text: string,
+      explicitLanguage?: string,
+      inputKind: "text" | "voice" = "text",
+    ) => {
       const cleaned = text.trim();
       if (!cleaned) return;
       if (configError) return;
@@ -754,8 +776,21 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       activeLanguageRef.current = requestLanguage;
       manager.setLanguage(requestLanguage);
 
-      appendMessage(makeMessage("user", cleaned));
+      appendMessage(
+        makeMessage("user", cleaned, {
+          inputKind,
+          language:
+            inputKind === "voice"
+              ? requestLanguage === "tr-TR"
+                ? "tr-TR"
+                : "en-US"
+              : undefined,
+        }),
+      );
       setProcessing(true);
+      if (inputKind === "voice") {
+        setVoiceTurnStatus("processing");
+      }
       responseResolvedRef.current = false;
       clearFallbackTimer();
       clearCompletionTimer();
@@ -947,6 +982,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   resumeWakeWordRef.current = () => {
     if (modeRef.current !== "wake-word") return;
     if (isTtsSpeakingRef.current) return;
+    setVoiceTurnStatus("rearming");
     window.setTimeout(() => {
       if (modeRef.current !== "wake-word" || isTtsSpeakingRef.current) return;
       const wakeWord = backendWakeWordRef.current;
@@ -957,6 +993,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
         .then(() => {
           setMicActive(true);
           setMicError(null);
+          setVoiceTurnStatus("armed");
         })
         .catch(() => {
           setMicActive(false);
@@ -985,8 +1022,16 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       if (state === "listening" || state === "capturing") {
         setMicActive(true);
         setMicError(null);
+        setVoiceTurnStatus(
+          state === "capturing" || wakeWordArmedRef.current
+            ? "listening"
+            : "armed",
+        );
       } else if (state === "processing" || state === "idle") {
         setMicActive(false);
+        if (state === "processing" && wakeWordArmedRef.current) {
+          setVoiceTurnStatus("transcribing");
+        }
       } else if (state === "error") {
         setMicActive(false);
         setMicError("Wake-word service disconnected. Reconnecting…");
@@ -1012,6 +1057,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       setPanelOpen(true);
       wakeWordArmedRef.current = true;
       setWakeWordArmed(true);
+      setVoiceTurnStatus("wake-detected");
       ensureConnected();
       const promptLanguage = activeLanguageRef.current;
       const prompt =
@@ -1019,6 +1065,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
           ? "Size nasıl yardımcı olabilirim?"
           : "How can I help you?";
       appendMessageRef.current(makeMessage("avaros", prompt));
+      setVoiceTurnStatus("acknowledging");
       void speakAssistantTextRef.current(prompt, promptLanguage).finally(() => {
         if (modeRef.current !== "wake-word" || !wakeWordArmedRef.current) return;
         if (isTtsSpeakingRef.current) return;
@@ -1039,7 +1086,9 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
         resumeWakeWordRef.current();
         return;
       }
-      void sendTextRef.current(payload.text, payload.language);
+      // The final local-ASR result is already known here. Show exactly what
+      // was heard before conversational routing begins.
+      void sendTextRef.current(payload.text, payload.language, "voice");
     });
     const unsubUtteranceError = bww.onUtteranceError((payload) => {
       wakeWordArmedRef.current = false;
@@ -1056,6 +1105,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
             : "Local speech recognition failed. Please try again or use push-to-talk/text.";
       setMicError(message);
       appendMessageRef.current(makeMessage("avaros", message));
+      setVoiceTurnStatus("rearming");
       resumeWakeWordRef.current();
     });
 
@@ -1065,6 +1115,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
         await bww.initialize();
         setWakeWordLabel(await bww.refreshWakeWordLabel());
         await bww.startListening();
+        setVoiceTurnStatus("armed");
       } catch (error) {
         // Backend unavailable — degrade to push-to-talk.
         bww.dispose();
@@ -1080,6 +1131,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
         }
         setMode((prev) => (prev === "wake-word" ? "push-to-talk" : prev));
         modeRef.current = "push-to-talk";
+        setVoiceTurnStatus(null);
       }
     })();
 
@@ -1092,6 +1144,16 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       backendWakeWordRef.current = null;
     };
   }, [config.sessionToken, config.wakeWordUrl, ensureConnected, mode]);
+
+  useEffect(() => {
+    if (mode !== "wake-word") {
+      setVoiceTurnStatus(null);
+      return;
+    }
+    if (isTtsSpeaking && voiceTurnStatus === "responding") {
+      setVoiceTurnStatus("speaking");
+    }
+  }, [isTtsSpeaking, mode, voiceTurnStatus]);
 
   useEffect(() => {
     if (!("speechSynthesis" in window)) return;
@@ -1321,7 +1383,13 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   const visualState: WidgetVisualState = useMemo(() => {
     if (configError) return "disabled";
     if (connectionState === "error") return "error";
-    if (processing) return "processing";
+    if (
+      processing ||
+      voiceTurnStatus === "transcribing" ||
+      voiceTurnStatus === "processing" ||
+      voiceTurnStatus === "responding"
+    ) return "processing";
+    if (voiceTurnStatus === "speaking") return "speaking";
     if (isTtsSpeaking) return "speaking";
     const isPassiveWakeWordListening =
       mode === "wake-word" && micActive && !wakeWordArmed && !panelOpen;
@@ -1338,6 +1406,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     processing,
     isTtsSpeaking,
     wakeWordArmed,
+    voiceTurnStatus,
   ]);
 
   const connectionTooltip =
@@ -1378,6 +1447,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
             processing={processing}
             sendDisabled={sendDisabled}
             visualState={visualState}
+            voiceTurnStatus={voiceTurnStatus}
             onListenToggle={() => {
               if (micActive) {
                 stopListening();

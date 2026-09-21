@@ -5,6 +5,7 @@ import type {
   WidgetConnectionState,
   WidgetMode,
   WidgetVisualState,
+  VoiceTurnStatus,
 } from "./types";
 
 type WidgetPanelProps = {
@@ -19,6 +20,7 @@ type WidgetPanelProps = {
   processing: boolean;
   sendDisabled: boolean;
   visualState: WidgetVisualState;
+  voiceTurnStatus: VoiceTurnStatus | null;
   onListenToggle: () => void;
   onCancelRequest?: () => void;
   onInputChange: (value: string) => void;
@@ -40,6 +42,18 @@ const STATE_LABEL: Record<WidgetVisualState, string> = {
   disabled: "Voice unavailable",
 };
 
+const VOICE_TURN_LABEL: Record<VoiceTurnStatus, string> = {
+  armed: "Wake on — ready",
+  "wake-detected": "Wake word detected",
+  acknowledging: "AVAROS is ready",
+  listening: "Listening for your request…",
+  transcribing: "Transcribing your request…",
+  processing: "Understanding your request…",
+  responding: "Preparing a response…",
+  speaking: "Speaking…",
+  rearming: "Wake mode re-arming…",
+};
+
 function getActionLabel(state: WidgetVisualState): string {
   if (state === "listening") return "Stop Listening";
   if (state === "speaking") return "Stop Speaking";
@@ -50,10 +64,12 @@ function getActionLabel(state: WidgetVisualState): string {
 function buildStateLabel(
   connectionState: WidgetConnectionState,
   visualState: WidgetVisualState,
+  voiceTurnStatus: VoiceTurnStatus | null,
 ): string {
   if (connectionState === "error") return "Voice unavailable";
   if (connectionState === "connecting") return "Connecting...";
   if (connectionState === "disconnected") return "Disconnected";
+  if (voiceTurnStatus) return VOICE_TURN_LABEL[voiceTurnStatus];
   return STATE_LABEL[visualState];
 }
 
@@ -174,6 +190,7 @@ export function WidgetPanel({
   processing,
   sendDisabled,
   visualState,
+  voiceTurnStatus,
   onListenToggle,
   onCancelRequest,
   onInputChange,
@@ -205,7 +222,7 @@ export function WidgetPanel({
     : "Ask AVAROS something...";
   const showCounter = inputValue.length > 400;
   const remaining = Math.max(0, 500 - inputValue.length);
-  const stateLabel = buildStateLabel(connectionState, visualState);
+  const stateLabel = buildStateLabel(connectionState, visualState, voiceTurnStatus);
   const isDisabled =
     visualState === "disabled" ||
     connectionState === "error" ||
@@ -447,8 +464,20 @@ export function WidgetPanel({
                         className="voice-chat-message__source"
                         aria-hidden="true"
                       >
-                        {message.source === "user" ? "⌨️" : "🤖"}
+                        {message.source === "user"
+                          ? message.inputKind === "voice"
+                            ? "🎙"
+                            : "⌨️"
+                          : "🤖"}
                       </span>
+                      {message.source === "user" && message.inputKind === "voice" ? (
+                        <span
+                          className="voice-chat-message__language"
+                          aria-label={`Recognized ${message.language === "tr-TR" ? "Turkish" : "English"}`}
+                        >
+                          {message.language === "tr-TR" ? "TR" : "EN"}
+                        </span>
+                      ) : null}
                       <time dateTime={message.timestamp.toISOString()}>
                         {formatTime(message.timestamp)}
                       </time>

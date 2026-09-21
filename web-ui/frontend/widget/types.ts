@@ -24,11 +24,24 @@ export type WidgetVisualState =
   | "error"
   | "disabled";
 
+export type VoiceTurnStatus =
+  | "armed"
+  | "wake-detected"
+  | "acknowledging"
+  | "listening"
+  | "transcribing"
+  | "processing"
+  | "responding"
+  | "speaking"
+  | "rearming";
+
 export type ChatMessage = {
   id: string;
   source: "user" | "avaros";
   text: string;
   timestamp: Date;
+  inputKind?: "text" | "voice";
+  language?: "en-US" | "tr-TR";
 };
 
 export type WidgetConfig = {

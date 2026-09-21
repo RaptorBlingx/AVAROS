@@ -733,6 +733,20 @@
   align-items: center;
 }
 
+.voice-chat-message__language {
+  display: inline-flex;
+  align-items: center;
+  min-height: 16px;
+  padding: 0.06rem 0.32rem;
+  border-radius: 999px;
+  background: rgba(2, 132, 199, 0.13);
+  color: #0369a1;
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
 .voice-chat-typing {
   display: inline-flex;
   align-items: center;
@@ -1468,6 +1482,11 @@
 .aw-widget--dark .voice-chat-message__text,
 .aw-widget--dark .voice-chat-input__field {
   color: #e7f8f4;
+}
+
+.aw-widget--dark .voice-chat-message__language {
+  background: rgba(94, 234, 212, 0.16);
+  color: #a7f3d0;
 }
 
 .voice-widget__header-actions {

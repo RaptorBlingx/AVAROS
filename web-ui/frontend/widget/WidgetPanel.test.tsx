@@ -25,6 +25,7 @@ function renderPanel(
       processing={processing}
       sendDisabled
       visualState={visualState}
+      voiceTurnStatus={null}
       onListenToggle={vi.fn()}
       onCancelRequest={onCancelRequest}
       onInputChange={vi.fn()}
@@ -73,6 +74,7 @@ describe("embedded WidgetPanel interruption", () => {
         processing={false}
         sendDisabled
         visualState="idle"
+        voiceTurnStatus={null}
         onListenToggle={vi.fn()}
         onInputChange={vi.fn()}
         onSend={vi.fn()}
@@ -91,5 +93,45 @@ describe("embedded WidgetPanel interruption", () => {
     );
 
     expect(onModeChange).toHaveBeenCalledWith("wake-word");
+  });
+
+  it("shows a voice transcript with its recognized language", () => {
+    render(
+      <WidgetPanel
+        mode="wake-word"
+        disabledModes={[]}
+        messages={[
+          {
+            id: "voice-1",
+            source: "user",
+            text: "Aktif bulguları göster",
+            timestamp: new Date("2026-09-21T12:00:00Z"),
+            inputKind: "voice",
+            language: "tr-TR",
+          },
+        ]}
+        connectionState="connected"
+        listeningSupported
+        listeningActive={false}
+        micError={null}
+        inputValue=""
+        processing
+        sendDisabled
+        visualState="processing"
+        voiceTurnStatus="processing"
+        onListenToggle={vi.fn()}
+        onInputChange={vi.fn()}
+        onSend={vi.fn()}
+        onModeChange={vi.fn()}
+        onClear={vi.fn()}
+        brandLogoSrc="/logo.svg"
+        wakeWordLabel="Hey Jarvis"
+        avarosUrl="https://avaros.example.com/"
+      />,
+    );
+
+    expect(screen.getByText("Aktif bulguları göster")).toBeTruthy();
+    expect(screen.getByLabelText("Recognized Turkish").textContent).toBe("TR");
+    expect(screen.getByText("Understanding your request…")).toBeTruthy();
   });
 });
