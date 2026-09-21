@@ -34,11 +34,11 @@ docker compose -f docker/docker-compose.avaros.yml up avaros-wakeword
 | `ASR_THREADS` | `2` | CPU threads used by the serial local whisper.cpp worker. |
 | `ASR_TIMEOUT_SECONDS` | `20` | Hard timeout for one local transcription. |
 | `ASR_MIN_LANGUAGE_CONFIDENCE` | `0.55` | Minimum auto-detection probability for accepting English or Turkish. |
-| `UTTERANCE_START_TIMEOUT_MS` | `6000` | Maximum wait for speech after the wake phrase. |
-| `UTTERANCE_MAX_DURATION_MS` | `15000` | Maximum post-wake request capture. |
-| `UTTERANCE_END_SILENCE_MS` | `800` | Silence that ends a started request. |
-| `UTTERANCE_ENERGY_FLOOR` | `300` | Minimum RMS energy for the adaptive speech gate. |
-| `UTTERANCE_ENERGY_RATIO` | `2.5` | Speech threshold relative to the observed noise floor. |
+| `UTTERANCE_START_TIMEOUT_MS` | `10000` | Maximum wait for speech after AVAROS's readiness acknowledgement. |
+| `UTTERANCE_MAX_DURATION_MS` | `20000` | Maximum post-wake request capture. |
+| `UTTERANCE_END_SILENCE_MS` | `1200` | Local-VAD silence that ends a started request. |
+| `UTTERANCE_SPEECH_START_PROBABILITY` | `0.55` | Silero probability required to begin a request. |
+| `UTTERANCE_SPEECH_CONTINUE_PROBABILITY` | `0.35` | Silero probability required to continue a started request. |
 
 If `WAKEWORD_MODEL_PATH` is configured but the file does not exist, service startup falls back to the registry model. If that model is unavailable, it falls back to `hey_jarvis`.
 
@@ -97,10 +97,11 @@ UI. The service first emits the wake event:
 }
 ```
 
-It then discards the wake-phrase tail, captures only the following request,
-and emits `utterance_processing` when VAD reaches the end of the turn. The
-browser must stop sending microphone audio at that point but keep the socket
-open. A successful local transcription is returned as:
+The widget pauses microphone streaming, speaks its readiness acknowledgement,
+then sends `{"command":"start_utterance_capture"}`. The service captures only
+the following request and emits `utterance_processing` when VAD reaches the
+end of the turn. The browser must stop sending microphone audio at that point
+but keep the socket open. A successful local transcription is returned as:
 
 ```json
 {
@@ -140,8 +141,11 @@ client calls `startListening()` again; that command resets detector state.
 - **Language separation.** openWakeWord sees the wake phrase. A fresh capture
   window feeds only the following utterance to multilingual whisper.cpp with
   `language=auto`, so “Hey Jarvis” cannot choose the request language.
-- **End-of-turn.** A lightweight adaptive RMS gate provides onset, pre-roll,
-  800 ms end-silence, a six-second no-speech timeout, and a 15-second cap.
+- **End-of-turn.** The local Silero VAD bundled with openWakeWord provides
+  probability-based onset and endpointing, pre-roll, 1.2-second end silence,
+  a ten-second no-speech timeout, and a 20-second cap. The service logs only
+  timing, VAD probabilities, end reason, and ASR language/duration—never raw
+  audio or transcription text.
 - **Bounded inference.** whisper.cpp runs with the quantized multilingual base
   model, two CPU threads, a global one-request-at-a-time lock, and private
   temporary WAV/JSON files that are deleted after every request.

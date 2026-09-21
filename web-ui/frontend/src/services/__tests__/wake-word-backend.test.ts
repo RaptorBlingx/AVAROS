@@ -427,7 +427,33 @@ describe("BackendWakeWordService", () => {
         }),
       );
 
-      expect(states[0]).toBe("capturing");
+      expect(states[0]).toBe("detected");
+      expect(service.state).toBe("detected");
+    });
+
+    it("opens the server command window only after readiness", async () => {
+      service.dispose();
+      service = new BackendWakeWordService({
+        wsUrl: "ws://test:9999/ws/detect",
+        captureUtterance: true,
+      });
+      const listenPromise = service.startListening();
+      const socket = MockWebSocket.lastInstance()!;
+      socket.simulateOpen();
+      await listenPromise;
+
+      socket.simulateMessage(
+        JSON.stringify({ event: "detected", model: "hey_jarvis", score: 0.9 }),
+      );
+      service.pauseAudioCapture();
+      const capturePromise = service.startUtteranceCapture();
+      await capturePromise;
+
+      expect(
+        MockWebSocket.lastInstance()!.sentMessages.map((message) =>
+          typeof message === "string" ? JSON.parse(message) : message,
+        ),
+      ).toContainEqual({ command: "start_utterance_capture" });
       expect(service.state).toBe("capturing");
     });
 

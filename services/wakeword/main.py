@@ -405,6 +405,8 @@ async def ws_detect(websocket: WebSocket) -> None:
     detection_cooldown = _detection_cooldown_seconds()
     utterance_capture: UtteranceCapture | None = None
     utterance_capture_enabled = False
+    awaiting_utterance_start = False
+    capture_speech_onset_logged = False
 
     def _reset_detector(active_detector: WakeWordDetector) -> WakeWordDetector:
         active_threshold = _detector_threshold(active_detector)
@@ -488,6 +490,32 @@ async def ws_detect(websocket: WebSocket) -> None:
                     utterance_capture_enabled = payload.get("enabled") is True
                     if not utterance_capture_enabled:
                         utterance_capture = None
+                        awaiting_utterance_start = False
+                    logger.info(
+                        "POST_WAKE_CAPTURE_CONFIG: session=%s enabled=%s",
+                        session_id,
+                        utterance_capture_enabled,
+                    )
+                    continue
+                if command == "start_utterance_capture":
+                    if not utterance_capture_enabled or not awaiting_utterance_start:
+                        logger.warning(
+                            "POST_WAKE_CAPTURE_START_IGNORED: session=%s enabled=%s awaiting=%s",
+                            session_id,
+                            utterance_capture_enabled,
+                            awaiting_utterance_start,
+                        )
+                        continue
+                    utterance_capture = UtteranceCapture()
+                    awaiting_utterance_start = False
+                    capture_speech_onset_logged = False
+                    logger.info(
+                        "POST_WAKE_CAPTURE_READY: session=%s start_timeout_ms=%s max_duration_ms=%s end_silence_ms=%s",
+                        session_id,
+                        utterance_capture.config.start_timeout_ms,
+                        utterance_capture.config.max_duration_ms,
+                        utterance_capture.config.end_silence_ms,
+                    )
                     continue
                 if command == "reset_detector":
                     reason = payload.get("reason", "unspecified")
@@ -506,6 +534,7 @@ async def ws_detect(websocket: WebSocket) -> None:
                         )
                         break
                     utterance_capture = None
+                    awaiting_utterance_start = False
                     last_detection_monotonic = None
                     logger.info(
                         "Detector reset: session=%s reason=%s threshold=%.2f",
@@ -516,7 +545,9 @@ async def ws_detect(websocket: WebSocket) -> None:
                     continue
                 if command == "cancel_utterance":
                     utterance_capture = None
+                    awaiting_utterance_start = False
                     detector = _reset_detector(detector)
+                    logger.info("POST_WAKE_CAPTURE_CANCELLED: session=%s", session_id)
                     continue
                 logger.debug("Ignoring unsupported websocket command: %s", payload)
                 continue
@@ -527,9 +558,36 @@ async def ws_detect(websocket: WebSocket) -> None:
 
             if utterance_capture is not None:
                 capture_result = utterance_capture.process_audio(pcm_frame)
+                if utterance_capture.started and not capture_speech_onset_logged:
+                    capture_speech_onset_logged = True
+                    diagnostics = utterance_capture.diagnostics()
+                    logger.info(
+                        "POST_WAKE_SPEECH_ONSET: session=%s elapsed_ms=%s probability=%.3f",
+                        session_id,
+                        diagnostics.duration_ms,
+                        diagnostics.last_voice_probability,
+                    )
                 if capture_result is None:
                     continue
                 utterance_capture = None
+                diagnostics = capture_result.diagnostics
+                diagnostic_fields = (
+                    "duration_ms=%s speech_ms=%s trailing_silence_ms=%s "
+                    "max_voice_probability=%.3f last_voice_probability=%.3f"
+                )
+                diagnostic_values: tuple[object, ...] = (
+                    diagnostics.duration_ms,
+                    diagnostics.speech_ms,
+                    diagnostics.trailing_silence_ms,
+                    diagnostics.max_voice_probability,
+                    diagnostics.last_voice_probability,
+                ) if diagnostics else (0, 0, 0, 0.0, 0.0)
+                logger.info(
+                    "POST_WAKE_CAPTURE_END: session=%s reason=%s " + diagnostic_fields,
+                    session_id,
+                    capture_result.status.value,
+                    *diagnostic_values,
+                )
                 if capture_result.status == CaptureStatus.SILENCE_TIMEOUT:
                     await websocket.send_json(
                         {"event": "utterance_error", "code": "silence_timeout"}
@@ -538,10 +596,18 @@ async def ws_detect(websocket: WebSocket) -> None:
                     continue
 
                 await websocket.send_json({"event": "utterance_processing"})
+                asr_started = _now_monotonic()
                 try:
                     transcript = await asyncio.to_thread(
                         _TRANSCRIBER.transcribe,
                         capture_result.pcm,
+                    )
+                    logger.info(
+                        "POST_WAKE_ASR_RESULT: session=%s duration_ms=%s language=%s confidence=%.3f",
+                        session_id,
+                        round((_now_monotonic() - asr_started) * 1_000),
+                        transcript.language,
+                        transcript.language_confidence,
                     )
                     await websocket.send_json(
                         {
@@ -555,6 +621,12 @@ async def ws_detect(websocket: WebSocket) -> None:
                         }
                     )
                 except TranscriptionError as exc:
+                    logger.warning(
+                        "POST_WAKE_ASR_ERROR: session=%s duration_ms=%s code=%s",
+                        session_id,
+                        round((_now_monotonic() - asr_started) * 1_000),
+                        exc.code,
+                    )
                     await websocket.send_json(
                         {"event": "utterance_error", "code": exc.code}
                     )
@@ -601,10 +673,15 @@ async def ws_detect(websocket: WebSocket) -> None:
                 )
                 await websocket.send_json(asdict(event))
                 # Wake detection and request-language detection are separate:
-                # begin a fresh, bounded capture after the wake event and let
-                # multilingual ASR classify only the following utterance.
+                # the widget acknowledges the wake first, then explicitly
+                # opens a fresh capture window so a natural initial pause is
+                # not treated as post-wake silence.
                 if utterance_capture_enabled:
-                    utterance_capture = UtteranceCapture()
+                    awaiting_utterance_start = True
+                    logger.info(
+                        "POST_WAKE_READINESS_PENDING: session=%s",
+                        session_id,
+                    )
     except WebSocketDisconnect:
         logger.info("WebSocket disconnected: %s", websocket.client)
     finally:

@@ -321,6 +321,26 @@ export class BackendWakeWordService {
   }
 
   /**
+   * Open the acknowledged, one-turn command window.
+   *
+   * Wake detection remains paused while the widget gives its readiness cue.
+   * Only after that cue finishes do we ask the server to construct the local
+   * VAD and resume browser microphone streaming.
+   */
+  async startUtteranceCapture(): Promise<void> {
+    if (!this.config.captureUtterance) {
+      throw new Error("Post-wake capture is not enabled for this service");
+    }
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      await this.initialize();
+    }
+    this.stopAudioCapture({ keepAudioContext: true });
+    this.sendControlCommand("start_utterance_capture");
+    await this.startAudioCapture();
+    this.setState("capturing");
+  }
+
+  /**
    * Tear down everything — WebSocket, audio, timers.
    */
   dispose(): void {
@@ -510,7 +530,7 @@ export class BackendWakeWordService {
           `[AVAROS-DEBUG] wake-word backend event: model=${String(payload.model)}, score=${Number(payload.score).toFixed(4)}`,
         );
         this.wakeWordLabel = toDisplayWakeWordLabel(String(payload.model));
-        this.setState(this.config.captureUtterance ? "capturing" : "detected");
+        this.setState("detected");
         this.fireDetected({
           model: String(payload.model),
           score: Number(payload.score),

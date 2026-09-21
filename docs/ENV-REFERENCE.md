@@ -83,11 +83,11 @@ Platform connection is configured from the Web UI wizard and stored per profile 
 | `ASR_THREADS` | No | `2` | Wake-word service | CPU threads for serial local whisper.cpp EN/TR transcription. |
 | `ASR_TIMEOUT_SECONDS` | No | `20` | Wake-word service | Hard timeout for one post-wake transcription. |
 | `ASR_MIN_LANGUAGE_CONFIDENCE` | No | `0.55` | Wake-word service | Minimum auto-detection probability for accepting English or Turkish. |
-| `UTTERANCE_START_TIMEOUT_MS` | No | `6000` | Wake-word service | Wait for request speech after wake detection before reporting silence. |
-| `UTTERANCE_MAX_DURATION_MS` | No | `15000` | Wake-word service | Maximum request capture duration. |
-| `UTTERANCE_END_SILENCE_MS` | No | `800` | Wake-word service | Post-speech silence used to end the request. |
-| `UTTERANCE_ENERGY_FLOOR` | No | `300` | Wake-word service | Minimum RMS value for adaptive speech onset/end detection. |
-| `UTTERANCE_ENERGY_RATIO` | No | `2.5` | Wake-word service | Speech threshold multiplier above the observed noise floor. |
+| `UTTERANCE_START_TIMEOUT_MS` | No | `10000` | Wake-word service | Wait for request speech after AVAROS's readiness acknowledgement before reporting silence. |
+| `UTTERANCE_MAX_DURATION_MS` | No | `20000` | Wake-word service | Maximum request capture duration. |
+| `UTTERANCE_END_SILENCE_MS` | No | `1200` | Wake-word service | Post-speech silence used to end the request. |
+| `UTTERANCE_SPEECH_START_PROBABILITY` | No | `0.55` | Wake-word service | Local Silero VAD probability required to begin a request. |
+| `UTTERANCE_SPEECH_CONTINUE_PROBABILITY` | No | `0.35` | Wake-word service | Local Silero VAD probability required to continue a started request. |
 
 ## Mock RENERYO Server
 

@@ -153,6 +153,9 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     at: 0,
   });
   const appendMessageRef = useRef<(msg: ChatMessage) => void>(() => {});
+  const speakAssistantTextRef = useRef<
+    (text: string, language?: string) => Promise<void>
+  >(async () => {});
   const sendTextRef = useRef<(text: string, language?: string) => Promise<void>>(
     async () => {},
   );
@@ -585,6 +588,8 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     ],
   );
 
+  speakAssistantTextRef.current = speakAssistantText;
+
   // ── Backend Wake Word lifecycle ────────────────────
 
   const disposeBackendWakeWord = useCallback(() => {
@@ -999,10 +1004,32 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       ) return;
 
       wakeWordPromptCooldownRef.current = Date.now() + WAKE_WORD_PROMPT_COOLDOWN_MS;
+      // Restore the proven interaction cadence: stop passive microphone
+      // streaming, acknowledge the wake, then open a fresh local-ASR command
+      // window. This prevents a natural pause after the wake phrase from
+      // consuming the no-speech timeout.
+      bww.pauseAudioCapture();
       setPanelOpen(true);
       wakeWordArmedRef.current = true;
       setWakeWordArmed(true);
       ensureConnected();
+      const promptLanguage = activeLanguageRef.current;
+      const prompt =
+        promptLanguage === "tr-TR"
+          ? "Size nasıl yardımcı olabilirim?"
+          : "How can I help you?";
+      appendMessageRef.current(makeMessage("avaros", prompt));
+      void speakAssistantTextRef.current(prompt, promptLanguage).finally(() => {
+        if (modeRef.current !== "wake-word" || !wakeWordArmedRef.current) return;
+        if (isTtsSpeakingRef.current) return;
+        void bww.startUtteranceCapture().catch(() => {
+          wakeWordArmedRef.current = false;
+          setWakeWordArmed(false);
+          setMicActive(false);
+          setMicError("Could not start listening. Please say the wake word again.");
+          resumeWakeWordRef.current();
+        });
+      });
     });
     const unsubTranscript = bww.onTranscript((payload) => {
       wakeWordArmedRef.current = false;

@@ -171,8 +171,8 @@ class TestWebSocketEndpoint:
 
         capture_cls.assert_not_called()
 
-    def test_websocket_routes_post_wake_audio_to_utterance_capture(self) -> None:
-        """The wake phrase is not re-run through detection as request audio."""
+    def test_websocket_waits_for_widget_readiness_before_post_wake_capture(self) -> None:
+        """The acknowledgement, not wake detection, opens the command window."""
         # Arrange
         mock_detector = MagicMock()
         mock_detector.process_audio.return_value = DetectionEvent(
@@ -203,6 +203,10 @@ class TestWebSocketEndpoint:
                 )
                 ws.send_bytes(b"\x00" * 2560)
                 first = ws.receive_json()
+                # Audio while AVAROS acknowledges the wake is deliberately
+                # ignored, so a natural pause cannot consume the timeout.
+                ws.send_bytes(b"\x01" * 2560)
+                ws.send_text('{"command":"start_utterance_capture"}')
                 ws.send_bytes(b"\x01" * 2560)
                 second = ws.receive_json()
 
@@ -250,6 +254,7 @@ class TestWebSocketEndpoint:
                 )
                 ws.send_bytes(b"\x00" * 2560)
                 assert ws.receive_json()["event"] == "detected"
+                ws.send_text('{"command":"start_utterance_capture"}')
                 ws.send_bytes(b"\x01" * 2560)
                 assert ws.receive_json() == {"event": "utterance_processing"}
                 transcript = ws.receive_json()
