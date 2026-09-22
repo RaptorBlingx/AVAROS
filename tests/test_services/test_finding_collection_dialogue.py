@@ -152,6 +152,23 @@ def test_ordinal_selection_is_limited_to_current_result_ids():
     assert selection_index("Üçüncüyü açıkla.", state) is None
 
 
+def test_contextual_ordinal_selection_tolerates_small_en_tr_asr_variations():
+    state = type("State", (), {"finding_ids": ("one", "two", "three")})()
+
+    assert selection_index("İlki açıkla.", state) == 0
+    assert selection_index("İlkin açıkla.", state) == 0
+    assert selection_index("Birincisini açıkla.", state) == 0
+    assert selection_index("İkincini anlat.", state) == 1
+    assert selection_index("Üçüncüsünü göster.", state) == 2
+    assert selection_index("Explain the firs one.", state) == 0
+    assert selection_index("Tell me about the secon item.", state) == 1
+    assert selection_index("Show the thrd one.", state) == 2
+
+    # A near-match is not treated as a selector without an explicit action.
+    assert selection_index("ilkin var mı", state) is None
+    assert selection_index("firs finding", state) is None
+
+
 def test_english_evaluation_collection_filter_selection_and_followup():
     skill = _Skill()
 
@@ -161,6 +178,10 @@ def test_english_evaluation_collection_filter_selection_and_followup():
     assert skill._futuregen_service.evaluations == 1
     assert _response_type(skill) == "evaluation"
     assert "fresh evaluation" in skill.spoken[-1][0]
+    assert "Finding one" not in skill.spoken[-1][0]
+    assert "Severity mix: 0 high, 1 medium, and 1 low." in skill.spoken[-1][0]
+    assert "medium-priority findings cover metrics" in skill.spoken[-1][0]
+    assert "List them" in skill.spoken[-1][0]
 
     assert handle_reneryo_query(skill, _message("List them."))
     assert _response_type(skill) == "findings"
@@ -171,7 +192,7 @@ def test_english_evaluation_collection_filter_selection_and_followup():
     assert "1 active medium findings" in skill.spoken[-1][0]
     assert skill._futuregen_service.requests[-1] == FindingFilters("ACTIVE", "MEDIUM", "")
 
-    assert handle_reneryo_query(skill, _message("Explain the first one."))
+    assert handle_reneryo_query(skill, _message("Explain the firs one."))
     assert "about 566 hours behind" in skill.spoken[-1][0]
     assert _response_type(skill) == "finding"
 
@@ -180,7 +201,6 @@ def test_english_evaluation_collection_filter_selection_and_followup():
     state = skill._dialogue_state_store.get("collection-session")
     assert state is not None and state.active_finding_id == "one"
     assert state.selected_finding_from_collection is True
-
 
 def test_existing_findings_read_does_not_trigger_evaluation():
     skill = _Skill()
@@ -198,7 +218,11 @@ def test_turkish_evaluation_collection_selection_and_followup():
         skill, _message("Güncel veriyi analiz et ve dikkat gerektirenleri anlat.", "tr-TR")
     )
     assert skill._futuregen_service.evaluations == 1
-    assert "yeni değerlendirmeyi tamamladı" in skill.spoken[-1][0]
+    assert "değerlendirmeyi tamamladı" in skill.spoken[-1][0]
+    assert "Bulgu one" not in skill.spoken[-1][0]
+    assert "Önem düzeyi dağılımı: 0 yüksek, 1 orta ve 1 düşük." in skill.spoken[-1][0]
+    assert "Orta öncelikli bulgular şu alanlarla ilgilidir: metrik." in skill.spoken[-1][0]
+    assert "bunları listele" in skill.spoken[-1][0]
 
     assert handle_reneryo_query(skill, _message("Bunları listele.", "tr-TR"))
     assert "Bulgu one" in skill.spoken[-1][0]
@@ -206,7 +230,7 @@ def test_turkish_evaluation_collection_selection_and_followup():
     assert handle_reneryo_query(skill, _message("Sadece orta olanları göster.", "tr-TR"))
     assert "1 etkin orta bulgu" in skill.spoken[-1][0]
 
-    assert handle_reneryo_query(skill, _message("İlkini açıkla.", "tr-TR"))
+    assert handle_reneryo_query(skill, _message("İlkin açıkla.", "tr-TR"))
     assert "yaklaşık 566 saat gerisinde" in skill.spoken[-1][0]
 
     assert handle_reneryo_query(skill, _message("Bu bulgu neden oluştu?", "tr-TR"))
