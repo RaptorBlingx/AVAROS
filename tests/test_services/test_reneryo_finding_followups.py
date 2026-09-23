@@ -10,9 +10,10 @@ from skill._reneryo_handlers import (
     _update_message_language,
 )
 from skill.domain.models import TimePeriod
-from skill.domain.reneryo_models import LocalizedText, MdspFinding
+from skill.domain.reneryo_models import LocalizedText, MdspFinding, MdspNextReview
 from skill.services.conversation_state import DialogueState
 from skill.services.finding_explanation import finding_headline
+from skill.services.finding_next_review import next_review_headline
 from skill.services.semantic_resolver import SemanticAction
 
 
@@ -45,6 +46,39 @@ def _finding() -> MdspFinding:
         rule_id="metric-resource-relative-freshness",
         rule_version=2,
     )
+
+
+def test_next_review_dialogue_uses_only_mdsp_assessment():
+    review = MdspNextReview(
+        code="metric-resource-relative-freshness-review",
+        version=1,
+        instruction=LocalizedText(en="Review this resource history.", tr="Bu kaynağın geçmişini inceleyin."),
+        rationale=LocalizedText(en="The observed lag exceeds the review gate.", tr="Gözlenen gecikme inceleme sınırını aşıyor."),
+        evidence_keys=("lagHours", "allowedLagHours"),
+        policy_status="PROVISIONAL",
+        assessment_run_id="run-1",
+        review_link="/measurements/metric/values/graph/metric-1",
+    )
+    finding = replace(_finding(), next_review=review)
+    state = DialogueState(active_finding_id=finding.finding_id)
+    prompts = [
+        ("What should we do about this?", SemanticAction.FINDING_NEXT_REVIEW),
+        ("Why are you recommending that?", SemanticAction.FINDING_NEXT_REVIEW_WHY),
+        ("Who should handle it?", SemanticAction.FINDING_OWNER),
+        ("Can you take action on it?", SemanticAction.FINDING_CAN_ACT),
+        ("Ne yapmalıyız?", SemanticAction.FINDING_NEXT_REVIEW),
+    ]
+    for prompt, expected in prompts:
+        assert _deterministic_action(prompt.lower(), state) is expected
+    assert "Review this resource history" in next_review_headline(finding, "finding.next_review", "en-US")
+    assert "Bu kaynağın geçmişini" in next_review_headline(finding, "finding.next_review", "tr-TR")
+    why = next_review_headline(finding, "finding.next_review_why", "en-US")
+    assert "lagHours" in why and "v2" in why and "Provisional" in why
+    assert "No approved Reneryo owner" in next_review_headline(finding, "finding.owner", "en-US")
+    assert "cannot change records or models" in next_review_headline(finding, "finding.can_act", "en-US")
+    assert "No supported next review" in next_review_headline(_finding(), "finding.next_review", "en-US")
+    retired = replace(finding, retired_at=datetime(2026, 9, 23, tzinfo=timezone.utc))
+    assert "retired" in next_review_headline(retired, "finding.next_review", "en-US")
 
 
 def _recent_gap_finding() -> MdspFinding:

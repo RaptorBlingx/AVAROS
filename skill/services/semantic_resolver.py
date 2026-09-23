@@ -36,6 +36,10 @@ class SemanticAction(str, Enum):
     FINDING_EVIDENCE = "finding.evidence"
     FINDING_PERIOD = "finding.period"
     FINDING_ENTITY = "finding.entity"
+    FINDING_NEXT_REVIEW = "finding.next_review"
+    FINDING_NEXT_REVIEW_WHY = "finding.next_review_why"
+    FINDING_OWNER = "finding.owner"
+    FINDING_CAN_ACT = "finding.can_act"
     FINDINGS_LIST = "findings.list"
     FINDINGS_EVALUATE = "findings.evaluate"
     METRICS_LIST = "metrics.list"
@@ -102,6 +106,24 @@ _ACTION_DESCRIPTIONS: dict[SemanticAction, tuple[str, ...]] = {
         "Etkilenen varlık: seçili bulgunun ilgili olduğu kaynak, metrik, sayaç veya model.",
         "Which subject, resource, or item the selected alert concerns.",
         "Seçili uyarının hangi konuyu, kaynağı veya öğeyi ilgilendirdiği.",
+    ),
+    SemanticAction.FINDING_NEXT_REVIEW: (
+        "Recommended next review step for the selected finding.",
+        "Seçili bulgu için önerilen sonraki inceleme adımı.",
+        "What should we do about this finding?",
+        "Bu bulgu için ne yapmalıyız?",
+    ),
+    SemanticAction.FINDING_NEXT_REVIEW_WHY: (
+        "Why the next review step is supported by the finding evidence and rule.",
+        "Sonraki inceleme adımının bulgu kanıtları ve kuralla neden desteklendiği.",
+    ),
+    SemanticAction.FINDING_OWNER: (
+        "Who is assigned to handle the selected finding's review?",
+        "Seçili bulgunun incelenmesinden kim sorumlu?",
+    ),
+    SemanticAction.FINDING_CAN_ACT: (
+        "Can the assistant take an operational action on the selected finding?",
+        "Asistan seçili bulgu üzerinde operasyonel işlem yapabilir mi?",
     ),
     SemanticAction.FINDINGS_LIST: (
         "Inventory and summary of active decision-support findings, issues, or alerts.",
@@ -181,6 +203,10 @@ _FINDING_ACTIONS = frozenset(
         SemanticAction.FINDING_EVIDENCE,
         SemanticAction.FINDING_PERIOD,
         SemanticAction.FINDING_ENTITY,
+        SemanticAction.FINDING_NEXT_REVIEW,
+        SemanticAction.FINDING_NEXT_REVIEW_WHY,
+        SemanticAction.FINDING_OWNER,
+        SemanticAction.FINDING_CAN_ACT,
     }
 )
 

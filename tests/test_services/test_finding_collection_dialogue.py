@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from skill._reneryo_handlers import handle_reneryo_query
@@ -9,6 +10,7 @@ from skill.domain.reneryo_models import (
     MdspEvaluation,
     MdspFinding,
     MdspFindingList,
+    MdspNextReview,
 )
 from skill.services.conversation_state import DialogueStateStore
 from skill.services.finding_collection import (
@@ -201,6 +203,43 @@ def test_english_evaluation_collection_filter_selection_and_followup():
     state = skill._dialogue_state_store.get("collection-session")
     assert state is not None and state.active_finding_id == "one"
     assert state.selected_finding_from_collection is True
+
+
+def test_selected_finding_next_review_conversation_stays_with_mdsp_assessment():
+    skill = _Skill()
+    review = MdspNextReview(
+        code="metric-resource-relative-freshness-review",
+        version=1,
+        instruction=LocalizedText(
+            en="Review the recorded observations for this resource.",
+            tr="Bu kaynağın kayıtlı gözlemlerini inceleyin.",
+        ),
+        rationale=LocalizedText(
+            en="The observed lag exceeds the provisional gate.",
+            tr="Gözlenen gecikme geçici sınırı aşıyor.",
+        ),
+        evidence_keys=("lagHours", "allowedLagHours"),
+        policy_status="PROVISIONAL",
+        assessment_run_id="run-1",
+        review_link="/measurements/metric/values/graph/metric-1",
+    )
+    skill._futuregen_service.rows = (
+        replace(skill._futuregen_service.rows[0], next_review=review),
+        skill._futuregen_service.rows[1],
+    )
+
+    assert handle_reneryo_query(skill, _message("List the active findings."))
+    assert handle_reneryo_query(skill, _message("Explain the first one."))
+    for prompt, expected in (
+        ("What should we do about this?", "Review the recorded observations"),
+        ("Why are you recommending that?", "lagHours"),
+        ("Who should handle it?", "No approved Reneryo owner"),
+        ("Can you take action on it?", "cannot change records or models"),
+    ):
+        assert handle_reneryo_query(skill, _message(prompt))
+        assert expected in skill.spoken[-1][0]
+        assert _response_type(skill) == "finding"
+    assert skill._futuregen_service.evaluations == 0
 
 def test_existing_findings_read_does_not_trigger_evaluation():
     skill = _Skill()

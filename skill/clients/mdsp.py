@@ -15,6 +15,7 @@ from skill.domain.reneryo_models import (
     MdspEvaluation,
     MdspFinding,
     MdspFindingList,
+    MdspNextReview,
 )
 
 
@@ -202,6 +203,8 @@ class MdspClient:
             row.get("assumptions") if isinstance(row.get("assumptions"), list) else []
         )
         evidence = row.get("evidence") if isinstance(row.get("evidence"), dict) else {}
+        review = row.get("nextReview") if isinstance(row.get("nextReview"), dict) else None
+        abstention = row.get("nextReviewAbstention") if isinstance(row.get("nextReviewAbstention"), dict) else None
         metric_name = str(evidence.get("metricName") or evidence.get("metric") or "")
         return MdspFinding(
             finding_id=str(row.get("id", "")),
@@ -232,4 +235,27 @@ class MdspClient:
             metric_name=metric_name,
             rule_id=str(row.get("ruleId", "")),
             rule_version=int(row.get("ruleVersion", 0) or 0),
+            next_review=(
+                MdspNextReview(
+                    code=str(review.get("code", "")),
+                    version=int(review.get("version", 0) or 0),
+                    instruction=LocalizedText(**{
+                        language: str((review.get("instruction") or {}).get(language, ""))
+                        for language in ("en", "tr")
+                    }),
+                    rationale=LocalizedText(**{
+                        language: str((review.get("rationale") or {}).get(language, ""))
+                        for language in ("en", "tr")
+                    }),
+                    evidence_keys=tuple(str(key) for key in review.get("evidenceKeys", []) if isinstance(key, str)),
+                    policy_status=str(review.get("policyStatus", "")),
+                    assessment_run_id=str(review.get("assessmentRunId", "")),
+                    review_link=str(review.get("reviewLink")) if review.get("reviewLink") else None,
+                ) if review else None
+            ),
+            next_review_abstention=(
+                LocalizedText(en=str(abstention.get("en", "")), tr=str(abstention.get("tr", "")))
+                if abstention else None
+            ),
+            retired_at=_datetime(row.get("retiredAt")),
         )

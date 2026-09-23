@@ -114,29 +114,30 @@ def _finding_explanation(finding: MdspFinding, language: str) -> str:
             f"{cadence_days} days, so the model period is finer than its supporting data."
         )
     if finding.rule_id == _REGRESSION_FIT_RULE:
-        r_squared = _number(evidence.get("rSquared"))
-        normalized_rmse = _number(evidence.get("normalizedRmsePct"))
+        r_squared = _optional_number(evidence.get("rSquared"))
+        normalized_rmse = _optional_number(evidence.get("normalizedRmsePct"))
+        r_text = f"{r_squared:.3f}" if r_squared is not None else ("yok" if turkish else "missing")
+        error_text = f"{normalized_rmse:.1f}%" if normalized_rmse is not None else ("yok" if turkish else "unavailable")
         if turkish:
             return (
-                "MDSP bu kayıtlı regresyon modelinin uyum kalitesinin gözden "
-                f"geçirilmesini öneriyor. R² değeri {r_squared:.3f}, normalize "
-                f"hata ise %{normalized_rmse:.1f}."
+                "Bu kayıtlı regresyon modeli geçici uyum kalitesi inceleme sınırına takıldı. "
+                f"R²: {r_text}; normalize hata: {error_text}."
             )
         return (
-            "MDSP recommends reviewing this saved regression model because its "
-            f"fit quality is weak: R-squared is {r_squared:.3f} and normalized "
-            f"error is {normalized_rmse:.1f}%."
+            "This saved regression model crossed a provisional fit-quality review gate. "
+            f"R-squared: {r_text}; normalized error: {error_text}."
         )
     if finding.rule_id == _REGRESSION_PRIMARY_RULE:
         results = _integer(evidence.get("resultCount"))
+        seu_name = str(evidence.get("seuName") or evidence.get("seuId") or "this SEU")
         if turkish:
             return (
-                f"MDSP {results} kayıtlı gelişmiş regresyon sonucu buldu, ancak "
-                "sürekli karar desteği için hiçbiri birincil model olarak seçilmemiş."
+                f"{seu_name} için {results} kayıtlı uygun regresyon sonucu var ancak "
+                "hiçbiri birincil değil. Birincil sonuç gerekip gerekmediği iş politikasıyla doğrulanmalıdır."
             )
         return (
-            f"MDSP found {results} saved advanced regression results, but none "
-            "is selected as the primary model for ongoing decision support."
+            f"{seu_name} has {results} eligible saved regression results, but none "
+            "is primary. Whether one is required needs business confirmation."
         )
     title = _clean_text(finding.title.for_language(language), finding)
     summary = _clean_text(finding.summary.for_language(language), finding)
@@ -199,20 +200,21 @@ def _evidence_explanation(finding: MdspFinding, language: str) -> str:
             f"updates only about every {cadence_days} days."
         )
     if finding.rule_id == _REGRESSION_FIT_RULE:
-        r_squared = _number(evidence.get("rSquared"))
+        r_squared = _optional_number(evidence.get("rSquared"))
         min_r_squared = _number(evidence.get("minimumRSquared"))
-        normalized_rmse = _number(evidence.get("normalizedRmsePct"))
+        normalized_rmse = _optional_number(evidence.get("normalizedRmsePct"))
         max_rmse = _number(evidence.get("maximumNormalizedRmsePct"))
+        r_text = f"{r_squared:.3f}" if r_squared is not None else ("yok" if turkish else "missing")
+        error_text = f"%{normalized_rmse:.1f}" if normalized_rmse is not None else ("yok" if turkish else "unavailable")
         if turkish:
             return (
-                f"Modelin R² değeri {r_squared:.3f}; geçici alt sınır "
-                f"{min_r_squared:.2f}. Normalize hata %{normalized_rmse:.1f}; "
+                f"Modelin R² değeri {r_text}; geçici alt sınır "
+                f"{min_r_squared:.2f}. Normalize hata {error_text}; "
                 f"geçici üst sınır %{max_rmse:.0f}."
             )
         return (
-            f"The model's R-squared is {r_squared:.3f}, below the provisional "
-            f"{min_r_squared:.2f} threshold. Its normalized error is "
-            f"{normalized_rmse:.1f}%, above the provisional {max_rmse:.0f}% threshold."
+            f"The model's R-squared is {r_text} (provisional minimum {min_r_squared:.2f}); "
+            f"normalized error is {error_text} (provisional maximum {max_rmse:.0f}%)."
         )
     if finding.rule_id == _REGRESSION_PRIMARY_RULE:
         results = _integer(evidence.get("resultCount"))

@@ -84,6 +84,18 @@ class LocalizedText:
 
 
 @dataclass(frozen=True)
+class MdspNextReview:
+    code: str
+    version: int
+    instruction: LocalizedText
+    rationale: LocalizedText
+    evidence_keys: tuple[str, ...]
+    policy_status: str
+    assessment_run_id: str
+    review_link: str | None
+
+
+@dataclass(frozen=True)
 class MdspFinding:
     """Explainable MDSP finding retrieved through the service interface."""
 
@@ -105,6 +117,9 @@ class MdspFinding:
     metric_name: str = ""
     rule_id: str = ""
     rule_version: int = 0
+    next_review: MdspNextReview | None = None
+    next_review_abstention: LocalizedText | None = None
+    retired_at: datetime | None = None
 
 
 @dataclass(frozen=True)

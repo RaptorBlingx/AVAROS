@@ -25,6 +25,7 @@ from skill.services.finding_collection import (
     selection_index,
 )
 from skill.services.finding_explanation import finding_headline
+from skill.services.finding_next_review import next_review_headline
 from skill.services.futuregen import FutureGenService, default_period, match_metric
 from skill.services.futuregen_responses import (
     meter_inventory_headline,
@@ -50,6 +51,10 @@ _FINDING_ACTIONS = frozenset(
         SemanticAction.FINDING_EVIDENCE,
         SemanticAction.FINDING_PERIOD,
         SemanticAction.FINDING_ENTITY,
+        SemanticAction.FINDING_NEXT_REVIEW,
+        SemanticAction.FINDING_NEXT_REVIEW_WHY,
+        SemanticAction.FINDING_OWNER,
+        SemanticAction.FINDING_CAN_ACT,
     }
 )
 
@@ -421,7 +426,16 @@ def _finding_response(skill, message, service, state, text, language, action) ->
         finding = skill.dispatcher._run_async(
             service.finding(organization_id, finding_id)
         )
-        headline = finding_headline(finding, text, language, action=action.value)
+        headline = (
+            next_review_headline(finding, action.value, language)
+            if action in {
+                SemanticAction.FINDING_NEXT_REVIEW,
+                SemanticAction.FINDING_NEXT_REVIEW_WHY,
+                SemanticAction.FINDING_OWNER,
+                SemanticAction.FINDING_CAN_ACT,
+            }
+            else finding_headline(finding, text, language, action=action.value)
+        )
         evidence = [
             {
                 "finding_id": finding.finding_id,
@@ -429,6 +443,10 @@ def _finding_response(skill, message, service, state, text, language, action) ->
                 "domain": finding.domain,
                 "period_start": finding.evaluation_start.isoformat(),
                 "period_end": finding.evaluation_end.isoformat(),
+                "next_review_code": finding.next_review.code if finding.next_review else None,
+                "next_review_version": finding.next_review.version if finding.next_review else None,
+                "assessment_run_id": finding.next_review.assessment_run_id if finding.next_review else None,
+                "review_link": finding.next_review.review_link if finding.next_review else None,
                 **finding.evidence,
             }
         ]
@@ -548,6 +566,10 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
     """Map established lexical forms without invoking the semantic model."""
     if selection_index(text, state) is not None:
         return SemanticAction.FINDING_EXPLAIN
+    if state.active_finding_id and _has(text, "when this finding was evaluated", "when was this finding evaluated"):
+        return SemanticAction.FINDING_PERIOD
+    if state.active_finding_id and _has(text, "destekleyen gercek", "destekleyen gerçek", "destekleyen veri", "supporting facts"):
+        return SemanticAction.FINDING_EVIDENCE
     if is_evaluation_request(text):
         return SemanticAction.FINDINGS_EVALUATE
     if is_collection_request(text, state):
@@ -605,6 +627,14 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
         ):
             return SemanticAction.METRIC_DETAIL
     if state.active_finding_id:
+        if _has(text, "can you take action", "can you act", "take action on it", "işlem yapabilir misin", "eyleme geçebilir misin"):
+            return SemanticAction.FINDING_CAN_ACT
+        if _has(text, "who should handle", "who is responsible", "who should review", "kim ilgilenmeli", "kim sorumlu", "kim incelemeli"):
+            return SemanticAction.FINDING_OWNER
+        if _has(text, "why are you recommending", "why this step", "why recommend", "bu adımı neden", "neden öneriyorsun", "neden tavsiye"):
+            return SemanticAction.FINDING_NEXT_REVIEW_WHY
+        if _has(text, "what should we do", "recommended next step", "next step", "what do you recommend", "ne yapmalıyız", "sonraki adım", "ne öneriyorsun", "ne tavsiye"):
+            return SemanticAction.FINDING_NEXT_REVIEW
         if state.metric_name and _looks_like_trend(text):
             return SemanticAction.TREND_SHOW
         if state.metric_name and _has(
