@@ -39,9 +39,11 @@ _ORDINALS = {
     "ilki": 0,
     "ilkini": 0,
     "birinci": 0,
+    "birinciyi": 0,
     "birincisi": 0,
     "birincisini": 0,
     "ikinci": 1,
+    "ikinciyi": 1,
     "ikincisi": 1,
     "ikincisini": 1,
     "ikincini": 1,
@@ -409,6 +411,10 @@ def selection_requested(text: str, state: DialogueState) -> bool:
         return True
     if not any(word in _SELECTION_CUES for word in words):
         return False
+    if re.match(r"^\d{1,2}\b", text):
+        # ASR may render an ordinal as "2."; the number alone does not
+        # establish which bounded finding the speaker meant.
+        return True
     return any(
         _edit_distance_at_most_one(word, ordinal)
         for word in words

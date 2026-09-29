@@ -585,6 +585,7 @@ def test_turkish_course_word_routes_to_trend():
         ("Regresyon modelinin eğitim dönemi nedir?", SemanticAction.REGRESSION_DETAIL),
         ("Show electricity trend", SemanticAction.TREND_SHOW),
         ("Show the first electricity trend", SemanticAction.TREND_SHOW),
+        ("Geçen ay için soğutma derece gün eğlimini göster.", SemanticAction.TREND_SHOW),
     ],
 )
 def test_selected_finding_does_not_steal_followups_or_topic_changes(

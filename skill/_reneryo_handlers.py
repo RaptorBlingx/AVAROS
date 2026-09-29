@@ -22,7 +22,6 @@ from skill.services.finding_collection import (
     filters_for,
     is_collection_request,
     is_evaluation_request,
-    is_negated_evaluation_request,
     selection_index,
     selection_requested,
 )
@@ -91,6 +90,16 @@ def handle_reneryo_query(
         _finding_selection_clarification(skill, language)
         _remember(skill, message, state, operation="clarification")
         return True
+    if (
+        state.finding_ids
+        and not state.active_finding_id
+        and _finding_selection_scope(text)
+        and _has(text, "evidence", "kanıt", "kanit", "period", "dönem", "donem")
+        and not is_collection_request(text, state)
+    ):
+        _finding_selection_clarification(skill, language)
+        _remember(skill, message, state, operation="clarification")
+        return True
 
     action = _deterministic_action(text, state)
     resolution: SemanticResolution | None = semantic_resolution
@@ -132,7 +141,13 @@ def handle_reneryo_query(
             _remember(skill, message, state, operation="clarification")
             return True
 
-    if action is SemanticAction.FINDINGS_EVALUATE and is_negated_evaluation_request(text):
+    if action is SemanticAction.FINDINGS_EVALUATE and not is_evaluation_request(text):
+        _semantic_clarification(skill, language)
+        _remember(skill, message, state, operation="clarification")
+        return True
+    if action is SemanticAction.METRICS_LIST and not _has(
+        text, "metric", "metrik", "indicator", "gösterge", "gosterge", "kpi"
+    ):
         _semantic_clarification(skill, language)
         _remember(skill, message, state, operation="clarification")
         return True
@@ -1073,6 +1088,8 @@ def _looks_like_trend(text: str) -> bool:
         "change over",
         "egilim",
         "eğilim",
+        "eglim",
+        "eğlim",
         "seyr",
         "degis",
         "değiş",

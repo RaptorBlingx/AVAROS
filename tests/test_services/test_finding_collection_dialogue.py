@@ -18,6 +18,7 @@ from skill.domain.reneryo_models import (
     ReneryoTrendPoint,
 )
 from skill.services.conversation_state import DialogueStateStore
+from skill.services.dia_dialogue import try_handle_structured_query
 from skill.services.finding_collection import (
     FindingFilters,
     filters_for,
@@ -190,9 +191,14 @@ def test_selection_covers_displayed_ordinals_and_never_guesses_corrupt_speech():
 
     assert selection_index("Show the fifth one", state) == 4
     assert selection_index("Dokuzuncusunu açıkla", state) == 8
+    assert selection_index("İkinciyi açıkla", state) == 1
+    assert selection_index("Birinciyi açıkla", state) == 0
     assert selection_index("Explain number 5", state) == 4
     assert selection_index("Birkinci bulbuyu açıkla", state) is None
     assert selection_requested("Birkinci bulbuyu açıkla", state)
+    assert selection_index("2. bulbuyor açıkla", state) is None
+    assert selection_requested("2. bulbuyor açıkla", state)
+    assert selection_requested("2. olana açıkla", state)
     assert selection_index("Show the first and second", state) is None
 
 
@@ -353,6 +359,104 @@ def test_negated_evaluation_cannot_be_resurrected_by_semantic_fallback():
 
     assert handle_reneryo_query(
         skill, _message("Do not evaluate the data"), semantic_resolution=resolution
+    )
+    assert _response_type(skill) == "clarification"
+    assert skill._futuregen_service.evaluations == 0
+
+
+@pytest.mark.parametrize("transcript", ["2. bulbuyor açıkla.", "2. olana açıkla."])
+def test_unclear_asr_ordinal_clarifies_without_evaluating(transcript):
+    skill = _Skill()
+    assert handle_reneryo_query(skill, _message("Aktif bulguları listele", "tr-TR"))
+
+    assert handle_reneryo_query(skill, _message(transcript, "tr-TR"))
+    assert _response_type(skill) == "clarification"
+    assert skill._futuregen_service.evaluations == 0
+
+
+def test_signed_widget_structured_entry_resolves_correct_ordinal_and_rejects_unclear_one():
+    skill = _Skill()
+    assert handle_reneryo_query(skill, _message("Aktif bulguları listele", "tr-TR"))
+    clear = _message("İkinciyi açıkla.", "tr-TR")
+    clear.context["reneryo_widget_session_validated"] = True
+    assert try_handle_structured_query(skill, clear)
+    assert skill._dialogue_state_store.get("collection-session").active_finding_id == "two"
+
+    unclear = _message("2. bulbuyor açıkla.", "tr-TR")
+    unclear.context["reneryo_widget_session_validated"] = True
+    assert try_handle_structured_query(skill, unclear)
+    assert _response_type(skill) == "clarification"
+    assert skill._futuregen_service.evaluations == 0
+
+
+def test_correct_turkish_ordinal_and_mistranscribed_period_keep_finding():
+    skill = _Skill()
+    assert handle_reneryo_query(skill, _message("Aktif bulguları listele", "tr-TR"))
+
+    assert handle_reneryo_query(skill, _message("İkinciyi açıkla.", "tr-TR"))
+    assert _response_type(skill) == "finding"
+    assert skill._dialogue_state_store.get("collection-session").active_finding_id == "two"
+    assert handle_reneryo_query(
+        skill, _message("Bu bulgur hangi dönemi katsoyor.", "tr-TR")
+    )
+    assert _response_type(skill) == "finding"
+    assert skill._futuregen_service.evaluations == 0
+
+
+@pytest.mark.parametrize(
+    "transcript", ["2. bulbuyor açıkla.", "2. olana açıkla.", "İkinciye açıklar."]
+)
+def test_semantic_evaluation_requires_explicit_analysis_request(transcript):
+    skill = _Skill()
+    resolution = SemanticResolution(
+        action=SemanticAction.FINDINGS_EVALUATE,
+        language="tr-TR",
+        confidence=0.9,
+        margin=0.1,
+    )
+
+    assert handle_reneryo_query(
+        skill, _message(transcript, "tr-TR"), semantic_resolution=resolution
+    )
+    assert _response_type(skill) == "clarification"
+    assert skill._futuregen_service.evaluations == 0
+
+
+def test_mistranscribed_english_findings_list_cannot_jump_to_metric_inventory():
+    skill = _Skill()
+    resolution = SemanticResolution(
+        action=SemanticAction.METRICS_LIST,
+        language="en-US",
+        confidence=0.9,
+        margin=0.1,
+    )
+
+    assert handle_reneryo_query(
+        skill,
+        _message("List Actify Endings."),
+        semantic_resolution=resolution,
+    )
+    assert _response_type(skill) == "clarification"
+    assert skill._futuregen_service.evaluations == 0
+
+
+@pytest.mark.parametrize(
+    "transcript", ["Bu bulgur hangi dönemi katsoyor.", "Kanıtları göster."]
+)
+def test_finding_followup_without_selection_clarifies_instead_of_switching_topic(
+    transcript,
+):
+    skill = _Skill()
+    assert handle_reneryo_query(skill, _message("Aktif bulguları listele", "tr-TR"))
+    resolution = SemanticResolution(
+        action=SemanticAction.METRICS_LIST,
+        language="tr-TR",
+        confidence=0.9,
+        margin=0.1,
+    )
+
+    assert handle_reneryo_query(
+        skill, _message(transcript, "tr-TR"), semantic_resolution=resolution
     )
     assert _response_type(skill) == "clarification"
     assert skill._futuregen_service.evaluations == 0
