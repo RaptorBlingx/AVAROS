@@ -35,6 +35,12 @@ def try_handle_structured_query(skill, message, *, include_simple_kpi: bool = Fa
     utterance = skill._extract_utterance_text(message).strip()
     if not utterance:
         return False
+    from skill._reneryo_handlers import handle_reneryo_query, has_signed_widget_context
+
+    if has_signed_widget_context(message) and handle_reneryo_query(
+        skill, message, allow_semantic=False
+    ):
+        return True
     store = getattr(skill, "_dialogue_state_store", None)
     session_id = message_session_id(message)
     prior = store.get(session_id) if store is not None else None

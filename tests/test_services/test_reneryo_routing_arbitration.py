@@ -400,6 +400,38 @@ def test_structured_turkish_capabilities_uses_current_signed_turn_language(
     assert spoken.call_args.kwargs["meta"]["language"] == "tr-TR"
 
 
+@pytest.mark.parametrize(
+    ("utterance", "expected"),
+    [
+        ("Show the first electricity trend", SemanticAction.TREND_SHOW),
+        ("Show the electricity trend for last month", SemanticAction.TREND_SHOW),
+        ("Üretim eğilimini son 30 gün için göster", SemanticAction.TREND_SHOW),
+        ("Why is the monthly regression weak?", SemanticAction.REGRESSION_DETAIL),
+        ("Explain the second finding", SemanticAction.FINDING_EXPLAIN),
+        ("What should we do about this finding?", SemanticAction.FINDING_NEXT_REVIEW),
+    ],
+)
+def test_structured_layer_defers_explicit_signed_reneryo_requests(
+    monkeypatch, utterance, expected
+):
+    skill = _skill(_resolution(expected))
+    state = handlers.DialogueState(
+        active_finding_id="finding-1",
+        finding_ids=("finding-1", "finding-2"),
+        operation="finding",
+        selected_finding_from_collection=True,
+    )
+    skill._dialogue_state_store.put("session-1", state)
+    message = _Message(utterance)
+    message.context["reneryo_widget_session_validated"] = True
+    delegated = Mock(return_value=True)
+    monkeypatch.setattr(handlers, "handle_reneryo_query", delegated)
+
+    assert handlers._deterministic_action(handlers.normalize_phrase(utterance), state) is expected
+    assert dialogue.try_handle_structured_query(skill, message) is True
+    delegated.assert_called_once_with(skill, message, allow_semantic=False)
+
+
 def test_signed_widget_semantics_precede_generic_structured_fallback(monkeypatch):
     message = _Message("Give me an overview of current operational alerts.")
     message.context["reneryo_widget_session_validated"] = True
