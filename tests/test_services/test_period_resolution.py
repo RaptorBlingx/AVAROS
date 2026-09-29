@@ -21,6 +21,10 @@ from skill.services.semantic_resolver import SemanticAction
         ("Geçen takvim ayında nasıl değişmiş?", "geçen ay"),
         ("Son dört haftayı karşılaştır.", "son dört hafta"),
         ("Son 30 gün için eğilim nedir?", "son 30 gün"),
+        ("Show the electricity trend for June 2026.", "june 2026"),
+        ("Show production trend in July 2026.", "july 2026"),
+        ("Haziran 2026 için elektrik eğilimini göster.", "haziran 2026"),
+        ("Temmuz 2026'da üretim eğilimini göster.", "temmuz 2026"),
     ],
 )
 def test_extract_period_phrase_normalizes_natural_forms(utterance, expected):
@@ -62,3 +66,26 @@ def test_trend_action_and_period_are_classified_independently(utterance):
     period = _query_period(skill, utterance, None)
 
     assert 27.99 < (period.end - period.start).total_seconds() / 86_400 < 28.01
+
+
+@pytest.mark.parametrize(
+    ("utterance", "month"),
+    [
+        ("Show the electricity trend for June 2026.", 6),
+        ("Show the production trend for July 2026.", 7),
+        ("Haziran 2026 için elektrik eğilimini göster.", 6),
+        ("Temmuz 2026'da üretim eğilimini göster.", 7),
+    ],
+)
+def test_explicit_named_month_trend_uses_calendar_window(utterance, month):
+    assert _deterministic_action(utterance.casefold(), DialogueState()) is SemanticAction.TREND_SHOW
+    skill = type(
+        "PeriodSkill",
+        (),
+        {"_parse_period": staticmethod(TimePeriod.from_natural_language)},
+    )()
+
+    period = _query_period(skill, utterance, None)
+
+    assert period.start == datetime(2026, month, 1, tzinfo=timezone.utc)
+    assert period.end == datetime(2026, month + 1, 1, tzinfo=timezone.utc)

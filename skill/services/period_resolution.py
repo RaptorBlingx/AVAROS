@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import calendar
 import re
 
 from skill.services.language import normalize_phrase
+
+_NAMED_MONTH = re.compile(
+    r"\b(?:"
+    + "|".join(month.lower() for month in calendar.month_name[1:])
+    + r"|ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık)\s+\d{4}\b"
+)
 
 _PERIOD_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
     (re.compile(pattern), canonical)
@@ -44,6 +51,9 @@ _PERIOD_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
 def extract_period_phrase(utterance: str) -> str:
     """Return a parser-supported period without using semantic inference."""
     text = normalize_phrase(utterance)
+    named_month = _NAMED_MONTH.search(text)
+    if named_month:
+        return named_month.group(0)
     for pattern, canonical in _PERIOD_PATTERNS:
         if pattern.search(text):
             return canonical
