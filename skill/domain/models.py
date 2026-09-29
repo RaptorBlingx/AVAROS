@@ -432,6 +432,40 @@ class TimePeriod:
             )
             return cls._with_display_name(period, f"{month_name} {year_text}")
 
+        month_numbers = {
+            **{name.lower(): number for number, name in enumerate(calendar.month_name) if name},
+            **turkish_months,
+        }
+        month_range = re.fullmatch(
+            r"(" + "|".join(month_numbers) + r")(?:\s+(\d{4}))?\s*"
+            r"(?:to|through|and|ile|-)\s*(" + "|".join(month_numbers) + r")\s+(\d{4})",
+            normalized,
+        )
+        if month_range:
+            first_name, first_year_text, last_name, last_year_text = month_range.groups()
+            first_year = int(first_year_text or last_year_text)
+            last_year = int(last_year_text)
+            first = cls._calendar_month(
+                year=first_year,
+                month=month_numbers[first_name],
+                timezone_name=timezone_name,
+                now=now,
+            )
+            last = cls._calendar_month(
+                year=last_year,
+                month=month_numbers[last_name],
+                timezone_name=timezone_name,
+                now=now,
+            )
+            if last.start < first.start:
+                raise ValueError("The end month must not precede the start month")
+            first_label = first_name.title() + (f" {first_year}" if first_year != last_year else "")
+            return cls(
+                start=first.start,
+                end=last.end,
+                display_name=f"{first_label}–{last_name.title()} {last_year}",
+            )
+
         iso_range = re.fullmatch(
             r"(?:from\s+)?(\d{4}-\d{2}-\d{2})\s+(?:to|through|until)\s+(\d{4}-\d{2}-\d{2})",
             normalized,

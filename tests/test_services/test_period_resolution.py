@@ -25,6 +25,10 @@ from skill.services.semantic_resolver import SemanticAction
         ("Show production trend in July 2026.", "july 2026"),
         ("Haziran 2026 için elektrik eğilimini göster.", "haziran 2026"),
         ("Temmuz 2026'da üretim eğilimini göster.", "temmuz 2026"),
+        ("Show the electricity trend from May to June 2026.", "may to june 2026"),
+        ("Show the production trend from June 2026 to July 2026.", "june 2026 to july 2026"),
+        ("Mayıs ile Haziran 2026 arasında elektrik eğilimini göster.", "mayıs ile haziran 2026"),
+        ("Haziran 2026 ile Temmuz 2026 arasında üretim eğilimini göster.", "haziran 2026 ile temmuz 2026"),
     ],
 )
 def test_extract_period_phrase_normalizes_natural_forms(utterance, expected):
@@ -89,3 +93,31 @@ def test_explicit_named_month_trend_uses_calendar_window(utterance, month):
 
     assert period.start == datetime(2026, month, 1, tzinfo=timezone.utc)
     assert period.end == datetime(2026, month + 1, 1, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize(
+    ("utterance", "first_month", "last_month"),
+    [
+        ("Show the electricity trend from May to June 2026.", 5, 6),
+        ("Show the production trend from June 2026 to July 2026.", 6, 7),
+        ("Mayıs ile Haziran 2026 arasında elektrik eğilimini göster.", 5, 6),
+        ("Haziran 2026 ile Temmuz 2026 arasında üretim eğilimini göster.", 6, 7),
+    ],
+)
+def test_named_month_range_trend_includes_both_months(utterance, first_month, last_month):
+    assert _deterministic_action(utterance.casefold(), DialogueState()) is SemanticAction.TREND_SHOW
+    skill = type(
+        "PeriodSkill",
+        (),
+        {"_parse_period": staticmethod(TimePeriod.from_natural_language)},
+    )()
+
+    period = _query_period(skill, utterance, None)
+
+    assert period.start == datetime(2026, first_month, 1, tzinfo=timezone.utc)
+    assert period.end == datetime(2026, last_month + 1, 1, tzinfo=timezone.utc)
+
+
+def test_named_month_range_rejects_reversed_months():
+    with pytest.raises(ValueError, match="end month"):
+        TimePeriod.from_natural_language("July to June 2026")

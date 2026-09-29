@@ -7,11 +7,15 @@ import re
 
 from skill.services.language import normalize_phrase
 
-_NAMED_MONTH = re.compile(
-    r"\b(?:"
-    + "|".join(month.lower() for month in calendar.month_name[1:])
-    + r"|ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık)\s+\d{4}\b"
+_MONTH_NAMES = (
+    "|".join(month.lower() for month in calendar.month_name[1:])
+    + r"|ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık"
 )
+_NAMED_MONTH_RANGE = re.compile(
+    rf"\b(?:{_MONTH_NAMES})(?:\s+\d{{4}})?\s*(?:to|through|and|ile|-)\s*"
+    rf"(?:{_MONTH_NAMES})\s+\d{{4}}\b"
+)
+_NAMED_MONTH = re.compile(rf"\b(?:{_MONTH_NAMES})\s+\d{{4}}\b")
 
 _PERIOD_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
     (re.compile(pattern), canonical)
@@ -51,6 +55,9 @@ _PERIOD_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
 def extract_period_phrase(utterance: str) -> str:
     """Return a parser-supported period without using semantic inference."""
     text = normalize_phrase(utterance)
+    named_range = _NAMED_MONTH_RANGE.search(text)
+    if named_range:
+        return named_range.group(0)
     named_month = _NAMED_MONTH.search(text)
     if named_month:
         return named_month.group(0)

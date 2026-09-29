@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import pytest
 
 from skill._reneryo_handlers import handle_reneryo_query
+from skill.domain.models import TimePeriod
 from skill.domain.reneryo_models import (
     LocalizedText,
     MdspEvaluation,
@@ -387,6 +388,50 @@ def test_signed_widget_structured_entry_resolves_correct_ordinal_and_rejects_unc
     assert try_handle_structured_query(skill, unclear)
     assert _response_type(skill) == "clarification"
     assert skill._futuregen_service.evaluations == 0
+
+
+@pytest.mark.parametrize(
+    ("utterance", "language", "expected_label"),
+    [
+        ("Show the electricity trend from May to June 2026", "en-US", "May–June 2026"),
+        (
+            "Mayıs ile Haziran 2026 arasında elektrik eğilimini göster",
+            "tr-TR",
+            "Mayıs–Haziran 2026",
+        ),
+    ],
+)
+def test_signed_widget_month_range_reaches_trend_with_both_observations(
+    utterance, language, expected_label
+):
+    skill = _Skill()
+    skill._parse_period = TimePeriod.from_natural_language
+    periods = []
+
+    async def trend(_utterance, period):
+        periods.append(period)
+        return ReneryoTrend(
+            metric=ReneryoMetric("electricity", "Electricity", "COUNTER", "ENERGY"),
+            period_label=period.display_name,
+            aggregation="DAILY",
+            points=(
+                ReneryoTrendPoint(datetime(2026, 5, 31, tzinfo=timezone.utc), 100, 1),
+                ReneryoTrendPoint(datetime(2026, 6, 30, tzinfo=timezone.utc), 124.3, 1),
+            ),
+            direction="increasing",
+            change_percent=24.3,
+        )
+
+    skill._futuregen_service.trend = trend
+    message = _message(utterance, language)
+    message.context["reneryo_widget_session_validated"] = True
+
+    assert try_handle_structured_query(skill, message)
+    assert _response_type(skill) == "trend"
+    assert periods[0].start == datetime(2026, 5, 1, tzinfo=timezone.utc)
+    assert periods[0].end == datetime(2026, 7, 1, tzinfo=timezone.utc)
+    assert expected_label in skill.spoken[-1][0]
+    assert "24.3" in skill.spoken[-1][0]
 
 
 def test_correct_turkish_ordinal_and_mistranscribed_period_keep_finding():
