@@ -50,7 +50,7 @@ class ReneryoTrend:
     aggregation: str
     points: tuple[ReneryoTrendPoint, ...]
     direction: str
-    change_percent: float
+    change_percent: float | None
 
 
 @dataclass(frozen=True)

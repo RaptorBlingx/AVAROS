@@ -4,6 +4,8 @@ import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
 
+import pytest
+
 from skill._reneryo_handlers import handle_reneryo_query
 from skill.domain.reneryo_models import (
     LocalizedText,
@@ -11,6 +13,9 @@ from skill.domain.reneryo_models import (
     MdspFinding,
     MdspFindingList,
     MdspNextReview,
+    ReneryoMetric,
+    ReneryoTrend,
+    ReneryoTrendPoint,
 )
 from skill.services.conversation_state import DialogueStateStore
 from skill.services.finding_collection import (
@@ -18,7 +23,9 @@ from skill.services.finding_collection import (
     filters_for,
     is_evaluation_request,
     selection_index,
+    selection_requested,
 )
+from skill.services.semantic_resolver import SemanticAction, SemanticResolution
 
 
 def _finding(identifier: str, severity: str = "MEDIUM") -> MdspFinding:
@@ -80,6 +87,30 @@ class _Service:
 
     async def finding(self, _organization_id: str, identifier: str) -> MdspFinding:
         return next(row for row in self.rows if row.finding_id == identifier)
+
+    async def trend(self, _utterance, period) -> ReneryoTrend:
+        return ReneryoTrend(
+            metric=ReneryoMetric(
+                "production",
+                "Tesis Toplam Üretim Miktarı",
+                "COUNTER",
+                "PIECE",
+                last_value_at=datetime(2026, 7, 31, tzinfo=timezone.utc),
+            ),
+            period_label=period.display_name,
+            aggregation="DAILY",
+            points=(),
+            direction="unavailable",
+            change_percent=None,
+        )
+
+    async def metrics(self):
+        return [
+            ReneryoMetric("humidity", "Humidity - Open Weather", "GAUGE", "RATE"),
+            ReneryoMetric(
+                "electricity", "Tesis Toplam Elektrik Tüketimi", "COUNTER", "ENERGY"
+            ),
+        ]
 
 
 class _Dispatcher:
@@ -154,6 +185,17 @@ def test_ordinal_selection_is_limited_to_current_result_ids():
     assert selection_index("Üçüncüyü açıkla.", state) is None
 
 
+def test_selection_covers_displayed_ordinals_and_never_guesses_corrupt_speech():
+    state = type("State", (), {"finding_ids": tuple(str(i) for i in range(9))})()
+
+    assert selection_index("Show the fifth one", state) == 4
+    assert selection_index("Dokuzuncusunu açıkla", state) == 8
+    assert selection_index("Explain number 5", state) == 4
+    assert selection_index("Birkinci bulbuyu açıkla", state) is None
+    assert selection_requested("Birkinci bulbuyu açıkla", state)
+    assert selection_index("Show the first and second", state) is None
+
+
 def test_contextual_ordinal_selection_tolerates_small_en_tr_asr_variations():
     state = type("State", (), {"finding_ids": ("one", "two", "three")})()
 
@@ -192,7 +234,9 @@ def test_english_evaluation_collection_filter_selection_and_followup():
 
     assert handle_reneryo_query(skill, _message("Only the medium ones."))
     assert "1 active medium findings" in skill.spoken[-1][0]
-    assert skill._futuregen_service.requests[-1] == FindingFilters("ACTIVE", "MEDIUM", "")
+    assert skill._futuregen_service.requests[-1] == FindingFilters(
+        "ACTIVE", "MEDIUM", ""
+    )
 
     assert handle_reneryo_query(skill, _message("Explain the firs one."))
     assert "about 566 hours behind" in skill.spoken[-1][0]
@@ -241,6 +285,7 @@ def test_selected_finding_next_review_conversation_stays_with_mdsp_assessment():
         assert _response_type(skill) == "finding"
     assert skill._futuregen_service.evaluations == 0
 
+
 def test_existing_findings_read_does_not_trigger_evaluation():
     skill = _Skill()
 
@@ -248,6 +293,125 @@ def test_existing_findings_read_does_not_trigger_evaluation():
 
     assert skill._futuregen_service.evaluations == 0
     assert _response_type(skill) == "findings"
+
+
+def test_selected_finding_followups_and_asr_ordinal_request():
+    skill = _Skill()
+
+    assert handle_reneryo_query(skill, _message("List active findings"))
+    assert handle_reneryo_query(skill, _message("Explain the first one"))
+    assert handle_reneryo_query(skill, _message("What does this finding mean?"))
+    assert _response_type(skill) == "finding"
+    assert handle_reneryo_query(
+        skill, _message("What should we do about this finding?")
+    )
+    assert _response_type(skill) == "finding"
+    assert handle_reneryo_query(skill, _message("Birkinci bulbuyu açıkla", "tr-TR"))
+    assert _response_type(skill) == "clarification"
+    assert "Hangi bulguyu" in skill.spoken[-1][0]
+    assert handle_reneryo_query(skill, _message("Birkinci bulbuyu açıkla", "tr-TR"))
+    assert _response_type(skill) == "clarification"
+    assert handle_reneryo_query(skill, _message("İkinci bulguyu açıkla", "tr-TR"))
+    assert _response_type(skill) == "finding"
+    assert skill._dialogue_state_store.get("collection-session").active_finding_id == "two"
+    assert skill._futuregen_service.evaluations == 0
+
+
+def test_all_findings_clears_collection_filters():
+    skill = _Skill()
+
+    assert handle_reneryo_query(skill, _message("List active findings"))
+    assert handle_reneryo_query(skill, _message("Only the medium ones"))
+    assert skill._futuregen_service.requests[-1] == FindingFilters(
+        "ACTIVE", "MEDIUM", ""
+    )
+    assert handle_reneryo_query(skill, _message("Show all findings"))
+    assert skill._futuregen_service.requests[-1] == FindingFilters("ACTIVE", "", "")
+    assert handle_reneryo_query(skill, _message("Sadece orta olanları göster", "tr-TR"))
+    assert handle_reneryo_query(skill, _message("Hepsini göster", "tr-TR"))
+    assert skill._futuregen_service.requests[-1] == FindingFilters("ACTIVE", "", "")
+
+
+def test_negated_evaluation_lists_without_running_analysis():
+    skill = _Skill()
+
+    assert handle_reneryo_query(
+        skill, _message("Do not evaluate the data; just list findings")
+    )
+    assert _response_type(skill) == "findings"
+    assert skill._futuregen_service.evaluations == 0
+
+
+def test_negated_evaluation_cannot_be_resurrected_by_semantic_fallback():
+    skill = _Skill()
+    resolution = SemanticResolution(
+        action=SemanticAction.FINDINGS_EVALUATE,
+        language="en-US",
+        confidence=0.9,
+        margin=0.1,
+    )
+
+    assert handle_reneryo_query(
+        skill, _message("Do not evaluate the data"), semantic_resolution=resolution
+    )
+    assert _response_type(skill) == "clarification"
+    assert skill._futuregen_service.evaluations == 0
+
+
+def test_turkish_missing_trend_is_explicit_after_a_finding_topic_change():
+    skill = _Skill()
+
+    assert handle_reneryo_query(skill, _message("List active findings"))
+    assert handle_reneryo_query(skill, _message("Explain the first one"))
+    assert handle_reneryo_query(skill, _message("Üretim eğilimini göster", "tr-TR"))
+
+    assert _response_type(skill) == "trend"
+    assert "gözlem bulunamadı" in skill.spoken[-1][0]
+    assert "2026-07-31" in skill.spoken[-1][0]
+    assert "%0.0" not in skill.spoken[-1][0]
+    assert "sabit" not in skill.spoken[-1][0]
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ((), "No observations were returned"),
+        ((10,), "only one observation was returned"),
+        ((0, 10), "the first observed value is zero"),
+    ],
+)
+def test_english_sparse_trend_explains_why_percent_is_unavailable(values, expected):
+    skill = _Skill()
+
+    async def sparse_trend(_utterance, period):
+        return ReneryoTrend(
+            metric=ReneryoMetric("electricity", "Electricity", "COUNTER", "ENERGY"),
+            period_label=period.display_name,
+            aggregation="DAILY",
+            points=tuple(
+                ReneryoTrendPoint(datetime(2026, 9, index + 1, tzinfo=timezone.utc), value, 1)
+                for index, value in enumerate(values)
+            ),
+            direction="unavailable",
+            change_percent=None,
+        )
+
+    skill._futuregen_service.trend = sparse_trend
+    assert handle_reneryo_query(skill, _message("Show electricity trend"))
+    assert expected in skill.spoken[-1][0]
+    assert "0.0%" not in skill.spoken[-1][0]
+    assert "stable" not in skill.spoken[-1][0]
+
+
+def test_correction_changes_metric_after_finding_handoff():
+    skill = _Skill()
+
+    assert handle_reneryo_query(skill, _message("List active findings"))
+    assert handle_reneryo_query(skill, _message("Explain the first one"))
+    assert handle_reneryo_query(skill, _message("Not humidity, electricity"))
+
+    assert _response_type(skill) == "metrics"
+    assert "Tesis Toplam Elektrik Tüketimi" in skill.spoken[-1][0]
 
 
 def test_turkish_evaluation_collection_selection_and_followup():

@@ -40,14 +40,16 @@ class FutureGenService:
         points = await self.reneryo.metric_values(
             metric.metric_id, period.start, period.end, aggregation
         )
-        change = 0.0
+        change = None
         if len(points) > 1 and points[0].value != 0:
             change = ((points[-1].value - points[0].value) / abs(points[0].value)) * 100
-        direction = "stable"
-        if change > 1:
+        direction = "unavailable"
+        if change is not None and change > 1:
             direction = "increasing"
-        elif change < -1:
+        elif change is not None and change < -1:
             direction = "decreasing"
+        elif change is not None:
+            direction = "stable"
         return ReneryoTrend(
             metric=metric,
             period_label=period.display_name,
@@ -100,6 +102,16 @@ def default_period(days: int = 30) -> TimePeriod:
 def match_metric(utterance: str, metrics):
     """Ground a natural metric reference in Reneryo-owned inventory data."""
     normalized = normalize_phrase(utterance)
+    # A correction names the unwanted metric first. Match only the replacement.
+    correction = re.match(
+        r"^(?:no|not)\b[^,]+,\s*(.+)$", utterance.strip(), re.IGNORECASE
+    )
+    if correction:
+        normalized = normalize_phrase(correction.group(1))
+    else:
+        turkish_correction = re.match(r"^.+?\b(?:değil|degil)\b\s+(.+)$", normalized)
+        if turkish_correction:
+            normalized = turkish_correction.group(1)
     aliases = (
         ("electric", "elektrik", "energy", "enerji"),
         ("production", "uretim", "üretim"),

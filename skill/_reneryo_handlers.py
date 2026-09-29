@@ -22,7 +22,9 @@ from skill.services.finding_collection import (
     filters_for,
     is_collection_request,
     is_evaluation_request,
+    is_negated_evaluation_request,
     selection_index,
+    selection_requested,
 )
 from skill.services.finding_explanation import finding_headline
 from skill.services.finding_next_review import next_review_headline
@@ -80,6 +82,16 @@ def handle_reneryo_query(
     state = replace(state, language=language)
     _update_message_language(message, language)
 
+    if (
+        state.operation in {"findings", "finding", "evaluation", "clarification"}
+        and _finding_selection_scope(text)
+        and selection_requested(text, state)
+        and selection_index(text, state) is None
+    ):
+        _finding_selection_clarification(skill, language)
+        _remember(skill, message, state, operation="clarification")
+        return True
+
     action = _deterministic_action(text, state)
     resolution: SemanticResolution | None = semantic_resolution
     if action is None:
@@ -119,6 +131,11 @@ def handle_reneryo_query(
             _semantic_clarification(skill, language)
             _remember(skill, message, state, operation="clarification")
             return True
+
+    if action is SemanticAction.FINDINGS_EVALUATE and is_negated_evaluation_request(text):
+        _semantic_clarification(skill, language)
+        _remember(skill, message, state, operation="clarification")
+        return True
 
     def _execute() -> bool:
         service = _service(skill)
@@ -196,7 +213,34 @@ def handle_reneryo_query(
                 "stable": "sabit",
             }.get(trend.direction, trend.direction)
             period_label = _localized_period_label(trend.period_label, language)
-            if is_turkish(language):
+            if not trend.points:
+                observed_at = trend.metric.last_value_at
+                last_seen = observed_at.date().isoformat() if observed_at else None
+                if is_turkish(language):
+                    headline = f"{trend.metric.name} için {period_label} döneminde gözlem bulunamadı; eğilim hesaplanamıyor."
+                    if last_seen:
+                        headline += f" Son kayıtlı gözlem {last_seen} tarihinde."
+                else:
+                    headline = f"No observations were returned for {trend.metric.name} over {period_label}; a trend cannot be calculated."
+                    if last_seen:
+                        headline += (
+                            f" The latest recorded observation is from {last_seen}."
+                        )
+            elif trend.change_percent is None:
+                first_seen = trend.points[0].timestamp.date().isoformat()
+                if is_turkish(language):
+                    headline = f"{trend.metric.name} için {period_label} döneminde " + (
+                        f"yalnızca bir gözlem var ({first_seen}); eğilim hesaplanamıyor."
+                        if len(trend.points) == 1
+                        else "ilk gözlem sıfır olduğu için yüzde değişim hesaplanamıyor."
+                    )
+                else:
+                    headline = f"For {trend.metric.name} over {period_label}, " + (
+                        f"only one observation was returned ({first_seen}); a trend cannot be calculated."
+                        if len(trend.points) == 1
+                        else "the first observed value is zero, so a percentage change cannot be calculated."
+                    )
+            elif is_turkish(language):
                 headline = f"{trend.metric.name}, {period_label} döneminde %{abs(trend.change_percent):.1f} oranında {direction}."
             else:
                 headline = f"{trend.metric.name} is {trend.direction} by {abs(trend.change_percent):.1f}% over {period_label}."
@@ -258,7 +302,10 @@ def handle_reneryo_query(
                 if resolution is not None
                 else ""
             ) or state.metric_name
-            selected_metric = match_metric(expected or text, rows)
+            selected_metric = match_metric(
+                utterance if _is_metric_correction(text) else expected or text,
+                rows,
+            )
         if action is SemanticAction.METRIC_DETAIL and selected_metric is None:
             _metric_clarification(skill, rows, language)
             _remember(skill, message, state, operation="metric_clarification")
@@ -564,7 +611,7 @@ def _evaluation_response(skill, message, service, state, language) -> bool:
 
 def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | None:
     """Map established lexical forms without invoking the semantic model."""
-    if selection_index(text, state) is not None:
+    if _finding_selection_scope(text) and selection_index(text, state) is not None:
         return SemanticAction.FINDING_EXPLAIN
     if state.active_finding_id and _has(text, "when this finding was evaluated", "when was this finding evaluated"):
         return SemanticAction.FINDING_PERIOD
@@ -576,6 +623,44 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
         return SemanticAction.FINDINGS_LIST
     if _is_finding_list(text):
         return SemanticAction.FINDINGS_LIST
+    # An explicit regression question changes topic even when a finding remains
+    # selected. A finding-related regression question was handled above.
+    if _has(text, "regression", "regresyon") and not _has(
+        text, "finding", "bulgu", "alert", "uyarı", "uyari"
+    ):
+        if _has(
+            text,
+            "daily",
+            "monthly",
+            "gunluk",
+            "günlük",
+            "aylik",
+            "aylık",
+            "driver",
+            "surucu",
+            "sürücü",
+            "fit",
+            "error",
+            "quality",
+            "weak",
+            "training",
+            "period",
+            "uyum",
+            "hata",
+            "kalite",
+            "zayıf",
+            "egitim",
+            "eğitim",
+            "dönem",
+        ):
+            return SemanticAction.REGRESSION_DETAIL
+        return SemanticAction.REGRESSIONS_LIST
+    if state.metric_name and _is_metric_correction(text):
+        return (
+            SemanticAction.TREND_SHOW
+            if state.operation == "trend"
+            else SemanticAction.METRIC_DETAIL
+        )
     if (
         state.operation == "regression_detail"
         and not _has(
@@ -752,28 +837,6 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
         "envanter",
     ):
         return SemanticAction.REGRESSIONS_LIST
-    if _has(text, "regression", "regressions", "regresyon"):
-        if _has(
-            text,
-            "daily",
-            "monthly",
-            "gunluk",
-            "günlük",
-            "aylik",
-            "aylık",
-            "driver",
-            "surucu",
-            "sürücü",
-            "fit",
-            "error",
-            "uyum",
-            "hata",
-            "training",
-            "egitim",
-            "eğitim",
-        ):
-            return SemanticAction.REGRESSION_DETAIL
-        return SemanticAction.REGRESSIONS_LIST
     if _looks_like_trend(text):
         return SemanticAction.TREND_SHOW
     if _has(text, "metric", "metrics", "metrik"):
@@ -806,6 +869,22 @@ def _semantic_clarification(skill, language: str) -> None:
             "Show its evidence",
             "List the metrics",
         ]
+    speak_information(
+        skill,
+        headline,
+        language=language,
+        response_type="clarification",
+        suggestions=suggestions,
+    )
+
+
+def _finding_selection_clarification(skill, language: str) -> None:
+    if is_turkish(language):
+        headline = "Hangi bulguyu kastediyorsunuz? Listedeki numarasını söyleyin."
+        suggestions = ["1 numaralı bulguyu açıkla", "2 numaralı bulguyu açıkla"]
+    else:
+        headline = "Which finding do you mean? Please say its number from the list."
+        suggestions = ["Explain finding number 1", "Explain finding number 2"]
     speak_information(
         skill,
         headline,
@@ -898,8 +977,8 @@ def _context_state(skill, message) -> DialogueState:
             if current.selected_finding_from_collection
             else str(signed.get("finding_id", "") or current.active_finding_id)
         ),
-        entity_id=str(signed.get("entity_id", "") or current.entity_id),
-        metric_name=str(signed.get("metric_name", "") or current.metric_name),
+        entity_id=current.entity_id or str(signed.get("entity_id", "")),
+        metric_name=current.metric_name or str(signed.get("metric_name", "")),
     )
 
 
@@ -997,6 +1076,19 @@ def _looks_like_trend(text: str) -> bool:
         "seyr",
         "degis",
         "değiş",
+    )
+
+
+def _is_metric_correction(text: str) -> bool:
+    return bool(
+        re.match(r"^(?:no|not)\b", text) or re.search(r"\b(?:değil|degil)\b", text)
+    )
+
+
+def _finding_selection_scope(text: str) -> bool:
+    return not (
+        _has(text, "trend", "egilim", "eğilim", "meter", "sayac", "sayaç", "metric", "metrik", "regression", "regresyon")
+        and not _has(text, "finding", "bulgu", "alert", "uyarı", "uyari")
     )
 
 

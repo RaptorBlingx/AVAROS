@@ -118,7 +118,8 @@ def test_active_finding_arbitrates_broad_help_to_explanation(
 ):
     skill = _skill(_resolution(SemanticAction.FINDING_EXPLAIN, language=language))
     skill._dialogue_state_store.put(
-        "session-1", handlers.DialogueState(active_finding_id="finding-1"),
+        "session-1",
+        handlers.DialogueState(active_finding_id="finding-1"),
     )
     delegated = Mock(return_value=True)
     monkeypatch.setattr(handlers, "handle_reneryo_query", delegated)
@@ -142,7 +143,10 @@ def test_active_metric_arbitrates_broad_help_to_metric_detail(monkeypatch):
     )
 
     assert handled is True
-    assert delegated.call_args.kwargs["semantic_resolution"].action is SemanticAction.METRIC_DETAIL
+    assert (
+        delegated.call_args.kwargs["semantic_resolution"].action
+        is SemanticAction.METRIC_DETAIL
+    )
 
 
 def test_explicit_help_without_reneryo_context_keeps_capabilities_fast_path(monkeypatch):
@@ -162,7 +166,8 @@ def test_explicit_help_without_reneryo_context_keeps_capabilities_fast_path(monk
 def test_ambiguous_contextual_help_clarifies_instead_of_using_capabilities(monkeypatch):
     skill = _skill(_resolution(None, ambiguous=True, language="tr-TR"))
     skill._dialogue_state_store.put(
-        "session-1", handlers.DialogueState(active_finding_id="finding-1"),
+        "session-1",
+        handlers.DialogueState(active_finding_id="finding-1"),
     )
     message = _Message("Peki bununla ilgili ne var?")
     message.context["reneryo_context"]["language"] = "tr-TR"
@@ -202,7 +207,10 @@ def test_first_turn_metric_detail_is_allowed_to_request_metric_name(monkeypatch)
     )
 
     assert handled is True
-    assert delegated.call_args.kwargs["semantic_resolution"].action is SemanticAction.METRIC_DETAIL
+    assert (
+        delegated.call_args.kwargs["semantic_resolution"].action
+        is SemanticAction.METRIC_DETAIL
+    )
 
 
 def test_missing_metric_uses_targeted_bilingual_clarification(monkeypatch):
@@ -532,3 +540,50 @@ def test_turkish_course_word_routes_to_trend():
     )
 
     assert action is SemanticAction.TREND_SHOW
+
+
+@pytest.mark.parametrize(
+    ("utterance", "expected"),
+    [
+        ("What does this finding mean?", SemanticAction.FINDING_EXPLAIN),
+        ("What should we do about this finding?", SemanticAction.FINDING_NEXT_REVIEW),
+        ("What should we do about this regression finding?", SemanticAction.FINDING_NEXT_REVIEW),
+        ("Bu bulguyu incele", SemanticAction.FINDING_EXPLAIN),
+        ("Why is the monthly regression weak?", SemanticAction.REGRESSION_DETAIL),
+        ("Regresyon modelinin eğitim dönemi nedir?", SemanticAction.REGRESSION_DETAIL),
+        ("Show electricity trend", SemanticAction.TREND_SHOW),
+        ("Show the first electricity trend", SemanticAction.TREND_SHOW),
+    ],
+)
+def test_selected_finding_does_not_steal_followups_or_topic_changes(
+    utterance, expected
+):
+    state = handlers.DialogueState(
+        active_finding_id="finding-1",
+        metric_name="Humidity - Open Weather",
+        operation="finding",
+        finding_ids=("finding-1", "finding-2"),
+        selected_finding_from_collection=True,
+    )
+
+    assert (
+        handlers._deterministic_action(handlers.normalize_phrase(utterance), state)
+        is expected
+    )
+
+
+def test_signed_handoff_does_not_restore_prior_metric_after_topic_change():
+    skill = _skill(_resolution(SemanticAction.METRIC_DETAIL))
+    skill._dialogue_state_store.put(
+        "session-1",
+        handlers.DialogueState(
+            metric_name="Tesis Toplam Elektrik Tüketimi", operation="trend"
+        ),
+    )
+    message = _Message("Not humidity, electricity")
+    message.context["reneryo_context"]["metric_name"] = "Humidity - Open Weather"
+
+    assert (
+        handlers._context_state(skill, message).metric_name
+        == "Tesis Toplam Elektrik Tüketimi"
+    )

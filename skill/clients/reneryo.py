@@ -120,29 +120,35 @@ class ReneryoClient:
         end: datetime,
         period: str,
     ) -> list[ReneryoTrendPoint]:
-        payload = await self._get(
-            f"/a/metric/values/{metric_id}",
-            {
-                "datetimeMin": start.isoformat(),
-                "datetimeMax": end.isoformat(),
-                "period": period,
-                "count": "100",
-                "page": "1",
-            },
-        )
         points: list[ReneryoTrendPoint] = []
-        for row in self._records(payload):
-            timestamp = _parse_datetime(row.get("datetime"))
-            value = _optional_float(row.get("value"))
-            if timestamp is None or value is None:
-                continue
-            points.append(
-                ReneryoTrendPoint(
-                    timestamp=timestamp,
-                    value=value,
-                    sample_count=int(row.get("sampleCount") or 0),
-                )
+        page = 1
+        while True:
+            payload = await self._get(
+                f"/a/metric/values/{metric_id}",
+                {
+                    "datetimeMin": start.isoformat(),
+                    "datetimeMax": end.isoformat(),
+                    "period": period,
+                    "count": "100",
+                    "page": str(page),
+                },
             )
+            rows = self._records(payload)
+            for row in rows:
+                timestamp = _parse_datetime(row.get("datetime"))
+                value = _optional_float(row.get("value"))
+                if timestamp is None or value is None:
+                    continue
+                points.append(
+                    ReneryoTrendPoint(
+                        timestamp=timestamp,
+                        value=value,
+                        sample_count=int(row.get("sampleCount") or 0),
+                    )
+                )
+            if not rows or page * 100 >= int(payload.get("recordCount") or 0):
+                break
+            page += 1
         return sorted(points, key=lambda point: point.timestamp)
 
     async def list_regressions(self) -> list[ReneryoRegression]:

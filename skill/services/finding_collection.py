@@ -25,6 +25,16 @@ _ORDINALS = {
     "3rd": 2,
     "fourth": 3,
     "4th": 3,
+    "fifth": 4,
+    "5th": 4,
+    "sixth": 5,
+    "6th": 5,
+    "seventh": 6,
+    "7th": 6,
+    "eighth": 7,
+    "8th": 7,
+    "ninth": 8,
+    "9th": 8,
     "ilk": 0,
     "ilki": 0,
     "ilkini": 0,
@@ -43,6 +53,37 @@ _ORDINALS = {
     "dorduncusu": 3,
     "dorduncusunu": 3,
     "dorduncuyu": 3,
+    "besinci": 4,
+    "besincisi": 4,
+    "besincisini": 4,
+    "altinci": 5,
+    "altincisi": 5,
+    "altincisini": 5,
+    "yedinci": 6,
+    "yedincisi": 6,
+    "yedincisini": 6,
+    "sekizinci": 7,
+    "sekizincisi": 7,
+    "sekizincisini": 7,
+    "dokuzuncu": 8,
+    "dokuzuncusu": 8,
+    "dokuzuncusunu": 8,
+}
+_ENGLISH_ORDINALS = {
+    word: index
+    for word, index in _ORDINALS.items()
+    if word
+    in {
+        "first",
+        "second",
+        "third",
+        "fourth",
+        "fifth",
+        "sixth",
+        "seventh",
+        "eighth",
+        "ninth",
+    }
 }
 _CARDINAL_ORDINALS = {"one": 0, "two": 1, "three": 2, "four": 3}
 _SELECTION_CUES = {
@@ -78,6 +119,12 @@ class FindingFilters:
 def is_evaluation_request(text: str) -> bool:
     """Recognize a request to run MDSP, not merely read existing findings."""
     text = _normalized_text(text)
+    if is_negated_evaluation_request(text):
+        return False
+    if _has(text, "bulguyu", "this finding") and not _has(
+        text, "data", "veri", "veriyi", "verileri"
+    ):
+        return False
     evaluation_verbs = (
         "analy",
         "evaluate",
@@ -112,116 +159,144 @@ def is_evaluation_request(text: str) -> bool:
     )
 
 
+def is_negated_evaluation_request(text: str) -> bool:
+    """Protect an explicit 'do not evaluate' correction from semantic fallback."""
+    text = _normalized_text(text)
+    if re.search(
+        r"\b(?:do not|don't|dont|not|without)\b.{0,40}\b(?:run|analy\w*|evaluat\w*|assess\w*|check)\b",
+        text,
+    ):
+        return True
+    return _has(
+        text, "analiz etme", "analiz yapma", "veriyi degerlendirme", "veriyi inceleme"
+    )
+
+
 def is_collection_request(text: str, state: DialogueState) -> bool:
     """Identify inventory, filtering, and pronoun follow-ups without text memory."""
     text = _normalized_text(text)
-    finding_reference = any(
-        cue in text
-        for cue in (
-            "finding",
-            "findings",
-            "decision support",
-            "alert",
-            "alerts",
-            "issue",
-            "issues",
-            "bulgu",
-            "bulgular",
-            "karar destek",
-            "uyari",
-            "uyarı",
-            "uyarilar",
-            "uyarılar",
-            "sorun",
-            "sorunlar",
+    plural = _has(
+        text,
+        "findings",
+        "alerts",
+        "issues",
+        "bulgular",
+        "bulgulari",
+        "bulguları",
+        "uyarilar",
+        "uyarılar",
+        "sorunlar",
+    )
+    finding_reference = plural or _has(
+        text,
+        "finding",
+        "alert",
+        "issue",
+        "bulgu",
+        "bulguyu",
+        "uyari",
+        "uyarı",
+        "sorun",
+        "decision support",
+        "karar destek",
+    )
+    inventory_cue = _has(
+        text,
+        "list",
+        "show",
+        "all",
+        "how many",
+        "count",
+        "active",
+        "unresolved",
+        "resolved",
+        "high",
+        "medium",
+        "low",
+        "listele",
+        "goster",
+        "neler",
+        "kac",
+        "aktif",
+        "cozulmemis",
+        "cozulmus",
+        "yuksek",
+        "orta",
+        "dusuk",
+    )
+    explicit = (
+        plural
+        and (
+            inventory_cue
+            or text.strip()
+            in {
+                "findings",
+                "alerts",
+                "issues",
+                "bulgular",
+                "uyarilar",
+                "uyarılar",
+                "sorunlar",
+            }
         )
-    )
-    inventory_cue = any(
-        cue in text
-        for cue in (
-            "list",
-            "show",
-            "all ",
-            "what ",
-            "which ",
-            "how many",
-            "count",
-            "active",
-            "unresolved",
-            "resolved",
-            "high",
-            "medium",
-            "low",
-            "regression",
-            "liste",
-            "goster",
-            "göster",
-            "neler",
-            "kac ",
-            "kaç ",
-            "aktif",
-            "cozul",
-            "çözül",
-            "yüksek",
-            "orta",
-            "düşük",
-            "regresyon",
-        )
-    )
-    explicit = finding_reference and (
-        inventory_cue
-        or text.strip()
-        in {"finding", "findings", "bulgu", "bulgular", "uyari", "uyarı"}
-    )
+    ) or (finding_reference and _has(text, "list", "listele", "how many", "count"))
     collection_context = state.operation in {"findings", "evaluation"} or (
         state.selected_finding_from_collection and bool(state.finding_ids)
     )
-    collection_followup = collection_context and any(
-        cue in text
-        for cue in (
-            "list",
-            "show",
-            "them",
-            "those",
-            "ones",
-            "only",
-            "any ",
-            "liste",
-            "goster",
-            "göster",
-            "bunlari",
-            "bunları",
-            "onlari",
-            "onları",
-            "sadece",
-            "var mi",
-            "var mı",
+    collection_followup = collection_context and _has(
+        text,
+        "list them",
+        "show them",
+        "those ones",
+        "the ones",
+        "only",
+        "all of them",
+        "list",
+        "bunlari",
+        "bunları",
+        "onlari",
+        "onları",
+        "sadece",
+        "hepsini",
+        "tumunu",
+        "tümünü",
+        "var mi",
+        "var mı",
+    )
+    filter_cue = _has(
+        text,
+        "active",
+        "unresolved",
+        "resolved",
+        "high",
+        "medium",
+        "low",
+        "aktif",
+        "cozulmemis",
+        "cozuldu",
+        "yuksek",
+        "orta",
+        "dusuk",
+    )
+    return (
+        explicit
+        or collection_followup
+        or (
+            collection_context
+            and filter_cue
+            and not _has(
+                text,
+                "trend",
+                "egilim",
+                "regression",
+                "regresyon",
+                "meter",
+                "sayac",
+                "metric",
+                "metrik",
+            )
         )
     )
-    filter_cue = any(
-        cue in text
-        for cue in (
-            "active",
-            "unresolved",
-            "resolved",
-            "high",
-            "medium",
-            "low",
-            "regression",
-            "metrics",
-            "aktif",
-            "cozulmemis",
-            "çözülmemiş",
-            "cozuldu",
-            "çözüldü",
-            "yüksek",
-            "orta",
-            "düşük",
-            "regresyon",
-            "metrik",
-        )
-    )
-    return explicit or collection_followup or (collection_context and filter_cue)
 
 
 def filters_for(text: str, state: DialogueState) -> FindingFilters:
@@ -233,6 +308,21 @@ def filters_for(text: str, state: DialogueState) -> FindingFilters:
         domain=state.finding_domain,
     ).normalized()
     status, severity, domain = prior.status, prior.severity, prior.domain
+
+    if _has(
+        text,
+        "all findings",
+        "all of them",
+        "show them all",
+        "tum bulgular",
+        "tum bulgulari",
+        "tum bulguları",
+        "butun bulgular",
+        "hepsini",
+        "tumunu",
+        "tümünü",
+    ):
+        severity, domain = "", ""
 
     if _has(text, "resolved", "cozuldu", "çözüldü", "cozulmus", "çözülmüş"):
         status = "RESOLVED"
@@ -267,29 +357,64 @@ def selection_index(text: str, state: DialogueState) -> int | None:
     text = _normalized_text(text)
     if not state.finding_ids:
         return None
-    for word, index in _ORDINALS.items():
-        if re.search(rf"(?<!\w){re.escape(word)}(?!\w)", text):
-            return index if index < len(state.finding_ids) else None
+    exact = {
+        index
+        for word, index in _ORDINALS.items()
+        if re.search(rf"(?<!\w){re.escape(word)}(?!\w)", text)
+    }
+    if exact:
+        return (
+            next(iter(exact))
+            if len(exact) == 1 and next(iter(exact)) < len(state.finding_ids)
+            else None
+        )
     match = re.search(r"\b(?:number|no|numara|numarali|numaralı)\s+(\d+)\b", text)
     if match:
         index = int(match.group(1)) - 1
         return index if 0 <= index < len(state.finding_ids) else None
-    # ASR occasionally drops or substitutes a single ordinal character (for
-    # example, a Turkish possessive ending). Permit that only with an active,
-    # organization-scoped collection and an explicit selection/explanation
-    # cue. This cannot select an arbitrary finding ID or autocorrect general
-    # conversation outside the collection context.
+    # Admit known Turkish inflection and a uniquely recognized short English
+    # spelling variation only with an explicit selection cue.
     words = re.findall(r"\w+", text)
     if not any(word in _SELECTION_CUES for word in words):
         return None
-    for spoken in words:
-        for ordinal, index in _ORDINALS.items():
-            if len(ordinal) >= 4 and _edit_distance_at_most_one(spoken, ordinal):
-                return index if index < len(state.finding_ids) else None
+    if "ilkin" in words:
+        return 0
+    fuzzy = {
+        index
+        for spoken in words
+        for ordinal, index in _ENGLISH_ORDINALS.items()
+        if _edit_distance_at_most_one(spoken, ordinal)
+    }
+    if fuzzy:
+        return (
+            next(iter(fuzzy))
+            if len(fuzzy) == 1 and next(iter(fuzzy)) < len(state.finding_ids)
+            else None
+        )
     for word, index in _CARDINAL_ORDINALS.items():
         if re.search(rf"(?<!\w){re.escape(word)}(?!\w)", text):
             return index if index < len(state.finding_ids) else None
     return None
+
+
+def selection_requested(text: str, state: DialogueState) -> bool:
+    """Catch unclear spoken ordinals before reusing a previously selected item."""
+    if not state.finding_ids:
+        return False
+    text = _normalized_text(text)
+    words = re.findall(r"\w+", text)
+    if any(word in _ORDINALS for word in words) or re.search(
+        r"\b(?:number|no|numara|numarali)\s+\d+\b", text
+    ):
+        return True
+    if not any(word in _SELECTION_CUES for word in words):
+        return False
+    return any(
+        _edit_distance_at_most_one(word, ordinal)
+        for word in words
+        for ordinal in _ORDINALS
+        if len(ordinal) >= 4
+    )
 
 
 def _edit_distance_at_most_one(left: str, right: str) -> bool:
