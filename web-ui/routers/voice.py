@@ -37,6 +37,7 @@ from schemas.voice import (
     VoicePreferencesRequest,
     VoicePreferencesResponse,
 )
+from services.piper_pronunciation import render_piper_text
 from skill.services.settings import SettingsService
 
 
@@ -300,8 +301,9 @@ def _synthesize_wav_piper_in_process(payload: SpeechRequest) -> bytes:
     """Generate WAV bytes with a cached in-process Piper voice."""
     voice = _load_piper_voice(payload.language)
     syn_config = _piper_synthesis_config(payload)
+    speech_text = render_piper_text(payload.text, payload.language)
     with _PIPER_SYNTH_LOCK:
-        chunks = list(voice.synthesize(payload.text, syn_config=syn_config))
+        chunks = list(voice.synthesize(speech_text, syn_config=syn_config))
     return _scale_wav(_wav_from_piper_chunks(chunks), _PIPER_OUTPUT_GAIN)
 
 
@@ -343,7 +345,7 @@ def _synthesize_wav_piper_cli(payload: SpeechRequest) -> bytes:
     try:
         subprocess.run(
             command,
-            input=f"{payload.text}\n",
+            input=f"{render_piper_text(payload.text, payload.language)}\n",
             text=True,
             capture_output=True,
             check=True,

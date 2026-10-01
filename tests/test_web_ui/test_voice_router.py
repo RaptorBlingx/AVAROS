@@ -339,6 +339,64 @@ class TestVoiceConfigAuth:
 class TestVoiceTTS:
     """Verify server-backed TTS endpoints."""
 
+    def test_piper_renders_transient_text_without_mutating_request(self, monkeypatch):
+        seen = []
+        voice = SimpleNamespace(
+            synthesize=lambda text, **kwargs: seen.append(text) or []
+        )
+        monkeypatch.setattr(voice_router, "_load_piper_voice", lambda _: voice)
+        monkeypatch.setattr(voice_router, "_piper_synthesis_config", lambda _: None)
+        monkeypatch.setattr(voice_router, "_wav_from_piper_chunks", lambda _: b"wav")
+        monkeypatch.setattr(voice_router, "_scale_wav", lambda data, _: data)
+        original = "Temperature - Open Weather için son gözlem var."
+        payload = voice_router.SpeechRequest(text=original, language="tr-TR")
+
+        assert voice_router._synthesize_wav_piper_in_process(payload) == b"wav"
+        assert seen == ["[[tˈɛmpɹɪtʃɚ ˈoʊpən wˈɛðɚ]] için son gözlem var."]
+        assert payload.text == original
+
+    def test_piper_cli_uses_same_transient_rendering(self, monkeypatch, tmp_path):
+        seen = []
+        monkeypatch.setattr(voice_router, "_piper_engine_path", lambda _: "/usr/bin/piper")
+        monkeypatch.setattr(
+            voice_router, "_piper_paths_for_language",
+            lambda _: (tmp_path / "model.onnx", tmp_path / "model.onnx.json"),
+        )
+
+        def fake_run(command, **kwargs):
+            seen.append(kwargs["input"])
+            Path(command[command.index("-f") + 1]).write_bytes(b"wav")
+
+        monkeypatch.setattr(voice_router.subprocess, "run", fake_run)
+        monkeypatch.setattr(voice_router, "_scale_wav", lambda data, _: data)
+        payload = voice_router.SpeechRequest(text="Temperature", language="tr-TR")
+        assert voice_router._synthesize_wav_piper_cli(payload) == b"wav"
+        assert seen == ["[[tˈɛmpɹɪtʃɚ]]\n"]
+        assert payload.text == "Temperature"
+
+    def test_espeak_fallback_receives_original_text_after_piper_failure(self, monkeypatch):
+        original = "Temperature için gözlem var."
+        payload = voice_router.SpeechRequest(text=original, language="tr-TR")
+        seen = []
+        monkeypatch.setattr(voice_router, "SERVER_TTS_ENGINE", "auto")
+
+        def fail_synthesis(text, **kwargs):
+            assert text == "[[tˈɛmpɹɪtʃɚ]] için gözlem var."
+            raise HTTPException(status_code=503, detail="unavailable")
+
+        monkeypatch.setattr(
+            voice_router, "_load_piper_voice",
+            lambda _: SimpleNamespace(synthesize=fail_synthesis),
+        )
+        monkeypatch.setattr(voice_router, "_piper_synthesis_config", lambda _: None)
+        monkeypatch.setattr(
+            voice_router, "_synthesize_wav_espeak",
+            lambda request: seen.append(request.text) or b"wav",
+        )
+        assert voice_router._synthesize_wav(payload) == b"wav"
+        assert seen == [original]
+        assert payload.text == original
+
     def test_piper_sentence_silence_preserves_pcm_frame_alignment(self) -> None:
         """A 22,050 Hz pause must not byte-shift later 16-bit speech."""
         first_samples = array("h", [1200, -2400, 3600])
