@@ -36,8 +36,16 @@ def try_handle_structured_query(skill, message, *, include_simple_kpi: bool = Fa
     if not utterance:
         return False
     from skill._reneryo_handlers import handle_reneryo_query, has_signed_widget_context
+    from skill.services.factory_questions import classify_factory_question
 
-    if has_signed_widget_context(message) and handle_reneryo_query(
+    store = getattr(skill, "_dialogue_state_store", None)
+    factory_state = store.get(message_session_id(message)) if store is not None else None
+    factory_request = (
+        getattr(skill, "_loaded_profile", "") == "reneryo"
+        and classify_factory_question(utterance, factory_state or DialogueState())
+        is not None
+    )
+    if (has_signed_widget_context(message) or factory_request) and handle_reneryo_query(
         skill, message, allow_semantic=False
     ):
         return True

@@ -51,6 +51,9 @@ class ReneryoTrend:
     points: tuple[ReneryoTrendPoint, ...]
     direction: str
     change_percent: float | None
+    requested_period_label: str = ""
+    period_start: datetime | None = None
+    period_end: datetime | None = None
 
 
 @dataclass(frozen=True)

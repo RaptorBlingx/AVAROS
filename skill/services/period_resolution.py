@@ -55,6 +55,11 @@ _PERIOD_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
 def extract_period_phrase(utterance: str) -> str:
     """Return a parser-supported period without using semantic inference."""
     text = normalize_phrase(utterance)
+    iso_range = re.search(
+        r"\b\d{4}-\d{2}-\d{2}\s+(?:to|through|until|ile|ila)\s+\d{4}-\d{2}-\d{2}\b", text
+    )
+    if iso_range:
+        return iso_range.group(0)
     named_range = _NAMED_MONTH_RANGE.search(text)
     if named_range:
         return named_range.group(0)

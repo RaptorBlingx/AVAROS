@@ -40,6 +40,18 @@ class FutureGenService:
         points = await self.reneryo.metric_values(
             metric.metric_id, period.start, period.end, aggregation
         )
+        requested_period_label = ""
+        if not points:
+            historical, _ = await self.reneryo.recent_metric_values(metric)
+            if historical:
+                requested_period_label = period.display_name
+                points = historical
+                aggregation = "MONTHLY"
+                period = TimePeriod(
+                    points[0].timestamp,
+                    next_month(points[-1].timestamp),
+                    f"available monthly history {points[0].timestamp:%Y-%m} – {points[-1].timestamp:%Y-%m}",
+                )
         change = None
         if len(points) > 1 and points[0].value != 0:
             change = ((points[-1].value - points[0].value) / abs(points[0].value)) * 100
@@ -57,6 +69,9 @@ class FutureGenService:
             points=tuple(points),
             direction=direction,
             change_percent=change,
+            requested_period_label=requested_period_label,
+            period_start=period.start,
+            period_end=period.end,
         )
 
     async def regressions(self):
@@ -99,6 +114,19 @@ def default_period(days: int = 30) -> TimePeriod:
     )
 
 
+def next_month(value: datetime) -> datetime:
+    """Exclusive end of a monthly bucket returned by Reneryo."""
+    return value.replace(
+        year=value.year + (value.month == 12),
+        month=1 if value.month == 12 else value.month + 1,
+        day=1,
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+
+
 def match_metric(utterance: str, metrics):
     """Ground a natural metric reference in Reneryo-owned inventory data."""
     normalized = normalize_phrase(utterance)
@@ -114,7 +142,7 @@ def match_metric(utterance: str, metrics):
             normalized = turkish_correction.group(1)
     aliases = (
         ("electric", "elektrik", "energy", "enerji"),
-        ("production", "uretim", "üretim"),
+        ("production", "produce", "output", "uretim", "üretim", "üretti", "uretti"),
         ("temperature", "sicaklik", "sıcaklık"),
         ("humidity", "nem"),
         ("heating degree", "isitma", "ısıtma"),

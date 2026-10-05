@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -150,6 +150,40 @@ class ReneryoClient:
                 break
             page += 1
         return sorted(points, key=lambda point: point.timestamp)
+
+    async def recent_metric_values(
+        self, metric: ReneryoMetric, count: int = 12
+    ) -> tuple[list[ReneryoTrendPoint], int]:
+        """Read a bounded tail of Reneryo monthly aggregates, regardless of age.
+
+        Reneryo owns counter deltas and gauge aggregation. Never derive period
+        consumption from the inventory's cumulative lastValue.
+        """
+        payload = await self._get(
+            f"/a/metric/values/{metric.metric_id}",
+            {
+                "datetimeMin": "1900-01-01T00:00:00+00:00",
+                "datetimeMax": (
+                    (metric.last_value_at + timedelta(days=1))
+                    if metric.last_value_at
+                    else datetime.now(timezone.utc)
+                ).isoformat(),
+                "period": "MONTHLY",
+                "count": str(min(100, max(1, count))),
+                "page": "1",
+                "descending": "true",
+            },
+        )
+        points = []
+        for row in self._records(payload):
+            timestamp = _parse_datetime(row.get("datetime"))
+            value = _optional_float(row.get("value"))
+            samples = int(row.get("sampleCount") or 0)
+            if timestamp is not None and value is not None and samples > 0:
+                points.append(ReneryoTrendPoint(timestamp, value, samples))
+        return sorted(points, key=lambda p: p.timestamp), int(
+            payload.get("recordCount") or 0
+        )
 
     async def list_regressions(self) -> list[ReneryoRegression]:
         advanced, linear = await _gather(

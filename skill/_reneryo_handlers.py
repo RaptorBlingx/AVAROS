@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -28,6 +28,7 @@ from skill.services.finding_collection import (
 from skill.services.finding_explanation import finding_headline
 from skill.services.finding_next_review import next_review_headline
 from skill.services.futuregen import FutureGenService, default_period, match_metric
+from skill.services.factory_questions import answer_factory_question, classify_factory_question
 from skill.services.futuregen_responses import (
     meter_inventory_headline,
     metric_detail_headline,
@@ -80,6 +81,37 @@ def handle_reneryo_query(
     )
     state = replace(state, language=language)
     _update_message_language(message, language)
+
+    factory_request = classify_factory_question(utterance, state)
+    if factory_request is not None:
+
+        def _factory_execute():
+            period = _query_period(skill, factory_request.utterance, state.period)
+            answer = skill.dispatcher._run_async(
+                answer_factory_question(
+                    _service(skill), factory_request, period, language
+                )
+            )
+            speak_information(
+                skill,
+                answer.headline,
+                language=language,
+                response_type=answer.response_type,
+                evidence_rows=answer.evidence,
+                suggestions=answer.suggestions,
+            )
+            _remember(
+                skill,
+                message,
+                state,
+                operation=("factory_selection" if answer.response_type == "clarification"
+                           else "factory_history"),
+                metric_name=answer.metric_name,
+                period=answer.period or state.period,
+            )
+            return True
+
+        return bool(skill._safe_dispatch("handle_factory_question", _factory_execute))
 
     if (
         state.operation in {"findings", "finding", "evaluation", "clarification"}
@@ -259,6 +291,20 @@ def handle_reneryo_query(
                 headline = f"{trend.metric.name}, {period_label} döneminde %{abs(trend.change_percent):.1f} oranında {direction}."
             else:
                 headline = f"{trend.metric.name} is {trend.direction} by {abs(trend.change_percent):.1f}% over {period_label}."
+            if trend.requested_period_label:
+                missing_period = _localized_period_label(
+                    trend.requested_period_label, language
+                )
+                headline = (
+                    f"{missing_period} döneminde gözlem bulunamadı. Bunun yerine tarihsel veriyi gösteriyorum: "
+                    if is_turkish(language)
+                    else f"No observations were returned for {missing_period}. Showing historical data instead: "
+                ) + headline
+            actual_period = (
+                type(period)(trend.period_start, trend.period_end, trend.period_label)
+                if trend.period_start is not None and trend.period_end is not None
+                else period
+            )
             evidence = [
                 {
                     "time": p.timestamp.isoformat(),
@@ -279,7 +325,7 @@ def handle_reneryo_query(
                 message,
                 state,
                 operation="trend",
-                period=period,
+                period=actual_period,
                 metric_name=trend.metric.name,
             )
             return True
@@ -402,7 +448,10 @@ def try_arbitrate_legacy_intent(
         utterance, state, message, skill._response_language
     )
     state = replace(state, language=language)
-    if _deterministic_action(text, state) is not None:
+    if (
+        classify_factory_question(utterance, state) is not None
+        or _deterministic_action(text, state) is not None
+    ):
         return handle_reneryo_query(skill, message, allow_semantic=False)
 
     resolver = getattr(skill, "_semantic_resolver", None)
@@ -1040,6 +1089,14 @@ def _query_period(skill, utterance: str, current, semantic_period: str = ""):
         parsed = skill._parse_period(semantic_period)
         if parsed:
             return parsed
+    year = re.search(r"\b(19\d{2}|20\d{2})\b", utterance)
+    if year and not phrase and not semantic_period:
+        value = int(year.group(1))
+        base = current or default_period()
+        return type(base)(
+            datetime(value, 1, 1, tzinfo=timezone.utc),
+            datetime(value + 1, 1, 1, tzinfo=timezone.utc), str(value)
+        )
     return current or default_period()
 
 

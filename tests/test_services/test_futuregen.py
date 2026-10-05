@@ -9,6 +9,9 @@ from skill.services.futuregen import FutureGenService, match_metric
 
 
 class FakeReneryo:
+    async def recent_metric_values(self, metric, count=12):
+        return [], 0
+
     async def list_metrics(self):
         return [
             ReneryoMetric(
