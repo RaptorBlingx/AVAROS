@@ -344,7 +344,39 @@ class TimePeriod:
         normalized = re.sub(r"\s+", " ", text.lower().strip())
         if not normalized:
             raise ValueError("Time period cannot be empty")
-        
+
+        numeric_days = re.fullmatch(
+            r"(?:last|past|son) (\d+) (?:days|gün|gun)", normalized
+        )
+        if numeric_days:
+            days = int(numeric_days.group(1))
+            if not 1 <= days <= 3660:
+                raise ValueError("The day count must be between 1 and 3660")
+            return cls._with_display_name(cls.rolling_days(days, now=now), normalized)
+        if normalized in {"this year", "bu yıl", "bu yil"} or re.fullmatch(
+            r"(?:19|20)\d{2}", normalized
+        ):
+            tz = cls._resolve_timezone(timezone_name)
+            year = (
+                (now or datetime.now(tz)).astimezone(tz).year
+                if normalized in {"this year", "bu yıl", "bu yil"}
+                else int(normalized)
+            )
+            start = datetime(year, 1, 1, tzinfo=tz)
+            cls._reject_future(start, now=now, tz=tz)
+            return cls(
+                start.astimezone(timezone.utc),
+                datetime(year + 1, 1, 1, tzinfo=tz).astimezone(timezone.utc),
+                normalized,
+            )
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", normalized):
+            return cls._with_display_name(
+                cls._explicit_date_range(
+                    normalized, normalized, timezone_name=timezone_name, now=now
+                ),
+                normalized,
+            )
+
         mapping = {
             "today": cls.today,
             "yesterday": cls.yesterday,

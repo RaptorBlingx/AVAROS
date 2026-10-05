@@ -132,7 +132,8 @@ def meter_inventory_headline(
     resources = _unique(row.energy_resource for row in meters if row.energy_resource)
     metrics = _unique(row.metric_name for row in meters if row.metric_name)
     slices = _unique(name for row in meters for name in row.slice_names if name)
-    total = sum(row.consumption or 0 for row in meters)
+    missing = any(row.consumption is None for row in meters)
+    total = sum(row.consumption for row in meters if row.consumption is not None)
     has_positive_consumption = any((row.consumption or 0) > 0 for row in meters)
 
     if turkish:
@@ -146,7 +147,9 @@ def meter_inventory_headline(
             headline += f" Bağlı metrik: {_natural_join(metrics, turkish=True)}."
         if slices:
             headline += f" Kapsadığı bölüm: {_natural_join(slices, turkish=True)}."
-        if has_positive_consumption:
+        if missing:
+            headline += f" {period_name} dönemi için tüketim verisi eksik; eksik veri sıfır tüketim değildir."
+        elif has_positive_consumption:
             headline += f" {period_name} dönemi tüketimi {total:,.2f}."
         else:
             headline += (
@@ -164,7 +167,9 @@ def meter_inventory_headline(
         headline += f" It is linked to {_natural_join(metrics)}."
     if slices:
         headline += f" It covers {_natural_join(slices)}."
-    if has_positive_consumption:
+    if missing:
+        headline += f" Consumption data for {period.display_name} is missing; missing data is not zero consumption."
+    elif has_positive_consumption:
         headline += f" Consumption for {period.display_name} totals {total:,.2f}."
     else:
         headline += (

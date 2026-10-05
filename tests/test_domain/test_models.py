@@ -266,7 +266,7 @@ class TestTimePeriod:
         assert period.start == datetime(2026, 7, 10, tzinfo=timezone.utc)
         assert period.end == datetime(2026, 7, 13, tzinfo=timezone.utc)
 
-    @pytest.mark.parametrize("phrase", ["past 90 days", "July 2099", "sometime before lunch"])
+    @pytest.mark.parametrize("phrase", ["past 9000 days", "July 2099", "sometime before lunch"])
     def test_from_natural_language_rejects_unsupported_or_future_periods(self, phrase):
         with pytest.raises(ValueError):
             TimePeriod.from_natural_language(phrase)

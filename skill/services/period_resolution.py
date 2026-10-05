@@ -56,17 +56,103 @@ def extract_period_phrase(utterance: str) -> str:
     """Return a parser-supported period without using semantic inference."""
     text = normalize_phrase(utterance)
     iso_range = re.search(
-        r"\b\d{4}-\d{2}-\d{2}\s+(?:to|through|until|ile|ila)\s+\d{4}-\d{2}-\d{2}\b", text
+        r"\b\d{4}-\d{2}-\d{2}\s+(?:to|through|until|ile|ila)\s+\d{4}-\d{2}-\d{2}\b",
+        text,
     )
     if iso_range:
         return iso_range.group(0)
+    iso_day = re.search(r"\b\d{4}-\d{2}-\d{2}\b", text)
+    if iso_day:
+        return iso_day.group(0)
+    # Canonicalize a named day into the existing explicit-date parser.
+    months = {name.lower(): i for i, name in enumerate(calendar.month_name) if name}
+    months.update(
+        dict(
+            zip(
+                [
+                    "ocak",
+                    "şubat",
+                    "mart",
+                    "nisan",
+                    "mayıs",
+                    "haziran",
+                    "temmuz",
+                    "ağustos",
+                    "eylül",
+                    "ekim",
+                    "kasım",
+                    "aralık",
+                ],
+                range(1, 13),
+            )
+        )
+    )
+    named_day = re.search(
+        rf"\b({_MONTH_NAMES})\s+(\d{{1,2}})(?:st|nd|rd|th)?(?:,)?\s+(\d{{4}})\b", text
+    )
+    day_first = re.search(
+        rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({_MONTH_NAMES})(?:,)?\s+(\d{{4}})\b", text
+    )
+    if named_day or day_first:
+        if named_day:
+            month, day, year = named_day.groups()
+        else:
+            day, month, year = day_first.groups()
+        return f"{int(year):04d}-{months[month]:02d}-{int(day):02d}"
     named_range = _NAMED_MONTH_RANGE.search(text)
     if named_range:
         return named_range.group(0)
     named_month = _NAMED_MONTH.search(text)
     if named_month:
         return named_month.group(0)
+    days = re.search(r"\b(?:last|past|son) (\d+) (?:days|gün|gun)\b", text)
+    if days:
+        return (
+            f"last {days.group(1)} days"
+            if not text[days.start() :].startswith("son")
+            else f"son {days.group(1)} gün"
+        )
     for pattern, canonical in _PERIOD_PATTERNS:
         if pattern.search(text):
             return canonical
-    return ""
+    if re.search(r"\b(?:this year|bu yıl|bu yil)\b", text):
+        return "bu yıl" if "bu yıl" in text or "bu yil" in text else "this year"
+    years = re.findall(r"\b(?:19|20)\d{2}\b", text)
+    return years[0] if len(years) == 1 else ""
+
+
+def named_month_reference(utterance: str) -> bool:
+    return bool(
+        re.search(
+            rf"\b(?:{_MONTH_NAMES})(?:\b|(?:ın|ında| ayında)\b)",
+            normalize_phrase(utterance),
+        )
+    )
+
+
+def unsupported_period_reference(utterance: str) -> bool:
+    """An unrecognized explicit time reference must not become a default window."""
+    text = normalize_phrase(utterance)
+    phrase = extract_period_phrase(utterance)
+    if re.search(r"\b(?:q[1-4]|quarter|çeyrek|ceyrek)\b|\d{1,2}/\d{1,2}/\d{2,4}", text):
+        return True
+    if named_month_reference(text) and re.fullmatch(r"(?:19|20)\d{2}", phrase):
+        return True
+    if len(
+        re.findall(rf"\b(?:{_MONTH_NAMES})\b", text)
+    ) > 1 and not _NAMED_MONTH_RANGE.search(text):
+        return True
+    # Multiple dates are supported only by a recognized range, never by its first date.
+    if len(re.findall(r"\b\d{4}-\d{2}-\d{2}\b", text)) > 1:
+        return not bool(re.search(r"(?:to|through|until|ile|ila)", phrase))
+    if len(re.findall(r"\b(?:19|20)\d{2}\b", text)) > 1:
+        return not bool(
+            _NAMED_MONTH_RANGE.search(text)
+            or re.search(r"\d{4}-\d{2}-\d{2}\s+(?:to|through|until|ile|ila)", text)
+        )
+    return not phrase and (
+        named_month_reference(text)
+        or bool(
+            re.search(r"\b(?:last|past|son) \d+|\b(?:this year|bu yıl|bu yil)\b", text)
+        )
+    )

@@ -141,7 +141,7 @@ def match_metric(utterance: str, metrics):
         if turkish_correction:
             normalized = turkish_correction.group(1)
     aliases = (
-        ("electric", "elektrik", "energy", "enerji"),
+        ("electric", "elektrik", "elektriğ", "elektrig", "energy", "enerji"),
         ("production", "produce", "output", "uretim", "üretim", "üretti", "uretti"),
         ("temperature", "sicaklik", "sıcaklık"),
         ("humidity", "nem"),

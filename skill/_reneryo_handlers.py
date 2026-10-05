@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime
 from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -15,6 +15,10 @@ from skill.clients.reneryo import ReneryoClient
 from skill.domain.exceptions import AdapterError, ValidationError
 from skill.services.conversation_state import DialogueState, message_session_id
 from skill.services.dia_response import speak_information
+from skill.services.factory_questions import (
+    answer_factory_question,
+    classify_factory_question,
+)
 from skill.services.finding_collection import (
     FindingFilters,
     collection_headline,
@@ -28,7 +32,6 @@ from skill.services.finding_collection import (
 from skill.services.finding_explanation import finding_headline
 from skill.services.finding_next_review import next_review_headline
 from skill.services.futuregen import FutureGenService, default_period, match_metric
-from skill.services.factory_questions import answer_factory_question, classify_factory_question
 from skill.services.futuregen_responses import (
     meter_inventory_headline,
     metric_detail_headline,
@@ -83,10 +86,18 @@ def handle_reneryo_query(
     _update_message_language(message, language)
 
     factory_request = classify_factory_question(utterance, state)
-    if factory_request is not None:
+    factory_trend = factory_request is not None and factory_request.kind == "trend"
+    if factory_trend:
+        utterance = f"{factory_request.utterance} {factory_request.metric_hint} trend"
+        text = normalize_phrase(utterance)
+    elif factory_request is not None:
 
         def _factory_execute():
-            period = _query_period(skill, factory_request.utterance, state.period)
+            try:
+                period = _query_period(skill, factory_request.utterance, state.period)
+            except ValueError:
+                _period_clarification(skill, language)
+                return True
             answer = skill.dispatcher._run_async(
                 answer_factory_question(
                     _service(skill), factory_request, period, language
@@ -100,18 +111,36 @@ def handle_reneryo_query(
                 evidence_rows=answer.evidence,
                 suggestions=answer.suggestions,
             )
-            _remember(
-                skill,
-                message,
-                state,
-                operation=("factory_selection" if answer.response_type == "clarification"
-                           else "factory_history"),
-                metric_name=answer.metric_name,
-                period=answer.period or state.period,
-            )
+            if answer.metric_name:
+                _remember(
+                    skill,
+                    message,
+                    state,
+                    operation="factory_history",
+                    metric_name=answer.metric_name,
+                    period=answer.period or state.period,
+                    entity_id="",
+                    active_finding_id="",
+                    finding_ids=(),
+                    selected_finding_from_collection=False,
+                )
+            elif state.active_finding_id:
+                _remember(
+                    skill,
+                    message,
+                    state,
+                    operation="factory_selection",
+                    metric_name="",
+                    entity_id="",
+                    active_finding_id="",
+                    finding_ids=(),
+                    selected_finding_from_collection=False,
+                )
             return True
 
-        return bool(skill._safe_dispatch("handle_factory_question", _factory_execute))
+        # A scoped factory request stays claimed even when the safe dispatcher reports an API error.
+        skill._safe_dispatch("handle_factory_question", _factory_execute)
+        return True
 
     if (
         state.operation in {"findings", "finding", "evaluation", "clarification"}
@@ -133,7 +162,11 @@ def handle_reneryo_query(
         _remember(skill, message, state, operation="clarification")
         return True
 
-    action = _deterministic_action(text, state)
+    action = (
+        SemanticAction.TREND_SHOW
+        if factory_trend
+        else _deterministic_action(text, state)
+    )
     resolution: SemanticResolution | None = semantic_resolution
     if action is None:
         if not allow_semantic:
@@ -243,7 +276,11 @@ def handle_reneryo_query(
             return True
         if action is SemanticAction.TREND_SHOW:
             semantic_period = resolution.slots.get("period", "") if resolution else ""
-            period = _query_period(skill, utterance, state.period, semantic_period)
+            try:
+                period = _query_period(skill, utterance, state.period, semantic_period)
+            except ValueError:
+                _period_clarification(skill, language)
+                return True
             metric_query = utterance
             context_metric = (
                 resolution.slots.get("context_metric", "") if resolution else ""
@@ -327,12 +364,30 @@ def handle_reneryo_query(
                 operation="trend",
                 period=actual_period,
                 metric_name=trend.metric.name,
+                active_finding_id="",
+                finding_ids=(),
+                selected_finding_from_collection=False,
+                entity_id="",
             )
             return True
         if action is SemanticAction.METERS_LIST:
             semantic_period = resolution.slots.get("period", "") if resolution else ""
             period = _query_period(skill, utterance, state.period, semantic_period)
             rows = skill.dispatcher._run_async(service.meters(period))
+            if _has(
+                text,
+                "production",
+                "üretim",
+                "uretim",
+                "electric",
+                "elektrik",
+                "elektriğ",
+            ):
+                selected = match_metric(
+                    utterance, skill.dispatcher._run_async(service.metrics())
+                )
+                if selected is not None:
+                    rows = [row for row in rows if row.metric_id == selected.metric_id]
             headline = meter_inventory_headline(rows, period, language)
             evidence = [
                 {
@@ -758,7 +813,11 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
         )
     ):
         return SemanticAction.REGRESSION_DETAIL
-    if state.metric_name and state.operation in {"metric_detail", "trend"}:
+    if state.metric_name and state.operation in {
+        "metric_detail",
+        "trend",
+        "factory_history",
+    }:
         if _looks_like_trend(text):
             return SemanticAction.TREND_SHOW
         if _has(
@@ -1029,6 +1088,14 @@ def _context_state(skill, message) -> DialogueState:
     signed = context.get("reneryo_context")
     if not isinstance(signed, dict):
         return current
+    explicit_finding = _has(
+        normalize_phrase(skill._extract_utterance_text(message)), "finding", "bulgu"
+    )
+    seeded_finding = (
+        str(signed.get("finding_id", ""))
+        if not current.operation or explicit_finding
+        else ""
+    )
     return replace(
         current,
         organization_id=str(
@@ -1039,10 +1106,20 @@ def _context_state(skill, message) -> DialogueState:
             # IDs retained in this bounded session state.
             current.active_finding_id
             if current.selected_finding_from_collection
-            else str(signed.get("finding_id", "") or current.active_finding_id)
+            else str(seeded_finding or current.active_finding_id)
         ),
-        entity_id=current.entity_id or str(signed.get("entity_id", "")),
-        metric_name=current.metric_name or str(signed.get("metric_name", "")),
+        entity_id=current.entity_id
+        or (
+            str(signed.get("entity_id", ""))
+            if not current.operation or explicit_finding
+            else ""
+        ),
+        metric_name=current.metric_name
+        or (
+            str(signed.get("metric_name", ""))
+            if not current.operation or explicit_finding
+            else ""
+        ),
     )
 
 
@@ -1089,15 +1166,20 @@ def _query_period(skill, utterance: str, current, semantic_period: str = ""):
         parsed = skill._parse_period(semantic_period)
         if parsed:
             return parsed
-    year = re.search(r"\b(19\d{2}|20\d{2})\b", utterance)
-    if year and not phrase and not semantic_period:
-        value = int(year.group(1))
-        base = current or default_period()
-        return type(base)(
-            datetime(value, 1, 1, tzinfo=timezone.utc),
-            datetime(value + 1, 1, 1, tzinfo=timezone.utc), str(value)
-        )
     return current or default_period()
+
+
+def _period_clarification(skill, language):
+    speak_information(
+        skill,
+        (
+            "İstenen dönem geçersiz veya gelecekte. Geçmiş bir tarih, ay ve yıl veya açık tarih aralığı belirtin; dönemi değiştirmedim."
+            if is_turkish(language)
+            else "The requested period is invalid or in the future. Specify a past date, month and year, or an explicit date range; I have not changed the period."
+        ),
+        language=language,
+        response_type="clarification",
+    )
 
 
 def has_signed_widget_context(message) -> bool:

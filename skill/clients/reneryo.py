@@ -90,7 +90,10 @@ class ReneryoClient:
     async def list_meters(self, start: datetime, end: datetime) -> list[ReneryoMeter]:
         payload = await self._get(
             "/a/meter/item",
-            {"datetimeMin": start.isoformat(), "datetimeMax": end.isoformat()},
+            {
+                "datetimeMin": start.isoformat(),
+                "datetimeMax": (end - timedelta(microseconds=1)).isoformat(),
+            },
         )
         meters: list[ReneryoMeter] = []
         for row in self._records(payload):
@@ -127,7 +130,7 @@ class ReneryoClient:
                 f"/a/metric/values/{metric_id}",
                 {
                     "datetimeMin": start.isoformat(),
-                    "datetimeMax": end.isoformat(),
+                    "datetimeMax": (end - timedelta(microseconds=1)).isoformat(),
                     "period": period,
                     "count": "100",
                     "page": str(page),
@@ -137,7 +140,12 @@ class ReneryoClient:
             for row in rows:
                 timestamp = _parse_datetime(row.get("datetime"))
                 value = _optional_float(row.get("value"))
-                if timestamp is None or value is None:
+                if (
+                    timestamp is None
+                    or value is None
+                    or not start <= timestamp < end
+                    or int(row.get("sampleCount") or 0) <= 0
+                ):
                     continue
                 points.append(
                     ReneryoTrendPoint(

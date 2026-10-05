@@ -11,7 +11,7 @@ Verified against Reneryo on **5 October 2026**. The answer improvements describe
 | Weather | Temperature, humidity, rainfall, heating and cooling degree-day metrics and trends | Historical daily records and current OpenWeather observations; ask for a specific metric |
 | Decision Support | Active findings, severity filtering, evidence, affected entities and grounded next-review guidance | Separate MDSP findings flows already supported by the MVP |
 
-Old observations remain usable. An empty requested window triggers an explicit explanation and dated historical evidence. It never turns an old value into today's value, and missing observations never mean zero consumption.
+Old observations remain usable. An empty requested window or unavailable period consumption triggers an explicit explanation and dated historical evidence. It never turns an old value into today's value, and missing observations never mean zero consumption.
 
 ## Electricity: English / Turkish
 
@@ -56,11 +56,11 @@ An unspecified production amount returns the latest available monthly value. A m
 
 ## Follow-ups and dates
 
-After “Show electricity consumption”, try **“And June?”**. After a dated production answer, try **“When was the last reading recorded?”**, **“Show history”** or **“Show its trend”**. Turkish equivalents include **“Peki Haziran?”**, **“Son veri ne zaman kaydedildi?”**, **“Geçmişini göster”** and **“Eğilimini göster”**. A month-only follow-up inherits the year of the historical answer. Switching to production explicitly switches the metric.
+After “Show electricity consumption”, try **“And June?”**. After a dated production answer, try **“When was the last reading recorded?”**, **“Show history”** or **“Show its trend”**. Turkish equivalents include **“Peki Haziran?”**, **“Son veri ne zaman kaydedildi?”**, **“Geçmişini göster”** and **“Eğilimini göster”**. A month-only follow-up inherits a retained year only when the displayed period lies in one calendar year; otherwise AVAROS asks for the year. Switching to production retains the discussed period unless a new period or latest data is requested.
 
-Named months, month ranges, calendar years and explicit date ranges are accepted. Examples: **“Electricity consumption from 2026-05-01 to 2026-06-30”** / **“2026-05-01 ile 2026-06-30 elektrik tüketimini göster”**. Dates in evidence identify the API-returned bucket or reading time. Monthly factory observations do not prove daily or hourly coverage.
+Single ISO or named dates, named months with years, month ranges, calendar years and explicit ISO date ranges are accepted. Unsupported or ambiguous dates trigger clarification rather than a substituted window. Dated cumulative readings cannot be retrieved through the verified access interface: AVAROS explains that limitation without substituting the latest counter. Examples: **“Electricity consumption from 2026-05-01 to 2026-06-30”** / **“2026-05-01 ile 2026-06-30 elektrik tüketimini göster”**. Dates in evidence identify the API-returned bucket or reading time. Monthly factory observations do not prove daily or hourly coverage.
 
-Default history displays the most recent 12 monthly buckets and states how many are available. **“All history” / “Tüm geçmiş”** requests the full paginated monthly history. The spoken answer previews a few values; the evidence panel retains the returned series. A trend is a first-to-last observed-period comparison, not a forecast or a claim about every intervening day.
+Default history displays the most recent 12 monthly buckets and states how many are available. **“All history” / “Tüm geçmiş”** requests the full paginated monthly history. The spoken answer previews a few values; the structured answer retains the returned series. The embedded widget currently shows the text preview, not the complete evidence rows; do not promise a visible full-history table. A trend is a first-to-last observed-period comparison, not a forecast or a claim about every intervening day.
 
 ## Other useful existing flows
 
@@ -68,4 +68,4 @@ Default history displays the most recent 12 monthly buckets and states how many 
 - **“List active findings” / “Etkin bulguları listele”**, then **“Explain the first one” / “İlkini açıkla”** and **“Show its evidence” / “Kanıtını göster”**.
 - **“Show Future Gen meters for June 2026” / “Haziran 2026 için Future Gen sayaçlarını göster”**.
 
-Ask electricity and production separately. If multiple counter metrics match, AVAROS asks for a named selection. Questions about cost, savings, forecasts, per-unit efficiency, OEE or root causes need their own verified data and calculation contracts; these historical answers do not manufacture them. A genuine API or access failure remains an availability error, not an empty-data fallback. Voice uses the same answer path; speech recognition and pronunciation still need a separate rehearsal after deployment.
+Gas, water and equipment-specific consumption are not available in the verified inventory. Those requests receive a scope clarification, never whole-factory electricity as a substitute. Ask electricity and production separately. If multiple counter metrics match, AVAROS asks for a named selection. Questions about cost, savings, forecasts, per-unit efficiency, OEE or root causes need their own verified data and calculation contracts; these historical answers do not manufacture them. A genuine API or access failure remains an availability error, not an empty-data fallback. Voice uses the same answer path; speech recognition and pronunciation still need a separate rehearsal after deployment.
