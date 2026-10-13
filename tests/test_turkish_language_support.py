@@ -111,3 +111,18 @@ def test_turkish_structured_comparison_resolves_operation_entities_and_period() 
     assert query.asset_ids == ("Line-1", "Line-2")
     assert query.period is not None
     assert query.period.display_name == "geçen hafta"
+
+
+@pytest.mark.parametrize("validated", [True, False])
+def test_only_verified_widget_locale_overrides_ovos_recognition_locale(validated):
+    skill = SimpleNamespace(
+        _response_language="en-US",
+        response_builder=create_response_builder("en-US"),
+        _resolve_asset_name_for_voice=lambda identifier: identifier,
+    )
+    message = SimpleNamespace(data={"lang": "en-US"}, context={
+        "reneryo_widget_session_validated": validated,
+        "reneryo_context": {"language": "tr-TR", "organization_id": "futuregen"},
+    })
+    assert sync_response_language(skill, message) == ("tr-TR" if validated else "en-US")
+    assert isinstance(skill.response_builder, TurkishResponseBuilder) is validated

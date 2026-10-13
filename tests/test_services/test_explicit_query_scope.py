@@ -25,6 +25,11 @@ from tests.test_services.test_finding_collection_dialogue import _message
 
 
 UNSUPPORTED = [
+    ("Compare OEE for Line 1, Line 2, Alpha", "en-US"),
+    ("Hat 1, Hat 2, Alpha OEE değerlerini karşılaştır", "tr-TR"),
+    ("Compare OEE for Line 1, Line 2, 99", "en-US"),
+    ("Do not compare OEE for Line 1 and Line 2", "en-US"),
+    ("Hat 1 ve Hat 2 OEE değerlerini karşılaştırma", "tr-TR"),
     ("Compare energy consumption of boiler 1 vs boiler 2 yesterday", "en-US"),
     ("Compare electricity consumption between boiler 1 and boiler 2 yesterday", "en-US"),
     ("Which uses more energy, boiler 1 versus boiler 2 yesterday?", "en-US"),

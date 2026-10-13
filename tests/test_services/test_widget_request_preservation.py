@@ -11,7 +11,15 @@ import subprocess
 
 import pytest
 
-from skill._helpers import extract_utterance_text
+from skill._helpers import extract_utterance_text, sync_response_language
+from skill import AVAROSSkill
+from skill._handlers import handle_metric_query_fallback
+from skill._reneryo_handlers import handle_reneryo_query
+from skill.services.response_builder import create_response_builder
+from skill.use_cases.query_dispatcher import QueryDispatcher
+from tests.helpers.stub_adapter import StubAdapter
+from tests.test_services.test_explicit_query_scope import ASSETS, UNSUPPORTED
+from unittest.mock import Mock
 from skill.services.dia_dialogue import try_handle_structured_query
 from tests.test_services.test_factory_predeployment import harness
 from tests.test_services.test_factory_questions import QUESTIONS
@@ -31,6 +39,17 @@ FINDINGS = [
     "List active findings", "Explain the first one", "What evidence supports this finding?",
     "Etkin bulguları listele", "İlk bulguyu açıkla", "Bu bulguyu hangi kanıt destekliyor?",
 ]
+CONFIGURED = [
+    ("Show overall equipment effectiveness for Line 10", "en-US", "kpi.oee", ["Line-10"]),
+    ("Hat 10 toplam ekipman etkinliği değerini göster", "tr-TR", "kpi.oee", ["Line-10"]),
+    ("Compare overall equipment effectiveness for Line 1 and Line 10", "en-US", "compare.metric", ["Line-1", "Line-10"]),
+    ("Hat 1, Hat 10 toplam ekipman etkinliği değerlerini karşılaştır", "tr-TR", "compare.metric", ["Line-1", "Line-10"]),
+    ("Compare OEE for Line 1, and Line 10 yesterday", "en-US", "compare.metric", ["Line-1", "Line-10"]),
+    ("Show OEE for Line 10 yesterday?", "en-US", "kpi.oee", ["Line-10"]),
+    ("Hat 10 OEE değerini göster!", "tr-TR", "kpi.oee", ["Line-10"]),
+    ("Compare OEE for Line 1 and Line 10 yesterday!", "en-US", "compare.metric", ["Line-1", "Line-10"]),
+    ("Hat 1 ve Hat 10 OEE değerlerini karşılaştır?", "tr-TR", "compare.metric", ["Line-1", "Line-10"]),
+]
 METERS = ["List all meters", "Tüm sayaçları listele"]
 
 
@@ -40,7 +59,7 @@ def widget_payloads():
     typescript = frontend / "node_modules" / "typescript"
     if not shutil.which("node") or not typescript.exists():
         pytest.skip("Node and frontend npm dependencies are required")
-    requests = [text for text, _kind in QUESTIONS] + COMPARISONS + FOLLOWUPS + FINDINGS + METERS
+    requests = [text for text, _kind in QUESTIONS] + COMPARISONS + FOLLOWUPS + FINDINGS + METERS + [row[0] for row in UNSUPPORTED + CONFIGURED]
     script = r"""
 const fs = require('fs');
 const ts = require(process.argv[1]);
@@ -154,3 +173,106 @@ def test_structured_entry_rejects_unsupported_comparisons(widget_payloads, quest
     assert response["response_type"] == "clarification"
     assert not response["evidence_rows"]
     assert not skill._futuregen_service.reneryo.calls
+
+
+def routed_widget_message(skill, payloads, text, language):
+    normalized, forward = payloads
+    assert normalized[text] == text
+    forwarded = forward({"utterances": [normalized[text]], "lang": language}, {
+        "source": "avaros-widget", "session": {"session_id": "collection-session"},
+    }, language)
+    message = _message(text, language)
+    message.data, message.context = forwarded["data"], forwarded["context"]
+    skill._extract_utterance_text = lambda msg: extract_utterance_text(skill, msg)
+    skill._sync_response_language = lambda msg: sync_response_language(skill, msg)
+    skill._resolve_asset_name_for_voice = lambda identifier: identifier
+    assert skill._extract_utterance_text(message) == text
+    return message
+
+
+def route(skill, message, entry, intent="reneryo.query"):
+    if entry == "fallback":
+        assert handle_metric_query_fallback(skill, message)
+    else:
+        skill.settings_service = None
+        legacy = Mock(side_effect=lambda msg: handle_reneryo_query(skill, msg))
+        AVAROSSkill._guard_intent_activation(skill, intent, legacy)(message)
+        if intent != "reneryo.query":
+            legacy.assert_not_called()
+    return skill.spoken[-1][1]["meta"]["avaros_response"]
+
+
+@pytest.mark.parametrize("entry", ["fallback", "registered-wrapper"])
+@pytest.mark.parametrize("question,kind", QUESTIONS)
+def test_combined_factory_routes_keep_grounded_answers(widget_payloads, entry, question, kind):
+    language = "tr-TR" if QUESTIONS.index((question, kind)) >= 22 else "en-US"
+    skill = harness()
+    skill._get_asset_registry = lambda: ASSETS
+    response = route(skill, routed_widget_message(skill, widget_payloads, question, language), entry)
+    assert response["evidence_rows"]
+    assert response["language"] == language
+
+
+@pytest.mark.parametrize("entry", ["fallback", "registered-wrapper"])
+@pytest.mark.parametrize("text,language", UNSUPPORTED)
+def test_combined_scope_refuses_without_factory_substitution(widget_payloads, entry, text, language):
+    skill = harness()
+    skill._get_asset_registry = lambda: ASSETS
+    response = route(skill, routed_widget_message(skill, widget_payloads, text, language), entry, "compare.energy")
+    assert response["response_type"] == "clarification"
+    assert response["language"] == language
+    assert not response["evidence_rows"]
+    assert not skill._futuregen_service.reneryo.calls
+
+
+@pytest.mark.parametrize("entry", ["fallback", "registered-wrapper"])
+@pytest.mark.parametrize("text,language,intent,asset_ids", CONFIGURED)
+def test_combined_configured_entities_reach_exact_dispatcher(widget_payloads, entry, text, language, intent, asset_ids):
+    skill = harness()
+    skill._get_asset_registry = lambda: ASSETS
+    skill.dispatcher = QueryDispatcher(adapter=StubAdapter())
+    skill._response_language = "en-US"
+    skill.response_builder = create_response_builder("en-US")
+    operation = "compare" if len(asset_ids) > 1 else "get_kpi"
+    called = Mock(wraps=getattr(skill.dispatcher, operation))
+    setattr(skill.dispatcher, operation, called)
+    response = route(skill, routed_widget_message(skill, widget_payloads, text, language), entry, intent)
+    assert response["response_type"] != "clarification"
+    assert skill._response_language == language
+    if language == "tr-TR":
+        assert "ekipman etkinliği" in response["headline"].lower()
+    assert (called.call_args.kwargs["asset_ids"] if operation == "compare" else [called.call_args.kwargs["asset_id"]]) == asset_ids
+    assert not skill._futuregen_service.reneryo.calls
+
+
+@pytest.mark.parametrize("entry", ["fallback", "registered-wrapper"])
+@pytest.mark.parametrize("language,start", [("en-US", 0), ("tr-TR", 2)])
+def test_combined_factory_followup(widget_payloads, entry, language, start):
+    skill = harness()
+    skill._get_asset_registry = lambda: ASSETS
+    for text in FOLLOWUPS[start:start+2]:
+        response = route(skill, routed_widget_message(skill, widget_payloads, text, language), entry)
+        assert response["evidence_rows"]
+    assert skill._futuregen_service.reneryo.calls[-1][1].month == 6
+
+
+@pytest.mark.parametrize("entry", ["fallback", "registered-wrapper"])
+@pytest.mark.parametrize("language,start", [("en-US", 0), ("tr-TR", 3)])
+def test_combined_finding_followup(widget_payloads, entry, language, start):
+    skill = _Skill()
+    skill._get_asset_registry = lambda: ASSETS
+    for text in FINDINGS[start:start+3]:
+        response = route(skill, routed_widget_message(skill, widget_payloads, text, language), entry)
+        assert response["evidence_rows"]
+    assert skill._dialogue_state_store.get("collection-session").active_finding_id == "one"
+    assert skill._futuregen_service.evaluations == 0
+
+
+@pytest.mark.parametrize("entry", ["fallback", "registered-wrapper"])
+@pytest.mark.parametrize("text,language", list(zip(METERS, ["en-US", "tr-TR"])))
+def test_combined_meter_inventory(widget_payloads, entry, text, language):
+    skill = harness()
+    skill._get_asset_registry = lambda: ASSETS
+    response = route(skill, routed_widget_message(skill, widget_payloads, text, language), entry)
+    assert response["response_type"] == "meters"
+    assert response["evidence_rows"][0]["id"] == "m"

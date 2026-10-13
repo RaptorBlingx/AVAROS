@@ -230,6 +230,11 @@ def sync_response_language(self, message: Message) -> str:
     context = getattr(message, "context", {}) or {}
     session = context.get("session", {}) if isinstance(context, dict) else {}
     requested = data.get("lang") if isinstance(data, dict) else None
+    signed = context.get("reneryo_context") if isinstance(context, dict) else None
+    if isinstance(signed, dict) and context.get("reneryo_widget_session_validated") is True:
+        # Turkish widget turns use en-US only for OVOS recognition. The verified
+        # conversational locale remains the authority for response formatting.
+        requested = signed.get("language") or requested
     if not requested and isinstance(context, dict):
         requested = context.get("lang")
     if not requested and isinstance(session, dict):

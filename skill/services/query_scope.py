@@ -37,7 +37,8 @@ _QUALIFIER = re.compile(
     r"\b([\w-]+)\s+(?:s|nın|nin|nun|nün)\b"
 )
 _COMPARISON_ENTITY = re.compile(
-    r"\b(?:between|vs|versus|against|with|and|or|ile|ve)\s+([\w-]+)"
+    r"(?:\b(?:between|vs|versus|against|with|and|or|ile|ve)\s+|"
+    r",\s*(?:(?:and|or|ile|ve)\s+)?)([\w-]+)"
 )
 _NON_ENTITY = re.compile(
     rf"^(?:{_MONTH_NAMES}|today|yesterday|last|past|previous|this|that|same|"
@@ -80,7 +81,9 @@ def asset_label_pattern(label: str) -> str:
 
 def entity_scope(utterance: str, assets=()) -> tuple[bool, bool]:
     """Return (explicit measurement scope, unresolved equipment cue)."""
-    text = normalize_phrase(utterance)
+    # Commas delimit comparison participants. Keep those boundaries while
+    # using the existing Unicode normalization within each source segment.
+    text = ", ".join(normalize_phrase(part) for part in utterance.split(","))
     if re.fullmatch(
         r"(?:show|display|list) (?:all |available |configured |the )?"
         r"(?:assets|equipment|meters|metrics|resources)", text,
@@ -101,6 +104,12 @@ def entity_scope(utterance: str, assets=()) -> tuple[bool, bool]:
             asset_label_pattern(label), " configured-asset ", remaining
         )
         matched = matched or bool(count)
+    # OEE's established English/Turkish metric names contain equipment words.
+    # They describe the metric, not an additional unresolved asset.
+    remaining = re.sub(
+        r"\b(?:overall equipment effectiveness|(?:toplam )?ekipman etkinliği)\b",
+        "measurement", remaining,
+    )
     # An explicit all-asset scope is resolved through the registry, not a
     # factory metric. With an empty registry it remains unavailable.
     remaining, all_assets = re.subn(
