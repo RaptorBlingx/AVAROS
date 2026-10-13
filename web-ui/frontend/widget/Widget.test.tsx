@@ -1,14 +1,17 @@
 // @vitest-environment jsdom
 
-import { act, render, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
+import type { ComponentProps } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Widget } from "./Widget";
+import type { WidgetPanel } from "./WidgetPanel";
 import type { WidgetConfig } from "./types";
 
 const managerConstructorCalls = vi.hoisted(() => [] as unknown[][]);
 const managerConnect = vi.hoisted(() => vi.fn());
 const managerSetLanguage = vi.hoisted(() => vi.fn());
+const managerSendUtterance = vi.hoisted(() => vi.fn());
 const managerSpeakListeners = vi.hoisted(
   () => [] as Array<(text: string, language: string) => void>,
 );
@@ -39,7 +42,9 @@ vi.mock("./ConnectionManager", () => ({
     setLanguage(language: string) {
       managerSetLanguage(language);
     }
-    async sendUtterance() {}
+    async sendUtterance(text: string, language: string) {
+      managerSendUtterance(text, language);
+    }
     async interrupt() {}
     destroy() {}
     isConnected() {
@@ -49,14 +54,27 @@ vi.mock("./ConnectionManager", () => ({
 }));
 
 vi.mock("./WidgetButton", () => ({ WidgetButton: () => null }));
-vi.mock("./WidgetPanel", () => ({ WidgetPanel: () => null }));
+vi.mock("./WidgetPanel", () => ({
+  WidgetPanel: (props: ComponentProps<typeof WidgetPanel>) => (
+    <>
+      <input aria-label="Request" value={props.inputValue}
+        onChange={(event) => props.onInputChange(event.target.value)} />
+      <button onClick={props.onSend}>Send</button>
+      <button onClick={props.onListenToggle}>Listen</button>
+      {props.messages.map((message) => <p key={message.id}>{message.text}</p>)}
+    </>
+  ),
+}));
 
 describe("Widget connection configuration", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   beforeEach(() => {
     managerConstructorCalls.length = 0;
     managerSpeakListeners.length = 0;
     managerConnect.mockClear();
     managerSetLanguage.mockClear();
+    managerSendUtterance.mockClear();
     vi.stubGlobal("matchMedia", () => ({
       matches: false,
       addEventListener: vi.fn(),
@@ -64,7 +82,25 @@ describe("Widget connection configuration", () => {
     }));
   });
 
-  it("passes the signed Reneryo session to the connection manager", async () => {
+  it.each([
+    "Compare energy consumption of boiler 1 vs boiler 2 yesterday",
+    "Show compressor train energy consumption yesterday",
+    "Do not compare boiler 1 vs boiler 2; show metrics instead",
+    "Show boiler 1 energy on 2026-10-12 between 08:30 and 09:45",
+  ].flatMap((request) => ["text", "push-to-talk"].map((mode) => ({
+    request, mode: mode as "text" | "push-to-talk",
+  }))))("sends the complete $mode request with the signed session: $request", async ({ request, mode }) => {
+    const recognition = {
+      start: vi.fn(),
+      stop: vi.fn(),
+      onresult: null as ((event: SpeechRecognitionEvent) => void) | null,
+    };
+    vi.stubGlobal("SpeechRecognition", vi.fn(function () { return recognition; }));
+    vi.stubGlobal("isSecureContext", true);
+    vi.stubGlobal("navigator", {
+      language: "en-US",
+      mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [] })) },
+    });
     const config: WidgetConfig = {
       host: "wss://avaros.example.com/hivemind/",
       clientName: "widget",
@@ -76,8 +112,8 @@ describe("Widget connection configuration", () => {
       offsetX: 20,
       offsetY: 20,
       label: "",
-      disabledModes: ["wake-word", "push-to-talk"],
-      defaultMode: "text",
+      disabledModes: ["wake-word"],
+      defaultMode: mode,
       logoSrc: "/widget-logo.svg",
       avarosUrl: "https://avaros.example.com/",
       wakeWordUrl: "wss://avaros.example.com/wakeword/ws/detect",
@@ -86,11 +122,24 @@ describe("Widget connection configuration", () => {
       autoOpen: true,
     };
 
-    render(<Widget config={config} configError={null} onReady={vi.fn()} />);
+    const view = render(<Widget config={config} configError={null} onReady={vi.fn()} />);
 
     await waitFor(() => expect(managerConstructorCalls).toHaveLength(1));
     expect(managerConstructorCalls[0][6]).toBe("signed-reneryo-session");
     expect(managerConnect).toHaveBeenCalledOnce();
+    if (mode === "text") {
+      fireEvent.change(view.getByLabelText("Request"), { target: { value: request } });
+      fireEvent.click(view.getByText("Send"));
+    } else {
+      fireEvent.click(view.getByText("Listen"));
+      await waitFor(() => expect(recognition.start).toHaveBeenCalledOnce());
+      act(() => recognition.onresult?.({
+        resultIndex: 0,
+        results: [{ isFinal: true, 0: { transcript: request } }],
+      } as unknown as SpeechRecognitionEvent));
+    }
+    await waitFor(() => expect(managerSendUtterance).toHaveBeenCalledWith(request, "en-US"));
+    expect(view.getByText(request)).toBeTruthy();
   });
 
   it("sends the response locale to server TTS after a mid-session switch", async () => {

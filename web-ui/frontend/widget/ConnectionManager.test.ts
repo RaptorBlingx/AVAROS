@@ -76,7 +76,12 @@ describe("ConnectionManager", () => {
     expect(sockets).toEqual([]);
   });
 
-  it("waits for a connecting socket before sending utterances", async () => {
+  it.each([
+    "Compare energy consumption of boiler 1 vs boiler 2 yesterday",
+    "Show compressor train energy consumption yesterday",
+    "Do not compare boiler 1 vs boiler 2; show metrics instead",
+    "Show boiler 1 energy on 2026-10-12 between 08:30 and 09:45",
+  ])("preserves the request on the wire after connecting: %s", async (request) => {
     class MockWebSocket {
       static readonly CONNECTING = 0;
       static readonly OPEN = 1;
@@ -125,7 +130,7 @@ describe("ConnectionManager", () => {
     const spoken: string[] = [];
     manager.onSpeak((text) => spoken.push(text));
 
-    const sendPromise = manager.sendUtterance("energy last week");
+    const sendPromise = manager.sendUtterance(request, "en-US");
     const socket = MockWebSocket.instances[0];
     expect(socket.sentMessages).toEqual([]);
 
@@ -134,7 +139,12 @@ describe("ConnectionManager", () => {
 
     expect(socket.sentMessages).toHaveLength(2);
     expect(socket.sentMessages[0]).toContain('"msg_type":"hello"');
-    expect(socket.sentMessages[1]).toContain("energy last week");
+    const sent = JSON.parse(socket.sentMessages[1]);
+    expect(sent.msg_type).toBe("bus");
+    expect(sent.payload.type).toBe("recognizer_loop:utterance");
+    expect(sent.payload.data).toEqual({ utterances: [request], lang: "en-US" });
+    expect(sent.payload.context.source).toBe("avaros-widget");
+    expect(sent.payload.context.session.lang).toBe("en-US");
 
     await manager.interrupt();
     const eventTypes = socket.sentMessages
