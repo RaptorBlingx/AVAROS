@@ -73,17 +73,19 @@ def test_exact_registered_legacy_utterance_keeps_fast_path(monkeypatch):
     delegated.assert_not_called()
 
 
-def test_specific_non_broad_intent_never_invokes_semantic_resolver(monkeypatch):
+def test_specific_comparison_validates_scope_without_semantic_resolver(monkeypatch):
     skill = _skill(_resolution(SemanticAction.TREND_SHOW))
     delegated = Mock(return_value=True)
     monkeypatch.setattr(handlers, "handle_reneryo_query", delegated)
+    structured = Mock(return_value=True)
+    monkeypatch.setattr(handlers, "try_handle_scoped_query", structured)
 
-    handled = handlers.try_arbitrate_legacy_intent(
-        skill, _Message("compare line one and line two"), "compare.energy"
-    )
+    message = _Message("compare line one and line two")
+    handled = handlers.try_arbitrate_legacy_intent(skill, message, "compare.energy")
 
-    assert handled is False
+    assert handled is True
     skill._semantic_resolver.resolve.assert_not_called()
+    structured.assert_called_once_with(skill, message)
 
 
 def test_signed_broad_help_match_can_route_to_contextual_finding(monkeypatch):

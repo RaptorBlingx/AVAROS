@@ -10,6 +10,7 @@ from enum import Enum
 from skill.domain.models import Asset, CanonicalMetric, TimePeriod
 from skill._metric_resolver import resolve_metric_from_utterance
 from skill.services.language import normalize_phrase
+from skill.services.query_scope import asset_label_pattern, is_comparison_request
 
 
 class QueryOperation(str, Enum):
@@ -115,6 +116,14 @@ def parse_structured_query(
         # energy-per-unit rate. Explicit consumption/total wording continues
         # to resolve to total energy.
         metrics = [CanonicalMetric.ENERGY_PER_UNIT]
+    if not metrics and operation is QueryOperation.COMPARE:
+        from skill._reneryo_handlers import _matches_registered_utterance
+
+        # Preserve the existing compare.energy handler's metric contract for
+        # its registered phrases. Explicit consumption already resolves to
+        # ENERGY_TOTAL above and must never be replaced by this shorthand.
+        if _matches_registered_utterance("compare.energy", text):
+            metrics = [CanonicalMetric.ENERGY_PER_UNIT]
     asset_ids, scope_kind = _resolve_assets(text, assets)
     period, period_error = _resolve_period(text, timezone_name)
 
@@ -203,7 +212,9 @@ def _resolve_operation(text: str) -> QueryOperation:
         (QueryOperation.CAPABILITIES, r"\b(help|capabilities|what can you do|yardım|ne(?:ler)? yapabilirsin|yetenekler)\b"),
     )
     for operation, pattern in ordered:
-        if re.search(pattern, text):
+        if re.search(pattern, text) or (
+            operation is QueryOperation.COMPARE and is_comparison_request(text)
+        ):
             if operation is QueryOperation.DEFINE and _resolve_metrics(text) and not re.search(
                 r"\b(define|definition|what does|calculated|calculation|formula|mean)\b",
                 text,
@@ -276,13 +287,15 @@ def _resolve_assets(text: str, assets: list[Asset]) -> tuple[list[str], str]:
     if re.search(r"\b(all lines|every line|all assets|factory wide|factory-wide|tüm hatlar|bütün hatlar|tüm varlıklar)\b", text):
         return [asset.asset_id for asset in assets], "all_assets"
     found: list[tuple[int, str]] = []
-    normalized_text = _normalize(text)
+    normalized_text = normalize_phrase(text)
     for asset in assets:
         labels = [asset.asset_id, asset.display_name, *asset.aliases]
         positions = [
-            normalized_text.find(_normalize(label))
-            for label in labels
-            if _normalize(label) and _normalize(label) in normalized_text
+            match.start()
+            for label in labels if _normalize(label)
+            for match in re.finditer(
+                asset_label_pattern(label), normalized_text
+            )
         ]
         if positions:
             found.append((min(position for position in positions if position >= 0), asset.asset_id))

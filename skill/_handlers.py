@@ -15,6 +15,7 @@ from skill.domain.exceptions import ValidationError
 from skill.domain.models import CanonicalMetric, ScenarioParameter, WhatIfScenario
 from skill.domain.results import KPIResult
 from skill.services.dia_response import clarification_metadata, speak_with_evidence
+from skill.services.query_scope import entity_scope, is_comparison_request
 from skill.services.dia_dialogue import (
     _is_explicit_capabilities_request,
     is_browser_message,
@@ -34,6 +35,7 @@ def handle_metric_query_fallback(skill: "AVAROSSkill", message: Message) -> bool
     from skill._reneryo_handlers import (
         handle_reneryo_query,
         has_signed_widget_context,
+        try_handle_scoped_query,
     )
 
     if handle_reneryo_query(skill, message, allow_semantic=False):
@@ -43,6 +45,11 @@ def handle_metric_query_fallback(skill: "AVAROSSkill", message: Message) -> bool
         utterance
     ):
         return try_handle_structured_query(skill, message, include_simple_kpi=True)
+
+    if has_signed_widget_context(message) and (
+        is_comparison_request(utterance) or entity_scope(utterance)[0]
+    ):
+        return try_handle_scoped_query(skill, message)
 
     # The signed Future Gen widget is a Reneryo surface. Give its constrained
     # local resolver first refusal before generic manufacturing structured

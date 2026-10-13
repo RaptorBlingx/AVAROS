@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from skill.clients.mdsp import MdspClient
 from skill.clients.reneryo import ReneryoClient
-from skill.domain.exceptions import AdapterError, ValidationError
+from skill.domain.exceptions import AdapterError, AVAROSError, ValidationError
 from skill.services.conversation_state import DialogueState, message_session_id
 from skill.services.dia_response import speak_information
 from skill.services.factory_questions import (
@@ -41,6 +41,7 @@ from skill.services.futuregen_responses import (
 )
 from skill.services.language import is_turkish, normalize_phrase
 from skill.services.period_resolution import extract_period_phrase
+from skill.services.query_scope import entity_scope, is_comparison_request, is_negated_comparison
 from skill.services.semantic_resolver import SemanticAction, SemanticResolution
 
 if TYPE_CHECKING:
@@ -84,6 +85,51 @@ def handle_reneryo_query(
     )
     state = replace(state, language=language)
     _update_message_language(message, language)
+
+    comparison = is_comparison_request(utterance)
+    scoped, unresolved = entity_scope(utterance)
+    if comparison and not scoped and not (
+        re.fullmatch(r"compare them", text)
+        and state.metrics
+        and (len(state.asset_ids) >= 2 or len(state.answer_evidence) >= 2)
+    ):
+        # Incomplete comparison shorthand must not select default assets.
+        unresolved = True
+    if scoped:
+        get_assets = getattr(skill, "_get_asset_registry", None)
+        try:
+            assets = get_assets() if callable(get_assets) else []
+        except (AdapterError, ValidationError):
+            assets = []
+        scoped, unresolved = entity_scope(utterance, assets)
+        if not comparison:
+            # A full inventory metric name may itself contain an equipment
+            # name. Only that exact grounded name is safe to remove from the
+            # scope check; a generic alias such as "energy" is insufficient.
+            try:
+                metrics = skill.dispatcher._run_async(_service(skill).metrics())
+            except (AdapterError, ValidationError):
+                metrics = []
+            scope_text = text
+            for metric in sorted(metrics, key=lambda row: len(row.name), reverse=True):
+                name = normalize_phrase(metric.name)
+                if name:
+                    scope_text = re.sub(
+                        rf"(?<![\w-]){re.escape(name)}(?![\w-])", "measurement", scope_text
+                    )
+            scoped, unresolved = entity_scope(scope_text, assets)
+    if comparison or scoped:
+        # A factory metric alias is not evidence for an explicitly requested
+        # asset. Let the structured/registered asset path handle resolved
+        # requests; semantic resolution must never turn them into metric detail.
+        if not unresolved and not allow_semantic and not is_negated_comparison(utterance):
+            return False
+        _scope_clarification(skill, language)
+        _remember(skill, message, DialogueState(
+            organization_id=state.organization_id, language=language,
+            operation="clarification", pending_clarification="equipment scope",
+        ))
+        return True
 
     factory_request = classify_factory_question(utterance, state)
     factory_trend = factory_request is not None and factory_request.kind == "trend"
@@ -483,16 +529,20 @@ def try_arbitrate_legacy_intent(
     """
     if getattr(skill, "_loaded_profile", "") != "reneryo":
         return False
+    context = getattr(message, "context", {}) or {}
+    signed = context.get("reneryo_context")
+    if not isinstance(signed, dict) or not signed.get("organization_id"):
+        return False
+    utterance = skill._extract_utterance_text(message)
+    if is_comparison_request(utterance) or entity_scope(utterance)[0]:
+        # Validate even exact/slot-based legacy matches before they can use
+        # defaults for an unresolved asset or fall back to factory data.
+        return try_handle_scoped_query(skill, message)
     if not (
         intent_name in _ARBITRATABLE_LEGACY_INTENTS
         or intent_name.startswith("kpi.")
     ):
         return False
-    context = getattr(message, "context", {}) or {}
-    signed = context.get("reneryo_context")
-    if not isinstance(signed, dict) or not signed.get("organization_id"):
-        return False
-
     utterance = skill._extract_utterance_text(message)
     text = normalize_phrase(utterance)
     if not text or _matches_registered_utterance(intent_name, text):
@@ -533,6 +583,31 @@ def try_arbitrate_legacy_intent(
         message,
         semantic_resolution=resolution,
     )
+
+
+def try_handle_scoped_query(skill, message) -> bool:
+    """Resolve a scoped request without single-metric semantic substitution."""
+    from skill.services.dia_dialogue import try_handle_structured_query
+
+    if handle_reneryo_query(skill, message, allow_semantic=False):
+        return True
+    try:
+        if try_handle_structured_query(skill, message, include_simple_kpi=True):
+            return True
+    except AVAROSError:
+        # Missing bindings/unsupported adapter operations remain unavailable;
+        # do not retry with a factory metric or inherited subject.
+        pass
+    state = _context_state(skill, message)
+    language = _conversation_language(
+        skill._extract_utterance_text(message), state, message, skill._response_language
+    )
+    _scope_clarification(skill, language)
+    _remember(skill, message, DialogueState(
+        organization_id=state.organization_id, language=language,
+        operation="clarification", pending_clarification="equipment scope",
+    ))
+    return True
 
 
 def _legacy_intent_confidence(message) -> float:
@@ -1190,6 +1265,23 @@ def has_signed_widget_context(message) -> bool:
         context.get("reneryo_widget_session_validated") is True
         and isinstance(signed, dict)
         and bool(signed.get("organization_id"))
+    )
+
+
+def _scope_clarification(skill, language) -> None:
+    speak_information(
+        skill,
+        (
+            "İstenen ekipman kapsamını bu istek için doğrulayamıyorum. "
+            "Lütfen yapılandırılmış varlık ve metrik adlarını belirtin; "
+            "tesis toplamını ekipman verisi yerine kullanamam."
+            if is_turkish(language)
+            else "I cannot verify the requested equipment scope for this query. "
+            "Please name configured assets and metrics; "
+            "I cannot substitute whole-factory data for equipment data."
+        ),
+        language=language,
+        response_type="clarification",
     )
 
 

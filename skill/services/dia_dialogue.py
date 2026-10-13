@@ -19,6 +19,7 @@ from skill.services.dia_response import (
 )
 from skill.services.futuregen_responses import reneryo_capabilities_headline
 from skill.services.language import normalize_phrase
+from skill.services.query_scope import entity_scope
 from skill.services.metric_knowledge import get_metric_knowledge
 
 _HEADLINE_METRICS = (
@@ -83,6 +84,7 @@ def try_handle_structured_query(skill, message, *, include_simple_kpi: bool = Fa
         and query.scope_kind != "all_assets"
         and not _is_follow_up(utterance)
         and not query.ambiguity
+        and not (include_simple_kpi and entity_scope(utterance, assets)[0])
     ):
         return False
 
