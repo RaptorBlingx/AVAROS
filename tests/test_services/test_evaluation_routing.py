@@ -235,3 +235,67 @@ def test_semantic_evaluation_cannot_authorize_information_or_negation(mdsp_http,
     assert _response_type(skill) in {"clarification", "findings"}
     assert all(method == "GET" for method, *_ in calls)
     assert not evaluations
+
+
+@pytest.mark.parametrize("selected", [False, True])
+@pytest.mark.parametrize(
+    "text,language,outcome",
+    [
+        ("Do not show findings; evaluate current data instead.", "en-US", "evaluation"),
+        (
+            "Bulguları gösterme, onun yerine güncel veriyi değerlendir.",
+            "tr-TR",
+            "evaluation",
+        ),
+        ("Do not evaluate data; show metrics instead.", "en-US", "metrics"),
+        ("Veriyi değerlendirme, onun yerine metrikleri göster.", "tr-TR", "metrics"),
+        (
+            "Do not show metrics; what should I check in the factory data instead?",
+            "en-US",
+            "review",
+        ),
+        (
+            "Metrikleri gösterme, onun yerine fabrika verilerinde neleri kontrol etmeliyim?",
+            "tr-TR",
+            "review",
+        ),
+        (
+            "Do not show findings; analyze current data next month instead.",
+            "en-US",
+            "clarification",
+        ),
+        (
+            "Bulguları gösterme, onun yerine gelecek ay veriyi analiz et.",
+            "tr-TR",
+            "clarification",
+        ),
+        ("Do not evaluate current data.", "en-US", "clarification"),
+        ("Güncel veriyi kontrol etme.", "tr-TR", "clarification"),
+    ],
+)
+def test_replacement_clauses_preserve_evaluation_authority(
+    mdsp_http, text, language, outcome, selected
+):
+    """D05 clause selection must not bypass D01 or D03 execution guards."""
+    skill, calls, evaluations, _client = mdsp_http
+    if selected:
+        assert handle_reneryo_query(skill, _message("List active findings", language))
+        assert handle_reneryo_query(skill, _message("Explain the first one", language))
+    calls.clear()
+
+    assert handle_reneryo_query(skill, _message(text, language))
+
+    expected = (
+        ("finding" if selected else "findings") if outcome == "review" else outcome
+    )
+    assert _response_type(skill) == expected
+    posts = [call for call in calls if call[0] == "POST"]
+    assert len(posts) == (1 if outcome == "evaluation" else 0)
+    assert evaluations == (["futuregen"] if outcome == "evaluation" else [])
+    if posts:
+        assert posts[0] == (
+            "POST",
+            "/v1/evaluations/manual",
+            "Bearer synthetic-token",
+            "futuregen",
+        )
