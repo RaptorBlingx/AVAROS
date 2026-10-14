@@ -42,7 +42,7 @@ from skill.services.futuregen_responses import (
     regression_detail_headline,
     regression_inventory_headline,
 )
-from skill.services.language import is_turkish, normalize_phrase
+from skill.services.language import is_turkish, normalize_phrase, period_display_name
 from skill.services.period_resolution import (
     extract_period_phrase, named_month_reference, remove_period_reference,
     unsupported_period_reference, unsupported_time_precision,
@@ -1445,25 +1445,7 @@ def _finding_selection_scope(text: str) -> bool:
 
 
 def _localized_period_label(value: str, language: str) -> str:
-    normalized = normalize_phrase(value)
-    if is_turkish(language):
-        return {
-            "last month": "geçen ay",
-            "last 4 weeks": "son dört hafta",
-            "last 30 days": "son 30 gün",
-            "past 30 days": "son 30 gün",
-            "last week": "geçen hafta",
-        }.get(normalized, value)
-    return {
-        "gecen ay": "last month",
-        "geçen ay": "last month",
-        "son dort hafta": "last 4 weeks",
-        "son dört hafta": "last 4 weeks",
-        "son 30 gun": "last 30 days",
-        "son 30 gün": "last 30 days",
-        "gecen hafta": "last week",
-        "geçen hafta": "last week",
-    }.get(normalized, value)
+    return period_display_name(value, language)
 
 
 def _signed_language(message) -> str:
@@ -1496,6 +1478,7 @@ _TURKISH_LANGUAGE_WORDS = {
     "listele",
     "metriklerini",
     "regresyon",
+    "peki", "haziran", "dun", "bugun",
 }
 _ENGLISH_LANGUAGE_WORDS = {
     "this",
@@ -1512,11 +1495,18 @@ _ENGLISH_LANGUAGE_WORDS = {
     "list",
     "trend",
     "regression",
+    "and", "june", "yesterday", "today", "i", "need", "should", "review",
 }
 
 
 def _conversation_language(utterance, state, message, fallback: str) -> str:
-    """Prefer lexical detection, then the trusted current-turn locale and memory."""
+    """Honor the validated current-turn locale before lexical fallback."""
+    context = getattr(message, "context", {}) or {}
+    if context.get("reneryo_widget_session_validated") is True:
+        signed = context.get("reneryo_context", {})
+        if isinstance(signed, dict) and signed.get("language"):
+            from skill.services.language import normalize_language_tag
+            return normalize_language_tag(signed["language"])
     detected = _utterance_language(utterance)
     return (
         detected or _signed_language(message) or state.language or fallback or "en-US"
@@ -1528,12 +1518,12 @@ def _utterance_language(utterance: str) -> str:
     words = set(text.split())
     turkish_score = len(words & _TURKISH_LANGUAGE_WORDS)
     english_score = len(words & _ENGLISH_LANGUAGE_WORDS)
-    if any(character in text for character in "çğıöşü"):
-        turkish_score += 2
     if turkish_score > english_score:
         return "tr-TR"
     if english_score > turkish_score:
         return "en-US"
+    if any(character in text for character in "çğıöşü"):
+        return "tr-TR"
     return ""
 
 

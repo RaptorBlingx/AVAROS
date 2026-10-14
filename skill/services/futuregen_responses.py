@@ -13,7 +13,9 @@ from skill.domain.reneryo_models import (
     ReneryoMetric,
     ReneryoRegression,
 )
-from skill.services.language import is_turkish
+from skill.services.language import (
+    is_turkish, period_display_name, format_localized_number, source_enum_label,
+)
 
 
 def reneryo_capabilities_headline(language: str) -> str:
@@ -129,7 +131,7 @@ def meter_inventory_headline(
         )
 
     names = _unique(row.name for row in meters if row.name)
-    resources = _unique(row.energy_resource for row in meters if row.energy_resource)
+    resources = _unique(source_enum_label(row.energy_resource, language) for row in meters if row.energy_resource)
     metrics = _unique(row.metric_name for row in meters if row.metric_name)
     slices = _unique(name for row in meters for name in row.slice_names if name)
     missing = any(row.consumption is None for row in meters)
@@ -137,7 +139,7 @@ def meter_inventory_headline(
     has_positive_consumption = any((row.consumption or 0) > 0 for row in meters)
 
     if turkish:
-        period_name = _turkish_period_label(period.display_name)
+        period_name = period_display_name(period.display_name, language)
         headline = (
             f"Reneryo'da {len(meters)} sayaç var: {_natural_join(names, turkish=True)}."
         )
@@ -150,7 +152,7 @@ def meter_inventory_headline(
         if missing:
             headline += f" {period_name} dönemi için tüketim verisi eksik; eksik veri sıfır tüketim değildir."
         elif has_positive_consumption:
-            headline += f" {period_name} dönemi tüketimi {total:,.2f}."
+            headline += f" {period_name} dönemi tüketimi {format_localized_number(total, language, ',.2f')}."
         else:
             headline += (
                 f" {period_name} dönemi için dönen tüketim 0,00; bu, "
@@ -213,11 +215,11 @@ def metric_inventory_headline(rows: Iterable[ReneryoMetric], language: str) -> s
 def metric_detail_headline(row: ReneryoMetric, language: str) -> str:
     """Describe one context-selected metric using Reneryo-owned metadata."""
     observed = _timestamp(row.last_value_at) if row.last_value_at else None
-    value = f"{row.last_value:,.2f}" if row.last_value is not None else None
+    value = format_localized_number(row.last_value, language, ",.2f") if row.last_value is not None else None
     if is_turkish(language):
         headline = (
-            f"İlgili metrik {row.name}; türü {row.metric_type}, "
-            f"kaynak grubu {row.unit_group}."
+            f"İlgili metrik {row.name}; türü {source_enum_label(row.metric_type, language)}, "
+            f"kaynak grubu {source_enum_label(row.unit_group, language)}."
         )
         if value and observed:
             headline += f" Son gözlemi {observed} tarihinde {value}."
@@ -295,17 +297,6 @@ def _localized_period(value: str, *, turkish: bool) -> str:
             normalized, value.lower()
         )
     return normalized.lower()
-
-
-def _turkish_period_label(value: str) -> str:
-    normalized = value.strip().lower()
-    return {
-        "latest available": "mevcut en güncel",
-        "last month": "geçen ay",
-        "last 4 weeks": "son dört hafta",
-        "past 30 days": "son 30 gün",
-        "last 30 days": "son 30 gün",
-    }.get(normalized, value)
 
 
 def _unique(values: Iterable[str]) -> list[str]:

@@ -175,6 +175,9 @@ def _fallback_forecast(
 
 def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
     """Recover KPI queries from global intent-failure events."""
+    sync_language = getattr(skill, "_sync_response_language", None)
+    if callable(sync_language):
+        sync_language(message)
     utterance = skill._extract_utterance_text(message).lower()
 
     from skill._reneryo_handlers import (
@@ -219,17 +222,26 @@ def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
     metric = skill._resolve_metric_from_utterance(utterance)
     if metric is None:
         if is_browser_message(message):
-            headline = (
-                "I couldn't map that to a configured manufacturing question. "
-                "Name a metric and asset, or ask what I can do."
-            )
+            from skill.services.language import is_turkish, normalize_language_tag
+
+            language = normalize_language_tag(getattr(skill, "_response_language", "en-US"))
+            if is_turkish(language):
+                headline = (
+                    "Bu isteği yapılandırılmış bir üretim sorusuyla eşleştiremedim. "
+                    "Bir metrik ve ekipman adı belirtin veya neler yapabildiğimi sorun."
+                )
+                suggestions = ["Neler yapabilirsin?", "Hat 1 OEE değerini göster", "Fabrika özetini göster"]
+            else:
+                headline = (
+                    "I couldn't map that to a configured manufacturing question. "
+                    "Name a metric and asset, or ask what I can do."
+                )
+                suggestions = ["What can you do?", "Show OEE for Line 1", "Give me a factory summary"]
+            metadata = clarification_metadata(headline, suggestions)
+            metadata["language"] = language
             skill.speak(
                 headline,
-                meta={"avaros_response": clarification_metadata(headline, [
-                    "What can you do?",
-                    "Show OEE for Line 1",
-                    "Give me a factory summary",
-                ])},
+                meta={"avaros_response": metadata},
             )
         return
 

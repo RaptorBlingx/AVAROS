@@ -66,3 +66,53 @@ def metric_display_name(metric: CanonicalMetric, language: str | None) -> str:
     if is_turkish(language):
         return _TURKISH_METRIC_NAMES.get(metric, metric.value.replace("_", " "))
     return metric.display_name
+
+
+def period_display_name(value: str, language: str | None) -> str:
+    """Localize a system period label without changing its dates or precision."""
+    pairs = {
+        "latest available": "mevcut en güncel", "today": "bugün",
+        "yesterday": "dün", "last week": "geçen hafta", "last month": "geçen ay",
+        "last 4 weeks": "son dört hafta", "last 30 days": "son 30 gün",
+        "past 30 days": "son 30 gün", "in total": "toplam",
+    }
+    normalized = normalize_phrase(value)
+    normalized = {"gecen ay": "geçen ay", "gecen hafta": "geçen hafta",
+                  "son dort hafta": "son dört hafta", "son 30 gun": "son 30 gün"}.get(normalized, normalized)
+    if is_turkish(language):
+        if normalized in pairs:
+            return pairs[normalized]
+    else:
+        reverse = {tr: en for en, tr in pairs.items()}
+        if normalized in reverse:
+            return reverse[normalized]
+    months = zip(
+        "january february march april may june july august september october november december".split(),
+        "ocak şubat mart nisan mayıs haziran temmuz ağustos eylül ekim kasım aralık".split(),
+    )
+    for english, turkish in months:
+        source, target = (english, turkish) if is_turkish(language) else (turkish, english)
+        value = re.sub(rf"\b{source}\b", target, value, flags=re.IGNORECASE)
+    return value
+
+
+def format_localized_number(value: float, language: str | None, spec: str = "g") -> str:
+    """Keep the caller's precision while using the locale's decimal separator."""
+    text = format(value, spec)
+    return text.translate(str.maketrans({",": ".", ".": ","})) if is_turkish(language) else text
+
+
+def source_enum_label(value: str, language: str | None) -> str:
+    """Translate known metadata enums, never source record names or IDs."""
+    if not is_turkish(language):
+        return value
+    return {
+        "ENERGY": "enerji", "PIECE": "adet", "COUNTER": "birikimli sayaç",
+        "GAUGE": "anlık ölçüm", "ELECTRIC": "elektrik", "GAS": "gaz",
+        "WATER": "su", "DIESEL": "dizel", "SOLID_FUEL": "katı yakıt",
+        "POWER": "güç", "CURRENT": "akım", "FREQUENCY": "frekans",
+        "PRECIPITATION": "yağış", "RATE": "oran", "SCALAR": "skaler",
+        "TEMPERATURE": "sıcaklık", "TIME": "zaman", "VOLTAGE": "gerilim",
+        "VOLUME": "hacim", "WEIGHT": "ağırlık", "APPARENT_POWER": "görünür güç",
+        "REACTIVE_ENERGY": "reaktif enerji",
+    }.get(value, value)

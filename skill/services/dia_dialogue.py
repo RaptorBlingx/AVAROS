@@ -18,7 +18,8 @@ from skill.services.dia_response import (
     speak_with_evidence,
 )
 from skill.services.futuregen_responses import reneryo_capabilities_headline
-from skill.services.language import normalize_phrase
+from skill.services.language import is_turkish, metric_display_name, normalize_phrase, normalize_language_tag, period_display_name
+from skill.services.response_localization import localized_system_text
 from skill.services.query_scope import entity_scope
 from skill.services.metric_knowledge import get_metric_knowledge
 
@@ -500,7 +501,7 @@ def _speak_result_collection(skill, title, results, warnings=None) -> None:
     rows = [
         {
             "metric": result.metric.value,
-            "metric_label": result.metric.display_name,
+            "metric_label": metric_display_name(result.metric, getattr(skill, "_response_language", "en-US")),
             "asset_id": result.asset_id,
             "value": result.value,
             "unit": result.unit,
@@ -509,10 +510,20 @@ def _speak_result_collection(skill, title, results, warnings=None) -> None:
         }
         for result in results
     ]
-    headline = title if title.endswith(".") else f"{title}: " + "; ".join(
-        f"{row['asset_id']} {row['metric_label']} {row['value']:g} {row['unit']}"
-        for row in rows[:3]
-    ) + (f"; and {len(rows) - 3} more in the evidence card" if len(rows) > 3 else "") + "."
+    turkish = is_turkish(getattr(skill, "_response_language", "en-US"))
+    if turkish:
+        title = {"KPI results": "KPI sonuçları", "Factory summary": "Fabrika özeti"}.get(title, title)
+        parts = [
+            f"{skill.response_builder._format_asset_name(result.asset_id)} "
+            f"{metric_display_name(result.metric, 'tr-TR')} "
+            f"{skill.response_builder._format_value(result.value, result.unit)}"
+            for result in results[:3]
+        ]
+        remaining = f"; kanıt kartında {len(rows) - 3} sonuç daha var" if len(rows) > 3 else ""
+    else:
+        parts = [f"{row['asset_id']} {row['metric_label']} {row['value']:g} {row['unit']}" for row in rows[:3]]
+        remaining = f"; and {len(rows) - 3} more in the evidence card" if len(rows) > 3 else ""
+    headline = title if title.endswith(".") else f"{title}: " + "; ".join(parts) + remaining + "."
     _speak_meta(skill, headline, results, response_type="summary", warnings=warnings or [])
 
 
@@ -522,7 +533,7 @@ def _speak_meta(skill, headline, results, *, response_type, warnings=None) -> No
         if hasattr(result, "metric") and hasattr(result, "value"):
             rows.append({
                 "metric": result.metric.value,
-                "metric_label": result.metric.display_name,
+                "metric_label": metric_display_name(result.metric, getattr(skill, "_response_language", "en-US")),
                 "asset_id": result.asset_id,
                 "value": result.value,
                 "unit": result.unit,
@@ -537,10 +548,11 @@ def _speak_meta(skill, headline, results, *, response_type, warnings=None) -> No
     period = getattr(first, "period", None)
     skill.speak(headline, meta={"avaros_response": {
         "response_type": response_type,
+        "language": normalize_language_tag(getattr(skill, "_response_language", "en-US")),
         "query_id": getattr(first, "recommendation_id", "") or str(uuid.uuid4()),
         "headline": headline,
         "period": {
-            "label": getattr(period, "display_name", ""),
+            "label": period_display_name(getattr(period, "display_name", ""), getattr(skill, "_response_language", "en-US")),
             "start": getattr(period, "start", None).isoformat() if period else None,
             "end": getattr(period, "end", None).isoformat() if period else None,
         },
@@ -555,7 +567,11 @@ def _speak_meta(skill, headline, results, *, response_type, warnings=None) -> No
 
 
 def _speak_clarification(skill, headline: str, suggestions: list[str]) -> None:
-    skill.speak(headline, meta={"avaros_response": clarification_metadata(headline, suggestions)})
+    language = normalize_language_tag(getattr(skill, "_response_language", "en-US"))
+    headline = localized_system_text(headline, language)
+    metadata = clarification_metadata(headline, suggestions)
+    metadata["language"] = language
+    skill.speak(headline, meta={"avaros_response": metadata})
 
 
 def _remember(store, session_id, query, *, pending="") -> None:

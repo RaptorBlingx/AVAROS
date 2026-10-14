@@ -23,6 +23,29 @@ const TURKISH_WORDS = new Set([
   "sayac",
   "eğilim",
   "egilim",
+  "peki",
+  "dun",
+  "bugun",
+  "haziran",
+  "ocak",
+  "subat",
+  "mart",
+  "nisan",
+  "mayis",
+  "temmuz",
+  "agustos",
+  "eylul",
+  "ekim",
+  "kasim",
+  "aralik",
+  "ne",
+  "kadar",
+  "veri",
+  "degerlendir",
+  "lutfen",
+  "incele",
+  "kontrol",
+  "simdi",
 ]);
 
 const ENGLISH_WORDS = new Set([
@@ -42,6 +65,32 @@ const ENGLISH_WORDS = new Set([
   "regression",
   "meter",
   "metric",
+  "i",
+  "need",
+  "should",
+  "review",
+  "check",
+  "and",
+  "yesterday",
+  "today",
+  "january",
+  "february",
+  "march",
+  "april",
+  "may",
+  "june",
+  "july",
+  "august",
+  "september",
+  "october",
+  "november",
+  "december",
+  "evaluate",
+  "please",
+  "run",
+  "how",
+  "did",
+  "we",
 ]);
 
 export function normalizeWidgetLanguage(language: unknown): string {
@@ -54,13 +103,15 @@ export function normalizeWidgetLanguage(language: unknown): string {
 }
 
 export function detectWidgetLanguage(text: string, fallback: string): string {
-  const normalized = text.toLocaleLowerCase("tr-TR");
+  // Locale-neutral casing must not manufacture Turkish ı from English I.
+  const normalized = text.normalize("NFKC").toLowerCase().replace(/i\u0307/g, "i");
   const words = normalized.match(/[a-zçğıöşü]+/giu) ?? [];
-  let turkishScore = words.filter((word) => TURKISH_WORDS.has(word)).length;
+  const turkishScore = words.filter((word) => TURKISH_WORDS.has(word)).length;
   const englishScore = words.filter((word) => ENGLISH_WORDS.has(word)).length;
-  if (/[çğıöşü]/iu.test(normalized)) turkishScore += 2;
+  // Clear language words outrank accents in an unchanged Reneryo name.
   if (turkishScore > englishScore) return "tr-TR";
   if (englishScore > turkishScore) return "en-US";
+  if (/[çğıöşü]/iu.test(normalized)) return "tr-TR";
   return normalizeWidgetLanguage(fallback);
 }
 

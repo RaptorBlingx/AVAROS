@@ -159,7 +159,7 @@ async def test_empty_recent_window_uses_years_old_consumption_and_dates(language
     )
     assert answer.period.start == date(2020, 6)
     assert "2020-06" in answer.headline
-    assert "October 2026" in answer.headline
+    assert ("October 2026" if language == "en-US" else "ekim 2026") in answer.headline
     assert answer.evidence[0]["consumption"] == 25
     assert "9000" not in answer.headline
     assert source.calls[-1] == ("meter", date(2020, 6), date(2020, 7))

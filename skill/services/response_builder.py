@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable
 
-from skill.services.language import is_turkish, metric_display_name
+from skill.services.language import is_turkish, metric_display_name, period_display_name
 
 if TYPE_CHECKING:
     from skill.domain.anomaly_models import DriftReport, ForecastReport
@@ -96,7 +96,7 @@ class ResponseBuilder:
         metric_name = result.metric.display_name
         asset_name = self._format_asset_name(result.asset_id)
         value = self._format_value(result.value, result.unit)
-        period = result.period.display_name if self.verbosity != "brief" else ""
+        period = period_display_name(result.period.display_name, 'en-US') if self.verbosity != "brief" else ""
         
         if self.verbosity == "brief":
             return f"{value}"
@@ -147,7 +147,7 @@ class ResponseBuilder:
             f"{self._format_comparison_value(item.value, result.unit)}"
             for item in sorted(result.items, key=lambda item: item.rank)
         )
-        period = result.period.display_name or "the requested period"
+        period = period_display_name(result.period.display_name, 'en-US') or "the requested period"
         aggregation = f" {result.aggregation}" if result.aggregation else ""
         
         # Determine if lower or higher is better
@@ -187,7 +187,7 @@ class ResponseBuilder:
         metric_name = result.metric.display_name
         direction = result.direction
         change = abs(result.change_percent)
-        period = result.period.display_name
+        period = period_display_name(result.period.display_name, 'en-US')
         
         # Direction verbs
         if direction == "up":
@@ -748,10 +748,10 @@ class TurkishResponseBuilder(ResponseBuilder):
         asset = self._format_asset_name(result.asset_id)
         if result.period.display_name == "latest available":
             period = " en güncel ölçümde"
-        elif result.period.display_name in {"bugün", "dün", "en güncel", "şimdi", "şu anda"}:
-            period = f" {result.period.display_name}"
+        elif period_display_name(result.period.display_name, 'tr-TR') in {"bugün", "dün", "en güncel", "şimdi", "şu anda"}:
+            period = f" {period_display_name(result.period.display_name, 'tr-TR')}"
         else:
-            period = f" {result.period.display_name} döneminde" if result.period.display_name else ""
+            period = f" {period_display_name(result.period.display_name, 'tr-TR')} döneminde" if period_display_name(result.period.display_name, 'tr-TR') else ""
         observations = (
             f", {result.sample_count} gözleme dayanıyor" if result.sample_count > 0 else ""
         )
@@ -778,7 +778,7 @@ class TurkishResponseBuilder(ResponseBuilder):
             if self._is_lower_better(result.metric)
             else f"{winner}, {difference} farkla önde"
         )
-        return f"{result.period.display_name} için {metric}: {values}. {outcome}."
+        return f"{period_display_name(result.period.display_name, 'tr-TR')} için {metric}: {values}. {outcome}."
 
     def format_trend_result(self, result: TrendResult) -> str:
         metric = metric_display_name(result.metric, "tr-TR")
@@ -789,8 +789,8 @@ class TurkishResponseBuilder(ResponseBuilder):
         if self.verbosity == "brief":
             return f"{direction}, yüzde {change:.1f}"
         if result.direction == "stable":
-            return f"{metric}, {result.period.display_name} boyunca sabit."
-        return f"{metric}, {result.period.display_name} boyunca yüzde {change:.1f} {direction}."
+            return f"{metric}, {period_display_name(result.period.display_name, 'tr-TR')} boyunca sabit."
+        return f"{metric}, {period_display_name(result.period.display_name, 'tr-TR')} boyunca yüzde {change:.1f} {direction}."
 
     def format_anomaly_result(self, result: AnomalyResult) -> str:
         metric = metric_display_name(result.metric, "tr-TR")
@@ -852,8 +852,15 @@ class TurkishResponseBuilder(ResponseBuilder):
             f"değerine gelir; yaklaşık yüzde {abs(result.delta_percent):.1f} {direction}."
         )
 
+    @staticmethod
+    def _format_number(value: float) -> str:
+        return ResponseBuilder._format_number(value).replace(".", ",")
+
+    def _format_comparison_value(self, value: float, unit: str) -> str:
+        return self._format_value(value, unit)
+
     def _format_value(self, value: float, unit: str, decimals: int | None = None) -> str:
-        formatted = f"{value:.{decimals}f}" if decimals is not None else self._format_number(value)
+        formatted = (f"{value:.{decimals}f}" if decimals is not None else self._format_number(value)).replace(".", ",")
         units = {
             "%": "yüzde", "kWh/unit": "kilovat saat/birim", "kWh": "kilovat saat",
             "kW": "kilovat", "W": "vat", "sec": "saniye", "seconds": "saniye",

@@ -8,7 +8,9 @@ from datetime import datetime, timedelta, timezone
 
 from skill.domain.models import TimePeriod
 from skill.services.futuregen import match_metric, next_month
-from skill.services.language import is_turkish, normalize_phrase
+from skill.services.language import (
+    is_turkish, normalize_phrase, period_display_name, format_localized_number, source_enum_label,
+)
 from skill.services.period_resolution import (
     extract_period_phrase,
     named_month_reference,
@@ -487,16 +489,16 @@ async def answer_factory_question(service, request, period, language) -> Factory
     )
     if request.kind == "period":
         return FactoryAnswer(
-            f"{metric.name}: {period.display_name}; {period.start.isoformat()} – {period.end.isoformat()}.",
+            f"{metric.name}: {period_display_name(period.display_name, language)}; {period.start.isoformat()} – {period.end.isoformat()}.",
             period=period,
             **common,
         )
     if request.kind in {"reading", "freshness"} and explicit_window:
         return FactoryAnswer(
             (
-                f"{period.display_name}: Bu erişim arayüzü tarihsel birikimli sayaç değerlerini veya tarihsel güncellik kayıtlarını sunmuyor; yalnızca son değer ve dönem toplamları mevcut. İstenen okumayı son değerle değiştirmedim."
+                f"{period_display_name(period.display_name, language)}: Bu erişim arayüzü tarihsel birikimli sayaç değerlerini veya tarihsel güncellik kayıtlarını sunmuyor; yalnızca son değer ve dönem toplamları mevcut. İstenen okumayı son değerle değiştirmedim."
                 if tr
-                else f"{period.display_name}: This access interface does not expose historical cumulative readings or historical freshness snapshots; it provides the latest reading and period aggregates. I have not substituted the latest reading for the requested one."
+                else f"{period_display_name(period.display_name, language)}: This access interface does not expose historical cumulative readings or historical freshness snapshots; it provides the latest reading and period aggregates. I have not substituted the latest reading for the requested one."
             ),
             "unavailable",
             period=period,
@@ -520,7 +522,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
                 "kayıtlı değer yok." if tr else "no recorded value is available."
             )
         else:
-            headline += f"{metric.last_value:g}; {date}; {metric.unit_group}. "
+            headline += f"{format_localized_number(metric.last_value, language)}; {date}; {source_enum_label(metric.unit_group, language)}. "
             if metric.metric_type == "COUNTER":
                 headline += (
                     "Bu birikimli sayaç değeridir, dönem tüketimi veya üretimi değildir."
@@ -587,7 +589,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
                 else "Reneryo returned no period values. "
             )
             + (
-                f"Son kayıt zamanı: {metric.last_value_at.isoformat()}."
+                (f"Son kayıt zamanı: {metric.last_value_at.isoformat()}." if tr else f"Latest recorded timestamp: {metric.last_value_at.isoformat()}.")
                 if metric.last_value_at
                 else ""
             ),
@@ -627,9 +629,9 @@ async def answer_factory_question(service, request, period, language) -> Factory
                     f"{historical[-1].timestamp:%Y-%m}",
                 )
                 prefix = (
-                    f"{period.display_name}: Dönem tüketimi mevcut değil. Tarihli tarihsel tüketimi gösteriyorum: "
+                    f"{period_display_name(period.display_name, language)}: Dönem tüketimi mevcut değil. Tarihli tarihsel tüketimi gösteriyorum: "
                     if tr
-                    else f"{period.display_name}: Period consumption is unavailable. Showing dated historical consumption instead: "
+                    else f"{period_display_name(period.display_name, language)}: Period consumption is unavailable. Showing dated historical consumption instead: "
                 )
                 meters = [
                     m
@@ -653,7 +655,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
                 else "Reneryo returned no meter consumption for this period."
             )
         else:
-            headline = "; ".join(f"{m.name}: {m.consumption:g}" for m in meters)
+            headline = "; ".join(f"{m.name}: {format_localized_number(m.consumption, language)}" for m in meters)
             headline += (
                 ". Reneryo dönem tüketimi; gözlenen veriye dayanır, tam kapsam garantisi değildir."
                 if tr
@@ -666,7 +668,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
                 if not explicit_window
                 else ""
             )
-            + f"{actual.display_name}: "
+            + f"{period_display_name(actual.display_name, language)}: "
             + headline,
             evidence=rows,
             period=actual,
@@ -690,7 +692,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
         for p in points
     ]
     preview = "; ".join(
-        f"{p.timestamp.isoformat() if aggregation != 'MONTHLY' else p.timestamp.strftime('%Y-%m')}: {p.value:g}"
+        f"{p.timestamp.isoformat() if aggregation != 'MONTHLY' else p.timestamp.strftime('%Y-%m')}: {format_localized_number(p.value, language)}"
         for p in points[-3:]
     )
     label = (
@@ -700,7 +702,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
     )
     headline = (
         prefix
-        + f"{metric.name}, {actual.display_name}. {label}: {preview}. {metric.unit_group}. "
+        + f"{metric.name}, {period_display_name(actual.display_name, language)}. {label}: {preview}. {source_enum_label(metric.unit_group, language)}. "
     )
     headline += (
         f"{len(points)} dönem gösteriliyor" if tr else f"Showing {len(points)} periods"
@@ -722,6 +724,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
 
 
 def _fallback(label, tr):
+    label = period_display_name(label, "tr-TR" if tr else "en-US")
     return (
         f"{label} döneminde gözlem yok. Mevcut tarihsel veriyi gösteriyorum: "
         if tr

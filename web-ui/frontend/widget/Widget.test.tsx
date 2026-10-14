@@ -97,6 +97,9 @@ describe("Widget connection configuration", () => {
     "Etkin bulguları listele",
     "And June?",
     "Peki Haziran?",
+    "I need energy consumption for yesterday.",
+    "What should I review next?",
+    "Show Tesis Toplam Üretim Miktarı",
   ].flatMap((request) => ["text", "push-to-talk"].map((mode) => ({
     request, mode: mode as "text" | "push-to-talk",
   }))))("sends the complete $mode request with the signed session: $request", async ({ request, mode }) => {
@@ -148,7 +151,7 @@ describe("Widget connection configuration", () => {
         results: [{ isFinal: true, 0: { transcript: request } }],
       } as unknown as SpeechRecognitionEvent));
     }
-    const language = /[çğıöşü]/i.test(request) ? "tr-TR" : "en-US";
+    const language = request === "Peki Haziran?" || (/[çğıöşü]/i.test(request) && !request.startsWith("Show ")) ? "tr-TR" : "en-US";
     await waitFor(() => expect(managerSendUtterance).toHaveBeenCalledWith(request, language));
     expect(view.getByText(request)).toBeTruthy();
   });

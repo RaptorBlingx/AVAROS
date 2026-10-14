@@ -86,7 +86,7 @@ def test_turkish_kpi_response() -> None:
         timestamp=datetime.now(tz=timezone.utc),
     )
     response = TurkishResponseBuilder().format_kpi_result(result)
-    assert response == "Line 1 için toplam ekipman etkinliği bugün yüzde 82.5."
+    assert response == "Line 1 için toplam ekipman etkinliği bugün yüzde 82,5."
 
 
 def test_turkish_locale_has_resource_parity_with_english() -> None:
