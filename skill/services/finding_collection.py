@@ -179,10 +179,12 @@ def is_review_question(text: str) -> bool:
     """Recognize bounded EN/TR questions about what the user should inspect."""
     text = _normalized_text(text)
     return bool(
-        re.search(r"\bwhat\s+should\s+(?:i|we)\s+(?:check|review|inspect)\b", text)
+        re.search(r"\bwhat\s+should\s+(?:i|we)\s+(?:check|review|inspect|look\s+(?:at|into))\b", text)
+        or re.search(r"\bwhat\s+(?:needs|should be)\s+(?:reviewing|reviewed|checked|inspected)\b", text)
         or (
             _has(text, "ne", "neyi", "neleri")
-            and re.search(r"\b(?:kontrol\s+etmeliy(?:im|iz)|incelemeliy(?:im|iz))\b", text)
+            and re.search(r"\b(?:kontrol\s+etmeliy(?:im|iz)|incelemeliy(?:im|iz)|"
+                          r"(?:kontrol\s+etmem(?:iz)?|incelemem(?:iz)?)\s+gerekiyor)\b", text)
         )
     )
 

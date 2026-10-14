@@ -9,7 +9,7 @@ from skill.services.language import normalize_phrase
 
 _MONTH_NAMES = (
     "|".join(month.lower() for month in calendar.month_name[1:])
-    + r"|ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık"
+    + r"|ocak|şubat|mart|nisan|mayıs|mayis|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık"
 )
 _NAMED_MONTH_RANGE = re.compile(
     rf"\b(?:{_MONTH_NAMES})(?:\s+\d{{4}})?\s*(?:to|through|and|ile|-)\s*"
@@ -87,6 +87,7 @@ def extract_period_phrase(utterance: str) -> str:
             )
         )
     )
+    months["mayis"] = 5
     named_day = re.search(
         rf"\b({_MONTH_NAMES})\s+(\d{{1,2}})(?:st|nd|rd|th)?(?:,)?\s+(\d{{4}})\b", text
     )

@@ -82,3 +82,12 @@ it("keeps a current-turn switch across neutral follow-ups and response metadata"
     expect(language).toBe(expected);
   }
 });
+
+it.each([
+  ["Bunun sorumlusu kim?", "en-US", "tr-TR"],
+  ["Who owns it?", "tr-TR", "en-US"],
+  ["Neyi incelemem gerekiyor?", "en-US", "tr-TR"],
+  ["How recent is that data?", "tr-TR", "en-US"],
+])("keeps D08 paraphrases in their current-turn language: %s", (text, fallback, expected) => {
+  expect(detectWidgetLanguage(text, fallback)).toBe(expected);
+});

@@ -28,6 +28,7 @@ from tests.test_services.test_factory_predeployment import harness
 from tests.test_services.test_factory_questions import QUESTIONS
 from tests.test_services.test_finding_collection_dialogue import _message, _Skill
 from tests.test_services.test_evaluation_routing import EXPLICIT_REQUESTS, REVIEW_QUESTIONS
+from tests.test_services.test_natural_paraphrases import FRESHNESS, CHANGE, OWNERS, REVIEWS
 
 
 COMPARISONS = [
@@ -68,7 +69,8 @@ def widget_payloads():
     if not shutil.which("node") or not typescript.exists():
         pytest.skip("Node and frontend npm dependencies are required")
     requests = [text for text, _kind in QUESTIONS] + COMPARISONS + FOLLOWUPS + FINDINGS + METERS + [row[0] for row in UNSUPPORTED + CONFIGURED + TIME_REQUESTS]
-    requests += [text for text, _language in EXPLICIT_REQUESTS + REVIEW_QUESTIONS]
+    requests += [text for text, _language in EXPLICIT_REQUESTS + REVIEW_QUESTIONS + OWNERS + REVIEWS]
+    requests += [text for text, _language, _identifier in FRESHNESS + CHANGE]
     script = r"""
 const fs = require('fs');
 const ts = require(process.argv[1]);
@@ -358,3 +360,34 @@ def test_supported_factory_period_followup_after_clock_clarification(widget_payl
     response = route(skill, routed_widget_message(skill, widget_payloads, FOLLOWUPS[start+1], language), entry)
     assert response["evidence_rows"]
     assert skill._futuregen_service.reneryo.calls[-1][1].month == 6
+
+
+@pytest.mark.parametrize("entry", ["fallback", "registered-wrapper"])
+@pytest.mark.parametrize("text,language,identifier", FRESHNESS + CHANGE)
+def test_d08_paraphrases_survive_signed_widget_and_legacy_arbitration(widget_payloads, entry, text, language, identifier):
+    skill = harness()
+    message = routed_widget_message(skill, widget_payloads, text, language)
+    response = route(skill, message, entry)
+    source = skill._futuregen_service.reneryo
+    if (text, language, identifier) in FRESHNESS:
+        assert source.calls == []
+        assert response["evidence_rows"][0]["recorded_at"].startswith("2020-07-01")
+    else:
+        assert response["response_type"] == "trend"
+        assert source.calls[0][0] == identifier
+        assert source.calls[0][1].isoformat().startswith("2020-05-01")
+        assert source.calls[0][2].isoformat().startswith("2020-07-01")
+        assert not any(call[0] == "meter" for call in source.calls)
+    assert response["language"] == language
+
+
+@pytest.mark.parametrize("entry", ["fallback", "registered-wrapper"])
+@pytest.mark.parametrize("text,language", OWNERS + REVIEWS)
+def test_d08_signed_finding_followups_keep_selection_and_never_evaluate(widget_payloads, entry, text, language):
+    skill = _Skill()
+    for turn in ["List active findings", "Explain the first one", text]:
+        response = route(skill, routed_widget_message(skill, widget_payloads, turn, language), entry)
+    assert response["response_type"] == "finding"
+    assert skill._dialogue_state_store.get("collection-session").active_finding_id == "one"
+    assert skill._futuregen_service.evaluations == 0
+    assert ("owner assignment" in response["headline"] or "sorumlu ataması" in response["headline"]) if (text, language) in OWNERS else ("next review" in response["headline"] or "inceleme önerisi" in response["headline"])

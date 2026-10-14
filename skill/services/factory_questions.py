@@ -60,6 +60,32 @@ def cost_limitation_headline(language: str) -> str:
     )
 
 
+def is_freshness_question(text: str) -> bool:
+    """Recognize last-observation questions, not a freshness policy judgment."""
+    text = normalize_phrase(text)
+    return (_has(text, "last") and _has(text, "observation")) or _has(
+        text, "updated", "update", "fresh", "last data", "last observation",
+        "son veri", "ne zaman", "how old", "recorded", "is current",
+        "consumption current", "ne kadar eski", "ne kadar güncel",
+        "ne kadar guncel", "güncel mi", "guncel mi", "up to date",
+        "how recent", "last received", "last refreshed",
+    )
+
+
+def is_historical_change_question(text: str) -> bool:
+    """Bounded past-change questions reuse the existing historical trend path."""
+    text = normalize_phrase(text)
+    if _has(text, "settings", "configuration", "ayar", "price", "cost", "maliyet"):
+        return False
+    return bool(re.search(
+        r"\b(?:how (?:did|has|have)|did|has|have)\b.*"
+        r"\b(?:change(?:d)?|increase(?:d)?|decrease(?:d)?)\b|"
+        r"\bnasıl değiş(?:ti|miş)\b|\bnasil degis(?:ti|mis)\b|"
+        r"\b(?:arttı|artti|azaldı|azaldi|yükseldi|yukseldi|düştü|dustu) m[ıi]\b",
+        text,
+    ))
+
+
 def classify_factory_question(utterance, state) -> FactoryRequest | None:
     text = normalize_phrase(utterance)
     # Findings, policy, regressions and weather keep their established dialogue.
@@ -153,6 +179,9 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
         )
     )
     follow_up = context and (
+        is_freshness_question(text)
+        or is_historical_change_question(text)
+        or
         _has(
             text,
             "and",
@@ -307,15 +336,19 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
         "save",
         "reduce",
         "tasarruf",
-        "verim",
         "azalt",
         "maximum",
         "maksimum",
         "minimum",
         "average",
         "ortalama",
-    ):
+    ) or any(word.startswith("verim") and not word.startswith("verimiz")
+             for word in text.split()):
+        # veri+miz (our data) is not verim (efficiency). Keep the existing
+        # efficiency boundary, including verimi/verimlilik/verimimiz forms.
         return FactoryRequest("unsupported", hint, utterance)
+    if is_historical_change_question(text):
+        return FactoryRequest("trend", hint, utterance, use_period)
     if _has(
         text,
         "trend",
@@ -338,24 +371,7 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
         and not production
     ):
         return FactoryRequest("trend", hint, utterance, True)
-    if (_has(text, "last") and _has(text, "observation")) or _has(
-        text,
-        "updated",
-        "update",
-        "fresh",
-        "last data",
-        "last observation",
-        "son veri",
-        "ne zaman",
-        "how old",
-        "recorded",
-        "is current",
-        "consumption current",
-        "ne kadar eski",
-        "ne kadar güncel",
-        "ne kadar guncel",
-        "güncel mi",
-    ):
+    if is_freshness_question(text):
         return FactoryRequest("freshness", hint, utterance)
     if context and _has(
         text,

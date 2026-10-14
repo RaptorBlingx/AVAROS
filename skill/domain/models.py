@@ -447,7 +447,7 @@ class TimePeriod:
 
         turkish_months = {
             "ocak": 1, "şubat": 2, "mart": 3, "nisan": 4,
-            "mayıs": 5, "haziran": 6, "temmuz": 7, "ağustos": 8,
+            "mayıs": 5, "mayis": 5, "haziran": 6, "temmuz": 7, "ağustos": 8,
             "eylül": 9, "ekim": 10, "kasım": 11, "aralık": 12,
         }
         turkish_month = re.fullmatch(

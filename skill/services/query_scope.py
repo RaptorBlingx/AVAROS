@@ -28,7 +28,7 @@ _EQUIPMENT = re.compile(
 _MEASUREMENT = re.compile(
     r"\b(?:electric\w*|energy|production|output|consum\w*|trend|reading|"
     r"temperature|humidity|oee|scrap|waste|throughput|measurement|metrics?|metrik\w*|"
-    r"show|display|report|what|how|values?|göster\w*|goster\w*|"
+    r"show|display|report|what|how|values?|review|inspect|incele\w*|kontrol|göster\w*|goster\w*|"
     r"elektr\w*|enerji|üret\w*|uret\w*|tüket\w*|tuket\w*|"
     r"eğilim|egilim|sıcaklık|sicaklik|nem)\b"
 )

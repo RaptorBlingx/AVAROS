@@ -20,6 +20,7 @@ from skill.services.factory_questions import (
     classify_factory_question,
     cost_limitation_headline,
     is_cost_request,
+    is_historical_change_question,
 )
 from skill.services.finding_collection import (
     FindingFilters,
@@ -139,7 +140,13 @@ def handle_reneryo_query(
         return True
 
     comparison = is_comparison_request(utterance)
-    scoped, unresolved = entity_scope(utterance)
+    # "look at next" is a review verb, not an asset named "next". Remove
+    # only that bounded phrase from the scope check; retain all entity cues.
+    scope_utterance = (
+        re.sub(r"\blook at next\b", "review next", utterance, flags=re.IGNORECASE)
+        if is_review_question(utterance) else utterance
+    )
+    scoped, unresolved = entity_scope(scope_utterance)
     if comparison and not scoped and not (
         re.fullmatch(r"compare them", text)
         and state.metrics
@@ -153,7 +160,7 @@ def handle_reneryo_query(
             assets = get_assets() if callable(get_assets) else []
         except (AdapterError, ValidationError):
             assets = []
-        scoped, unresolved = entity_scope(utterance, assets)
+        scoped, unresolved = entity_scope(scope_utterance, assets)
         if not comparison:
             # A full inventory metric name may itself contain an equipment
             # name. Only that exact grounded name is safe to remove from the
@@ -1002,7 +1009,12 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
     if state.active_finding_id:
         if _has(text, "can you take action", "can you act", "take action on it", "işlem yapabilir misin", "eyleme geçebilir misin"):
             return SemanticAction.FINDING_CAN_ACT
-        if _has(text, "who should handle", "who is responsible", "who should review", "kim ilgilenmeli", "kim sorumlu", "kim incelemeli"):
+        if _has(text, "who should handle", "who is responsible", "who should review",
+                "who owns this finding", "who owns it", "who is in charge of it",
+                "who should look into this", "who should look at this finding",
+                "kim ilgilenmeli", "kim sorumlu", "kim incelemeli",
+                "sorumlusu kim", "kimin sorumluluğunda", "kimin sorumlulugunda",
+                "bunu kim incelemeli", "buna kim bakmalı", "buna kim bakmali"):
             return SemanticAction.FINDING_OWNER
         if _has(text, "why are you recommending", "why this step", "why recommend", "bu adımı neden", "neden öneriyorsun", "neden tavsiye"):
             return SemanticAction.FINDING_NEXT_REVIEW_WHY
@@ -1414,7 +1426,7 @@ def _ground_metric_reference(skill, utterance: str):
 
 
 def _looks_like_trend(text: str) -> bool:
-    return _has(
+    return is_historical_change_question(text) or _has(
         text,
         "trend",
         "evolve",
