@@ -91,3 +91,22 @@ it.each([
 ])("keeps D08 paraphrases in their current-turn language: %s", (text, fallback, expected) => {
   expect(detectWidgetLanguage(text, fallback)).toBe(expected);
 });
+
+
+it.each([
+  ["Compare them.", "tr-TR", "en-US"],
+  ["İkisini karşılaştır.", "en-US", "tr-TR"],
+  ["Onları karşılaştır.", "en-US", "tr-TR"],
+  ["And yesterday?", "tr-TR", "en-US"],
+  ["Peki dün?", "en-US", "tr-TR"],
+])("switches comparison and period follow-ups: %s", (text, fallback, expected) => {
+  expect(detectWidgetLanguage(text, fallback)).toBe(expected);
+});
+
+it.each([
+  ["Haziran 2020 Electric Main Meter ve Meter 1 toplam enerji tüketimini karşılaştır", "en-US", "tr-TR"],
+  ["Electric Main Meter ile Meter 1 enerji tüketimini karşılaştır", "en-US", "tr-TR"],
+  ["Compare Tesis Toplam Elektrik Tüketimi for June 2020", "tr-TR", "en-US"],
+])("keeps comparison verbs in the current language around source names: %s", (text, fallback, expected) => {
+  expect(detectWidgetLanguage(text, fallback)).toBe(expected);
+});

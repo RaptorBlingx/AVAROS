@@ -53,6 +53,10 @@ const TURKISH_WORDS = new Set([
   "neyi",
   "incelemem",
   "gerekiyor",
+  "karşılaştır",
+  "karsilastir",
+  "ve",
+  "ile",
 ]);
 
 const ENGLISH_WORDS = new Set([
@@ -102,6 +106,8 @@ const ENGLISH_WORDS = new Set([
   "owns",
   "responsible",
   "recent",
+  "compare",
+  "them",
 ]);
 
 export function normalizeWidgetLanguage(language: unknown): string {

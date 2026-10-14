@@ -139,6 +139,14 @@ def handle_reneryo_query(
                           language=language, response_type="unavailable")
         return True
 
+    from skill.services.dia_query import is_comparison_pronoun, is_period_follow_up
+
+    if (is_period_follow_up(utterance) and state.metrics and state.asset_ids
+            and state.operation in {"kpi", "compare", "rank", "average", "summary"}):
+        # The signed Reneryo semantic fallback must not steal a typed asset
+        # follow-up. Re-enter the existing structured route only once.
+        return try_handle_scoped_query(skill, message) if allow_semantic else False
+
     comparison = is_comparison_request(utterance)
     # "look at next" is a review verb, not an asset named "next". Remove
     # only that bounded phrase from the scope check; retain all entity cues.
@@ -148,11 +156,24 @@ def handle_reneryo_query(
     )
     scoped, unresolved = entity_scope(scope_utterance)
     if comparison and not scoped and not (
-        re.fullmatch(r"compare them", text)
+        is_comparison_pronoun(text)
         and state.metrics
         and (len(state.asset_ids) >= 2 or len(state.answer_evidence) >= 2)
     ):
         # Incomplete comparison shorthand must not select default assets.
+        if is_comparison_pronoun(text):
+            speak_information(
+                skill,
+                ("Karşılaştırmak istediğiniz metriği ve en az iki yapılandırılmış ekipmanı belirtin."
+                 if is_turkish(language) else
+                 "Please name the metric and at least two configured assets you want to compare."),
+                language=language, response_type="clarification",
+            )
+            _remember(skill, message, DialogueState(
+                organization_id=state.organization_id, language=language,
+                operation="clarification", pending_clarification="equipment scope",
+            ))
+            return True
         unresolved = True
     if scoped:
         get_assets = getattr(skill, "_get_asset_registry", None)

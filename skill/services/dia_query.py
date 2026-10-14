@@ -11,7 +11,7 @@ from skill.domain.models import Asset, CanonicalMetric, TimePeriod
 from skill._metric_resolver import resolve_metric_from_utterance
 from skill.services.language import normalize_phrase
 from skill.services.period_resolution import (
-    extract_period_phrase, unsupported_period_reference, unsupported_time_precision,
+    extract_period_phrase, remove_period_reference, unsupported_period_reference, unsupported_time_precision,
 )
 from skill.services.request_correction import affirmative_request
 from skill.services.query_scope import asset_label_pattern, is_comparison_request
@@ -53,7 +53,10 @@ class StructuredQuery:
 
 _METRIC_ALIASES: dict[CanonicalMetric, tuple[str, ...]] = {
     CanonicalMetric.OEE: ("oee", "overall equipment effectiveness", "equipment effectiveness"),
-    CanonicalMetric.ENERGY_PER_UNIT: ("energy per unit", "specific energy", "power per unit"),
+    CanonicalMetric.ENERGY_PER_UNIT: (
+        "energy per unit", "energy consumed per unit", "energy used per unit",
+        "energy consumption per unit", "specific energy", "power per unit",
+    ),
     CanonicalMetric.ENERGY_TOTAL: ("total energy", "energy consumed", "energy consumption", "power consumption"),
     CanonicalMetric.PEAK_DEMAND: ("peak demand", "maximum demand", "peak power"),
     CanonicalMetric.PEAK_TARIFF_EXPOSURE: ("peak tariff exposure", "tariff exposure"),
@@ -149,10 +152,10 @@ def parse_structured_query(
     ]
 
     if prior is not None:
-        if not metrics and _looks_like_follow_up(text):
+        if not metrics and is_structured_follow_up(text):
             metrics = list(prior.metrics)
-        if not asset_ids and _looks_like_follow_up(text):
-            if "compare them" in text and prior.answer_evidence:
+        if not asset_ids and is_structured_follow_up(text):
+            if is_comparison_pronoun(text) and prior.answer_evidence:
                 asset_ids = list(dict.fromkeys(
                     str(row.get("asset_id", ""))
                     for row in prior.answer_evidence
@@ -160,9 +163,9 @@ def parse_structured_query(
                 ))
             else:
                 asset_ids = list(prior.asset_ids)
-        if period is None and not period_error and ("same period" in text or _looks_like_follow_up(text)):
+        if period is None and not period_error and ("same period" in text or is_structured_follow_up(text)):
             period = prior.period
-        if operation is QueryOperation.UNKNOWN and _looks_like_follow_up(text):
+        if operation is QueryOperation.UNKNOWN and is_structured_follow_up(text):
             try:
                 operation = QueryOperation(prior.operation)
             except ValueError:
@@ -173,6 +176,12 @@ def parse_structured_query(
             operation = QueryOperation.DIAGNOSE
 
     ambiguity = period_error
+    if is_structured_follow_up(text) and any(
+        identifier not in {asset.asset_id for asset in assets} for identifier in asset_ids
+    ):
+        ambiguity = "The previous participants are no longer configured. Please name configured assets."
+    if text.startswith("ikisini ") and len(asset_ids) != 2:
+        ambiguity = "Please name the two assets you want to compare."
     if unknown_lines:
         available = ", ".join(asset.display_name for asset in assets[:10])
         ambiguity = f"{unknown_lines[0]} is not configured. Available assets: {available}."
@@ -267,6 +276,10 @@ def _resolve_metrics(text: str) -> list[CanonicalMetric]:
         for alias in sorted(aliases, key=len, reverse=True):
             match = re.search(rf"\b{re.escape(alias)}\b", normalized)
             if match:
+                if metric is CanonicalMetric.ENERGY_TOTAL and re.match(
+                    r"\s+per unit\b", normalized[match.end():]
+                ):
+                    continue
                 matches.append((match.start(), -len(alias), metric))
                 break
     matches.sort()
@@ -280,6 +293,8 @@ def _resolve_metrics(text: str) -> list[CanonicalMetric]:
     turkish_metric = resolve_metric_from_utterance(normalized)
     if turkish_metric is not None:
         return [turkish_metric]
+    if re.search(r"\benerji\b(?:\s+\w+){0,3}\s+\btüket\w*\b", normalized):
+        return [CanonicalMetric.ENERGY_TOTAL]
 
     tokens = re.findall(r"[\w]+", normalized, flags=re.UNICODE)
     phrases = [alias for aliases in _METRIC_ALIASES.values() for alias in aliases]
@@ -360,8 +375,27 @@ def _requested_aggregation(text: str) -> str:
     return ""
 
 
-def _looks_like_follow_up(text: str) -> bool:
-    return bool(re.match(r"^(and|what about|how about|use the same|compare them|why|what does that mean)\b", text))
+def is_structured_follow_up(text: str) -> bool:
+    return is_comparison_pronoun(text) or is_period_follow_up(text) or bool(
+        re.match(r"^(and|what about|how about|use the same|why|what does that mean)\b", text)
+    )
+
+
+def is_comparison_pronoun(text: str) -> bool:
+    """Only bounded shorthand may reuse the last comparison participants."""
+    return bool(re.fullmatch(
+        r"compare them|(?:ikisini|onları|onlari) (?:karşılaştır|karsilastir)",
+        normalize_phrase(text),
+    ))
+
+
+def is_period_follow_up(text: str) -> bool:
+    """A period alone after a discourse marker changes only the period."""
+    match = re.fullmatch(r"(?:and|what about|how about|peki|ya) (.+)", normalize_phrase(text))
+    if not match:
+        return False
+    phrase = extract_period_phrase(match.group(1))
+    return bool(phrase and not remove_period_reference(match.group(1)))
 
 
 def _normalize(value: str) -> str:

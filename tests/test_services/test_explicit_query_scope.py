@@ -188,7 +188,7 @@ def test_unavailable_comparison_binding_does_not_retry_factory_data(entry):
     else:
         assert try_arbitrate_legacy_intent(skill, message, "compare.energy")
     skill.dispatcher.compare.assert_called_once()
-    assert skill.spoken[-1][1]["meta"]["avaros_response"]["response_type"] == "clarification"
+    assert skill.spoken[-1][1]["meta"]["avaros_response"]["response_type"] == "unavailable"
     assert not skill._futuregen_service.reneryo.calls
 
 

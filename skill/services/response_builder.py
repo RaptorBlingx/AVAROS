@@ -28,9 +28,11 @@ from typing import TYPE_CHECKING, Callable
 
 from skill.services.language import is_turkish, metric_display_name, period_display_name
 
+from skill.domain.models import CanonicalMetric
+
 if TYPE_CHECKING:
     from skill.domain.anomaly_models import DriftReport, ForecastReport
-    from skill.domain.models import Anomaly, CanonicalMetric
+    from skill.domain.models import Anomaly
     from skill.domain.results import (
         KPIResult,
         ComparisonResult,
@@ -153,9 +155,16 @@ class ResponseBuilder:
         # Determine if lower or higher is better
         lower_is_better = self._is_lower_better(result.metric)
         
+        quality_warning = f" Warning: {result.warnings[0]}" if result.warnings else ""
+        if result.metric is CanonicalMetric.ENERGY_TOTAL:
+            # A lower total alone does not establish normalized efficiency.
+            outcome = (
+                "The total energy values are equal" if result.difference == 0
+                else f"{winner} has a lower total energy value by {difference}"
+            )
+            return f"For {period},{aggregation} {metric_name}: {values}. {outcome}.{quality_warning}"
         if self.verbosity == "brief":
             return f"{values}. {winner} wins by {difference}."
-        quality_warning = f" Warning: {result.warnings[0]}" if result.warnings else ""
         outcome = (
             f"{winner} is more efficient by {difference}"
             if lower_is_better
@@ -773,6 +782,15 @@ class TurkishResponseBuilder(ResponseBuilder):
             f"{self._format_comparison_value(item.value, result.unit)}"
             for item in sorted(result.items, key=lambda item: item.rank)
         )
+        if result.metric is CanonicalMetric.ENERGY_TOTAL:
+            outcome = (
+                "Toplam enerji değerleri eşit" if result.difference == 0
+                else f"{winner} toplam enerji değeri, {difference} daha düşük"
+            )
+            return (
+                f"{period_display_name(result.period.display_name, 'tr-TR')} için {metric}: {values}. "
+                f"{outcome}."
+            )
         outcome = (
             f"{winner}, {difference} farkla daha verimli"
             if self._is_lower_better(result.metric)

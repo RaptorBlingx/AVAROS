@@ -29,6 +29,7 @@ from tests.test_services.test_factory_questions import QUESTIONS
 from tests.test_services.test_finding_collection_dialogue import _message, _Skill
 from tests.test_services.test_evaluation_routing import EXPLICIT_REQUESTS, REVIEW_QUESTIONS
 from tests.test_services.test_natural_paraphrases import FRESHNESS, CHANGE, OWNERS, REVIEWS
+from tests.test_services.test_comparison_followups import NATURAL, PRONOUNS, PERIODS, comparison_skill
 
 
 COMPARISONS = [
@@ -71,6 +72,8 @@ def widget_payloads():
     requests = [text for text, _kind in QUESTIONS] + COMPARISONS + FOLLOWUPS + FINDINGS + METERS + [row[0] for row in UNSUPPORTED + CONFIGURED + TIME_REQUESTS]
     requests += [text for text, _language in EXPLICIT_REQUESTS + REVIEW_QUESTIONS + OWNERS + REVIEWS]
     requests += [text for text, _language, _identifier in FRESHNESS + CHANGE]
+    requests += [text for text, _language, _metric in NATURAL] + [text for text, _language in PRONOUNS + PERIODS]
+    requests += ["Compare OEE for Line 1 and Line 2 today"]
     script = r"""
 const fs = require('fs');
 const ts = require(process.argv[1]);
@@ -391,3 +394,20 @@ def test_d08_signed_finding_followups_keep_selection_and_never_evaluate(widget_p
     assert skill._dialogue_state_store.get("collection-session").active_finding_id == "one"
     assert skill._futuregen_service.evaluations == 0
     assert ("owner assignment" in response["headline"] or "sorumlu ataması" in response["headline"]) if (text, language) in OWNERS else ("next review" in response["headline"] or "inceleme önerisi" in response["headline"])
+
+
+@pytest.mark.parametrize("entry", ["fallback", "registered-wrapper"])
+@pytest.mark.parametrize("text,language", PRONOUNS + PERIODS)
+def test_signed_widget_comparison_followups_preserve_frame(widget_payloads, entry, text, language):
+    skill = comparison_skill("en-US")
+    first = routed_widget_message(skill, widget_payloads, "Compare OEE for Line 1 and Line 2 today", "en-US")
+    assert route(skill, first, entry, "kpi.oee")["response_type"] == "comparison"
+    message = routed_widget_message(skill, widget_payloads, text, language)
+    response = route(skill, message, entry, "kpi.oee")
+    assert response["response_type"] == "comparison" and response["language"] == language
+    request = skill.dispatcher.compare.call_args.kwargs
+    assert request["asset_ids"] == ["Line-1", "Line-2"]
+    assert request["metric"] == CanonicalMetric.OEE
+    expected = "today" if (text, language) in PRONOUNS else "June 2020" if "2020" in text else "yesterday"
+    assert request["period"].start == TimePeriod.from_natural_language(expected).start
+    assert not skill._futuregen_service.reneryo.calls

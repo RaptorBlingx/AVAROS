@@ -13,6 +13,9 @@ from skill.services.period_resolution import _MONTH_NAMES
 _COMPARISON = re.compile(
     r"\b(?:compare|comparison|versus|vs|difference between|"
     r"which uses more|which is more efficient|stack up against|"
+    r"which (?:line|asset|meter) (?:had|has|uses|used|consumed) "
+    r"(?:better|higher|lower|more|less)|"
+    r"(?:mi|mı|mu|mü) yoksa .+? (?:mi|mı|mu|mü) daha (?:iyi|yüksek|düşük|fazla|az)|"
     r"karşılaştır\w*|karsilastir\w*|kıyasla\w*|kiyasla\w*)\b"
 )
 _EQUIPMENT = re.compile(
@@ -23,7 +26,7 @@ _EQUIPMENT = re.compile(
     r"\b(?:meters?|resources?|sayaç|sayac)\s+"
     r"(?!(?:for|of|in|on|at|readings?|consumption|history|data|list|inventory|today|yesterday|last|"
     r"record\w*|measure\w*|monitor\w*|track\w*|are|is|do|have|can|available|configured|"
-    r"değer\w*|deger\w*|tüket\w*|tuket\w*|veri\w*|geçmiş|gecmis|için|icin|bu|son|dün|bugün)\b)[\w-]+"
+    r"değer\w*|deger\w*|okuma|tüket\w*|tuket\w*|veri\w*|geçmiş|gecmis|için|icin|bu|son|dün|bugün)\b)[\w-]+"
 )
 _MEASUREMENT = re.compile(
     r"\b(?:electric\w*|energy|production|output|consum\w*|trend|reading|"
@@ -44,7 +47,7 @@ _NON_ENTITY = re.compile(
     rf"^(?:{_MONTH_NAMES}|today|yesterday|last|past|previous|this|that|same|"
     r"current|latest|now|whole|entire|factory|period|data|history|readings?|"
     r"electricity|energy|production|output|temperature|humidity|metrics?|meters?|"
-    r"oee|scrap|waste|units?|pieces?|each|per|reneryo|what|that|this|it|"
+    r"oee|throughput|scrap|waste|units?|pieces?|each|per|reneryo|what|that|this|it|"
     r"configured-asset|measurement|"
     r"bugün|dün|bu|geçen|son|elektrik|enerji|üretim|uretim|dönem|donem)$"
 )
@@ -76,6 +79,9 @@ def asset_label_pattern(label: str) -> str:
     if not words:
         return r"(?!)"
     phrase = r"[\s-]+".join(re.escape(word) for word in words)
+    if len(words) == 2 and words[0] in {"line", "hat"} and words[1].isdigit():
+        # Localize the equipment type cue, never the configured identifier.
+        phrase = rf"(?:line|hat)[\s-]+{re.escape(words[1])}"
     return rf"(?<![\w-]){phrase}(?![\w-])"
 
 
@@ -116,6 +122,8 @@ def entity_scope(utterance: str, assets=()) -> tuple[bool, bool]:
         r"\b(?:all lines|every line|all assets|tüm hatlar|bütün hatlar|tüm varlıklar)\b",
         " configured-asset " if assets else "equipment", remaining,
     )
+    if is_comparison_request(text):
+        remaining = re.sub(r"\bwhich (?:line|asset|meter)\b", "measurement", remaining)
     unknown = bool(_EQUIPMENT.search(remaining)) or any(
         not re.fullmatch(r"\d[\w-]*", candidate) and not _NON_ENTITY.fullmatch(candidate)
         for match in _QUALIFIER.finditer(remaining)

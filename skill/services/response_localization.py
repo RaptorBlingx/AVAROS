@@ -6,6 +6,9 @@ from skill.services.language import is_turkish
 _TURKISH_SYSTEM_TEXT = {
     "This meter only exposes a cumulative total. Ask for total energy without a period.": "Bu sayaç yalnızca birikimli toplam sunuyor. Dönem belirtmeden toplam enerjiyi sorun.",
     "Which manufacturing metric do you mean?": "Hangi üretim metriğini kastediyorsunuz?",
+    "Please choose one metric to compare.": "Karşılaştırmak için tek bir metrik seçin.",
+    "Please name the two assets you want to compare.": "Karşılaştırmak istediğiniz iki ekipmanın adını belirtin.",
+    "The previous participants are no longer configured. Please name configured assets.": "Önceki ekipmanlar artık yapılandırılmış değil. Yapılandırılmış ekipmanların adlarını belirtin.",
     "Which manufacturing metric should I explain?": "Hangi üretim metriğini açıklamamı istiyorsunuz?",
     "Which asset should I use?": "Hangi ekipmanı kullanmamı istiyorsunuz?",
     "Please name at least two assets, or say all lines.": "En az iki ekipman adı belirtin veya tüm hatlar deyin.",
