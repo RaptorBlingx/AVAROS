@@ -40,7 +40,7 @@ from skill.services.futuregen_responses import (
     regression_inventory_headline,
 )
 from skill.services.language import is_turkish, normalize_phrase
-from skill.services.period_resolution import extract_period_phrase
+from skill.services.period_resolution import extract_period_phrase, unsupported_time_precision
 from skill.services.query_scope import entity_scope, is_comparison_request, is_negated_comparison
 from skill.services.semantic_resolver import SemanticAction, SemanticResolution
 
@@ -85,6 +85,22 @@ def handle_reneryo_query(
     )
     state = replace(state, language=language)
     _update_message_language(message, language)
+
+    if unsupported_time_precision(utterance):
+        speak_information(
+            skill,
+            (
+                "Saat düzeyindeki sorgular desteklenmiyor. Bir gün, ay veya tarih aralığı belirtin; "
+                "istenen saat yerine en güncel ölçümü kullanmadım."
+                if is_turkish(language)
+                else "Time-of-day queries are not supported. Specify a day, month, or date range; "
+                "I have not substituted the latest measurement for the requested time."
+            ),
+            language=language,
+            response_type="clarification",
+        )
+        _remember(skill, message, state, pending_clarification="time precision")
+        return True
 
     comparison = is_comparison_request(utterance)
     scoped, unresolved = entity_scope(utterance)
@@ -534,6 +550,9 @@ def try_arbitrate_legacy_intent(
     if not isinstance(signed, dict) or not signed.get("organization_id"):
         return False
     utterance = skill._extract_utterance_text(message)
+    if unsupported_time_precision(utterance):
+        # Recognizer slots and exact legacy matches cannot drop clock precision.
+        return handle_reneryo_query(skill, message, allow_semantic=False)
     if is_comparison_request(utterance) or entity_scope(utterance)[0]:
         # Validate even exact/slot-based legacy matches before they can use
         # defaults for an unresolved asset or fall back to factory data.

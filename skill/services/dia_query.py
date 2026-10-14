@@ -10,6 +10,7 @@ from enum import Enum
 from skill.domain.models import Asset, CanonicalMetric, TimePeriod
 from skill._metric_resolver import resolve_metric_from_utterance
 from skill.services.language import normalize_phrase
+from skill.services.period_resolution import unsupported_time_precision
 from skill.services.query_scope import asset_label_pattern, is_comparison_request
 
 
@@ -125,7 +126,7 @@ def parse_structured_query(
         if _matches_registered_utterance("compare.energy", text):
             metrics = [CanonicalMetric.ENERGY_PER_UNIT]
     asset_ids, scope_kind = _resolve_assets(text, assets)
-    period, period_error = _resolve_period(text, timezone_name)
+    period, period_error = _resolve_period(utterance, timezone_name)
 
     configured_asset_keys = {
         _normalize(label)
@@ -150,7 +151,7 @@ def parse_structured_query(
                 ))
             else:
                 asset_ids = list(prior.asset_ids)
-        if period is None and ("same period" in text or _looks_like_follow_up(text)):
+        if period is None and not period_error and ("same period" in text or _looks_like_follow_up(text)):
             period = prior.period
         if operation is QueryOperation.UNKNOWN and _looks_like_follow_up(text):
             try:
@@ -310,6 +311,9 @@ def _resolve_assets(text: str, assets: list[Asset]) -> tuple[list[str], str]:
 
 
 def _resolve_period(text: str, timezone_name: str) -> tuple[TimePeriod | None, str]:
+    if unsupported_time_precision(text):
+        return None, "Time-of-day queries are not supported. Specify a day, month, or date range."
+    text = normalize_phrase(text)
     patterns = (
         r"\b(?:bugün|dün|bu hafta|geçen hafta|son hafta|son (?:2|iki) hafta|bu ay|geçen ay|son ay|son (?:30|otuz) gün|şimdi|şu anda|en güncel)\b",
         r"\b(?:ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık)\s+\d{4}\b",

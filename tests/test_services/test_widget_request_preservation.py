@@ -18,7 +18,10 @@ from skill._reneryo_handlers import handle_reneryo_query
 from skill.services.response_builder import create_response_builder
 from skill.use_cases.query_dispatcher import QueryDispatcher
 from tests.helpers.stub_adapter import StubAdapter
-from tests.test_services.test_explicit_query_scope import ASSETS, UNSUPPORTED
+from tests.test_services.test_explicit_query_scope import ASSETS, UNSUPPORTED, setup_skill
+from tests.test_services.test_period_resolution import TIME_REQUESTS
+from skill.services.conversation_state import DialogueState
+from skill.domain.models import CanonicalMetric, TimePeriod
 from unittest.mock import Mock
 from skill.services.dia_dialogue import try_handle_structured_query
 from tests.test_services.test_factory_predeployment import harness
@@ -40,6 +43,10 @@ FINDINGS = [
     "Etkin bulguları listele", "İlk bulguyu açıkla", "Bu bulguyu hangi kanıt destekliyor?",
 ]
 CONFIGURED = [
+    ("Show OEE for Line 10 today", "en-US", "kpi.oee", ["Line-10"]),
+    ("Hat 10 OEE değerini dün göster", "tr-TR", "kpi.oee", ["Line-10"]),
+    ("Show OEE for Line 10 in June 2020", "en-US", "kpi.oee", ["Line-10"]),
+    ("Hat 10 OEE değerini Haziran 2020 için göster", "tr-TR", "kpi.oee", ["Line-10"]),
     ("Show overall equipment effectiveness for Line 10", "en-US", "kpi.oee", ["Line-10"]),
     ("Hat 10 toplam ekipman etkinliği değerini göster", "tr-TR", "kpi.oee", ["Line-10"]),
     ("Compare overall equipment effectiveness for Line 1 and Line 10", "en-US", "compare.metric", ["Line-1", "Line-10"]),
@@ -59,7 +66,7 @@ def widget_payloads():
     typescript = frontend / "node_modules" / "typescript"
     if not shutil.which("node") or not typescript.exists():
         pytest.skip("Node and frontend npm dependencies are required")
-    requests = [text for text, _kind in QUESTIONS] + COMPARISONS + FOLLOWUPS + FINDINGS + METERS + [row[0] for row in UNSUPPORTED + CONFIGURED]
+    requests = [text for text, _kind in QUESTIONS] + COMPARISONS + FOLLOWUPS + FINDINGS + METERS + [row[0] for row in UNSUPPORTED + CONFIGURED + TIME_REQUESTS]
     script = r"""
 const fs = require('fs');
 const ts = require(process.argv[1]);
@@ -276,3 +283,53 @@ def test_combined_meter_inventory(widget_payloads, entry, text, language):
     response = route(skill, routed_widget_message(skill, widget_payloads, text, language), entry)
     assert response["response_type"] == "meters"
     assert response["evidence_rows"][0]["id"] == "m"
+
+
+@pytest.mark.parametrize("entry", ["fallback", "registered-wrapper"])
+@pytest.mark.parametrize("text,language", TIME_REQUESTS)
+def test_widget_clock_precision_never_executes_latest_or_inherited_data(widget_payloads, entry, text, language):
+    skill = setup_skill()
+    skill.dispatcher = QueryDispatcher(adapter=StubAdapter())
+    calls = {}
+    for operation in ("get_kpi", "compare", "get_trend"):
+        calls[operation] = Mock(wraps=getattr(skill.dispatcher, operation))
+        setattr(skill.dispatcher, operation, calls[operation])
+    prior = DialogueState(
+        organization_id="futuregen", language=language, operation="kpi",
+        metric_name="Tesis Toplam Elektrik Tüketimi",
+        metrics=(CanonicalMetric.OEE,), asset_ids=("Line-10",),
+        period=TimePeriod.from_natural_language("June 2020"),
+    )
+    skill._dialogue_state_store.put("collection-session", prior)
+    message = routed_widget_message(skill, widget_payloads, text, language)
+    # Slots cannot override the explicit unsupported precision in original text.
+    message.data.update(period="latest", asset="Line-10", metric="oee")
+    response = route(skill, message, entry, "kpi.oee")
+    assert response["response_type"] == "clarification"
+    assert response["language"] == language
+    assert ("Saat düzeyindeki" if language == "tr-TR" else "Time-of-day") in response["headline"]
+    assert not response["evidence_rows"]
+    assert not skill._futuregen_service.reneryo.calls
+    skill._semantic_resolver.resolve.assert_not_called()
+    for called in calls.values():
+        called.assert_not_called()
+    state = skill._dialogue_state_store.get("collection-session")
+    assert state.period == prior.period
+    assert state.organization_id == "futuregen"
+    assert state.pending_clarification == "time precision"
+
+
+@pytest.mark.parametrize("entry", ["fallback", "registered-wrapper"])
+@pytest.mark.parametrize("language,start", [("en-US", 0), ("tr-TR", 2)])
+def test_supported_factory_period_followup_after_clock_clarification(widget_payloads, entry, language, start):
+    skill = harness()
+    skill._get_asset_registry = lambda: ASSETS
+    route(skill, routed_widget_message(skill, widget_payloads, FOLLOWUPS[start], language), entry)
+    calls_before = list(skill._futuregen_service.reneryo.calls)
+    clock = "And at 14:30?" if language == "en-US" else "Peki saat 14:30?"
+    response = route(skill, routed_widget_message(skill, widget_payloads, clock, language), entry)
+    assert response["response_type"] == "clarification"
+    assert skill._futuregen_service.reneryo.calls == calls_before
+    response = route(skill, routed_widget_message(skill, widget_payloads, FOLLOWUPS[start+1], language), entry)
+    assert response["evidence_rows"]
+    assert skill._futuregen_service.reneryo.calls[-1][1].month == 6

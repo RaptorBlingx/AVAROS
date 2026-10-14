@@ -132,6 +132,8 @@ def named_month_reference(utterance: str) -> bool:
 
 def unsupported_period_reference(utterance: str) -> bool:
     """An unrecognized explicit time reference must not become a default window."""
+    if unsupported_time_precision(utterance):
+        return True
     text = normalize_phrase(utterance)
     phrase = extract_period_phrase(utterance)
     if re.search(r"\b(?:q[1-4]|quarter|çeyrek|ceyrek)\b|\d{1,2}/\d{1,2}/\d{2,4}", text):
@@ -156,3 +158,23 @@ def unsupported_period_reference(utterance: str) -> bool:
             re.search(r"\b(?:last|past|son) \d+|\b(?:this year|bu yıl|bu yil)\b", text)
         )
     )
+
+
+def unsupported_time_precision(utterance: str) -> bool:
+    """Detect clock-time qualifiers the MVP's day-or-coarser queries cannot honor.
+
+    Inspect the source text before phrase normalization removes clock separators.
+    A supported date alongside a clock time does not make that precision supported.
+    """
+    return bool(re.search(
+        r"(?<!\w)\d{1,2}\s*:\s*\d{2}(?:\s*:\s*\d{2})?(?!\d)|"
+        r"\b\d{4}-\d{2}-\d{2}t\d{2}\s*:\s*\d{2}|"
+        r"\b(?:at|saat)\s+\d{1,2}(?:\s*[.:]\s*\d{2})?(?![\w-])|"
+        r"\b\d{1,2}(?:[.:]\d{2})?\s*[ap]\.?m\.?(?!\w)|"
+        r"(?<!\w)\d{1,2}\.\d{2}\s*['’]?(?:de|da|te|ta|den|dan|ten|tan)\b|"
+        r"\bat\s+(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+        r"thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b|"
+        r"\bsaat\s+(?:bir|iki|üç|uc|dört|dort|beş|bes|altı|alti|yedi|sekiz|dokuz|on)\b|"
+        r"\b(?:noon|midnight|öğlen|gece yarısı)\b",
+        utterance, re.IGNORECASE,
+    ))
