@@ -10,7 +10,10 @@ from enum import Enum
 from skill.domain.models import Asset, CanonicalMetric, TimePeriod
 from skill._metric_resolver import resolve_metric_from_utterance
 from skill.services.language import normalize_phrase
-from skill.services.period_resolution import unsupported_time_precision
+from skill.services.period_resolution import (
+    extract_period_phrase, unsupported_period_reference, unsupported_time_precision,
+)
+from skill.services.request_correction import affirmative_request
 from skill.services.query_scope import asset_label_pattern, is_comparison_request
 
 
@@ -104,7 +107,13 @@ def parse_structured_query(
     timezone_name: str = "UTC",
 ) -> StructuredQuery:
     """Resolve operation first, then every metric, asset, period, and scope."""
-    text = normalize_phrase(utterance)
+    requested = affirmative_request(utterance)
+    if requested is None:
+        return StructuredQuery(
+            QueryOperation.UNKNOWN, (), (), None, "", "normal",
+            "Please specify the operation you want instead of the excluded request.", utterance,
+        )
+    text = normalize_phrase(requested)
     operation = _resolve_operation(text)
     metrics = _resolve_metrics(text)
     if (
@@ -126,7 +135,7 @@ def parse_structured_query(
         if _matches_registered_utterance("compare.energy", text):
             metrics = [CanonicalMetric.ENERGY_PER_UNIT]
     asset_ids, scope_kind = _resolve_assets(text, assets)
-    period, period_error = _resolve_period(utterance, timezone_name)
+    period, period_error = _resolve_period(requested, timezone_name)
 
     configured_asset_keys = {
         _normalize(label)
@@ -313,26 +322,18 @@ def _resolve_assets(text: str, assets: list[Asset]) -> tuple[list[str], str]:
 def _resolve_period(text: str, timezone_name: str) -> tuple[TimePeriod | None, str]:
     if unsupported_time_precision(text):
         return None, "Time-of-day queries are not supported. Specify a day, month, or date range."
-    text = normalize_phrase(text)
-    patterns = (
-        r"\b(?:bugün|dün|bu hafta|geçen hafta|son hafta|son (?:2|iki) hafta|bu ay|geçen ay|son ay|son (?:30|otuz) gün|şimdi|şu anda|en güncel)\b",
-        r"\b(?:ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık)\s+\d{4}\b",
-        r"\b\d{4}-\d{2}-\d{2}\s+(?:ile|ila)\s+\d{4}-\d{2}-\d{2}(?:\s+arası)?\b",
-        r"\b(?:today|yesterday|this week|last week|this month|last month|past month|past \d+ days|last \d+ days|right now|latest|current)\b",
-        r"\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}\b",
-        r"\b\d{4}-\d{2}-\d{2}\s+(?:to|through|until)\s+\d{4}-\d{2}-\d{2}\b",
-    )
-    for pattern in patterns:
-        match = re.search(pattern, text)
-        if not match:
-            continue
+    if unsupported_period_reference(text):
+        return None, "Unsupported time period. Specify a month and year or an explicit date range."
+    phrase = extract_period_phrase(text)
+    if phrase:
         try:
             return TimePeriod.from_natural_language(
-                match.group(0),
+                phrase,
                 timezone_name=timezone_name,
             ), ""
         except ValueError as exc:
             return None, str(exc)
+    text = normalize_phrase(text)
     if re.search(
         r"\b(next|tomorrow|quarter|year|before|after|since|until)\b",
         text,

@@ -35,7 +35,7 @@ _PERIOD_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"\btoday\b", "today"),
         (r"\b(?:right now|latest|current)\b", "latest"),
         (
-            r"\bgeçen (?:takvim )?ay(?:ın|ı|a|da|dan|ında|ındaki)?\b",
+            r"\b(?:geçen|önceki|onceki) (?:takvim )?ay(?:ın|ı|a|da|dan|ında|ındaki)?\b",
             "geçen ay",
         ),
         (r"\bson ay(?:ın|ı|a|da|dan)?\b", "son ay"),
@@ -45,8 +45,8 @@ _PERIOD_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"\bson (?:iki|2) hafta(?:yı|ya|daki|da|dan|nın)?\b", "son iki hafta"),
         (r"\bbu ay\b", "bu ay"),
         (r"\bbu hafta\b", "bu hafta"),
-        (r"\bdün\b", "dün"),
-        (r"\bbugün\b", "bugün"),
+        (r"\b(?:dün|dun)(?:kü|ku)?\b", "dün"),
+        (r"\b(?:bugün|bugun)(?:kü|ku)?\b", "bugün"),
         (r"\b(?:şu anda|şimdi|en güncel)\b", "en güncel"),
     )
 )
@@ -130,12 +130,35 @@ def named_month_reference(utterance: str) -> bool:
     )
 
 
+def remove_period_reference(utterance: str) -> str:
+    """Remove the matched source wording, even when its parser phrase differs."""
+    text = normalize_phrase(utterance)
+    phrase = extract_period_phrase(utterance)
+    if phrase:
+        for pattern, canonical in _PERIOD_PATTERNS:
+            if canonical == phrase:
+                text = pattern.sub("", text)
+        text = text.replace(phrase, "")
+    return text
+
+
 def unsupported_period_reference(utterance: str) -> bool:
     """An unrecognized explicit time reference must not become a default window."""
     if unsupported_time_precision(utterance):
         return True
     text = normalize_phrase(utterance)
     phrase = extract_period_phrase(utterance)
+    # These windows are outside the current parser contract. Reject them even
+    # alongside a recognized date rather than retaining/defaulting a window.
+    if re.search(
+        r"\b(?:next|coming|following) (?:day|week|month|year)s?\b|"
+        r"\b(?:tomorrow|yarın|yarin)\b|"
+        r"\b(?:gelecek|önümüzdeki|onumuzdeki|sonraki) (?:gün|gun|hafta|ay|yıl|yil)\w*\b|"
+        r"\b(?:last|previous|prior|past) (?:calendar )?year\b|"
+        r"\b(?:geçen|gecen|önceki|onceki|son) (?:yıl|yil|sene)\w*\b",
+        text,
+    ):
+        return True
     if re.search(r"\b(?:q[1-4]|quarter|çeyrek|ceyrek)\b|\d{1,2}/\d{1,2}/\d{2,4}", text):
         return True
     if named_month_reference(text) and re.fullmatch(r"(?:19|20)\d{2}", phrase):
@@ -155,7 +178,11 @@ def unsupported_period_reference(utterance: str) -> bool:
     return not phrase and (
         named_month_reference(text)
         or bool(
-            re.search(r"\b(?:last|past|son) \d+|\b(?:this year|bu yıl|bu yil)\b", text)
+            re.search(
+                r"\b(?:last|past|previous|prior|son|geçen|gecen|önceki|onceki) "
+                r"(?:\d+|two|three|four|six|iki|üç|uc|dört|dort|altı|alti)\b|"
+                r"\b(?:this year|bu yıl|bu yil)\b", text
+            )
         )
     )
 

@@ -18,6 +18,8 @@ from skill.services.dia_response import speak_information
 from skill.services.factory_questions import (
     answer_factory_question,
     classify_factory_question,
+    cost_limitation_headline,
+    is_cost_request,
 )
 from skill.services.finding_collection import (
     FindingFilters,
@@ -41,7 +43,11 @@ from skill.services.futuregen_responses import (
     regression_inventory_headline,
 )
 from skill.services.language import is_turkish, normalize_phrase
-from skill.services.period_resolution import extract_period_phrase, unsupported_time_precision
+from skill.services.period_resolution import (
+    extract_period_phrase, named_month_reference, remove_period_reference,
+    unsupported_period_reference, unsupported_time_precision,
+)
+from skill.services.request_correction import affirmative_request
 from skill.services.query_scope import entity_scope, is_comparison_request, is_negated_comparison
 from skill.services.semantic_resolver import SemanticAction, SemanticResolution
 
@@ -87,6 +93,20 @@ def handle_reneryo_query(
     state = replace(state, language=language)
     _update_message_language(message, language)
 
+    original_utterance = utterance
+    utterance = affirmative_request(utterance)
+    if utterance is None:
+        speak_information(
+            skill,
+            ("Hariç tuttuğunuz istek yerine hangi işlemi istediğinizi belirtin."
+             if is_turkish(language)
+             else "Please specify the operation you want instead of the excluded request."),
+            language=language, response_type="clarification",
+        )
+        return True
+    corrected = utterance != original_utterance
+    text = normalize_phrase(utterance)
+
     if unsupported_time_precision(utterance):
         speak_information(
             skill,
@@ -101,6 +121,21 @@ def handle_reneryo_query(
             response_type="clarification",
         )
         _remember(skill, message, state, pending_clarification="time precision")
+        return True
+
+    # Bare named-month follow-ups are resolved using the factory dialogue's
+    # retained year. All other unsupported explicit periods must stop routing.
+    retained_month = (
+        named_month_reference(utterance) and not re.search(r"\b\d{4}\b", text)
+        and state.operation in {"factory_history", "trend"} and state.period
+    )
+    if unsupported_period_reference(utterance) and not retained_month:
+        _period_clarification(skill, language)
+        return True
+
+    if is_cost_request(utterance):
+        speak_information(skill, cost_limitation_headline(language),
+                          language=language, response_type="unavailable")
         return True
 
     comparison = is_comparison_request(utterance)
@@ -149,6 +184,19 @@ def handle_reneryo_query(
         return True
 
     factory_request = classify_factory_question(utterance, state)
+    if corrected and state.metric_name:
+        explicit_amount = _has(text, "consum", "tüket", "tuket", "amount", "miktar",
+                               "how much", "ne kadar", "produced", "ürett", "urett")
+        if (state.operation not in {"factory_history", "trend"}
+                and factory_request is not None and factory_request.kind == "amount"
+                and not explicit_amount and not extract_period_phrase(utterance)):
+            # A detail/finding handoff correction remains a metric detail.
+            factory_request = None
+        elif factory_request is not None and factory_request.kind == "amount":
+            factory_request = replace(
+                factory_request, use_period=bool(state.period),
+                kind="trend" if state.operation == "trend" and not explicit_amount else "amount",
+            )
     factory_trend = factory_request is not None and factory_request.kind == "trend"
     if factory_trend:
         utterance = f"{factory_request.utterance} {factory_request.metric_hint} trend"
@@ -158,7 +206,7 @@ def handle_reneryo_query(
         def _factory_execute():
             try:
                 period = _query_period(skill, factory_request.utterance, state.period)
-            except ValueError:
+            except (ValueError, ValidationError):
                 _period_clarification(skill, language)
                 return True
             answer = skill.dispatcher._run_async(
@@ -230,6 +278,11 @@ def handle_reneryo_query(
         if factory_trend
         else _deterministic_action(text, state)
     )
+    if action is None and corrected and state.metric_name:
+        action = (
+            SemanticAction.TREND_SHOW if state.operation == "trend"
+            else SemanticAction.METRIC_DETAIL
+        )
     resolution: SemanticResolution | None = semantic_resolution
     if action is None:
         if not allow_semantic:
@@ -341,19 +394,30 @@ def handle_reneryo_query(
             semantic_period = resolution.slots.get("period", "") if resolution else ""
             try:
                 period = _query_period(skill, utterance, state.period, semantic_period)
-            except ValueError:
+            except (ValueError, ValidationError):
                 _period_clarification(skill, language)
                 return True
-            metric_query = utterance
-            context_metric = (
-                resolution.slots.get("context_metric", "") if resolution else ""
-            ) or state.metric_name
+            # Inherit only subject-free shorthand, before executing. A failed
+            # explicit subject is never permission to query the previous one.
+            metric_query = (
+                state.metric_name if state.metric_name and _is_trend_follow_up(utterance)
+                else utterance
+            )
             try:
                 trend = skill.dispatcher._run_async(service.trend(metric_query, period))
-            except (AdapterError, ValidationError):
-                if not context_metric:
-                    raise
-                trend = skill.dispatcher._run_async(service.trend(context_metric, period))
+            except (AdapterError, ValidationError) as exc:
+                _remember(skill, message, state, operation="trend", metric_name="",
+                          pending_clarification="metric unavailable")
+                if isinstance(exc, ValidationError) and exc.code == "METRIC_NOT_FOUND":
+                    speak_information(
+                        skill,
+                        ("İstenen ölçüm mevcut Reneryo envanterinde bulunamadı."
+                         if is_turkish(language)
+                         else "The requested metric is not present in the current Reneryo inventory."),
+                        language=language, response_type="unavailable",
+                    )
+                    return True
+                raise
             direction = {
                 "increasing": "artıyor",
                 "decreasing": "azalıyor",
@@ -482,7 +546,7 @@ def handle_reneryo_query(
                 else ""
             ) or state.metric_name
             selected_metric = match_metric(
-                utterance if _is_metric_correction(text) else expected or text,
+                utterance if corrected or _is_metric_correction(text) else expected or text,
                 rows,
             )
         if action is SemanticAction.METRIC_DETAIL and selected_metric is None:
@@ -1258,6 +1322,8 @@ def _is_finding_list(text: str) -> bool:
 
 def _query_period(skill, utterance: str, current, semantic_period: str = ""):
     """Extract a supported period phrase without sending the full query parser input."""
+    if unsupported_period_reference(utterance):
+        raise ValueError("Unsupported requested period")
     phrase = extract_period_phrase(utterance)
     if phrase:
         parsed = skill._parse_period(phrase)
@@ -1270,13 +1336,25 @@ def _query_period(skill, utterance: str, current, semantic_period: str = ""):
     return current or default_period()
 
 
+def _is_trend_follow_up(utterance: str) -> bool:
+    """Allow context only for a bounded command that names no new subject."""
+    text = remove_period_reference(utterance)
+    text = re.sub(r"\b(?:over|for|during|in|the|döneminde|için)\b", "", text)
+    text = " ".join(text.split())
+    return bool(re.fullmatch(
+        r"(?:show|display)?\s*(?:its|this metric s|this indicator s|the metric s)?\s*trend|"
+        r"(?:bu metriğin |bu metrik |bunun )?(?:eğilimini|egilimini|eğilim|egilim)"
+        r"(?: göster| goster)?", text,
+    ))
+
+
 def _period_clarification(skill, language):
     speak_information(
         skill,
         (
-            "İstenen dönem geçersiz veya gelecekte. Geçmiş bir tarih, ay ve yıl veya açık tarih aralığı belirtin; dönemi değiştirmedim."
+            "İstenen dönem desteklenmiyor, geçersiz veya gelecekte. Geçmiş bir tarih, ay ve yıl veya açık tarih aralığı belirtin; dönemi değiştirmedim."
             if is_turkish(language)
-            else "The requested period is invalid or in the future. Specify a past date, month and year, or an explicit date range; I have not changed the period."
+            else "The requested period is unsupported, invalid or in the future. Specify a past date, month and year, or an explicit date range; I have not changed the period."
         ),
         language=language,
         response_type="clarification",

@@ -12,6 +12,7 @@ from skill.services.language import is_turkish, normalize_phrase
 from skill.services.period_resolution import (
     extract_period_phrase,
     named_month_reference,
+    remove_period_reference,
     unsupported_period_reference,
 )
 
@@ -36,6 +37,25 @@ class FactoryAnswer:
 
 def _has(text, *terms):
     return any(re.search(rf"(?<!\w){re.escape(term)}", text) for term in terms)
+
+
+def is_cost_request(utterance: str) -> bool:
+    text = normalize_phrase(utterance)
+    if _has(text, "finding", "bulgu", "rule", "kural", "regression", "regresyon"):
+        return False
+    return bool(re.search(
+        r"\b(?:cost\w*|paid|pay|payment\w*|bill\w*|spend|spent)\b|"
+        r"\b(?:maliyet|öde|ode|fatura|ücret|ucret)\w*|"
+        r"\b(?:kaç|kac|ne kadar) (?:para|lira|tl)\b", text,
+    ))
+
+
+def cost_limitation_headline(language: str) -> str:
+    return (
+        "İstenen maliyet veya ödeme tutarı için doğrulanmış Reneryo verisi mevcut değil."
+        if is_turkish(language)
+        else "Verified Reneryo cost or payment data is not available for the requested amount."
+    )
 
 
 def classify_factory_question(utterance, state) -> FactoryRequest | None:
@@ -172,6 +192,8 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
     )
     if energy and production:
         return FactoryRequest("clarify", "", utterance)
+    if is_cost_request(utterance):
+        return FactoryRequest("unsupported", hint, utterance)
     # Resource/entity qualifiers must never be discarded by the generic consumption alias.
     if _has(
         text,
@@ -209,7 +231,7 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
     } and _has(text, "its", "this", "bunun", "onun"):
         return FactoryRequest("scope_unavailable", hint, utterance)
     phrase = extract_period_phrase(utterance)
-    remainder = text.replace(phrase, "") if phrase else text
+    remainder = remove_period_reference(text)
     remainder = re.sub(r"\b(?:19|20)\d{2}\b", "", remainder)
     remainder = re.sub(
         r"\b(?:same period|that period|this period|aynı dönem|ayni donem|bu dönem|bu donem)\b",
@@ -269,8 +291,6 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
         "forecast",
         "predict",
         "tahmin",
-        "cost",
-        "maliyet",
         "per unit",
         "birim başına",
         "oee",
@@ -372,6 +392,8 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
 
 async def answer_factory_question(service, request, period, language) -> FactoryAnswer:
     tr = is_turkish(language)
+    if request.kind == "unsupported" and is_cost_request(request.utterance):
+        return FactoryAnswer(cost_limitation_headline(language), "unavailable")
     suggestions = (
         [
             "En son elektrik tüketimini göster",
