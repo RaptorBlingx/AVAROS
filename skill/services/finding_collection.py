@@ -119,7 +119,12 @@ class FindingFilters:
 
 
 def is_evaluation_request(text: str) -> bool:
-    """Recognize a request to run MDSP, not merely read existing findings."""
+    """Require an affirmative command, not a verb stem or an analysis question.
+
+    This predicate also gates semantic evaluation proposals before execution.
+    Turkish suffixes matter: ``kontrol etmeliyim`` and ``kontrol etme`` do not
+    authorize the imperative ``kontrol et``.
+    """
     text = _normalized_text(text)
     if is_negated_evaluation_request(text):
         return False
@@ -127,19 +132,26 @@ def is_evaluation_request(text: str) -> bool:
         text, "data", "veri", "veriyi", "verileri"
     ):
         return False
-    evaluation_verbs = (
-        "analy",
-        "evaluate",
-        "assessment",
-        "assess ",
-        "run a check",
-        "check current",
-        "degerlendir",
-        "değerlendir",
-        "analiz",
-        "incele",
-        "kontrol et",
+    english_command = re.search(
+        r"^(?:please\s+)?(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+)?"
+        r"(?:analy[sz]e|evaluate|assess|run\s+(?:(?:a|an|the|new|fresh|manual|mdsp|decision[- ]support)\s+)*"
+        r"(?:check|evaluation|assessment|analysis)|check\s+current)\b",
+        text.strip(),
     )
+    turkish_command = re.search(
+        r"\b(?:(?:analiz|kontrol)\s+(?:et|yap|eder\s+misin|edebilir\s+misin)|"
+        r"degerlendir(?:ir\s+misin)?|incele|"
+        r"(?:analiz(?:i|ini)?|degerlendirme(?:yi|sini)?)\s+(?:cal[ıi]st[ıi]r|baslat))\b"
+        r"(?=\s*(?:[.!?]*$|ve\b|lutfen\s*[.!?]*$))",
+        text,
+    )
+    # A how/what/should question asks for information even when it contains an
+    # exact imperative as quoted wording. A polite 'can you' command is explicit.
+    information_prefix = text[:turkish_command.start()] if turkish_command else text
+    if not english_command and _has(
+        information_prefix, "how", "what", "should", "nasil", "nasıl", "ne", "neyi", "neleri"
+    ):
+        return False
     data_cues = (
         "data",
         "current",
@@ -148,7 +160,11 @@ def is_evaluation_request(text: str) -> bool:
         "finding",
         "attention",
         "reneryo",
+        "mdsp",
         "veri",
+        "veriyi",
+        "verileri",
+        "veriler",
         "guncel",
         "güncel",
         "simdi",
@@ -156,8 +172,18 @@ def is_evaluation_request(text: str) -> bool:
         "bulgu",
         "dikkat",
     )
-    return any(cue in text for cue in evaluation_verbs) and any(
-        cue in text for cue in data_cues
+    return bool(english_command or turkish_command) and _has(text, *data_cues)
+
+
+def is_review_question(text: str) -> bool:
+    """Recognize bounded EN/TR questions about what the user should inspect."""
+    text = _normalized_text(text)
+    return bool(
+        re.search(r"\bwhat\s+should\s+(?:i|we)\s+(?:check|review|inspect)\b", text)
+        or (
+            _has(text, "ne", "neyi", "neleri")
+            and re.search(r"\b(?:kontrol\s+etmeliy(?:im|iz)|incelemeliy(?:im|iz))\b", text)
+        )
     )
 
 

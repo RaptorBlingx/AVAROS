@@ -27,6 +27,7 @@ from skill.services.dia_dialogue import try_handle_structured_query
 from tests.test_services.test_factory_predeployment import harness
 from tests.test_services.test_factory_questions import QUESTIONS
 from tests.test_services.test_finding_collection_dialogue import _message, _Skill
+from tests.test_services.test_evaluation_routing import EXPLICIT_REQUESTS, REVIEW_QUESTIONS
 
 
 COMPARISONS = [
@@ -67,6 +68,7 @@ def widget_payloads():
     if not shutil.which("node") or not typescript.exists():
         pytest.skip("Node and frontend npm dependencies are required")
     requests = [text for text, _kind in QUESTIONS] + COMPARISONS + FOLLOWUPS + FINDINGS + METERS + [row[0] for row in UNSUPPORTED + CONFIGURED + TIME_REQUESTS]
+    requests += [text for text, _language in EXPLICIT_REQUESTS + REVIEW_QUESTIONS]
     script = r"""
 const fs = require('fs');
 const ts = require(process.argv[1]);
@@ -207,6 +209,29 @@ def route(skill, message, entry, intent="reneryo.query"):
         if intent != "reneryo.query":
             legacy.assert_not_called()
     return skill.spoken[-1][1]["meta"]["avaros_response"]
+
+
+@pytest.mark.parametrize("entry", ["fallback", "registered-wrapper"])
+@pytest.mark.parametrize("question,language", REVIEW_QUESTIONS)
+@pytest.mark.parametrize("selected", [False, True])
+def test_widget_review_questions_remain_read_only(widget_payloads, entry, question, language, selected):
+    skill = _Skill()
+    if selected:
+        start = 0 if language == "en-US" else 3
+        ask_from_widget(skill, widget_payloads, FINDINGS[start], language)
+        ask_from_widget(skill, widget_payloads, FINDINGS[start + 1], language)
+    response = route(skill, routed_widget_message(skill, widget_payloads, question, language), entry, "help")
+    assert response["response_type"] == ("finding" if selected else "findings")
+    assert skill._futuregen_service.evaluations == 0
+
+
+@pytest.mark.parametrize("entry", ["fallback", "registered-wrapper"])
+@pytest.mark.parametrize("question,language", EXPLICIT_REQUESTS)
+def test_widget_explicit_evaluation_remains_available(widget_payloads, entry, question, language):
+    skill = _Skill()
+    response = route(skill, routed_widget_message(skill, widget_payloads, question, language), entry, "help")
+    assert response["response_type"] == "evaluation"
+    assert skill._futuregen_service.evaluations == 1
 
 
 @pytest.mark.parametrize("entry", ["fallback", "registered-wrapper"])

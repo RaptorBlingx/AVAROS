@@ -26,6 +26,7 @@ from skill.services.finding_collection import (
     filters_for,
     is_collection_request,
     is_evaluation_request,
+    is_review_question,
     selection_index,
     selection_requested,
 )
@@ -832,6 +833,12 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
         return SemanticAction.FINDING_EVIDENCE
     if is_evaluation_request(text):
         return SemanticAction.FINDINGS_EVALUATE
+    if is_review_question(text):
+        return (
+            SemanticAction.FINDING_NEXT_REVIEW
+            if state.active_finding_id
+            else SemanticAction.FINDINGS_LIST
+        )
     if is_collection_request(text, state):
         return SemanticAction.FINDINGS_LIST
     if _is_finding_list(text):
