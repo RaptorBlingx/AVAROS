@@ -365,28 +365,34 @@ def _resolve_kpi_period(
         utterance_period_phrase,
     )
 
-    aggregate_period = None
+    default_period = _wide_default_period()
     if metric is CanonicalMetric.ENERGY_TOTAL:
-        mapping = _resolve_asset_mapping(skill, asset_id=asset_id)
-        aggregate_period = _resolve_energy_total_aggregate_period(
-            skill,
-            asset_id=asset_id,
+        default_period = _resolve_energy_total_default_period(
+            skill, asset_id=asset_id, has_requested_period=requested_period_phrase is not None,
         )
-        if aggregate_period is not None and requested_period_phrase is not None:
-            _raise_energy_total_period_unavailable(skill, asset_id=asset_id)
-        if (
-            requested_period_phrase is not None
-            and isinstance(mapping, dict)
-            and _is_total_energy_only_asset_mapping(mapping)
-            and _uses_period_insensitive_energy_total_mapping(skill)
-        ):
-            _raise_energy_total_period_unavailable(skill, asset_id=asset_id)
-
     if requested_period_phrase is not None:
         return skill._parse_period(requested_period_phrase)
-    if aggregate_period is not None:
-        return aggregate_period
-    return _wide_default_period()
+    return default_period
+
+
+def _resolve_energy_total_default_period(
+    skill: "AVAROSSkill", *, asset_id: str, has_requested_period: bool,
+) -> TimePeriod:
+    """Share mapping-aware period safeguards with structured KPI routing.
+
+    Structured requests already have a parsed (possibly inherited) period;
+    re-parsing their utterance would lose bilingual dates and follow-up scope.
+    """
+    mapping = _resolve_asset_mapping(skill, asset_id=asset_id)
+    aggregate_period = _resolve_energy_total_aggregate_period(skill, asset_id=asset_id)
+    if has_requested_period and (
+        aggregate_period is not None
+        or (isinstance(mapping, dict)
+            and _is_total_energy_only_asset_mapping(mapping)
+            and _uses_period_insensitive_energy_total_mapping(skill))
+    ):
+        _raise_energy_total_period_unavailable(skill, asset_id=asset_id)
+    return aggregate_period or _wide_default_period()
 
 
 def _is_metric_mapped_for_active_adapter(

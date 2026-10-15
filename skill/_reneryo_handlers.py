@@ -713,6 +713,11 @@ def try_handle_scoped_query(skill, message) -> bool:
     try:
         if try_handle_structured_query(skill, message, include_simple_kpi=True):
             return True
+        # Structured parsing deliberately hands scenarios back to the legacy
+        # simulator. Scope has already been validated above; keep that handoff.
+        if skill._is_whatif_query(skill._extract_utterance_text(message)):
+            skill.handle_whatif_scenario(message)
+            return True
     except AVAROSError:
         # Missing bindings/unsupported adapter operations remain unavailable;
         # do not retry with a factory metric or inherited subject.

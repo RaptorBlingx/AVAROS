@@ -1148,7 +1148,8 @@ class TestMetricFallback:
 
         handled = skill.handle_metric_query_fallback(msg)
 
-        assert handled is False
+        # A narrated failure owns the turn; falling through would retry it.
+        assert handled is True
         skill.dispatcher.get_kpi.assert_not_called()
         _assert_structured_speak(
             skill,
@@ -1219,7 +1220,8 @@ class TestMetricFallback:
 
         handled = skill.handle_metric_query_fallback(msg)
 
-        assert handled is False
+        # A narrated failure owns the turn; falling through would retry it.
+        assert handled is True
         skill.dispatcher.get_kpi.assert_not_called()
         _assert_structured_speak(
             skill,
@@ -1264,7 +1266,8 @@ class TestMetricFallback:
 
         handled = skill.handle_metric_query_fallback(msg)
 
-        assert handled is False
+        # A narrated failure owns the turn; falling through would retry it.
+        assert handled is True
         skill.dispatcher.get_kpi.assert_not_called()
         _assert_structured_speak(
             skill,
@@ -1321,7 +1324,8 @@ class TestMetricFallback:
 
         handled = skill.handle_metric_query_fallback(msg)
 
-        assert handled is False
+        # A narrated failure owns the turn; falling through would retry it.
+        assert handled is True
         skill.dispatcher.get_kpi.assert_not_called()
         _assert_structured_speak(
             skill,

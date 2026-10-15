@@ -188,6 +188,14 @@ def try_handle_structured_query(skill, message, *, include_simple_kpi: bool = Fa
 
     period = query.period or TimePeriod.latest()
     try:
+        if (query.operation is QueryOperation.KPI
+                and metrics == [CanonicalMetric.ENERGY_TOTAL] and len(asset_ids) == 1):
+            from skill._metric_handlers import _resolve_energy_total_default_period
+
+            default_period = _resolve_energy_total_default_period(
+                skill, asset_id=asset_ids[0], has_requested_period=query.period is not None,
+            )
+            period = query.period or default_period
         if query.operation in {QueryOperation.COMPARE, QueryOperation.RANK, QueryOperation.AVERAGE}:
             if len(metrics) != 1:
                 _speak_clarification(skill, "Please choose one metric to compare.", _metric_suggestions(skill))
