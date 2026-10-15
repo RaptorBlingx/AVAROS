@@ -324,6 +324,10 @@ class AVAROSSkill(FallbackSkill):
         @wraps(handler)
         def _guarded(message: Message) -> Any:
             self._sync_response_language(message)
+            from skill._system_handlers import try_handle_read_only_request
+
+            if try_handle_read_only_request(self, message):
+                return None
             if intent_name and self.settings_service is not None:
                 try:
                     if not self.settings_service.is_intent_active(intent_name):

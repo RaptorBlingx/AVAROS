@@ -94,6 +94,11 @@ def handle_reneryo_query(
     state = replace(state, language=language)
     _update_message_language(message, language)
 
+    from skill._system_handlers import try_handle_read_only_request
+
+    if try_handle_read_only_request(skill, message):
+        return True
+
     original_utterance = utterance
     utterance = affirmative_request(utterance)
     if utterance is None:
@@ -615,8 +620,10 @@ def handle_reneryo_query(
         )
         return True
 
-    handled = skill._safe_dispatch("handle_reneryo_query", _execute)
-    return bool(handled)
+    # The selected operation owns this turn even when safe dispatch reports
+    # a service failure. Falling through would retry and speak again.
+    skill._safe_dispatch("handle_reneryo_query", _execute)
+    return True
 
 
 _ARBITRATABLE_LEGACY_INTENTS = frozenset(

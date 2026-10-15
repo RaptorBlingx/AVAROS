@@ -23,6 +23,11 @@ const TURKISH_WORDS = new Set([
   "sayac",
   "eğilim",
   "egilim",
+  "kapat",
+  "durdur",
+  "calistir",
+  "ayarla",
+  "degistir",
   "peki",
   "dun",
   "bugun",
@@ -106,6 +111,10 @@ const ENGLISH_WORDS = new Set([
   "owns",
   "responsible",
   "recent",
+  "stop",
+  "turn",
+  "change",
+  "settings",
   "compare",
   "them",
 ]);
@@ -121,7 +130,9 @@ export function normalizeWidgetLanguage(language: unknown): string {
 
 export function detectWidgetLanguage(text: string, fallback: string): string {
   // Locale-neutral casing must not manufacture Turkish ı from English I.
-  const normalized = text.normalize("NFKC").toLowerCase().replace(/i\u0307/g, "i");
+  const normalized = text.normalize("NFKC").toLowerCase().replace(/i\u0307/g, "i")
+    // The Turkish case suffix in "Hat 1'i" is not the English pronoun I.
+    .replace(/(\d)['’]i\b/gu, "$1");
   const words = normalized.match(/[a-zçğıöşü]+/giu) ?? [];
   const turkishScore = words.filter((word) => TURKISH_WORDS.has(word)).length;
   const englishScore = words.filter((word) => ENGLISH_WORDS.has(word)).length;

@@ -35,6 +35,11 @@ _HEADLINE_METRICS = (
 
 def try_handle_structured_query(skill, message, *, include_simple_kpi: bool = False) -> bool:
     """Parse and execute rich operations before legacy KPI intent fallback."""
+    from skill._system_handlers import try_handle_read_only_request
+
+    if try_handle_read_only_request(skill, message):
+        return True
+
     utterance = skill._extract_utterance_text(message).strip()
     if not utterance:
         return False
@@ -182,45 +187,46 @@ def try_handle_structured_query(skill, message, *, include_simple_kpi: bool = Fa
         metrics = metrics[:3]
 
     period = query.period or TimePeriod.latest()
-    if query.operation in {QueryOperation.COMPARE, QueryOperation.RANK, QueryOperation.AVERAGE}:
-        if len(metrics) != 1:
-            _speak_clarification(skill, "Please choose one metric to compare.", _metric_suggestions(skill))
-            _remember(store, session_id, query, pending="comparison metric")
-            return True
-        if len(asset_ids) < 2:
-            _speak_clarification(skill, "Please name at least two assets, or say all lines.", [])
-            _remember(store, session_id, query, pending="comparison assets")
-            return True
-        try:
+    try:
+        if query.operation in {QueryOperation.COMPARE, QueryOperation.RANK, QueryOperation.AVERAGE}:
+            if len(metrics) != 1:
+                _speak_clarification(skill, "Please choose one metric to compare.", _metric_suggestions(skill))
+                _remember(store, session_id, query, pending="comparison metric")
+                return True
+            if len(asset_ids) < 2:
+                _speak_clarification(skill, "Please name at least two assets, or say all lines.", [])
+                _remember(store, session_id, query, pending="comparison assets")
+                return True
             _handle_composite_operation(skill, query.operation, metrics[0], asset_ids, period)
-        except AVAROSError as error:
-            # A resolved comparison with missing data/bindings is not an
-            # unresolved equipment request. Preserve the requested frame.
-            text = (
-                ("İstenen metrik, karşılaştırmadaki tüm ekipmanlar için eşlenmemiş. "
-                 "Bu metrik için eşlemesi olan ekipmanları seçin."
-                 if is_turkish(skill._response_language) else
-                 "The requested metric is not mapped for every comparison participant. "
-                 "Choose participants with a mapping for that metric.")
-                if error.code in {"ASSET_METRIC_UNAVAILABLE", "METRIC_NOT_SUPPORTED", "GENERIC_REST_MAPPING_NOT_FOUND"}
-                else localized_error_message(error, skill._response_language)
-            )
-            speak_information(skill, text,
-                              response_type="unavailable")
-            _remember(store, session_id, query, pending="comparison data")
-            return True
-    elif query.operation is QueryOperation.SUMMARY or len(metrics) > 1:
-        _handle_summary(skill, metrics, asset_ids, period)
-    elif query.operation is QueryOperation.TARGET:
-        _handle_target(skill, metrics[0], asset_ids[0], period)
-    elif query.operation is QueryOperation.DIAGNOSE:
-        _handle_diagnosis(skill, metrics[0], asset_ids, period)
-    elif query.operation is QueryOperation.RECOMMEND:
-        _handle_recommendation(skill, metrics[0], asset_ids[0], period)
-    elif query.operation is QueryOperation.TREND:
-        _handle_trends(skill, metrics[0], asset_ids, period)
-    else:
-        _handle_kpis(skill, metrics, asset_ids, period)
+        elif query.operation is QueryOperation.SUMMARY or len(metrics) > 1:
+            _handle_summary(skill, metrics, asset_ids, period)
+        elif query.operation is QueryOperation.TARGET:
+            _handle_target(skill, metrics[0], asset_ids[0], period)
+        elif query.operation is QueryOperation.DIAGNOSE:
+            _handle_diagnosis(skill, metrics[0], asset_ids, period)
+        elif query.operation is QueryOperation.RECOMMEND:
+            _handle_recommendation(skill, metrics[0], asset_ids[0], period)
+        elif query.operation is QueryOperation.TREND:
+            _handle_trends(skill, metrics[0], asset_ids, period)
+        else:
+            _handle_kpis(skill, metrics, asset_ids, period)
+    except AVAROSError as error:
+        # A resolved data failure is not an unresolved equipment request.
+        # Preserve the requested operation, participants, metric and period.
+        text = (
+            ("İstenen metrik, karşılaştırmadaki tüm ekipmanlar için eşlenmemiş. "
+             "Bu metrik için eşlemesi olan ekipmanları seçin."
+             if is_turkish(skill._response_language) else
+             "The requested metric is not mapped for every comparison participant. "
+             "Choose participants with a mapping for that metric.")
+            if query.operation in {QueryOperation.COMPARE, QueryOperation.RANK, QueryOperation.AVERAGE}
+            and error.code in {"ASSET_METRIC_UNAVAILABLE", "METRIC_NOT_SUPPORTED", "GENERIC_REST_MAPPING_NOT_FOUND"}
+            else localized_error_message(error, skill._response_language)
+        )
+        speak_information(skill, text,
+                          response_type="unavailable")
+        _remember(store, session_id, query, pending="comparison data" if query.operation in {QueryOperation.COMPARE, QueryOperation.RANK, QueryOperation.AVERAGE} else "data")
+        return True
 
     remembered = DialogueState(
         metrics=tuple(metrics),

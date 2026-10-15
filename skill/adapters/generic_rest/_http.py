@@ -58,7 +58,7 @@ class GenericRestHttpMixin:
         params: dict[str, str] | None = None,
     ) -> dict | list:
         """Execute GET request and parse JSON response."""
-        self._ensure_initialized()
+        await self._ensure_read_session()
         await self._refresh_session_if_needed()
         assert self._session is not None
 
@@ -69,16 +69,16 @@ class GenericRestHttpMixin:
                 return await self._handle_response(response, endpoint)
         except AdapterError:
             raise
-        except aiohttp.ClientConnectorError as exc:
-            raise AdapterError(
-                message=f"Connection failed: {exc}",
-                code="GENERIC_REST_CONNECTION_FAILED",
-                platform="generic_rest",
-            ) from exc
         except asyncio.TimeoutError as exc:
             raise AdapterError(
                 message=f"Request timed out after {self._timeout}s: {endpoint}",
                 code="GENERIC_REST_TIMEOUT",
+                platform="generic_rest",
+            ) from exc
+        except aiohttp.ClientError as exc:
+            raise AdapterError(
+                message=f"Connection failed: {exc}",
+                code="GENERIC_REST_CONNECTION_FAILED",
                 platform="generic_rest",
             ) from exc
 

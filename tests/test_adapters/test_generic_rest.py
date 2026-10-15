@@ -1152,3 +1152,38 @@ def test_get_natively_bound_metrics_returns_bound_metrics() -> None:
     result = adapter._get_natively_bound_metrics("meter")
 
     assert result == [CanonicalMetric.ENERGY_TOTAL]
+
+
+@pytest.mark.asyncio
+async def test_requested_read_recovers_after_failed_startup_probe(period):
+    """An outage must not permanently strand the configured adapter."""
+    adapter = _build_adapter({"oee": {"endpoint": "/kpi", "json_path": "$.value", "unit": "%"}})
+    with aioresponses() as mocked:
+        mocked.head("https://api.example.com", status=503)
+        with pytest.raises(AdapterError):
+            await adapter.initialize()
+        assert adapter._session is None
+        mocked.head("https://api.example.com", status=200)
+        mocked.get("https://api.example.com/kpi", payload={"value": 75})
+        result = await adapter.get_kpi(CanonicalMetric.OEE, "Line-1", period)
+        assert result.value == 75 and result.asset_id == "Line-1"
+        assert result.period == period
+    await adapter.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_disconnect_is_typed_and_next_read_can_recover(period):
+    """A dropped response must use the same error boundary as refusal."""
+    import aiohttp
+
+    adapter = _build_adapter({"oee": {"endpoint": "/kpi", "json_path": "$.value", "unit": "%"}})
+    with aioresponses() as mocked:
+        mocked.head("https://api.example.com", status=200)
+        await adapter.initialize()
+        mocked.get("https://api.example.com/kpi", exception=aiohttp.ServerDisconnectedError())
+        with pytest.raises(AdapterError) as error:
+            await adapter.get_kpi(CanonicalMetric.OEE, "Line-1", period)
+        assert error.value.code == "GENERIC_REST_CONNECTION_FAILED"
+        mocked.get("https://api.example.com/kpi", payload={"value": 80})
+        assert (await adapter.get_kpi(CanonicalMetric.OEE, "Line-1", period)).value == 80
+    await adapter.shutdown()

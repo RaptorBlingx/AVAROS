@@ -110,3 +110,13 @@ it.each([
 ])("keeps comparison verbs in the current language around source names: %s", (text, fallback, expected) => {
   expect(detectWidgetLanguage(text, fallback)).toBe(expected);
 });
+
+it.each([
+  ["Hat 1'i kapat", "en-US", "tr-TR"],
+  ["Hat 1'i durdur", "en-US", "tr-TR"],
+  ["OEE hedefini ayarla", "en-US", "tr-TR"],
+  ["Turn off Line 1", "tr-TR", "en-US"],
+  ["Change settings", "tr-TR", "en-US"],
+])("recognizes the language of unsupported commands: %s", (text, fallback, expected) => {
+  expect(detectWidgetLanguage(text, fallback)).toBe(expected);
+});

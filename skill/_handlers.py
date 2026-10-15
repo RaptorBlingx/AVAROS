@@ -30,6 +30,11 @@ if TYPE_CHECKING:
 
 def handle_metric_query_fallback(skill: "AVAROSSkill", message: Message) -> bool:
     """Fallback: resolve metric KPI queries missed by strict intent parsing."""
+    from skill._system_handlers import try_handle_read_only_request
+
+    if try_handle_read_only_request(skill, message):
+        return True
+
     utterance = skill._extract_utterance_text(message).lower()
 
     from skill._reneryo_handlers import (
@@ -101,8 +106,8 @@ def handle_metric_query_fallback(skill: "AVAROSSkill", message: Message) -> bool
         remember_kpi_result(skill, message, result)
         return True
 
-    handled = skill._safe_dispatch("handle_metric_query_fallback", _execute)
-    return bool(handled)
+    skill._safe_dispatch("handle_metric_query_fallback", _execute)
+    return True
 
 
 def _fallback_anomaly(
@@ -126,8 +131,8 @@ def _fallback_anomaly(
         skill.speak(response)
         return True
 
-    handled = skill._safe_dispatch("fallback_anomaly", _execute)
-    return bool(handled)
+    skill._safe_dispatch("fallback_anomaly", _execute)
+    return True
 
 
 def _fallback_drift(
@@ -145,8 +150,8 @@ def _fallback_drift(
         speak_with_evidence(skill, response, result)
         return True
 
-    handled = skill._safe_dispatch("fallback_drift", _execute)
-    return bool(handled)
+    skill._safe_dispatch("fallback_drift", _execute)
+    return True
 
 
 def _fallback_forecast(
@@ -169,8 +174,8 @@ def _fallback_forecast(
         speak_with_evidence(skill, response, result)
         return True
 
-    handled = skill._safe_dispatch("fallback_forecast", _execute)
-    return bool(handled)
+    skill._safe_dispatch("fallback_forecast", _execute)
+    return True
 
 
 def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
@@ -313,8 +318,8 @@ def _fallback_whatif(
         speak_with_evidence(skill, response, result)
         return True
 
-    handled = skill._safe_dispatch("fallback_whatif", _execute)
-    return bool(handled)
+    skill._safe_dispatch("fallback_whatif", _execute)
+    return True
 
 
 def _build_whatif_scenario(
