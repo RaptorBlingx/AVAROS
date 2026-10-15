@@ -60,6 +60,13 @@ def try_handle_structured_query(skill, message, *, include_simple_kpi: bool = Fa
     store = getattr(skill, "_dialogue_state_store", None)
     session_id = message_session_id(message)
     prior = store.get(session_id) if store is not None else None
+    if store is not None and has_signed_widget_context(message):
+        # Bind pending/error frames as well as successful answers to this org.
+        # _context_state also discards a frame retained under another org.
+        from skill._reneryo_handlers import _context_state
+
+        prior = _context_state(skill, message)
+        store.put(session_id, prior)
     assets = skill._get_asset_registry()
     query = parse_structured_query(
         utterance,
@@ -618,7 +625,9 @@ def _speak_clarification(skill, headline: str, suggestions: list[str]) -> None:
 def _remember(store, session_id, query, *, pending="") -> None:
     if store is None:
         return
+    prior = store.get(session_id) or DialogueState()
     store.put(session_id, DialogueState(
+        organization_id=prior.organization_id, language=prior.language,
         metrics=query.metrics,
         asset_ids=query.asset_ids,
         period=query.period,
@@ -634,7 +643,9 @@ def remember_kpi_result(skill, message, result) -> None:
         return
     asset_id = str(getattr(result, "asset_id", "") or "").strip()
     evidence = ({"asset_id": asset_id},) if asset_id else ()
+    signed = (getattr(message, "context", {}) or {}).get("reneryo_context", {})
     store.put(message_session_id(message), DialogueState(
+        organization_id=str(signed.get("organization_id", "")) if isinstance(signed, dict) else "",
         metrics=(result.metric,),
         asset_ids=(asset_id,) if asset_id else (),
         period=result.period,

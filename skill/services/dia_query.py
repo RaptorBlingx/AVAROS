@@ -152,7 +152,7 @@ def parse_structured_query(
     ]
 
     if prior is not None:
-        if not metrics and is_structured_follow_up(text):
+        if not metrics and is_structured_follow_up(text) and _can_inherit_metric(text, assets):
             metrics = list(prior.metrics)
         if not asset_ids and is_structured_follow_up(text):
             if is_comparison_pronoun(text) and prior.answer_evidence:
@@ -375,9 +375,24 @@ def _requested_aggregation(text: str) -> str:
     return ""
 
 
+def _can_inherit_metric(text: str, assets: list[Asset]) -> bool:
+    """Only subject-free shorthand may inherit a metric, never an unknown noun."""
+    if is_comparison_pronoun(text) or is_period_follow_up(text):
+        return True
+    remainder = remove_period_reference(text)
+    for asset in assets:
+        for label in (asset.asset_id, asset.display_name, *asset.aliases):
+            remainder = re.sub(asset_label_pattern(label), " ", remainder)
+    remainder = re.sub(r"^(?:and|what about|how about|peki|ya)\b", "", remainder).strip()
+    return not remainder or bool(re.fullmatch(
+        r"why|what does that mean|use the same(?: metric| period)?|compare|karşılaştır|karsilastir",
+        remainder,
+    ))
+
+
 def is_structured_follow_up(text: str) -> bool:
     return is_comparison_pronoun(text) or is_period_follow_up(text) or bool(
-        re.match(r"^(and|what about|how about|use the same|why|what does that mean)\b", text)
+        re.match(r"^(and|what about|how about|peki|ya|use the same|why|what does that mean)\b", text)
     )
 
 

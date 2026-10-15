@@ -175,15 +175,26 @@ def is_evaluation_request(text: str) -> bool:
     return bool(english_command or turkish_command) and _has(text, *data_cues)
 
 
+def is_finding_evidence_question(text: str) -> bool:
+    """Bounded evidence paraphrases; never a general analysis instruction."""
+    return bool(re.fullmatch(
+        r"(?:hangi verilere dayan[ıi]yor|hangi veriye dayan[ıi]yor|"
+        r"what evidence supports (?:it|this finding)|supporting facts|"
+        r"(?:bulguyu )?destekleyen (?:veri|gercek)(?:ler)?(?:i goster)?)",
+        _normalized_text(text).strip(" .?!"),
+    ))
+
+
 def is_review_question(text: str) -> bool:
     """Recognize bounded EN/TR questions about what the user should inspect."""
     text = _normalized_text(text)
     return bool(
-        re.search(r"\bwhat\s+should\s+(?:i|we)\s+(?:check|review|inspect|look\s+(?:at|into))\b", text)
+        re.fullmatch(r"(?:peki |simdi )?ne yapmam[ıi] onerirsin", text.strip(" .?!"))
+        or re.search(r"\bwhat\s+should\s+(?:i|we)\s+(?:check|review|inspect|look\s+(?:at|into))\b", text)
         or re.search(r"\bwhat\s+(?:needs|should be)\s+(?:reviewing|reviewed|checked|inspected)\b", text)
         or (
             _has(text, "ne", "neyi", "neleri")
-            and re.search(r"\b(?:kontrol\s+etmeliy(?:im|iz)|incelemeliy(?:im|iz)|"
+            and re.search(r"\b(?:kontrol\s+etmeliy(?:im|iz)|incelemeliy(?:im|iz)|gozden\s+gecirmeliy(?:im|iz)|"
                           r"(?:kontrol\s+etmem(?:iz)?|incelemem(?:iz)?)\s+gerekiyor)\b", text)
         )
     )

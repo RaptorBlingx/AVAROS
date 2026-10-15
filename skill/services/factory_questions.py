@@ -348,7 +348,7 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
         # veri+miz (our data) is not verim (efficiency). Keep the existing
         # efficiency boundary, including verimi/verimlilik/verimimiz forms.
         return FactoryRequest("unsupported", hint, utterance)
-    if is_historical_change_question(text):
+    if is_historical_change_question(text) or re.search(r"\bseyr(?:i|ini)\b", text):
         return FactoryRequest("trend", hint, utterance, use_period)
     if _has(
         text,

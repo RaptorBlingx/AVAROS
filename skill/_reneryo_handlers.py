@@ -30,6 +30,7 @@ from skill.services.finding_collection import (
     is_collection_request,
     is_evaluation_request,
     is_review_question,
+    is_finding_evidence_question,
     selection_index,
     selection_requested,
 )
@@ -144,7 +145,33 @@ def handle_reneryo_query(
                           language=language, response_type="unavailable")
         return True
 
+    # "Previous month" after a dated answer may mean the calendar month or
+    # the month before the displayed window (including a disclosed fallback).
+    # Ask before any source read and leave the grounded period unchanged.
+    if state.period and state.operation and re.fullmatch(
+        r"(?:(?:and|what about|how about|peki|ya) )?(?:the )?"
+        r"(?:previous month|önceki ay|onceki ay)(?: nasıldı| nasildi)?", text
+    ):
+        speak_information(
+            skill,
+            ("Önceki ay derken geçen takvim ayını mı, gösterdiğim dönemden önceki ayı mı kastediyorsunuz? Ay ve yılı belirtin."
+             if is_turkish(language) else
+             "Do you mean the previous calendar month or the month before the period I showed? Please specify the month and year."),
+            language=language, response_type="clarification",
+        )
+        return True
+
+    if _is_meter_metric_question(text):
+        _meter_metric_response(skill, message, state, text, language)
+        return True
+
     from skill.services.dia_query import is_comparison_pronoun, is_period_follow_up
+
+    asset_follow_up = bool(
+        state.metrics and state.asset_ids
+        and re.match(r"^(?:and|what about|how about|peki|ya)\b", text)
+        and entity_scope("show " + text)[0]
+    )
 
     if (is_period_follow_up(utterance) and state.metrics and state.asset_ids
             and state.operation in {"kpi", "compare", "rank", "average", "summary"}):
@@ -159,6 +186,8 @@ def handle_reneryo_query(
         re.sub(r"\blook at next\b", "review next", utterance, flags=re.IGNORECASE)
         if is_review_question(utterance) else utterance
     )
+    if asset_follow_up:
+        scope_utterance = "show " + scope_utterance
     scoped, unresolved = entity_scope(scope_utterance)
     if comparison and not scoped and not (
         is_comparison_pronoun(text)
@@ -195,7 +224,7 @@ def handle_reneryo_query(
                 metrics = skill.dispatcher._run_async(_service(skill).metrics())
             except (AdapterError, ValidationError):
                 metrics = []
-            scope_text = text
+            scope_text = normalize_phrase(scope_utterance)
             for metric in sorted(metrics, key=lambda row: len(row.name), reverse=True):
                 name = normalize_phrase(metric.name)
                 if name:
@@ -207,8 +236,11 @@ def handle_reneryo_query(
         # A factory metric alias is not evidence for an explicitly requested
         # asset. Let the structured/registered asset path handle resolved
         # requests; semantic resolution must never turn them into metric detail.
-        if not unresolved and not allow_semantic and not is_negated_comparison(utterance):
-            return False
+        if not unresolved and not is_negated_comparison(utterance):
+            if not allow_semantic:
+                return False
+            if asset_follow_up:
+                return try_handle_scoped_query(skill, message)
         _scope_clarification(skill, language)
         _remember(skill, message, DialogueState(
             organization_id=state.organization_id, language=language,
@@ -230,6 +262,8 @@ def handle_reneryo_query(
                 factory_request, use_period=bool(state.period),
                 kind="trend" if state.operation == "trend" and not explicit_amount else "amount",
             )
+    if state.operation == "trend" and state.metric_name and is_period_follow_up(utterance):
+        factory_request = None
     factory_trend = factory_request is not None and factory_request.kind == "trend"
     if factory_trend:
         utterance = f"{factory_request.utterance} {factory_request.metric_hint} trend"
@@ -295,11 +329,15 @@ def handle_reneryo_query(
         _finding_selection_clarification(skill, language)
         _remember(skill, message, state, operation="clarification")
         return True
+    if is_finding_evidence_question(text) and not state.active_finding_id:
+        _finding_selection_clarification(skill, language)
+        return True
     if (
         state.finding_ids
         and not state.active_finding_id
         and _finding_selection_scope(text)
-        and _has(text, "evidence", "kanıt", "kanit", "period", "dönem", "donem")
+        and (is_finding_evidence_question(text) or is_review_question(text)
+             or _has(text, "evidence", "kanıt", "kanit", "period", "dönem", "donem"))
         and not is_collection_request(text, state)
     ):
         _finding_selection_clarification(skill, language)
@@ -566,7 +604,12 @@ def handle_reneryo_query(
                 response_type="meters",
                 evidence_rows=evidence,
             )
-            _remember(skill, message, state, operation="meters", period=period)
+            _remember(
+                skill, message, state, operation="meters", period=period,
+                answer_evidence=tuple({"meter_id": r.meter_id, "name": r.name} for r in rows),
+                metrics=(), asset_ids=(), metric_name="", entity_id="",
+                active_finding_id="", finding_ids=(), selected_finding_from_collection=False,
+            )
             return True
         if action not in {SemanticAction.METRICS_LIST, SemanticAction.METRIC_DETAIL}:
             _semantic_clarification(skill, language)
@@ -625,6 +668,70 @@ def handle_reneryo_query(
     # a service failure. Falling through would retry and speak again.
     skill._safe_dispatch("handle_reneryo_query", _execute)
     return True
+
+
+def _is_meter_metric_question(text: str) -> bool:
+    return bool(re.fullmatch(
+        r"which metric is (?:the (?:first|second|third) (?:one|meter)|it|this meter) linked to|"
+        r"(?:ilki|ikincisi|üçüncüsü|ucuncusu|bu sayaç|bu sayac|o) hangi metri(?:ğe|ge) ba(?:ğlı|gli)",
+        text,
+    ))
+
+
+def _meter_metric_response(skill, message, state, text, language) -> None:
+    """Resolve only IDs from the last scoped meter result, then recheck its link."""
+    def clarify():
+        speak_information(
+            skill,
+            (("Hangi sayacı kastediyorsunuz? Son listedeki sırasını belirtin."
+              if candidates else
+              "Hangi sayacı kastediyorsunuz? Önce sayaçları listeleyip listedeki sırasını belirtin.")
+             if is_turkish(language) else
+             ("Which meter do you mean? Specify its position in the last list."
+              if candidates else
+              "Which meter do you mean? List the meters first, then specify its position in that list.")),
+            language=language, response_type="clarification",
+        )
+
+    candidates = state.answer_evidence if state.operation == "meters" else ()
+    index = next((i for i, pattern in enumerate((
+        r"\b(?:first|ilki)\b", r"\b(?:second|ikincisi)\b", r"\b(?:third|üçüncüsü|ucuncusu)\b"
+    )) if re.search(pattern, text)), None)
+    if index is None and len(candidates) == 1:
+        index = 0
+    if index is None or index >= len(candidates) or not state.period:
+        clarify()
+        return
+    meter_id = candidates[index].get("meter_id", "")
+
+    def execute():
+        service = _service(skill)
+        meters = skill.dispatcher._run_async(service.meters(state.period))
+        meter = next((row for row in meters if row.meter_id == meter_id), None)
+        metric = None
+        if meter is not None and meter.metric_id:
+            rows = skill.dispatcher._run_async(service.metrics())
+            metric = next((row for row in rows if row.metric_id == meter.metric_id), None)
+        if metric is None:
+            speak_information(
+                skill,
+                ("Bu sayacın bağlı olduğu metriği mevcut Reneryo verisinden doğrulayamıyorum. Sayacı ve metrik bağlantısını kontrol edin."
+                 if is_turkish(language) else
+                 "I cannot verify this meter's linked metric from the current Reneryo data. Please check the meter and its metric link."),
+                language=language, response_type="clarification",
+            )
+            return
+        speak_information(
+            skill, metric_detail_headline(metric, language), language=language,
+            response_type="metrics", evidence_rows=[{
+                "id": metric.metric_id, "name": metric.name, "type": metric.metric_type,
+                "last_value": metric.last_value, "observed_at": _iso(metric.last_value_at),
+            }],
+        )
+        _remember(skill, message, state, operation="metric_detail", metric_name=metric.name,
+                  answer_evidence=(), entity_id="", active_finding_id="", finding_ids=())
+
+    skill._safe_dispatch("handle_meter_metric_reference", execute)
 
 
 _ARBITRATABLE_LEGACY_INTENTS = frozenset(
@@ -934,7 +1041,7 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
         return SemanticAction.FINDING_EXPLAIN
     if state.active_finding_id and _has(text, "when this finding was evaluated", "when was this finding evaluated"):
         return SemanticAction.FINDING_PERIOD
-    if state.active_finding_id and _has(text, "destekleyen gercek", "destekleyen gerçek", "destekleyen veri", "supporting facts"):
+    if state.active_finding_id and is_finding_evidence_question(text):
         return SemanticAction.FINDING_EVIDENCE
     if is_evaluation_request(text):
         return SemanticAction.FINDINGS_EVALUATE
@@ -1299,6 +1406,10 @@ def _context_state(skill, message) -> DialogueState:
     signed = context.get("reneryo_context")
     if not isinstance(signed, dict):
         return current
+    organization = str(signed.get("organization_id", "") or "")
+    if organization and current.organization_id and organization != current.organization_id:
+        skill._dialogue_state_store.clear(session_id)
+        current = DialogueState()
     explicit_finding = _has(
         normalize_phrase(skill._extract_utterance_text(message)), "finding", "bulgu"
     )
@@ -1392,8 +1503,8 @@ def _is_trend_follow_up(utterance: str) -> bool:
     text = re.sub(r"\b(?:over|for|during|in|the|döneminde|için)\b", "", text)
     text = " ".join(text.split())
     return bool(re.fullmatch(
-        r"(?:show|display)?\s*(?:its|this metric s|this indicator s|the metric s)?\s*trend|"
-        r"(?:bu metriğin |bu metrik |bunun )?(?:eğilimini|egilimini|eğilim|egilim)"
+        r"(?:show|display)?\s*(?:its|this metric s|this indicator s|the metric s)?\s*(?:trend|history)|"
+        r"(?:bu metriğin |bu metrik |bunun )?(?:eğilimini|egilimini|eğilim|egilim|geçmişini|gecmisini)"
         r"(?: göster| goster)?", text,
     ))
 
