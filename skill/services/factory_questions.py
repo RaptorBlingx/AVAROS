@@ -106,6 +106,7 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
         "temperature",
         "humidity",
         "sıcaklık",
+        "sicaklik",
         "nem",
         "turn off",
         "turn on",

@@ -308,7 +308,8 @@ def handle_reneryo_query(
 
     action = (
         SemanticAction.TREND_SHOW
-        if factory_trend
+        if factory_trend or (state.operation == "trend" and state.metric_name
+                             and is_period_follow_up(utterance))
         else _deterministic_action(text, state)
     )
     if action is None and corrected and state.metric_name:
@@ -1383,6 +1384,10 @@ def _query_period(skill, utterance: str, current, semantic_period: str = ""):
 
 def _is_trend_follow_up(utterance: str) -> bool:
     """Allow context only for a bounded command that names no new subject."""
+    from skill.services.dia_query import is_period_follow_up
+
+    if is_period_follow_up(utterance):
+        return True
     text = remove_period_reference(utterance)
     text = re.sub(r"\b(?:over|for|during|in|the|döneminde|için)\b", "", text)
     text = " ".join(text.split())
@@ -1462,6 +1467,10 @@ def _looks_like_trend(text: str) -> bool:
     return is_historical_change_question(text) or _has(
         text,
         "trend",
+        "history",
+        "historical",
+        "geçmiş",
+        "gecmis",
         "evolve",
         "move over",
         "changed",
