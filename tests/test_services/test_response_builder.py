@@ -496,10 +496,10 @@ class TestFormatComparisonResult:
     ) -> None:
         result = builder.format_comparison_result(comparison_oee)
 
-        assert "Line 1: 85.0 percent" in result
-        assert "Line 2: 78.0 percent" in result
+        assert "Line 1: 85 percent" in result
+        assert "Line 2: 78 percent" in result
         assert "today" in result
-        assert "7.0 percentage points" in result
+        assert "7 percentage points" in result
 
     def test_format_comparison_under_30_words(
         self, builder: ResponseBuilder, comparison_energy: ComparisonResult
@@ -867,8 +867,8 @@ class TestFormatForecastResult:
 
         assert "Next week" in result
         assert "energy per unit" in result.lower()
-        assert "2.8" in result
-        assert "about 6.7 percent lower than the latest observed value" in result
+        assert "2.75" in result
+        assert "about 8.3 percent lower than the latest observed value" in result
         assert "possible improvement" in result
         assert "strong at 82 percent" in result
 
@@ -926,8 +926,8 @@ class TestFormatForecastResult:
 
         result = builder.format_forecast_result(result_obj)
 
-        assert "2.0 kilowatt hours per unit" in result
-        assert "about 100.0 percent higher" in result
+        assert "2.03 kilowatt hours per unit" in result
+        assert "about 103.0 percent higher" in result
         assert "103.4 percent" not in result
 
     def test_format_forecast_oee_drop_explains_risk(
@@ -1106,7 +1106,7 @@ class TestFormatWhatIfResult:
         result = builder.format_whatif_result(result_obj)
 
         assert "1.86 percent" in result
-        assert "1.90 percent" in result
+        assert "1.9 percent" in result
 
     def test_format_whatif_target_value_assumption(self, builder: ResponseBuilder) -> None:
         """Absolute-target scenarios should state the target assumption."""
@@ -1124,7 +1124,7 @@ class TestFormatWhatIfResult:
 
         result = builder.format_whatif_result(result_obj)
 
-        assert "Assumption: target value is 90.0 percent" in result
+        assert "Assumption: target value is 90 percent" in result
 
     def test_format_whatif_large_change_mentions_low_confidence(
         self,
@@ -1190,7 +1190,7 @@ class TestFormatValue:
     def test_format_value_kg(self, builder: ResponseBuilder) -> None:
         """kg unit → 'X.X kilograms'."""
         result = builder._format_value(15.0, "kg CO₂-eq")
-        assert result == "15.0 kilograms"
+        assert result == "15 kilograms"
 
     def test_format_value_celsius(self, builder: ResponseBuilder) -> None:
         """°C unit → 'X.X degrees celsius'."""
@@ -1205,19 +1205,19 @@ class TestFormatValue:
     def test_format_value_minutes(self, builder: ResponseBuilder) -> None:
         """min unit → 'X.X minutes'."""
         result = builder._format_value(12.0, "min")
-        assert result == "12.0 minutes"
+        assert result == "12 minutes"
 
     def test_format_value_days(self, builder: ResponseBuilder) -> None:
         """days unit → 'X.X days'."""
         result = builder._format_value(5.0, "days")
-        assert result == "5.0 days"
+        assert result == "5 days"
 
     def test_format_value_unknown_unit_lowercase(
         self, builder: ResponseBuilder
     ) -> None:
         """Unknown unit is lowercased."""
         result = builder._format_value(42.0, "UNITS/HR")
-        assert result == "42.0 units/hr"
+        assert result == "42 units/hr"
 
 
 # ══════════════════════════════════════════════════════════

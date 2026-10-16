@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from skill.services.language import normalize_language_tag, is_turkish, metric_display_name, period_display_name
+from skill.services.language import normalize_language_tag, is_turkish, metric_display_name, period_display_name, speech_text
 from skill.domain.results import ComparisonResult, KPIResult, TrendResult, WhatIfResult
 
 
@@ -44,7 +44,8 @@ def speak_with_evidence(skill, headline: str, result: Any) -> None:
             response["warnings"] = [
                 "Bu aritmetik senaryo karar desteği içindir; nedensel bir model değildir."
             ]
-    skill.speak(headline, meta={"avaros_response": response})
+    response["speech_text"] = speech_text(headline, language)
+    skill.speak(response["speech_text"], meta={"avaros_response": response})
 
 
 def speak_information(
@@ -69,8 +70,9 @@ def speak_information(
         "assumptions": [],
         "suggested_follow_ups": list(suggestions or []),
     }
+    response["speech_text"] = speech_text(headline, language)
     skill.speak(
-        headline,
+        response["speech_text"],
         meta={"language": language, "avaros_response": response},
     )
 

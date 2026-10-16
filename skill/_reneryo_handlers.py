@@ -142,6 +142,14 @@ def handle_reneryo_query(
         _period_clarification(skill, language)
         return True
 
+    if extract_period_phrase(utterance) and getattr(skill, "settings_service", None) is not None:
+        try:
+            from skill._helpers import parse_period
+            parse_period(skill, extract_period_phrase(utterance), message)
+        except (ValueError, ValidationError):
+            _period_clarification(skill, language)
+            return True
+
     if is_cost_request(utterance):
         speak_information(skill, cost_limitation_headline(language),
                           language=language, response_type="unavailable")
@@ -242,8 +250,7 @@ def handle_reneryo_query(
         if not unresolved and not is_negated_comparison(utterance):
             if not allow_semantic:
                 return False
-            if asset_follow_up:
-                return try_handle_scoped_query(skill, message)
+            return try_handle_scoped_query(skill, message)
         _scope_clarification(skill, language)
         _remember(skill, message, DialogueState(
             organization_id=state.organization_id, language=language,
@@ -331,7 +338,7 @@ def handle_reneryo_query(
 
         def _factory_execute():
             try:
-                period = _query_period(skill, factory_request.utterance, state.period)
+                period = _query_period(skill, factory_request.utterance, state.period, message=message)
             except (ValueError, ValidationError):
                 _period_clarification(skill, language)
                 return True
@@ -550,7 +557,7 @@ def handle_reneryo_query(
         if action is SemanticAction.TREND_SHOW:
             semantic_period = resolution.slots.get("period", "") if resolution else ""
             try:
-                period = _query_period(skill, utterance, state.period, semantic_period)
+                period = _query_period(skill, utterance, state.period, semantic_period, message=message)
             except (ValueError, ValidationError):
                 _period_clarification(skill, language)
                 return True
@@ -561,7 +568,19 @@ def handle_reneryo_query(
                 else utterance
             )
             try:
-                trend = skill.dispatcher._run_async(service.trend(metric_query, period))
+                references = metric_references(metric_query, skill.dispatcher._run_async(service.metrics()))
+                if not references:
+                    raise ValidationError(message="Metric not found", code="METRIC_NOT_FOUND")
+                if len(references) > 1:
+                    _metric_clarification(skill, references, language)
+                    _remember(skill, message, state, operation="clarification",
+                              metric_name="", metrics=(), asset_ids=(), answer_evidence=(),
+                              pending_clarification="metric")
+                    return True
+                trend = skill.dispatcher._run_async(service.trend(
+                    utterance, period, metric=references[0],
+                    allow_history_fallback=not bool(state.period or extract_period_phrase(utterance)),
+                ))
             except (AdapterError, ValidationError) as exc:
                 _remember(skill, message, state, operation="trend", metric_name="",
                           pending_clarification="metric unavailable")
@@ -656,7 +675,7 @@ def handle_reneryo_query(
             return True
         if action is SemanticAction.METERS_LIST:
             semantic_period = resolution.slots.get("period", "") if resolution else ""
-            period = _query_period(skill, utterance, state.period, semantic_period)
+            period = _query_period(skill, utterance, state.period, semantic_period, message=message)
             references = metric_references(utterance, skill.dispatcher._run_async(service.metrics()))
             if len(references) > 1:
                 _metric_clarification(skill, references, language)
@@ -664,13 +683,18 @@ def handle_reneryo_query(
             rows = skill.dispatcher._run_async(service.meters(period))
             if references:
                 rows = [row for row in rows if row.metric_id == references[0].metric_id]
-            headline = meter_inventory_headline(rows, period, language)
+            from skill.services.reneryo_periods import meter_window_exact
+            exact_window = meter_window_exact(period.start, period.end)
+            headline = meter_inventory_headline(rows, period, language, exact_window=exact_window)
             evidence = [
                 {
                     "id": r.meter_id,
                     "name": r.name,
                     "resource": r.energy_resource,
                     "consumption": r.consumption,
+                    "unit_group": r.unit_group,
+                    "metric_id": r.metric_id,
+                    "period_exact": exact_window,
                 }
                 for r in rows
             ]
@@ -680,6 +704,9 @@ def handle_reneryo_query(
                 language=language,
                 response_type="meters",
                 evidence_rows=evidence,
+                warnings=[] if exact_window else [
+                    "Reneryo bucket boundaries do not establish exact consumption for this window."
+                ],
             )
             _remember(
                 skill, message, state, operation="meters", period=period,
@@ -854,6 +881,9 @@ def try_arbitrate_legacy_intent(
     if not isinstance(signed, dict) or not signed.get("organization_id"):
         return False
     utterance = skill._extract_utterance_text(message)
+    if extract_period_phrase(utterance) or unsupported_period_reference(utterance):
+        if handle_reneryo_query(skill, message, allow_semantic=False):
+            return True
     if unsupported_time_precision(utterance):
         # Recognizer slots and exact legacy matches cannot drop clock precision.
         return handle_reneryo_query(skill, message, allow_semantic=False)
@@ -1572,20 +1602,23 @@ def _is_finding_list(text: str) -> bool:
     )
 
 
-def _query_period(skill, utterance: str, current, semantic_period: str = ""):
+def _query_period(skill, utterance: str, current, semantic_period: str = "", *, message=None):
     """Extract a supported period phrase without sending the full query parser input."""
     if unsupported_period_reference(utterance):
         raise ValueError("Unsupported requested period")
     phrase = extract_period_phrase(utterance)
     if phrase:
+        if message is not None and getattr(skill, "settings_service", None) is not None:
+            from skill._helpers import parse_period
+            return parse_period(skill, phrase, message)
         parsed = skill._parse_period(phrase)
         if parsed:
             return parsed
     if semantic_period:
-        parsed = skill._parse_period(semantic_period)
-        if parsed:
-            return parsed
-    return current or default_period()
+        # A proposed slot cannot introduce a period absent from source text.
+        raise ValueError("Proposed period is not grounded in the original request")
+    from skill._helpers import request_clock
+    return current or default_period(now=request_clock(message))
 
 
 def _is_trend_follow_up(utterance: str) -> bool:
@@ -1608,9 +1641,9 @@ def _period_clarification(skill, language):
     speak_information(
         skill,
         (
-            "İstenen dönem desteklenmiyor, geçersiz veya gelecekte. Geçmiş bir tarih, ay ve yıl veya açık tarih aralığı belirtin; dönemi değiştirmedim."
+            "İstenen dönem desteklenmiyor, geçersiz, gelecekte veya kuruluşun saat dilimi doğrulanmamış. Geçmiş bir tarih, ay ve yıl veya açık tarih aralığı belirtin; dönemi değiştirmedim."
             if is_turkish(language)
-            else "The requested period is unsupported, invalid or in the future. Specify a past date, month and year, or an explicit date range; I have not changed the period."
+            else "The requested period is unsupported, invalid, in the future, or the organization timezone is not verified. Specify a past date, month and year, or an explicit date range; I have not changed the period."
         ),
         language=language,
         response_type="clarification",

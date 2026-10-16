@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable
 
+from skill.services.quantities import quantity_number
 from skill.domain.models import TimePeriod
 from skill.domain.reneryo_models import (
     MdspFindingList,
@@ -117,7 +118,7 @@ def regression_detail_headline(row: ReneryoRegression, language: str) -> str:
 
 
 def meter_inventory_headline(
-    rows: Iterable[ReneryoMeter], period: TimePeriod, language: str
+    rows: Iterable[ReneryoMeter], period: TimePeriod, language: str, *, exact_window: bool = True
 ) -> str:
     """Describe meter identity and make a zero-period result unambiguous."""
     meters = list(rows)
@@ -133,50 +134,38 @@ def meter_inventory_headline(
     resources = _unique(source_enum_label(row.energy_resource, language) for row in meters if row.energy_resource)
     metrics = _unique(row.metric_name for row in meters if row.metric_name)
     slices = _unique(name for row in meters for name in row.slice_names if name)
-    missing = any(row.consumption is None for row in meters)
-    total = sum(row.consumption for row in meters if row.consumption is not None)
-    has_positive_consumption = any((row.consumption or 0) > 0 for row in meters)
-
-    if turkish:
-        period_name = period_display_name(period.display_name, language)
-        headline = (
-            f"Reneryo'da {len(meters)} sayaç var: {_natural_join(names, turkish=True)}."
-        )
-        if resources:
-            headline += f" Enerji kaynağı {_natural_join(resources, turkish=True)}."
-        if metrics:
-            headline += f" Bağlı metrik: {_natural_join(metrics, turkish=True)}."
-        if slices:
-            headline += f" Kapsadığı bölüm: {_natural_join(slices, turkish=True)}."
-        if missing:
-            headline += f" {period_name} dönemi için tüketim verisi eksik; eksik veri sıfır tüketim değildir."
-        elif has_positive_consumption:
-            headline += f" {period_name} dönemi tüketimi {format_localized_number(total, language, ',.2f')}{' kWh' if all(m.energy_resource == 'ELECTRIC' for m in meters) else ''}."
-        else:
-            headline += (
-                f" {period_name} dönemi için dönen tüketim 0,00; bu, "
-                "sayacın mevcut olmadığını veya fabrikanın hiç tüketim yapmadığını göstermez."
-            )
-        return headline
-
-    headline = f"Reneryo has {len(meters)} meter: {_natural_join(names)}."
-    if len(meters) != 1:
-        headline = f"Reneryo has {len(meters)} meters: {_natural_join(names)}."
-    if resources:
-        headline += f" The energy resource is {_natural_join(resources)}."
+    period_name = period_display_name(period.display_name, language)
+    headline = (
+        f"Reneryo'da {len(meters)} sayaç var: {_natural_join(names, turkish=True)}."
+        if turkish else
+        f"Reneryo has {len(meters)} {'meter' if len(meters) == 1 else 'meters'}: {_natural_join(names)}."
+    )
     if metrics:
-        headline += f" It is linked to {_natural_join(metrics)}."
+        headline += (" Bağlı metrik: " if turkish else " It is linked to ") + _natural_join(metrics, turkish) + "."
+    if resources:
+        headline += (" Enerji kaynağı " if turkish else " The energy resource is ") + _natural_join(resources, turkish) + "."
     if slices:
-        headline += f" It covers {_natural_join(slices)}."
-    if missing:
-        headline += f" Consumption data for {period.display_name} is missing; missing data is not zero consumption."
-    elif has_positive_consumption:
-        headline += f" Consumption for {period.display_name} totals {total:,.2f}{' kWh' if all(m.energy_resource == 'ELECTRIC' for m in meters) else ''}."
-    else:
-        headline += (
-            f" The returned consumption for {period.display_name} is 0.00; that "
-            "does not mean the meter is absent or the factory used no energy."
-        )
+        headline += (" Kapsadığı bölüm: " if turkish else " It covers ") + _natural_join(slices, turkish) + "."
+    if not exact_window:
+        return headline + (" Reneryo veri aralıkları bu dönemle örtüşmediği için kesin dönem tüketimi veremiyorum." if turkish else
+                           " Exact period consumption is unavailable because Reneryo aggregate boundaries do not match this window.")
+    # Reneryo supplies individual meter values, not a cross-meter aggregate.
+    # Even compatible meters can overlap; adding them here would invent a total.
+    values = []
+    for meter in meters[:3]:
+        value = (format_reneryo_value(meter.consumption, meter.unit_group, language)
+                 if meter.consumption is not None else
+                 "veri eksik" if turkish else "data missing")
+        values.append(f"{meter.name}: {value}")
+    headline += f" {period_name} " + ("dönemi tüketimi: " if turkish else "consumption: ") + "; ".join(values) + "."
+    if any(m.consumption is None for m in meters):
+        headline += (" Eksik veri sıfır tüketim değildir." if turkish else " Missing data is not zero consumption.")
+    elif any(m.consumption == 0 for m in meters):
+        headline += (" Dönen 0,00, fabrikanın hiç tüketim yapmadığını göstermez." if turkish else
+                     " A returned 0.00 does not mean the factory used no energy.")
+    if len(meters) > 1:
+        headline += (" Sayaç değerlerini toplamadım; ayrı değerler ayrıntılarda mevcut." if turkish else
+                     " Meter values are kept separate; individual values are in the details.")
     return headline
 
 
@@ -317,6 +306,8 @@ def _natural_join(values: Iterable[str], turkish: bool = False) -> str:
     items = list(values)
     if not items:
         return ""
+    if len(items) > 5:
+        return _natural_join(items[:3], turkish) + (f" ve {len(items) - 3} tane daha" if turkish else f" and {len(items) - 3} more")
     if len(items) == 1:
         return items[0]
     conjunction = " ve " if turkish else " and "
@@ -335,14 +326,9 @@ def _range(values: Iterable[float], *, turkish: bool = False) -> str:
 def format_reneryo_value(value: float, unit_group: str, language: str) -> str:
     """Display Reneryo base units (UtilUnit), without altering source evidence."""
     displayed = value * 100 if unit_group == "RATE" else value
-    spec = ",.2f" if abs(displayed) >= 0.01 or displayed == 0 else ",.6f"
-    if 0 < abs(displayed) < 0.000001:
-        spec = ".2e"
-    number = format_localized_number(displayed, language, spec)
-    if "e" not in number:
-        number = number.rstrip("0").rstrip("," if is_turkish(language) else ".")
+    number = quantity_number(displayed, language)
     if unit_group == "RATE":
         return f"%{number}" if is_turkish(language) else f"{number}%"
-    units = {"ENERGY": "kWh", "TEMPERATURE": "°C",
+    units = {"ENERGY": "kWh", "TEMPERATURE": "°C", "VOLUME": "m³", "WEIGHT": "kg",
              "PIECE": "adet" if is_turkish(language) else "unit" if value == 1 else "units"}
     return f"{number} {units.get(unit_group, source_enum_label(unit_group, language))}".strip()

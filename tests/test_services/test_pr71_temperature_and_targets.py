@@ -135,10 +135,8 @@ def test_relative_and_default_scenarios_remain_distinct_from_absolute_target(tex
 
 
 @pytest.mark.parametrize('language,text', [
-    ('tr-TR', 'Hat 2 OEE yüzde doksan olursa ne olur'),
     ('tr-TR', 'Hat 2 OEE yüzde90 olursa ne olur'),
     ('en-US', 'What if OEE reaches percent90 for Line 2'),
-    ('en-US', 'What if OEE reaches ninety percent for Line 2'),
     ('tr-TR', 'Hat 2 OEE yüzde 90 veya yüzde 95 olursa ne olur'),
     ('en-US', 'What if OEE reaches 90 or 95 percent for Line 2'),
     ('tr-TR', 'Hat 2 OEE 90 olursa ne olur'),

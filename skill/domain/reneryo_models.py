@@ -30,6 +30,7 @@ class ReneryoMeter:
     metric_id: str
     metric_name: str
     slice_names: tuple[str, ...] = ()
+    unit_group: str = ""
 
 
 @dataclass(frozen=True)

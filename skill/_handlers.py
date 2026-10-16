@@ -17,6 +17,7 @@ from skill.domain.results import KPIResult
 from skill.services.dia_response import clarification_metadata, speak_with_evidence, speak_information
 from skill.services.language import is_turkish
 from skill.services.period_resolution import remove_period_reference
+from skill.services.quantities import normalize_quantity_expressions
 from skill.services.query_scope import entity_scope, is_comparison_request
 from skill.services.dia_dialogue import (
     _is_explicit_capabilities_request,
@@ -190,6 +191,7 @@ def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
     from skill._reneryo_handlers import (
         handle_reneryo_query,
         has_signed_widget_context,
+        try_handle_scoped_query,
     )
 
     if handle_reneryo_query(skill, message, allow_semantic=False):
@@ -199,6 +201,12 @@ def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
         utterance
     ):
         if try_handle_structured_query(skill, message, include_simple_kpi=True):
+            return
+
+    if has_signed_widget_context(message) and (
+        is_comparison_request(utterance) or entity_scope(utterance)[0]
+    ):
+        if try_handle_scoped_query(skill, message):
             return
 
     if has_signed_widget_context(message) and handle_reneryo_query(skill, message):
@@ -406,7 +414,7 @@ def _build_whatif_scenario(
     # Line/Hat numeric aliases identify equipment, not a scenario quantity.
     without_asset = re.sub(r"\b(?:line|hat)\s+\d+\b", " ", without_asset)
     explicit_quantity = bool(re.search(
-        r"%|\b(?:percent|yüzde|yuzde|reach\w*|become\w*|hedef\w*)|(?<!\w)\d",
+        r"%|\b(?:by|percent|yüzde|yuzde|reach\w*|become\w*|hedef\w*)|(?<!\w)\d",
         remove_period_reference(without_asset),
     ))
     if explicit_quantity and (
@@ -503,7 +511,7 @@ _WHATIF_NUMBER = r"[-+]?\d+(?:\.\d+)?(?!\d|[.,]\d)"
 
 def _whatif_quantity_text(utterance: str) -> str:
     """Keep Turkish letters, decimal precision and signs in scenario quantities."""
-    text = utterance.casefold().replace("i\u0307", "i")
+    text = normalize_quantity_expressions(utterance)
     text = re.sub(r"(?<=\d),(?=\d)", ".", text)
     text = re.sub(r"[^\w.%+,\s-]", " ", text)
     return re.sub(r"\s+", " ", text).strip()

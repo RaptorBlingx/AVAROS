@@ -145,5 +145,6 @@ async def test_reference_set_narrows_exact_names_but_preserves_legacy_single_mat
 def test_quantity_units_are_not_metric_attribute_requests(text, language):
     skill = skill_with_proposal(SemanticAction.METERS_LIST)
     assert handle_reneryo_query(skill, _message(text, language))
-    assert response(skill)['response_type'] == 'information'
+    assert response(skill)['response_type'] == 'unavailable'
+    assert not response(skill)['evidence_rows']
     assert skill._futuregen_service.reneryo.calls

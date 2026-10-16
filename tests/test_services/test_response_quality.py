@@ -66,7 +66,7 @@ def test_turkish_scenario_states_absolute_target_and_material_confidence():
                           baseline=57.2, projected=90, delta=32.8, delta_percent=57.34,
                           confidence=.45, factors={'target_value': 90}, unit='%')
     text = TurkishResponseBuilder().format_whatif_result(result)
-    assert 'hedef değer yüzde 90,0' in text and 'güven düzeyi düşük' in text
+    assert 'hedef değer yüzde 90' in text and 'güven düzeyi düşük' in text
     assert 'gelebilir' in text and '57,3' in text
 
 
@@ -89,7 +89,7 @@ def test_turkish_widget_scenario_metadata_uses_same_typed_assumption():
     skill = Mock(_response_language='tr-TR', response_builder=TurkishResponseBuilder())
     speak_with_evidence(skill, skill.response_builder.format_whatif_result(result), result)
     meta = skill.speak.call_args.kwargs['meta']['avaros_response']
-    assert meta['assumptions'] == ['Varsayım: hedef değer yüzde 90,0.']
+    assert meta['assumptions'] == ['Varsayım: hedef değer yüzde 90.']
     assert meta['warnings'] == ['Bu aritmetik senaryo karar desteği içindir; nedensel bir model değildir.']
     assert [r['value'] for r in meta['evidence_rows']] == [80, 90]
     assert [r['label'] for r in meta['evidence_rows']] == ['Başlangıç', 'Senaryo']

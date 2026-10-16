@@ -92,7 +92,7 @@ def test_turkish_collection_localizes_owned_words_and_preserves_source_name_and_
     _speak_result_collection(skill, "KPI results", rows)
     text = skill.speak.call_args.args[0]
     metadata = skill.speak.call_args.kwargs["meta"]["avaros_response"]
-    assert text == "KPI sonuçları: Cooling degree days - Open Weather toplam ekipman etkinliği yüzde 82,5; Cooling degree days - Open Weather toplam ekipman etkinliği yüzde 75,0."
+    assert text == "KPI sonuçları: Cooling degree days - Open Weather toplam ekipman etkinliği yüzde 82,5; Cooling degree days - Open Weather toplam ekipman etkinliği yüzde 75."
     assert metadata["language"] == "tr-TR"
     assert [r["value"] for r in metadata["evidence_rows"]] == [82.5, 75]
     assert all(r["asset_id"] == "Line-10" and r["unit"] == "%" and r["metric"] == "oee" for r in metadata["evidence_rows"])
@@ -124,7 +124,7 @@ def test_known_metadata_enums_are_not_record_names_or_unit_conversions():
     meter = ReneryoMeter("m", "ELECTRIC", "ELECTRIC", 12.5, "source-id", metric.name)
     text = meter_inventory_headline([meter], TimePeriod.latest(), "tr-TR")
     assert "sayaç var: ELECTRIC" in text and "Enerji kaynağı elektrik" in text
-    assert "12,50" in text and "PIECE - Open Weather" in text
+    assert "12,5" in text and "PIECE - Open Weather" in text
 
 
 @pytest.mark.parametrize("language,expected", [("en-US", "Reneryo data is temporarily unavailable."), ("tr-TR", "Reneryo verilerine şu anda erişilemiyor.")])

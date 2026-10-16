@@ -133,3 +133,26 @@ def format_observation_time(value: datetime, language: str | None) -> str:
         value = value.astimezone(timezone.utc)
     stamp = value.strftime("%d.%m.%Y %H:%M" if is_turkish(language) else "%d %B %Y %H:%M")
     return stamp + (" UTC" if value.tzinfo is not None else "")
+
+
+def speech_text(text: str, language: str) -> str:
+    """Adapt quantity spelling for TTS without changing facts or limitations."""
+    turkish = is_turkish(language)
+    grouping = "." if turkish else ","
+    text = re.sub(
+        rf"(?<!\w)\d{{1,3}}(?:{re.escape(grouping)}\d{{3}})+(?:[,.]\d+)?(?!\w)",
+        lambda match: match.group(0).replace(grouping, ""), text,
+    )
+    units = {
+        "kWh/unit": "kilovat saat/birim" if turkish else "kilowatt hours per unit",
+        "kWh": "kilovat saat" if turkish else "kilowatt hours",
+        "kW": "kilovat" if turkish else "kilowatts",
+        "°C": "derece Celsius" if turkish else "degrees Celsius",
+        "m³": "metreküp" if turkish else "cubic metres",
+        "kg": "kilogram" if turkish else "kilograms",
+    }
+    for symbol, spoken in units.items():
+        text = re.sub(rf"(?<=\d)\s*{re.escape(symbol)}(?![\w/])", " " + spoken, text)
+    text = re.sub(r"%(\d[\d,.]*)", r"yüzde \1" if turkish else r"\1 percent", text)
+    text = re.sub(r"(\d[\d,.]*)%", r"yüzde \1" if turkish else r"\1 percent", text)
+    return text

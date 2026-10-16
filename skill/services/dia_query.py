@@ -108,6 +108,7 @@ def parse_structured_query(
     assets: list[Asset],
     prior=None,
     timezone_name: str = "UTC",
+    now=None,
 ) -> StructuredQuery:
     """Resolve operation first, then every metric, asset, period, and scope."""
     requested = affirmative_request(utterance)
@@ -138,7 +139,7 @@ def parse_structured_query(
         if _matches_registered_utterance("compare.energy", text):
             metrics = [CanonicalMetric.ENERGY_PER_UNIT]
     asset_ids, scope_kind = _resolve_assets(text, assets)
-    period, period_error = _resolve_period(requested, timezone_name)
+    period, period_error = _resolve_period(requested, timezone_name, now=now)
 
     configured_asset_keys = {
         _normalize(label)
@@ -334,7 +335,7 @@ def _resolve_assets(text: str, assets: list[Asset]) -> tuple[list[str], str]:
     return [], ""
 
 
-def _resolve_period(text: str, timezone_name: str) -> tuple[TimePeriod | None, str]:
+def _resolve_period(text: str, timezone_name: str, *, now=None) -> tuple[TimePeriod | None, str]:
     if unsupported_time_precision(text):
         return None, "Time-of-day queries are not supported. Specify a day, month, or date range."
     if unsupported_period_reference(text):
@@ -345,6 +346,7 @@ def _resolve_period(text: str, timezone_name: str) -> tuple[TimePeriod | None, s
             return TimePeriod.from_natural_language(
                 phrase,
                 timezone_name=timezone_name,
+                now=now,
             ), ""
         except ValueError as exc:
             return None, str(exc)

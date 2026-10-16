@@ -46,6 +46,8 @@ def make_skill(language, kind="item"):
     settings = _StubSettingsService({"energy_total": {
         "endpoint": endpoint, "json_path": "$.lastValue", "unit": "kWh",
     }}, {"Line-1": asset})
+    from types import SimpleNamespace
+    settings.get_profile = lambda _: SimpleNamespace(extra_settings={"organization_timezones": {"futuregen": "UTC"}})
     skill.settings_service = settings
     adapter = GenericRestAdapter("https://synthetic.invalid", "synthetic-token",
                                  settings_service=settings)

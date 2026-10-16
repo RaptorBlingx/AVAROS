@@ -257,3 +257,56 @@ describe("ConnectionManager", () => {
     expect(utterance.payload.context.session.lang).toBe("tr-TR");
   });
 });
+
+describe("grounded display and speech", () => {
+  it("keeps the display headline and spoken units from the same reply", async () => {
+    class MockWebSocket {
+      static readonly CONNECTING = 0;
+      static readonly OPEN = 1;
+      static readonly CLOSED = 3;
+      readyState = MockWebSocket.CONNECTING;
+      sentMessages: string[] = [];
+      onopen: (() => void) | null = null;
+      onmessage: ((event: { data: string }) => void) | null = null;
+      onerror: (() => void) | null = null;
+      onclose: ((event: { code?: number }) => void) | null = null;
+
+      constructor() {
+        MockWebSocket.instances.push(this);
+      }
+
+      send(message: string): void {
+        this.sentMessages.push(message);
+      }
+
+      close(): void {
+        this.readyState = MockWebSocket.CLOSED;
+      }
+
+      simulateOpen(): void {
+        this.readyState = MockWebSocket.OPEN;
+        this.onopen?.();
+      }
+
+      static instances: MockWebSocket[] = [];
+    }
+
+    vi.stubGlobal("crypto", {getRandomValues: (buffer: Uint8Array) => buffer, randomUUID: () => "presentation"});
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const manager = new ConnectionManager("wss://avaros.example.com/hivemind/", "widget", "access-key", "", "", "tr-TR");
+    const reply = vi.fn();
+    manager.onSpeak(reply);
+    manager.connect();
+    const socket = MockWebSocket.instances[0];
+    socket.simulateOpen();
+    socket.onmessage?.({data: JSON.stringify({msg_type: "bus", payload: {
+      type: "speak", data: {utterance: "59645,93 kilovat saat. Veri kapsamı eksik olabilir.", meta: {avaros_response: {
+        language: "tr-TR", headline: "59.645,93 kWh. Veri kapsamı eksik olabilir.", evidence_rows: [{name: "Ana sayaç"}],
+      }}}, context: {},
+    }})});
+    await Promise.resolve();
+    expect(reply).toHaveBeenCalledWith("59.645,93 kWh. Veri kapsamı eksik olabilir.", "tr-TR", "59645,93 kilovat saat. Veri kapsamı eksik olabilir.", ["Ana sayaç"]);
+    manager.destroy();
+    vi.unstubAllGlobals();
+  });
+});

@@ -486,6 +486,12 @@ export function WidgetPanel({
                 >
                   <div className="voice-chat-message__bubble">
                     <p className="voice-chat-message__text">{message.text}</p>
+                    {message.inventoryNames && message.inventoryNames.length > 5 && (
+                      <details>
+                        <summary>{message.language === "tr-TR" ? "Tümünü göster" : "Show all"}</summary>
+                        <ul>{message.inventoryNames.map((name, index) => <li key={index}>{name}</li>)}</ul>
+                      </details>
+                    )}
                     <div className="voice-chat-message__meta">
                       <span
                         className="voice-chat-message__source"

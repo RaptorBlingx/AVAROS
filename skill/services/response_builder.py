@@ -24,6 +24,8 @@ Usage:
 
 from __future__ import annotations
 
+from skill.services.quantities import quantity_number
+
 from typing import TYPE_CHECKING, Callable
 
 from skill.services.language import is_turkish, metric_display_name, period_display_name, format_localized_number
@@ -563,17 +565,10 @@ class ResponseBuilder:
     def _format_number(value: float) -> str:
         """Format a number with adaptive precision for readability.
 
-        Uses 1 decimal for normal values (≥0.1) and up to 4 significant
-        figures for very small values so they don't collapse to '0.0'.
+        Shares quantity precision with Reneryo narration and keeps small
+        nonzero values in decimal form for speech.
         """
-        abs_value = abs(value)
-        if abs_value == 0:
-            return "0"
-        if abs_value >= 0.1:
-            return f"{value:.1f}"
-        if abs_value >= 0.001:
-            return f"{value:.4f}"
-        return f"{value:.2e}"
+        return quantity_number(value, grouped=False)
 
     def _format_comparison_value(self, value: float, unit: str) -> str:
         """Use compact but unambiguous units in spoken comparison rows."""

@@ -7,7 +7,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 from skill.domain.models import TimePeriod
-from skill.services.futuregen import match_metric, next_month
+from skill.services.reneryo_periods import history_resolution, meter_window_exact
+from skill.services.futuregen import metric_references, next_month
 from skill.services.futuregen_responses import format_reneryo_value
 from skill.services.language import (
     is_turkish, normalize_phrase, period_display_name, format_observation_time,
@@ -455,7 +456,8 @@ async def answer_factory_question(service, request, period, language) -> Factory
             suggestions=suggestions,
         )
     metrics = await service.metrics()
-    metric = match_metric(request.metric_hint, metrics)
+    references = metric_references(request.utterance, metrics) or metric_references(request.metric_hint, metrics)
+    metric = references[0] if len(references) == 1 else None
     group = (
         "ENERGY"
         if request.metric_hint == "electricity"
@@ -473,7 +475,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
     ]
     if len(named) == 1:
         metric = named[0]
-    if len(candidates) > 1 and len(named) != 1:
+    if (len(references) > 1 or len(candidates) > 1) and len(named) != 1:
         return FactoryAnswer(
             (
                 "Birden fazla ölçüm var; lütfen adını seçin."
@@ -572,6 +574,14 @@ async def answer_factory_question(service, request, period, language) -> Factory
     aggregation = "MONTHLY" if month_aligned else "DAILY"
     if request.kind == "amount" and metric.unit_group == "ENERGY":
         aggregation = "DAILY" if (period.end - period.start).days > 7 else "HOURLY"
+    if explicit_window:
+        aggregation = history_resolution(period, aggregation)
+    if request.kind == "amount" and metric.unit_group == "ENERGY" and explicit_window and not meter_window_exact(period.start, period.end):
+        return FactoryAnswer(
+            ("Reneryo sayaç toplamlarının veri aralıkları istenen yerel dönemle örtüşmüyor; bu dönem için kesin tüketim veremiyorum." if tr else
+             "Reneryo meter aggregate boundaries do not match the requested window; exact consumption for this period is unavailable."),
+            "unavailable", metric_name=metric.name, period=period,
+        )
     points = (
         await service.reneryo.metric_values(
             metric.metric_id, period.start, period.end, aggregation
@@ -598,7 +608,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
         )
         total_count = len(points)
         aggregation = "MONTHLY"
-    if not points:
+    if not points and not explicit_window:
         points, total_count = await service.reneryo.recent_metric_values(metric)
         aggregation = "MONTHLY"
     if not points:
@@ -613,6 +623,8 @@ async def answer_factory_question(service, request, period, language) -> Factory
                 if metric.last_value_at
                 else ""
             ),
+            period=period if explicit_window else None,
+            response_type="unavailable",
             **common,
         )
     actual = (
@@ -636,28 +648,6 @@ async def answer_factory_question(service, request, period, language) -> Factory
         meters = [
             m for m in await service.meters(actual) if m.metric_id == metric.metric_id
         ]
-        if (
-            explicit_window
-            and not fallback
-            and (not meters or any(m.consumption is None for m in meters))
-        ):
-            historical, _ = await service.reneryo.recent_metric_values(metric)
-            if historical:
-                actual = TimePeriod(
-                    historical[-1].timestamp,
-                    next_month(historical[-1].timestamp),
-                    f"{historical[-1].timestamp:%Y-%m}",
-                )
-                prefix = (
-                    f"{period_display_name(period.display_name, language)}: Dönem tüketimi mevcut değil. Mevcut tarihsel tüketim: "
-                    if tr
-                    else f"{period_display_name(period.display_name, language)}: Period consumption is unavailable. Showing dated historical consumption instead: "
-                )
-                meters = [
-                    m
-                    for m in await service.meters(actual)
-                    if m.metric_id == metric.metric_id
-                ]
         rows = [
             {
                 "meter": m.name,
@@ -715,11 +705,11 @@ async def answer_factory_question(service, request, period, language) -> Factory
         f"{format_observation_time(p.timestamp, language) if aggregation != 'MONTHLY' else p.timestamp.strftime('%Y-%m')}: {format_reneryo_value(p.value, metric.unit_group, language)}"
         for p in points[-3:]
     )
-    label = (
-        ("Reneryo aylık dönem değerleri" if tr else "Reneryo monthly period values")
-        if aggregation == "MONTHLY"
-        else ("Reneryo günlük dönem değerleri" if tr else "Reneryo daily period values")
-    )
+    cadence = {
+        "MONTHLY": ("aylık", "monthly"), "DAILY": ("günlük", "daily"),
+        "HOURLY": ("saatlik", "hourly"), "MINUTELY": ("dakikalık", "minutely"),
+    }[aggregation][0 if tr else 1]
+    label = f"Reneryo {cadence} dönem değerleri" if tr else f"Reneryo {cadence} period values"
     headline = (
         prefix
         + f"{metric.name}, {period_display_name(actual.display_name, language)}. {label}: {preview}. "

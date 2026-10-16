@@ -278,7 +278,7 @@ def test_trend_energy_falls_back_to_kpi_when_trend_unavailable():
     skill.response_builder.format_kpi_result.assert_called_once_with(kpi_result)
     spoken = skill.speak.call_args.args[0]
     assert "couldn't find enough trend points" in spoken
-    assert "Energy per unit for Line-1 is 2.35 kWh/unit today." in spoken
+    assert "Energy per unit for Line-1 is 2.35 kilowatt hours per unit today." in spoken
 
 
 def test_old_trend_scrap_intent_still_works():

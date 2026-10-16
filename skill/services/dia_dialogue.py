@@ -68,11 +68,14 @@ def try_handle_structured_query(skill, message, *, include_simple_kpi: bool = Fa
         prior = _context_state(skill, message)
         store.put(session_id, prior)
     assets = skill._get_asset_registry()
+    from skill._helpers import request_clock
+
     query = parse_structured_query(
         utterance,
         assets=assets,
         prior=prior,
-        timezone_name=_site_timezone(skill),
+        timezone_name=_site_timezone(skill, message),
+        now=request_clock(message),
     )
 
     should_claim = (
@@ -668,12 +671,10 @@ def _period_suggestions() -> list[str]:
     return ["Use last month", "Use past 30 days", "Use 2026-07-01 to 2026-07-31"]
 
 
-def _site_timezone(skill) -> str:
-    try:
-        config = skill.settings_service.get_profile(skill._resolve_active_profile())
-        return str(config.extra_settings.get("site_timezone", "UTC") or "UTC") if config else "UTC"
-    except Exception:
-        return "UTC"
+def _site_timezone(skill, message=None) -> str | None:
+    from skill._helpers import request_timezone
+
+    return request_timezone(skill, message)
 
 
 def _is_follow_up(utterance: str) -> bool:

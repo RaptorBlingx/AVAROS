@@ -155,6 +155,7 @@ def test_bare_or_contradictory_exclusion_clarifies_without_execution(text, langu
 def test_failed_explicit_trend_executes_once_and_clears_stale_metric(exception, text, language):
     skill = harness()
     service = skill._futuregen_service
+    service.metrics = AsyncMock(return_value=[ReneryoMetric("h", "Humidity", "GAUGE", "RATE")])
     service.trend = AsyncMock(side_effect=exception("Synthetic failure", code="TEST_FAILURE"))
     skill._dialogue_state_store.put("collection-session", DialogueState(
         operation="trend", metric_name="Tesis Toplam Üretim Miktarı",

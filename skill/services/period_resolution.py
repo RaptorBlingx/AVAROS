@@ -6,6 +6,7 @@ import calendar
 import re
 
 from skill.services.language import normalize_phrase
+from skill.services.quantities import normalize_quantity_expressions
 
 _MONTH_NAMES = (
     "|".join(month.lower() for month in calendar.month_name[1:])
@@ -16,6 +17,10 @@ _NAMED_MONTH_RANGE = re.compile(
     rf"({_MONTH_NAMES})\s+(\d{{4}})(?:\s+(?:ya|ye|a|e))?\b"
 )
 _NAMED_MONTH = re.compile(rf"\b(?:{_MONTH_NAMES})\s+\d{{4}}\b")
+
+# Case and possessive endings belong to the shared calendar expression,
+# including forms such as ayının / haftasının, rather than subject text.
+_TR_CALENDAR_SUFFIX = r"(?:ı|i|ın|in|ının|inin|nın|nin|sının|sinin|a|e|yı|yi|ya|ye|da|de|dan|den|daki|deki|ında|inde|ındaki|indeki)?"
 
 _PERIOD_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
     (re.compile(pattern), canonical)
@@ -35,16 +40,16 @@ _PERIOD_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"\btoday\b", "today"),
         (r"\b(?:right now|latest|current)\b", "latest"),
         (
-            r"\b(?:geçen|önceki|onceki) (?:takvim )?ay(?:ın|ı|a|da|dan|ında|ındaki)?\b",
+            rf"\b(?:geçen|gecen|önceki|onceki) (?:takvim )?ay{_TR_CALENDAR_SUFFIX}\b",
             "geçen ay",
         ),
-        (r"\bson ay(?:ın|ı|a|da|dan)?\b", "son ay"),
-        (r"\bson (?:dört|4) hafta(?:yı|ya|daki|da|dan|nın)?\b", "son dört hafta"),
+        (rf"\bson ay{_TR_CALENDAR_SUFFIX}\b", "son ay"),
+        (rf"\bson (?:dört|4) hafta{_TR_CALENDAR_SUFFIX}\b", "son dört hafta"),
         (r"\bson (?:otuz|30) gün(?:ü|e|de|den)?\b", "son 30 gün"),
-        (r"\b(?:geçen|son) hafta(?:yı|ya|daki|da|dan|nın)?\b", "geçen hafta"),
-        (r"\bson (?:iki|2) hafta(?:yı|ya|daki|da|dan|nın)?\b", "son iki hafta"),
-        (r"\bbu ay\b", "bu ay"),
-        (r"\bbu hafta\b", "bu hafta"),
+        (rf"\b(?:geçen|son) hafta{_TR_CALENDAR_SUFFIX}\b", "geçen hafta"),
+        (rf"\bson (?:iki|2) hafta{_TR_CALENDAR_SUFFIX}\b", "son iki hafta"),
+        (rf"\bbu ay{_TR_CALENDAR_SUFFIX}\b", "bu ay"),
+        (rf"\bbu hafta{_TR_CALENDAR_SUFFIX}\b", "bu hafta"),
         (r"\b(?:dün|dun)(?:kü|ku)?\b", "dün"),
         (r"\b(?:bugün|bugun)(?:kü|ku)?\b", "bugün"),
         (r"\b(?:şu anda|şimdi|en güncel)\b", "en güncel"),
@@ -54,7 +59,7 @@ _PERIOD_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
 
 def extract_period_phrase(utterance: str) -> str:
     """Return a parser-supported period without using semantic inference."""
-    text = normalize_phrase(utterance)
+    text = normalize_phrase(normalize_quantity_expressions(utterance))
     iso_range = re.search(
         r"\b\d{4}-\d{2}-\d{2}\s+(?:to|through|until|ile|ila)\s+\d{4}-\d{2}-\d{2}\b",
         text,
@@ -110,12 +115,12 @@ def extract_period_phrase(utterance: str) -> str:
     named_month = _NAMED_MONTH.search(text)
     if named_month:
         return named_month.group(0)
-    days = re.search(r"\b(?:last|past|son) (\d+) (?:days|gün|gun)\b", text)
-    if days:
+    days = re.search(r"\b(?:last|past|son) (\d+) (days|weeks|gün(?:ün|ü|e|de|den|deki|lük|ler)?|gun(?:un|u|e|de|den|deki|luk|ler)?|hafta\w*)\b", text)
+    if days and not (int(days.group(1)) in {2, 4} and days.group(2).startswith(("week", "hafta"))):
         return (
-            f"last {days.group(1)} days"
+            f"last {days.group(1)} {'weeks' if days.group(2) == 'weeks' else 'days'}"
             if not text[days.start() :].startswith("son")
-            else f"son {days.group(1)} gün"
+            else f"son {days.group(1)} {'hafta' if days.group(2).startswith('hafta') else 'gün'}"
         )
     for pattern, canonical in _PERIOD_PATTERNS:
         if pattern.search(text):
@@ -137,13 +142,14 @@ def named_month_reference(utterance: str) -> bool:
 
 def remove_period_reference(utterance: str) -> str:
     """Remove the matched source wording, even when its parser phrase differs."""
-    text = normalize_phrase(utterance)
+    text = normalize_phrase(normalize_quantity_expressions(utterance))
     phrase = extract_period_phrase(utterance)
     if phrase:
         for pattern, canonical in _PERIOD_PATTERNS:
             if canonical == phrase:
                 text = pattern.sub("", text)
         text = text.replace(phrase, "")
+        text = re.sub(r"\b(?:last|past|son) \d+ (?:days|weeks|gün(?:ün|ü|e|de|den|deki|lük|ler)?|gun(?:un|u|e|de|den|deki|luk|ler)?|hafta\w*)\b", "", text)
     return text
 
 
@@ -151,8 +157,16 @@ def unsupported_period_reference(utterance: str) -> bool:
     """An unrecognized explicit time reference must not become a default window."""
     if unsupported_time_precision(utterance):
         return True
-    text = normalize_phrase(utterance)
+    text = normalize_phrase(normalize_quantity_expressions(utterance))
     phrase = extract_period_phrase(utterance)
+    relative_spans = sorted({m.span() for pattern, _ in _PERIOD_PATTERNS
+                             for m in pattern.finditer(text)})
+    disjoint = []
+    for start, end in relative_spans:
+        if not disjoint or start >= disjoint[-1][1]:
+            disjoint.append((start, end))
+    if len(disjoint) > 1:
+        return True
     # These windows are outside the current parser contract. Reject them even
     # alongside a recognized date rather than retaining/defaulting a window.
     if re.search(
@@ -185,7 +199,7 @@ def unsupported_period_reference(utterance: str) -> bool:
         or bool(
             re.search(
                 r"\b(?:last|past|previous|prior|son|geçen|gecen|önceki|onceki) "
-                r"(?:\d+|two|three|four|six|iki|üç|uc|dört|dort|altı|alti)\b|"
+                r"[^.!?]*\b(?:days?|weeks?|months?|years?|gün(?:ün|ü|e|de|den|deki|lük|ler)?|gun(?:un|u|e|de|den|deki|luk|ler)?|hafta\w*|ay(?:ın|in|da|dan|ı|i)?|yıl\w*|yil\w*)\b|"
                 r"\b(?:this year|bu yıl|bu yil)\b", text
             )
         )

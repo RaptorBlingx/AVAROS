@@ -142,7 +142,7 @@ export function useConversation(): {
           rawEvidence && typeof rawEvidence === "object"
             ? (rawEvidence as unknown as AvarosResponseEvidence)
             : undefined;
-        addAvarosResponse(normalized, evidence);
+        addAvarosResponse(evidence?.headline || normalized, evidence);
       }
     });
   }, [on, addAvarosResponse]);

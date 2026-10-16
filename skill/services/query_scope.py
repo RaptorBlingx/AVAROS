@@ -8,6 +8,7 @@ import re
 
 from skill.services.language import normalize_phrase
 from skill.services.period_resolution import _MONTH_NAMES
+from skill.services.quantities import normalize_quantity_expressions
 
 
 _COMPARISON = re.compile(
@@ -120,6 +121,10 @@ def entity_scope(utterance: str, assets=()) -> tuple[bool, bool]:
     )
     if is_comparison_request(text):
         remaining = re.sub(r"\bwhich (?:line|asset|meter)\b", "measurement", remaining)
+    # Quantity words are not equipment heads (English "by ten percent",
+    # Turkish "yüzde on"). Remove verified asset labels first so numbers
+    # within source-owned names remain opaque to this local scope check.
+    remaining = normalize_quantity_expressions(remaining)
     # Parse the head of a prepositional noun phrase, rather than treating
     # its first adjective/determiner as an asset. Pronouns are not equipment;
     # factory-wide and supported operation nouns are typed domain references.

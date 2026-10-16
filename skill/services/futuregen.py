@@ -11,6 +11,7 @@ from skill.domain.exceptions import ValidationError
 from skill.domain.models import TimePeriod
 from skill.domain.reneryo_models import MdspFinding, MdspFindingList, ReneryoTrend
 from skill.services.language import normalize_phrase
+from skill.services.reneryo_periods import history_resolution
 
 
 class FutureGenService:
@@ -26,9 +27,12 @@ class FutureGenService:
     async def metrics(self):
         return await self.reneryo.list_metrics()
 
-    async def trend(self, utterance: str, period: TimePeriod) -> ReneryoTrend:
-        metrics = await self.metrics()
-        metric = match_metric(utterance, metrics)
+    async def trend(self, utterance: str, period: TimePeriod, *, metric=None, allow_history_fallback: bool = True) -> ReneryoTrend:
+        if metric is None:
+            references = metric_references(utterance, await self.metrics())
+            if len(references) > 1:
+                raise ValidationError(message="Ambiguous trend subject", code="METRIC_AMBIGUOUS")
+            metric = references[0] if references else None
         if metric is None:
             raise ValidationError(
                 message="No Future Gen metric matched the request",
@@ -45,11 +49,13 @@ class FutureGenService:
             extract_period_phrase(utterance)
         ):
             aggregation = "MONTHLY"
+        if extract_period_phrase(utterance) not in {"", "latest", "en güncel"}:
+            aggregation = history_resolution(period, aggregation)
         points = await self.reneryo.metric_values(
             metric.metric_id, period.start, period.end, aggregation
         )
         requested_period_label = ""
-        if not points:
+        if not points and allow_history_fallback and not extract_period_phrase(utterance):
             historical, _ = await self.reneryo.recent_metric_values(metric)
             if historical:
                 requested_period_label = period.display_name
@@ -115,8 +121,8 @@ class FutureGenService:
         return await self.mdsp.evaluate(organization_id)
 
 
-def default_period(days: int = 30) -> TimePeriod:
-    end = datetime.now(timezone.utc)
+def default_period(days: int = 30, *, now: datetime | None = None) -> TimePeriod:
+    end = now or datetime.now(timezone.utc)
     return TimePeriod(
         start=end - timedelta(days=days), end=end, display_name=f"last {days} days"
     )

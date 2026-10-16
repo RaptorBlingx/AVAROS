@@ -236,7 +236,13 @@ def test_exact_inventory_metric_name_with_equipment_term_remains_supported():
     ))
     response = skill.spoken[-1][1]["meta"]["avaros_response"]
     assert response["response_type"] != "clarification"
-    assert response["evidence_rows"]
+    assert response["response_type"] == "unavailable"
+    assert not response["evidence_rows"]
+    calls = skill._futuregen_service.reneryo.calls
+    assert calls[0][0] == "e"
+    expected = TimePeriod.from_natural_language("yesterday")
+    assert calls[0][1:3] == (expected.start, expected.end)
+    assert not any(call[0] == "meter" for call in calls)
 
 
 @pytest.mark.parametrize("text", [

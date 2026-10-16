@@ -135,6 +135,36 @@ Expected health response:
 {"status":"ok","version":"0.1.1"}
 ```
 
+### Organization-local query periods
+
+For signed Reneryo widget requests, calendar periods require an administrator-verified
+organization/timezone binding in the active profile's `extra_settings`:
+
+```json
+{"organization_timezones": {"verified-organization-id": "Europe/Istanbul"}}
+```
+
+Verify the organization ID and its IANA timezone before setting this metadata.
+Reneryo's current organization schema does not expose a timezone field. AVAROS does
+not infer this binding from language, browser timezone, hostname, or `site_timezone`.
+Missing/invalid bindings clarify local-date requests; rolling elapsed-day windows
+and latest observations do not require a local calendar. Unsigned native profiles
+retain their existing `site_timezone` behavior. This code change does not configure
+or deploy a binding for any real organization.
+
+Calendar boundaries use one request clock and are sent as UTC instants. Reneryo
+owns aggregation: AVAROS selects its existing history resolution and never prorates
+buckets. Meter windows that do not align with Reneryo's automatically selected
+buckets cannot establish exact local consumption; AVAROS reports that limitation.
+Meter values remain separate, including compatible meters that could overlap.
+Explicit empty windows do not fetch a different historical period.
+
+Spoken cardinal numbers are parsed only in duration/percentage expressions in the
+existing request handlers. Unsupported or ambiguous quantities clarify. The widget
+uses the same grounded reply's display headline and speech text, with bounded
+inventory narration and an expandable full name list. Actual STT/TTS listening
+acceptance remains separate from the automated text and signed-transport tests.
+
 ## License
 
 AVAROS is licensed under the Apache License 2.0. See [LICENSE](LICENSE).

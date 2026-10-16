@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from skill._asset_resolution import (
@@ -25,23 +26,44 @@ if TYPE_CHECKING:
     from ovos_bus_client.message import Message
 
 
-def parse_period(self, period_str: str) -> TimePeriod:
+def request_clock(message=None) -> datetime:
+    """Reuse one clock across existing handoffs without changing wire context."""
+    clock = getattr(message, "_avaros_request_clock", None) if message is not None else None
+    if not isinstance(clock, datetime):
+        clock = datetime.now(timezone.utc)
+        if message is not None:
+            message._avaros_request_clock = clock
+    return clock
+
+
+def request_timezone(self, message=None) -> str | None:
+    """Read an administrator-verified org binding, never a browser timezone.
+
+    Reneryo currently exposes no organization timezone field. Signed sessions
+    therefore require a server profile binding rather than an unassociated
+    site_timezone or a default derived from language, hostname or machine time.
+    """
+    settings = getattr(self, "settings_service", None)
+    resolve_profile = getattr(self, "_resolve_active_profile", None)
+    profile_name = resolve_profile() if callable(resolve_profile) else getattr(self, "_loaded_profile", "")
+    profile = settings.get_profile(profile_name) if settings and callable(getattr(settings, "get_profile", None)) else None
+    extra = profile.extra_settings if profile else {}
+    context = (getattr(message, "context", {}) or {}).get("reneryo_context", {})
+    organization = context.get("organization_id") if isinstance(context, dict) else None
+    if organization:
+        bindings = extra.get("organization_timezones", {})
+        value = bindings.get(str(organization)) if isinstance(bindings, dict) else None
+        return value if isinstance(value, str) and value else None
+    return str(extra.get("site_timezone", "UTC") or "UTC")
+
+
+def parse_period(self, period_str: str, message=None, *, now=None) -> TimePeriod:
     """Parse natural language period into TimePeriod value object."""
-    timezone_name = "UTC"
-    settings_service = getattr(self, "settings_service", None)
-    if settings_service is not None:
-        try:
-            profile = settings_service.get_profile(self._resolve_active_profile())
-            if profile is not None:
-                timezone_name = str(
-                    profile.extra_settings.get("site_timezone", "UTC") or "UTC"
-                )
-        except Exception:
-            timezone_name = "UTC"
     try:
         return TimePeriod.from_natural_language(
             period_str,
-            timezone_name=timezone_name,
+            timezone_name=request_timezone(self, message),
+            now=now or request_clock(message),
         )
     except ValueError as exc:
         raise ValidationError(
