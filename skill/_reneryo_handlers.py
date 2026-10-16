@@ -224,12 +224,13 @@ def handle_reneryo_query(
                 metrics = skill.dispatcher._run_async(_service(skill).metrics())
             except (AdapterError, ValidationError):
                 metrics = []
-            scope_text = normalize_phrase(scope_utterance)
+            scope_text = scope_utterance
             for metric in sorted(metrics, key=lambda row: len(row.name), reverse=True):
-                name = normalize_phrase(metric.name)
+                name = metric.name
                 if name:
                     scope_text = re.sub(
-                        rf"(?<![\w-]){re.escape(name)}(?![\w-])", "measurement", scope_text
+                        rf"(?<![\w-]){re.escape(name)}(?![\w-])", "measurement", scope_text,
+                        flags=re.IGNORECASE,
                     )
             scoped, unresolved = entity_scope(scope_text, assets)
     if comparison or scoped:
@@ -249,6 +250,38 @@ def handle_reneryo_query(
         return True
 
     factory_request = classify_factory_question(utterance, state)
+    inventory_actions = {
+        SemanticAction.METERS_LIST, SemanticAction.METRICS_LIST,
+        SemanticAction.REGRESSIONS_LIST, SemanticAction.REGRESSION_DETAIL,
+    }
+    operation = _deterministic_action(text, state)
+    if factory_request is not None and factory_request.kind == "amount":
+        # Existing inventory/definition verbs and entity nouns disambiguate the
+        # requested view; energy vocabulary alone does not own the operation.
+        inventory_cue = bool(re.search(
+            r"\b(?:devices?|quantities|measurements?|instruments?|kind|type|unit|"
+            r"cihaz\w*|ölçüm\w*|olcum\w*|tür\w*|tur\w*|birim\w*)\b", text
+        )) and bool(re.search(
+            r"\b(?:which|what|list|available|configured|hangi|hangileri|liste\w*)\b", text
+        )) and not bool(re.search(r"\b(?:how much|how many|ne kadar|kaç|kac)\b", text))
+        if inventory_cue and not allow_semantic and operation not in inventory_actions:
+            # The initial deterministic pass must leave uncertain operation
+            # ownership to the existing semantic pass, rather than read a total.
+            return False
+        if inventory_cue and semantic_resolution is None and allow_semantic:
+            resolver = getattr(skill, "_semantic_resolver", None)
+            if resolver is not None:
+                proposal = resolver.resolve(utterance, state=state, language=language)
+                definition = bool(re.search(
+                    r"\b(?:kind|type|unit|group|tür\w*|tur\w*|birim\w*)\b", text
+                ))
+                if proposal.accepted and (
+                    proposal.action in inventory_actions
+                    or (definition and proposal.action is SemanticAction.METRIC_DETAIL)
+                ):
+                    semantic_resolution = proposal
+        if inventory_cue and (operation in inventory_actions or semantic_resolution is not None):
+            factory_request = None
     if corrected and state.metric_name:
         explicit_amount = _has(text, "consum", "tüket", "tuket", "amount", "miktar",
                                "how much", "ne kadar", "produced", "ürett", "urett")
@@ -366,6 +399,7 @@ def handle_reneryo_query(
                 state=state,
                 language=language,
             )
+        if resolution is not None and resolution.accepted:
             action = resolution.action
         if action is None:
             grounded_metric = _ground_metric_reference(skill, utterance)
@@ -398,12 +432,12 @@ def handle_reneryo_query(
         _semantic_clarification(skill, language)
         _remember(skill, message, state, operation="clarification")
         return True
-    if action is SemanticAction.METRICS_LIST and not _has(
-        text, "metric", "metrik", "indicator", "gösterge", "gosterge", "kpi"
-    ):
-        _semantic_clarification(skill, language)
-        _remember(skill, message, state, operation="clarification")
-        return True
+    if action is SemanticAction.METRICS_LIST and re.match(r"^(?:please )?list\b", text):
+        # An explicit list subject still needs to name a supported collection.
+        # This is distinct from requiring literal 'metric' in every paraphrase.
+        if not re.search(r"\b(?:metrics?|indicators?|kpis?|measurements?|quantities|signals?)\b", text):
+            _semantic_clarification(skill, language)
+            return True
 
     def _execute() -> bool:
         service = _service(skill)
@@ -784,7 +818,8 @@ def try_arbitrate_legacy_intent(
         classify_factory_question(utterance, state) is not None
         or _deterministic_action(text, state) is not None
     ):
-        return handle_reneryo_query(skill, message, allow_semantic=False)
+        if handle_reneryo_query(skill, message, allow_semantic=False):
+            return True
 
     resolver = getattr(skill, "_semantic_resolver", None)
     if resolver is None:

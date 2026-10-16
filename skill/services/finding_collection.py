@@ -134,14 +134,15 @@ def is_evaluation_request(text: str) -> bool:
         return False
     english_command = re.search(
         r"^(?:please\s+)?(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+)?"
-        r"(?:analy[sz]e|evaluate|assess|run\s+(?:(?:a|an|the|new|fresh|manual|mdsp|decision[- ]support)\s+)*"
+        r"(?:analy[sz]e|evaluate|assess|(?:run|carry\s+out|perform)\s+(?:(?:a|an|the|new|fresh|manual|mdsp|decision[- ]support)\s+)*"
         r"(?:check|evaluation|assessment|analysis)|check\s+current)\b",
         text.strip(),
     )
     turkish_command = re.search(
         r"\b(?:(?:analiz|kontrol)\s+(?:et|yap|eder\s+misin|edebilir\s+misin)|"
         r"degerlendir(?:ir\s+misin)?|incele|"
-        r"(?:analiz(?:i|ini)?|degerlendirme(?:yi|sini)?)\s+(?:cal[ıi]st[ıi]r|baslat))\b"
+        r"(?:analiz(?:i|ini)?|degerlendirme(?:yi|sini|si)?)\s+"
+        r"(?:cal[ıi]st[ıi]r|baslat|yap)(?:man[ıi]\s+istiyorum|[ıi]r\s+m[ıi]s[ıi]n|abilir\s+misin)?)\b"
         r"(?=\s*(?:[.!?]*$|ve\b|lutfen\s*[.!?]*$))",
         text,
     )
@@ -208,7 +209,9 @@ def is_negated_evaluation_request(text: str) -> bool:
         text,
     ):
         return True
-    return _has(
+    return bool(re.search(
+        r"\b(?:cal[ıi]st[ıi]rma|baslatma|degerlendirme yapma|degerlendirme cal[ıi]st[ıi]rma)\b", text
+    )) or _has(
         text, "analiz etme", "analiz yapma", "veriyi degerlendirme", "veriyi inceleme"
     )
 
@@ -365,16 +368,17 @@ def filters_for(text: str, state: DialogueState) -> FindingFilters:
     ):
         severity, domain = "", ""
 
-    if _has(text, "resolved", "cozuldu", "çözüldü", "cozulmus", "çözülmüş"):
+    if _has(text, "resolved", "cozuldu", "cozulmus", "no longer active", "not active",
+            "etkin olmayan", "aktif olmayan"):
         status = "RESOLVED"
     elif _has(text, "active", "unresolved", "open", "aktif", "cozulmemis", "çözülmemiş", "acik", "açık"):
         status = "ACTIVE"
 
-    if _has(text, "high", "yüksek"):
+    if _has(text, "high", "yuksek"):
         severity = "HIGH"
     elif _has(text, "medium", "orta"):
         severity = "MEDIUM"
-    elif _has(text, "low", "düşük"):
+    elif _has(text, "low", "dusuk"):
         severity = "LOW"
     elif _has(text, "info", "bilgi"):
         severity = "INFO"

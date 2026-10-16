@@ -20,7 +20,7 @@ _COMPARISON = re.compile(
 )
 _EQUIPMENT = re.compile(
     r"\b(?:(?:boiler|compressor|turbine|pump|oven|machine|"
-    r"line|plant|department|workshop)(?:s|\d+)?|equipment|"
+    r"line|department|workshop)(?:s|\d+)?|equipment|plant\s+(?:[a-z]|\d+)\b|"
     r"kazan\w*|kompresör\w*|kompresor\w*|pompa\w*|türbin\w*|turbin\w*|"
     r"fırın\w*|firin\w*|makine\w*|ekipman\w*|hat\w*|bölüm\w*|bolum\w*)\b|"
     r"\b(?:meters?|resources?|sayaç|sayac)\s+"
@@ -34,10 +34,6 @@ _MEASUREMENT = re.compile(
     r"show|display|report|what|how|values?|review|inspect|incele\w*|kontrol|göster\w*|goster\w*|"
     r"elektr\w*|enerji|üret\w*|uret\w*|tüket\w*|tuket\w*|"
     r"eğilim|egilim|sıcaklık|sicaklik|nem)\b"
-)
-_QUALIFIER = re.compile(
-    r"\b(?:for|of|by|at|in|on)\s+(?:the\s+)?([\w-]+)|"
-    r"\b([\w-]+)\s+(?:s|nın|nin|nun|nün)\b"
 )
 _COMPARISON_ENTITY = re.compile(
     r"(?:\b(?:between|vs|versus|against|with|and|or|ile|ve)\s+|"
@@ -124,9 +120,27 @@ def entity_scope(utterance: str, assets=()) -> tuple[bool, bool]:
     )
     if is_comparison_request(text):
         remaining = re.sub(r"\bwhich (?:line|asset|meter)\b", "measurement", remaining)
-    unknown = bool(_EQUIPMENT.search(remaining)) or any(
-        not re.fullmatch(r"\d[\w-]*", candidate) and not _NON_ENTITY.fullmatch(candidate)
-        for match in _QUALIFIER.finditer(remaining)
+    # Parse the head of a prepositional noun phrase, rather than treating
+    # its first adjective/determiner as an asset. Pronouns are not equipment;
+    # factory-wide and supported operation nouns are typed domain references.
+    qualifiers = re.finditer(
+        r"\b(?:for|of|by|at|in|on)\s+"
+        r"(?:(?:the|a|an|our|your|their|my|daily|monthly|annual|recorded)\s+)*([\w-]+)|"
+        r"\b([\w-]+)\s+(?:s|nın|nin|nun|nün)\b", remaining
+    )
+    non_asset_head = re.compile(
+        r"^(?:me|us|you|them|site|plant|organization|"
+        r"regressions?|models?|findings?|assessments?|evaluations?|"
+        r"observations?|measurements?|quantities|guidance|evidence)$"
+    )
+    named_organization = re.search(
+        r"\b(?:for|of|in)\s+(?:the\s+)?(?:organization|organisation|tenant)\s+[\w-]+", remaining
+    )
+    unknown = bool(_EQUIPMENT.search(remaining) or named_organization) or any(
+        not re.fullmatch(r"\d[\w-]*", candidate)
+        and not _NON_ENTITY.fullmatch(candidate)
+        and not non_asset_head.fullmatch(candidate)
+        for match in qualifiers
         for candidate in [match.group(1) or match.group(2)]
     )
     if is_comparison_request(text):

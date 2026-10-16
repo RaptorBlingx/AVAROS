@@ -45,10 +45,10 @@ def is_cost_request(utterance: str) -> bool:
     text = normalize_phrase(utterance)
     if _has(text, "finding", "bulgu", "rule", "kural", "regression", "regresyon"):
         return False
-    return bool(re.search(
+    return bool(re.search(r"\bTRY\b", utterance)) or bool(re.search(
         r"\b(?:cost\w*|paid|pay|payment\w*|bill\w*|spend|spent)\b|"
         r"\b(?:maliyet|öde|ode|fatura|ücret|ucret)\w*|"
-        r"\b(?:kaç|kac|ne kadar) (?:para|lira|tl)\b", text,
+        r"\b(?:para|lira(?:ya|yı|yi|lık|lik|dan|da)?|tl|eur|usd|euros?|dollars?)\b", text,
     ))
 
 
@@ -81,7 +81,9 @@ def is_historical_change_question(text: str) -> bool:
         r"\b(?:how (?:did|has|have)|did|has|have)\b.*"
         r"\b(?:change(?:d)?|increase(?:d)?|decrease(?:d)?)\b|"
         r"\bnasıl değiş(?:ti|miş)\b|\bnasil degis(?:ti|mis)\b|"
-        r"\b(?:arttı|artti|azaldı|azaldi|yükseldi|yukseldi|düştü|dustu) m[ıi]\b",
+        r"\b(?:arttı|artti|azaldı|azaldi|yükseldi|yukseldi|düştü|dustu) m[ıi]\b|"
+        r"\b(?:direction|go up|go down|rise|fall|gidişat\w*|gidisat\w*)\b|"
+        r"\b(?:art|azal|yüksel|yuksel|düş|dus)(?:mış|mis|miş|mus|müş|muş)\b",
         text,
     ))
 
@@ -105,8 +107,8 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
         "weather",
         "temperature",
         "humidity",
-        "sıcaklık",
-        "sicaklik",
+        "sıcakl",
+        "sicakl",
         "nem",
         "turn off",
         "turn on",
@@ -291,7 +293,7 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
         "hat ",
         "bölüm",
         "bolum",
-    ) or re.search(r"\b(?:for|by|at|in)\s+(?:the\s+)?[a-zçğıöşü][\w-]*", remainder):
+    ):
         return FactoryRequest("scope_unavailable", hint, utterance)
     reading = _has(
         text,
@@ -303,7 +305,7 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
         "birikimli",
     ) or (_has(text, "değer", "deger") and not consumption and not production)
     if _has(text, "metric", "metrik", "metriğ", "metrig") or (
-        _has(text, "meter", "sayaç", "sayac") and not reading
+        _has(text, "meter", "sayaç", "sayac") and not reading and not consumption
     ):
         return None
     latest = _has(

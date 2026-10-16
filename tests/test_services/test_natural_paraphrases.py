@@ -84,7 +84,8 @@ def test_change_question_preserves_subject_operation_and_dates(text, language, i
     skill = harness(source)
     answer = ask(skill, text, language)
     assert answer["response_type"] == "trend"
-    assert source.calls[0] == (identifier, date(2020, 5), date(2020, 7), "DAILY")
+    # Named calendar-month comparisons use Reneryo-owned monthly deltas.
+    assert source.calls[0] == (identifier, date(2020, 5), date(2020, 7), "MONTHLY")
     assert not any(call[0] == "meter" for call in source.calls)
     if available:
         assert [row["value"] for row in answer["evidence_rows"]] == [12]

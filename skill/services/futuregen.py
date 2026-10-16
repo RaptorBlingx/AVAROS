@@ -37,6 +37,14 @@ class FutureGenService:
             )
         days = max(1, (period.end - period.start).days)
         aggregation = "HOURLY" if days <= 2 else "DAILY" if days <= 120 else "MONTHLY"
+        # Explicit multi-month counter comparisons request Reneryo's monthly
+        # aggregates, not the endpoints of daily readings across both months.
+        from skill.services.period_resolution import _NAMED_MONTH_RANGE, extract_period_phrase
+
+        if metric.metric_type == "COUNTER" and _NAMED_MONTH_RANGE.fullmatch(
+            extract_period_phrase(utterance)
+        ):
+            aggregation = "MONTHLY"
         points = await self.reneryo.metric_values(
             metric.metric_id, period.start, period.end, aggregation
         )
@@ -143,8 +151,8 @@ def match_metric(utterance: str, metrics):
     aliases = (
         ("electric", "elektrik", "elektriğ", "elektrig", "energy", "enerji"),
         ("production", "produce", "output", "uretim", "üretim", "üretti", "uretti"),
-        ("temperature", "sicaklik", "sıcaklık"),
-        ("humidity", "nem"),
+        ("temperature", "sicaklik", "sıcaklık", "sicaklig", "sıcaklığ"),
+        ("humidity", "humid", "nem"),
         ("heating degree", "isitma", "ısıtma"),
         ("cooling degree", "sogutma", "soğutma"),
         ("rain", "yagmur", "yağmur"),
@@ -172,4 +180,5 @@ def match_metric(utterance: str, metrics):
 
 def _contains_alias(text: str, alias: str) -> bool:
     """Match an alias at a word start, avoiding fragments such as nem/döneme."""
-    return re.search(rf"(?<!\w){re.escape(alias)}", text) is not None
+    ending = r"(?!\w)" if alias == "humid" else ""
+    return re.search(rf"(?<!\w){re.escape(alias)}{ending}", text) is not None

@@ -448,7 +448,8 @@ class TimePeriod:
         turkish_months = {
             "ocak": 1, "şubat": 2, "mart": 3, "nisan": 4,
             "mayıs": 5, "mayis": 5, "haziran": 6, "temmuz": 7, "ağustos": 8,
-            "eylül": 9, "ekim": 10, "kasım": 11, "aralık": 12,
+            "eylül": 9, "eylul": 9, "ekim": 10, "kasım": 11, "kasim": 11,
+            "aralık": 12, "aralik": 12, "subat": 2, "agustos": 8,
         }
         turkish_month = re.fullmatch(
             r"(" + "|".join(turkish_months) + r")\s+(\d{4})",

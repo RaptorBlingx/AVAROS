@@ -9,11 +9,11 @@ from skill.services.language import normalize_phrase
 
 _MONTH_NAMES = (
     "|".join(month.lower() for month in calendar.month_name[1:])
-    + r"|ocak|şubat|mart|nisan|mayıs|mayis|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık"
+    + r"|ocak|şubat|subat|mart|nisan|mayıs|mayis|haziran|temmuz|ağustos|agustos|eylül|eylul|ekim|kasım|kasim|aralık|aralik"
 )
 _NAMED_MONTH_RANGE = re.compile(
-    rf"\b(?:{_MONTH_NAMES})(?:\s+\d{{4}})?\s*(?:to|through|and|ile|-)\s*"
-    rf"(?:{_MONTH_NAMES})\s+\d{{4}}\b"
+    rf"\b({_MONTH_NAMES})(?:\s+(\d{{4}}))?\s*(?:to|through|and|ile|-|dan|den)\s*"
+    rf"({_MONTH_NAMES})\s+(\d{{4}})(?:\s+(?:ya|ye|a|e))?\b"
 )
 _NAMED_MONTH = re.compile(rf"\b(?:{_MONTH_NAMES})\s+\d{{4}}\b")
 
@@ -87,7 +87,8 @@ def extract_period_phrase(utterance: str) -> str:
             )
         )
     )
-    months["mayis"] = 5
+    months.update({"mayis": 5, "subat": 2, "agustos": 8,
+                   "eylul": 9, "kasim": 11, "aralik": 12})
     named_day = re.search(
         rf"\b({_MONTH_NAMES})\s+(\d{{1,2}})(?:st|nd|rd|th)?(?:,)?\s+(\d{{4}})\b", text
     )
@@ -102,7 +103,10 @@ def extract_period_phrase(utterance: str) -> str:
         return f"{int(year):04d}-{months[month]:02d}-{int(day):02d}"
     named_range = _NAMED_MONTH_RANGE.search(text)
     if named_range:
-        return named_range.group(0)
+        if not re.search(r"\b(?:dan|den)\b", named_range.group(0)):
+            return named_range.group(0)
+        first, first_year, last, last_year = named_range.groups()
+        return f"{first} {first_year or last_year} to {last} {last_year}"
     named_month = _NAMED_MONTH.search(text)
     if named_month:
         return named_month.group(0)

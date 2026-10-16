@@ -41,6 +41,12 @@ def affirmative_request(utterance: str) -> str | None:
             ).strip(" ,;.")
             if not replacement or _is_exclusion(replacement):
                 return None
+            # Subject corrections must not discard an explicit enclosing period.
+            from skill.services.period_resolution import extract_period_phrase
+
+            period = extract_period_phrase(utterance[:match.start(1)])
+            if period and not extract_period_phrase(replacement):
+                replacement = f"{replacement} {period}"
             return replacement
     # "Show metrics instead of findings" also excludes the trailing subject.
     match = re.match(r"^(.+?)\s+instead of\s+.+$", utterance, re.IGNORECASE)
