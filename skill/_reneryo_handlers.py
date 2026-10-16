@@ -14,6 +14,8 @@ from skill.clients.mdsp import MdspClient
 from skill.clients.reneryo import ReneryoClient
 from skill.domain.exceptions import AdapterError, AVAROSError, ValidationError
 from skill.services.conversation_state import DialogueState, message_session_id
+from skill._helpers import request_timezone
+from skill.services.language import format_observation_time
 from skill.services.dia_response import speak_information
 from skill.services.factory_questions import (
     answer_factory_question,
@@ -344,7 +346,8 @@ def handle_reneryo_query(
                 return True
             answer = skill.dispatcher._run_async(
                 answer_factory_question(
-                    _service(skill), factory_request, period, language
+                    _service(skill), factory_request, period, language,
+                    timezone_name=request_timezone(skill, message),
                 )
             )
             speak_information(
@@ -602,7 +605,7 @@ def handle_reneryo_query(
             period_label = _localized_period_label(trend.period_label, language)
             if not trend.points:
                 observed_at = trend.metric.last_value_at
-                last_seen = observed_at.date().isoformat() if observed_at else None
+                last_seen = format_observation_time(observed_at, language, request_timezone(skill, message)) if observed_at else None
                 if is_turkish(language):
                     headline = f"{trend.metric.name} için {period_label} döneminde gözlem bulunamadı; eğilim hesaplanamıyor."
                     if last_seen:
@@ -614,7 +617,7 @@ def handle_reneryo_query(
                             f" The latest recorded observation is from {last_seen}."
                         )
             elif trend.change_percent is None:
-                first_seen = trend.points[0].timestamp.date().isoformat()
+                first_seen = format_observation_time(trend.points[0].timestamp, language, request_timezone(skill, message))
                 if is_turkish(language):
                     headline = f"{trend.metric.name} için {period_label} döneminde " + (
                         f"yalnızca bir gözlem var ({first_seen}); eğilim hesaplanamıyor."
@@ -755,9 +758,10 @@ def handle_reneryo_query(
         response_rows = [selected_metric] if selected_metric is not None else rows
         headline = (
             metric_detail_headline(selected_metric, language,
-                                   value_only=not detail_request and _metric_value_request(text))
+                                   value_only=not detail_request and _metric_value_request(text),
+                                   timezone_name=request_timezone(skill, message))
             if selected_metric is not None
-            else metric_inventory_headline(rows, language)
+            else metric_inventory_headline(rows, language, timezone_name=request_timezone(skill, message))
         )
         evidence = [
             {
@@ -845,7 +849,7 @@ def _meter_metric_response(skill, message, state, text, language) -> None:
             )
             return
         speak_information(
-            skill, metric_detail_headline(metric, language), language=language,
+            skill, metric_detail_headline(metric, language, timezone_name=request_timezone(skill, message)), language=language,
             response_type="metrics", evidence_rows=[{
                 "id": metric.metric_id, "name": metric.name, "type": metric.metric_type,
                 "last_value": metric.last_value, "observed_at": _iso(metric.last_value_at),
@@ -1034,7 +1038,8 @@ def _finding_response(skill, message, service, state, text, language, action) ->
                 SemanticAction.FINDING_OWNER,
                 SemanticAction.FINDING_CAN_ACT,
             }
-            else finding_headline(finding, text, language, action=action.value)
+            else finding_headline(finding, text, language, action=action.value,
+                                   timezone_name=request_timezone(skill, message))
         )
         evidence = [
             {

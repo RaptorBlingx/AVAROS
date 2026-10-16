@@ -11,6 +11,7 @@ from skill.domain.exceptions import AdapterError, MetricNotSupportedError, Valid
 from skill.domain.models import CanonicalMetric, TimePeriod
 from skill.domain.results import AnomalyResult, ComparisonResult, KPIResult, TrendResult
 from skill.services.dia_dialogue import remember_kpi_result, try_handle_structured_query
+from skill._helpers import request_timezone
 from skill.services.dia_response import speak_with_evidence
 from skill.services.language import normalize_phrase
 
@@ -459,7 +460,7 @@ def dispatch_kpi_for_metric(
             period=period,
         )
 
-        response = skill.response_builder.format_kpi_result(result)
+        response = skill.response_builder.format_kpi_result(result, timezone_name=request_timezone(skill, message))
         speak_with_evidence(skill, response, result)
         remember_kpi_result(skill, message, result)
 
@@ -609,7 +610,7 @@ def handle_trend_energy(skill: "AVAROSSkill", message) -> None:
             asset_id=asset_id,
             period=skill._parse_period("today"),
         )
-        kpi_response = skill.response_builder.format_kpi_result(kpi_result)
+        kpi_response = skill.response_builder.format_kpi_result(kpi_result, timezone_name=request_timezone(skill, message))
         speak_with_evidence(
             skill,
             f"I couldn't find enough trend points for {period.display_name}. {kpi_response}",

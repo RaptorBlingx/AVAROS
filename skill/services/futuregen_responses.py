@@ -169,7 +169,9 @@ def meter_inventory_headline(
     return headline
 
 
-def metric_inventory_headline(rows: Iterable[ReneryoMetric], language: str) -> str:
+def metric_inventory_headline(
+    rows: Iterable[ReneryoMetric], language: str, *, timezone_name: str | None = None,
+) -> str:
     """Summarize the metric inventory and its observable data watermark."""
     metrics = list(rows)
     turkish = is_turkish(language)
@@ -189,21 +191,21 @@ def metric_inventory_headline(rows: Iterable[ReneryoMetric], language: str) -> s
         )
         if newest:
             headline += (
-                f" Bu envanterdeki en güncel metrik gözlemi {format_observation_time(newest, language)}."
+                f" Bu envanterdeki en güncel metrik gözlemi {format_observation_time(newest, language, timezone_name)}."
             )
         return headline
     noun = "metric" if len(metrics) == 1 else "metrics"
     headline = f"Future Gen has {len(metrics)} {noun}: {_natural_join(names)}."
     if newest:
         headline += (
-            f" The newest metric observation in this inventory is {format_observation_time(newest, language)}."
+            f" The newest metric observation in this inventory is {format_observation_time(newest, language, timezone_name)}."
         )
     return headline
 
 
-def metric_detail_headline(row: ReneryoMetric, language: str, *, value_only: bool = False) -> str:
+def metric_detail_headline(row: ReneryoMetric, language: str, *, value_only: bool = False, timezone_name: str | None = None) -> str:
     """Describe one context-selected metric using Reneryo-owned metadata."""
-    observed = format_observation_time(row.last_value_at, language) if row.last_value_at else None
+    observed = format_observation_time(row.last_value_at, language, timezone_name) if row.last_value_at else None
     value = format_reneryo_value(row.last_value, row.unit_group, language) if row.last_value is not None else None
     if value_only:
         if value is None:

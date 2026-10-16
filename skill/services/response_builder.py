@@ -24,11 +24,13 @@ Usage:
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from skill.services.quantities import quantity_number
 
 from typing import TYPE_CHECKING, Callable
 
-from skill.services.language import is_turkish, metric_display_name, period_display_name, format_localized_number
+from skill.services.language import is_turkish, metric_display_name, period_display_name, format_localized_number, format_observation_time
 
 from skill.domain.models import CanonicalMetric
 
@@ -83,7 +85,7 @@ class ResponseBuilder:
     # KPI Results
     # =========================================================================
     
-    def format_kpi_result(self, result: KPIResult) -> str:
+    def format_kpi_result(self, result: KPIResult, *, timezone_name: str | None = None) -> str:
         """
         Format a KPI result into natural speech.
         
@@ -106,7 +108,7 @@ class ResponseBuilder:
             return f"{value}"
         aggregation = f"{result.aggregation} " if result.aggregation else ""
         if period == "latest available":
-            period_clause = self._format_observation_clause(result.source_observed_at)
+            period_clause = self._format_observation_clause(result.source_observed_at, timezone_name)
         else:
             period_clause = f" over {period}" if period else ""
             if result.sample_count > 0:
@@ -708,11 +710,11 @@ class ResponseBuilder:
         return "No performance objective is configured, so I am not rating this result."
 
     @staticmethod
-    def _format_observation_clause(observed_at: datetime | None) -> str:
+    def _format_observation_clause(observed_at: datetime | None, timezone_name: str | None = None) -> str:
         """Format latest source time without exposing implementation details."""
         if observed_at is None:
             return " from the latest available observation"
-        return f" as of {observed_at.isoformat()}"
+        return f" as of {format_observation_time(observed_at, 'en-US', timezone_name)}"
 
     def format_asset_list(self, asset_names: list[str], max_items: int = 10) -> str:
         """Format concise voice response listing configured assets."""
@@ -745,14 +747,15 @@ class ResponseBuilder:
 class TurkishResponseBuilder(ResponseBuilder):
     """Build operator-facing responses in Turkish while preserving result data."""
 
-    def format_kpi_result(self, result: KPIResult) -> str:
+    def format_kpi_result(self, result: KPIResult, *, timezone_name: str | None = None) -> str:
         value = self._format_value(result.value, result.unit)
         if self.verbosity == "brief":
             return value
         metric = metric_display_name(result.metric, "tr-TR")
         asset = self._format_asset_name(result.asset_id)
         if result.period.display_name == "latest available":
-            period = " en güncel ölçümde"
+            period = (f" {format_observation_time(result.source_observed_at, 'tr-TR', timezone_name)} tarihli en güncel ölçümde"
+                      if result.source_observed_at else " en güncel ölçümde")
         elif period_display_name(result.period.display_name, 'tr-TR') in {"bugün", "dün", "en güncel", "şimdi", "şu anda"}:
             period = f" {period_display_name(result.period.display_name, 'tr-TR')}"
         else:

@@ -184,8 +184,8 @@ def test_recent_gap_period_uses_rule_lookback_and_actual_gap_interval():
     )
 
     assert "most recent 30-day lookback window" in answer
-    assert "2026-09-06 01:53 UTC" in answer
-    assert "2026-09-07 06:24 UTC" in answer
+    assert "06 September 2026 01:53 UTC" in answer
+    assert "07 September 2026 06:24 UTC" in answer
     assert "29 hours" in answer
     assert "2023-09-18" not in answer
 
@@ -206,7 +206,7 @@ def test_finding_evidence_follow_up_is_localized():
 
     assert "5 OpenWeather kaynağında" in answer
     assert "4 yakın tarihli önemli boşluk" in answer
-    assert "2026-09-06 01:53 UTC" in answer
+    assert "06.09.2026 01:53 UTC" in answer
     assert "29 saat" in answer
     assert "affectedResourceCount" not in answer
     assert "recentGapCount" not in answer
@@ -218,7 +218,7 @@ def test_english_evidence_is_humanized_without_raw_keys():
     )
 
     assert "4 recent significant gaps across 5 OpenWeather resources" in answer
-    assert "2026-09-06 01:53 UTC" in answer
+    assert "06 September 2026 01:53 UTC" in answer
     assert "29 hours" in answer
     assert "affectedResourceCount" not in answer
     assert "recentGapCount" not in answer

@@ -5,9 +5,9 @@ from __future__ import annotations
 import re
 import unicodedata
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from skill.domain.models import CanonicalMetric
-
 
 SUPPORTED_LANGUAGES = ("en-US", "tr-TR")
 
@@ -127,17 +127,57 @@ def source_enum_label(value: str, language: str | None) -> str:
     return english.get(value, fallback)
 
 
-def format_observation_time(value: datetime, language: str | None) -> str:
-    """Present a dated observation in UTC; never imply the site's timezone."""
+def format_observation_time(
+    value: datetime, language: str | None, timezone_name: str | None = None,
+) -> str:
+    """Render an instant in a verified request timezone, without changing it.
+
+    Missing/invalid bindings retain explicitly labelled UTC. Naive source times
+    have no established instant and must never acquire a guessed timezone.
+    """
+    zone = None
+    if timezone_name:
+        try:
+            zone = ZoneInfo(timezone_name)
+        except (ValueError, ZoneInfoNotFoundError):
+            pass
     if value.tzinfo is not None:
-        value = value.astimezone(timezone.utc)
+        value = value.astimezone(zone or timezone.utc)
     stamp = value.strftime("%d.%m.%Y %H:%M" if is_turkish(language) else "%d %B %Y %H:%M")
-    return stamp + (" UTC" if value.tzinfo is not None else "")
+    if value.tzinfo is None:
+        return stamp
+    if zone is None or zone.key == "UTC":
+        return stamp + " UTC"
+    offset = value.strftime("%z")
+    return f"{stamp} ({zone.key}, UTC{offset[:3]}:{offset[3:]})"
 
 
 def speech_text(text: str, language: str) -> str:
     """Adapt quantity spelling for TTS without changing facts or limitations."""
     turkish = is_turkish(language)
+    # Only timestamp presentations carrying an explicit timezone are expanded.
+    # Raw source/evidence strings and ambiguous dates are left untouched.
+    if turkish:
+        months = ("Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+                  "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık")
+        text = re.sub(
+            r"\b(\d{2})\.(0[1-9]|1[0-2])\.(\d{4}) (\d{2}:\d{2})(?= UTC| \([^()]+, UTC)",
+            lambda m: f"{int(m[1])} {months[int(m[2]) - 1]} {m[3]} saat {m[4]}",
+            text,
+        )
+
+    def spoken_zone(match):
+        zone, sign, hours, minutes = match.groups()
+        name = ("İstanbul saati" if turkish else "Istanbul time") if zone == "Europe/Istanbul" else (
+            zone.replace("/", " ").replace("_", " ") + (" saat dilimi" if turkish else " time")
+        )
+        sign_word = ("artı" if sign == "+" else "eksi") if turkish else ("plus" if sign == "+" else "minus")
+        offset = f"{int(hours)} " + ("saat" if turkish else "hours")
+        if int(minutes):
+            offset += f" {int(minutes)} " + ("dakika" if turkish else "minutes")
+        return f"{name}, UTC {sign_word} {offset}"
+
+    text = re.sub(r"\(([A-Za-z0-9_+/-]+), UTC([+-])(\d{2}):(\d{2})\)", spoken_zone, text)
     grouping = "." if turkish else ","
     text = re.sub(
         rf"(?<!\w)\d{{1,3}}(?:{re.escape(grouping)}\d{{3}})+(?:[,.]\d+)?(?!\w)",

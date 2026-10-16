@@ -525,7 +525,7 @@ def test_turkish_missing_trend_is_explicit_after_a_finding_topic_change():
 
     assert _response_type(skill) == "trend"
     assert "gözlem bulunamadı" in skill.spoken[-1][0]
-    assert "2026-07-31" in skill.spoken[-1][0]
+    assert "31 Temmuz 2026 saat 00:00 UTC" in skill.spoken[-1][0]
     assert "%0.0" not in skill.spoken[-1][0]
     assert "sabit" not in skill.spoken[-1][0]
 

@@ -275,7 +275,7 @@ def test_trend_energy_falls_back_to_kpi_when_trend_unavailable():
     skill.handle_trend_energy(_message(period="today"))
 
     skill.dispatcher.get_kpi.assert_called_once()
-    skill.response_builder.format_kpi_result.assert_called_once_with(kpi_result)
+    skill.response_builder.format_kpi_result.assert_called_once_with(kpi_result, timezone_name="UTC")
     spoken = skill.speak.call_args.args[0]
     assert "couldn't find enough trend points" in spoken
     assert "Energy per unit for Line-1 is 2.35 kilowatt hours per unit today." in spoken

@@ -219,7 +219,7 @@ def try_handle_structured_query(skill, message, *, include_simple_kpi: bool = Fa
         elif query.operation is QueryOperation.SUMMARY or len(metrics) > 1:
             _handle_summary(skill, metrics, asset_ids, period)
         elif query.operation is QueryOperation.TARGET:
-            _handle_target(skill, metrics[0], asset_ids[0], period)
+            _handle_target(skill, metrics[0], asset_ids[0], period, timezone_name=_site_timezone(skill, message))
         elif query.operation is QueryOperation.DIAGNOSE:
             _handle_diagnosis(skill, metrics[0], asset_ids, period)
         elif query.operation is QueryOperation.RECOMMEND:
@@ -227,7 +227,7 @@ def try_handle_structured_query(skill, message, *, include_simple_kpi: bool = Fa
         elif query.operation is QueryOperation.TREND:
             _handle_trends(skill, metrics[0], asset_ids, period)
         else:
-            _handle_kpis(skill, metrics, asset_ids, period)
+            _handle_kpis(skill, metrics, asset_ids, period, timezone_name=_site_timezone(skill, message))
     except AVAROSError as error:
         # A resolved data failure is not an unresolved equipment request.
         # Preserve the requested operation, participants, metric and period.
@@ -307,14 +307,14 @@ def _is_explicit_capabilities_request(text: str) -> bool:
     )
 
 
-def _handle_kpis(skill, metrics, asset_ids, period) -> None:
+def _handle_kpis(skill, metrics, asset_ids, period, *, timezone_name: str | None = None) -> None:
     results = [
         skill.dispatcher.get_kpi(metric=metric, asset_id=asset_id, period=period)
         for asset_id in asset_ids
         for metric in metrics
     ]
     if len(results) == 1:
-        text = skill.response_builder.format_kpi_result(results[0])
+        text = skill.response_builder.format_kpi_result(results[0], timezone_name=timezone_name)
         speak_with_evidence(skill, text, results[0])
         return
     _speak_result_collection(skill, "KPI results", results)
@@ -369,9 +369,9 @@ def _handle_definition(skill, metrics) -> None:
     speak_information(skill, " ".join(parts), response_type="definition")
 
 
-def _handle_target(skill, metric, asset_id, period) -> None:
+def _handle_target(skill, metric, asset_id, period, *, timezone_name: str | None = None) -> None:
     result = skill.dispatcher.get_kpi(metric, asset_id, period)
-    value = skill.response_builder.format_kpi_result(result)
+    value = skill.response_builder.format_kpi_result(result, timezone_name=timezone_name)
     objective = None
     if skill.settings_service is not None and hasattr(skill.settings_service, "get_kpi_objective"):
         objective = skill.settings_service.get_kpi_objective(metric.value, asset_id)

@@ -135,7 +135,7 @@ Expected health response:
 {"status":"ok","version":"0.1.1"}
 ```
 
-### Organization-local query periods
+### Organization-local periods and observation timestamps
 
 For signed Reneryo widget requests, calendar periods require an administrator-verified
 organization/timezone binding in the active profile's `extra_settings`:
@@ -151,6 +151,14 @@ Missing/invalid bindings clarify local-date requests; rolling elapsed-day window
 and latest observations do not require a local calendar. Unsigned native profiles
 retain their existing `site_timezone` behavior. This code change does not configure
 or deploy a binding for any real organization.
+
+The same verified binding renders observation timestamps in display and speech,
+including local date changes. Display includes the IANA zone and UTC offset;
+speech expands the date/zone. Missing or invalid bindings keep explicit UTC,
+and naive source times are never assigned a guessed timezone. Source timestamps,
+evidence, requested UTC bounds and monthly bucket labels remain unchanged.
+See [controlled FutureGen MVP acceptance](docs/FUTUREGEN-MVP-ACCEPTANCE.md) for
+deployment prerequisites, rollback and the real text/audio acceptance boundary.
 
 Calendar boundaries use one request clock and are sent as UTC instants. Reneryo
 owns aggregation: AVAROS selects its existing history resolution and never prorates
