@@ -36,7 +36,9 @@ from skill.services.finding_collection import (
 )
 from skill.services.finding_explanation import finding_headline
 from skill.services.finding_next_review import next_review_headline
-from skill.services.futuregen import FutureGenService, default_period, match_metric, metric_references
+from skill.services.futuregen import (
+    FutureGenService, default_period, has_metric_alias, match_metric, metric_references,
+)
 from skill.services.futuregen_responses import (
     meter_inventory_headline,
     metric_detail_headline,
@@ -255,13 +257,23 @@ def handle_reneryo_query(
         SemanticAction.REGRESSIONS_LIST, SemanticAction.REGRESSION_DETAIL,
     }
     operation = _deterministic_action(text, state)
-    attribute_detail = (
-        _metric_attribute_request(text) and not _meter_reference(text)
+    detail_request = (
+        (_metric_attribute_request(text) or (
+            _singular_metric_request(text) and not extract_period_phrase(utterance)
+            and not _quantity_request(text)
+        )) and not _meter_reference(text)
         and operation in {None, SemanticAction.METRICS_LIST, SemanticAction.METRIC_DETAIL}
     )
-    if attribute_detail:
+    if detail_request:
         # An attribute of a metric is a detail request, not a collection.
         operation = SemanticAction.METRIC_DETAIL
+        factory_request = None
+    elif (operation in {None, SemanticAction.METRICS_LIST}
+          and _metric_collection_request(text) and not _meter_reference(text)
+          and not _quantity_request(text) and not extract_period_phrase(utterance)):
+        # The same catalogue contract owns inventory-shaped factory history
+        # proposals as well as amounts, without stealing dated quantity reads.
+        operation = SemanticAction.METRICS_LIST
         factory_request = None
     if factory_request is not None and factory_request.kind == "amount":
         # Existing inventory/definition verbs and entity nouns disambiguate the
@@ -403,6 +415,15 @@ def handle_reneryo_query(
             else SemanticAction.METRIC_DETAIL
         )
     resolution: SemanticResolution | None = semantic_resolution
+    if (action is None and not _metric_collection_request(text)
+            and (_metric_value_request(text, specific=True)
+                 or (_metric_value_request(text) and extract_period_phrase(utterance)))):
+        # A concrete read subject/field outranks an unconstrained action proposal.
+        # Explicit operations and factory amount requests have already taken ownership.
+        metric = _ground_metric_reference(skill, utterance)
+        if metric is not None:
+            resolution = _metric_read_resolution(metric, utterance, language)
+            action = resolution.action
     if action is None:
         if not allow_semantic:
             return False
@@ -442,20 +463,21 @@ def handle_reneryo_query(
             _remember(skill, message, state, operation="clarification")
             return True
 
-    if (action is SemanticAction.METERS_LIST and _metric_value_request(text)
+    if (action in {SemanticAction.METERS_LIST, SemanticAction.METRICS_LIST}
+            and _metric_value_request(text)
             and not _meter_reference(text) and not _metric_collection_request(text)):
-        # A semantic action cannot replace an explicit metric value with an
-        # unrelated device inventory. Ground the subject before executing.
+        # An inventory proposal cannot replace an explicit metric value.
+        # Keep generic catalogue paraphrases when no metric subject is named.
         metric = _ground_metric_reference(skill, utterance)
-        if metric is None:
+        if metric is None and (
+            action is SemanticAction.METERS_LIST or has_metric_alias(utterance)
+            or _metric_value_request(text, specific=True) or extract_period_phrase(utterance)
+        ):
             _metric_clarification(skill, [], language)
             return True
-        period = extract_period_phrase(utterance)
-        action = (SemanticAction.TREND_SHOW if period and period not in {"latest", "en güncel"}
-                  else SemanticAction.METRIC_DETAIL)
-        resolution = SemanticResolution(
-            action, language, slots={"metric_name": metric.name}, reason="grounded_metric_subject"
-        )
+        if metric is not None:
+            resolution = _metric_read_resolution(metric, utterance, language)
+            action = resolution.action
 
     if action is SemanticAction.FINDINGS_EVALUATE and not is_evaluation_request(text):
         _semantic_clarification(skill, language)
@@ -685,7 +707,7 @@ def handle_reneryo_query(
             # Explicit subjects outrank semantic/context slots. For an attribute
             # or value request, inherit only subject-free dialogue shorthand.
             if selected_metric is None and (
-                not (attribute_detail or _metric_value_request(text))
+                not (detail_request or _metric_value_request(text))
                 or _metric_detail_shorthand(text)
             ):
                 selected_metric = match_metric(expected or text, rows)
@@ -693,6 +715,16 @@ def handle_reneryo_query(
             _metric_clarification(skill, rows, language)
             _remember(skill, message, state, operation="metric_clarification")
             return True
+        if action is SemanticAction.METRICS_LIST:
+            references = metric_references(utterance, rows)
+            if _has_inventory_modifier(utterance, rows) or (has_metric_alias(utterance) and not references):
+                # An unresolved explicit filter must not widen to all metrics
+                # or silently discard an unrecognized part of the subject.
+                _metric_clarification(skill, rows, language)
+                return True
+            if references:
+                # A collection may contain several members of a metric family.
+                rows = references
         response_rows = [selected_metric] if selected_metric is not None else rows
         headline = (
             metric_detail_headline(selected_metric, language)
@@ -1344,7 +1376,9 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
         return SemanticAction.REGRESSIONS_LIST
     if _looks_like_trend(text):
         return SemanticAction.TREND_SHOW
-    if _has(text, "metric", "metrics", "metrik"):
+    if _has(text, "metric", "metrics", "metrik") or (
+        _METRIC_NOUN.search(text) and _metric_collection_request(text)
+    ):
         return SemanticAction.METRICS_LIST
     if _has(text, "findings", "bulgular", "decision support", "karar destek"):
         return SemanticAction.FINDINGS_LIST
@@ -1631,19 +1665,77 @@ def _meter_reference(text: str) -> bool:
 
 
 def _metric_collection_request(text: str) -> bool:
-    return bool(re.search(
-        r"\b(?:list|liste\w*|metrics|indicators|metrikler\w*|"
-        r"göstergeler\w*|gostergeler\w*)\b", text
+    if re.search(r"\b(?:metrics|indicators|metrikler\w*|göstergeler\w*|gostergeler\w*)\b", text):
+        return True
+    return bool(_METRIC_NOUN.search(text)) and bool(re.search(
+        r"\b(?:list|liste\w*|available|configured|inventory|mevcut|envanter)\b", text
     ))
+
+
+_METRIC_NOUN = re.compile(r"\b(?:metrics?|indicators?|metri[kğg]\w*|gösterge\w*|gosterge\w*)\b")
+
+
+def _singular_metric_request(text: str) -> bool:
+    return bool(_METRIC_NOUN.search(text)) and not _metric_collection_request(text)
+
+
+def _quantity_request(text: str) -> bool:
+    return bool(re.search(r"\b(?:how much|how many|ne kadar|kaç|kac)\b", text))
+
+
+def _has_inventory_modifier(utterance: str, metrics) -> bool:
+    """Recognize explicit collection modifiers without interpreting new domains.
+
+    Ground known names/families first. These bounded noun-phrase positions
+    reject unknown filters rather than silently returning the whole catalogue.
+    """
+    # Mask opaque names before splitting clauses, including names containing
+    # punctuation. A word in a preceding clause is not a collection modifier.
+    for metric in sorted(metrics, key=lambda row: len(row.name), reverse=True):
+        if metric.name:
+            utterance = re.sub(rf"(?<!\w){re.escape(metric.name)}(?!\w)",
+                               "configured", utterance, flags=re.IGNORECASE)
+    modifiers = []
+    for clause in re.split(r"[;.!?]", utterance):
+        text = normalize_phrase(clause)
+        for metric in metrics:
+            name = normalize_phrase(metric.name)
+            if name:
+                text = re.sub(rf"(?<!\w){re.escape(name)}(?!\w)", "configured", text)
+        modifiers += re.findall(r"\b(\w+)\s+(?:metrics|indicators|metrik\w*|gösterge\w*|gosterge\w*)\b", text)
+        modifiers += re.findall(r"\b(?:metrics?|indicators?)\s+(?:for|of|about)\s+(?:the\s+)?(\w+)\b", text)
+    generic = {
+        "the", "all", "which", "what", "available", "configured", "current", "our",
+        "these", "those", "reneryo", "futuregen", "factory", "site", "plant",
+        "hangi", "mevcut", "tüm", "tum", "bütün", "butun", "bu", "kayıtlı", "kayitli",
+        "tanımlı", "tanimli", "ölçülen", "olculen", "ilgili",
+        "list", "show", "listele", "göster", "goster",
+        "saved", "known", "registered", "named", "measured", "operational",
+        "consumption", "usage", "tüketim", "tuketim", "sarfiyat",
+    }
+    return any(word not in generic and not metric_references(word, metrics) for word in modifiers)
 
 
 def _metric_attribute_request(text: str) -> bool:
     return (bool(_METRIC_ATTRIBUTE.search(text)) and not _metric_collection_request(text)
-            and not re.search(r"\b(?:how much|how many|ne kadar|kaç|kac)\b", text))
+            and not _quantity_request(text))
 
 
-def _metric_value_request(text: str) -> bool:
-    return bool(_METRIC_VALUE.search(text))
+def _metric_value_request(text: str, *, specific: bool = False) -> bool:
+    # A measurement noun alone can mean the catalogue; a value/reading or
+    # latest/current qualifier requests an observation, not an unnamed catalogue.
+    return any(not specific or not re.fullmatch(r"measurements?|ölçüm\w*|olcum\w*", match.group())
+               for match in _METRIC_VALUE.finditer(text))
+
+
+def _metric_read_resolution(metric, utterance: str, language: str) -> SemanticResolution:
+    period = extract_period_phrase(utterance)
+    action = (SemanticAction.TREND_SHOW if period and period not in {"latest", "en güncel"}
+              else SemanticAction.METRIC_DETAIL)
+    slots = {"metric_name": metric.name}
+    if period:
+        slots["period"] = period
+    return SemanticResolution(action, language, slots=slots, reason="grounded_metric_subject")
 
 
 def _metric_detail_shorthand(text: str) -> bool:

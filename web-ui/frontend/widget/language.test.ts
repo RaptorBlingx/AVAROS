@@ -120,3 +120,17 @@ it.each([
 ])("recognizes the language of unsupported commands: %s", (text, fallback, expected) => {
   expect(detectWidgetLanguage(text, fallback)).toBe(expected);
 });
+
+it.each([
+  ["Tell me the unit group of Tesis Toplam Üretim Miktarı.", "tr-TR", "en-US"],
+  ["Could you describe Tesis Toplam Elektrik Tüketimi?", "tr-TR", "en-US"],
+  ["The type of Tesis Toplam Üretim Miktarı?", "tr-TR", "en-US"],
+  ["Electric Main Meter metriğini açıklar mısınız?", "en-US", "tr-TR"],
+  ["Electric Main Meter metrigini aciklar misiniz?", "en-US", "tr-TR"],
+  ["Temperature - Open Weather için veri var mı?", "en-US", "tr-TR"],
+  ["What is its type?", "tr-TR", "en-US"],
+  ["Bunun türü nedir?", "en-US", "tr-TR"],
+  ["Line-A OEE", "tr-TR", "tr-TR"],
+])("uses the request language around foreign source names: %s", (text, fallback, expected) => {
+  expect(detectWidgetLanguage(text, fallback)).toBe(expected);
+});

@@ -62,6 +62,17 @@ const TURKISH_WORDS = new Set([
   "karsilastir",
   "ve",
   "ile",
+  // Function words identify the question language around source-owned names.
+  "nedir",
+  "nasıl",
+  "nasil",
+  "için",
+  "icin",
+  "onun",
+  "mı",
+  "mi",
+  "mu",
+  "mü",
 ]);
 
 const ENGLISH_WORDS = new Set([
@@ -117,7 +128,35 @@ const ENGLISH_WORDS = new Set([
   "settings",
   "compare",
   "them",
+  // Common request/function words, rather than factory-specific entity names.
+  "tell",
+  "give",
+  "describe",
+  "define",
+  "me",
+  "you",
+  "the",
+  "of",
+  "for",
+  "about",
+  "is",
+  "are",
+  "was",
+  "were",
+  "can",
+  "could",
+  "would",
+  "does",
+  "do",
+  "has",
+  "have",
+  "its",
+  "our",
 ]);
+
+// Product names may be English, while Turkish requests inflect their nouns,
+// verbs and question particles. Keep this at the token level; never rewrite text.
+const TURKISH_REQUEST_WORD = /^(?:metri[kğg]\p{L}*|bulgu\p{L}*|saya[çc]\p{L}*|g[öo]ster\p{L}*|a[çc][ıi]kla\p{L}*|anlat\p{L}*|listele\p{L}*|m[ıiuü](?:s[ıiuü]n(?:[ıiuü]z)?)?)$/u;
 
 export function normalizeWidgetLanguage(language: unknown): string {
   const normalized = String(language ?? "")
@@ -134,7 +173,9 @@ export function detectWidgetLanguage(text: string, fallback: string): string {
     // The Turkish case suffix in "Hat 1'i" is not the English pronoun I.
     .replace(/(\d)['’]i\b/gu, "$1");
   const words = normalized.match(/[a-zçğıöşü]+/giu) ?? [];
-  const turkishScore = words.filter((word) => TURKISH_WORDS.has(word)).length;
+  const turkishScore = words.filter(
+    (word) => TURKISH_WORDS.has(word) || TURKISH_REQUEST_WORD.test(word),
+  ).length;
   const englishScore = words.filter((word) => ENGLISH_WORDS.has(word)).length;
   // Clear language words outrank accents in an unchanged Reneryo name.
   if (turkishScore > englishScore) return "tr-TR";

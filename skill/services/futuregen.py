@@ -185,6 +185,13 @@ def metric_references(utterance: str, metrics):
     return list(found.values())
 
 
+def has_metric_alias(utterance: str) -> bool:
+    """Whether a request names a supported family, even if inventory lacks it."""
+    text = _metric_reference_text(utterance)
+    return any(_contains_alias(text, normalize_phrase(term))
+               for family in _METRIC_ALIASES for term in family)
+
+
 def match_metric(utterance: str, metrics):
     """Ground a natural metric reference in Reneryo-owned inventory data."""
     normalized = _metric_reference_text(utterance)
