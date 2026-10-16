@@ -168,7 +168,7 @@ def test_metric_inventory_names_domains_and_watermark():
     assert "2 metrics" in answer
     assert "Tesis Toplam Elektrik Tüketimi" in answer
     assert "Temperature - Open Weather" in answer
-    assert "2026-09-17 11:21 UTC" in answer
+    assert "17 September 2026 11:21 UTC" in answer
 
 
 def test_metric_detail_uses_context_selected_reneryo_metadata():
@@ -184,10 +184,10 @@ def test_metric_detail_uses_context_selected_reneryo_metadata():
     answer = metric_detail_headline(metric, "en-US")
 
     assert "Cooling degree days - Open Weather" in answer
-    assert "GAUGE" in answer
-    assert "TEMPERATURE" in answer
+    assert "instantaneous measurement" in answer
+    assert "temperature" in answer
     assert "5.15" in answer
-    assert "2026-09-17 11:21 UTC" in answer
+    assert "17 September 2026 11:21 UTC" in answer
 
 
 def test_finding_inventory_summarizes_severity_and_domain():

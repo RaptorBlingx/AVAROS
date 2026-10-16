@@ -465,7 +465,7 @@ class TestFormatComparisonResult:
         """Energy comparison: lower is better → 'more efficient'."""
         result = builder.format_comparison_result(comparison_energy)
         assert "Compressor 1" in result
-        assert "efficient" in result.lower()
+        assert "lower value" in result.lower()
 
     def test_format_comparison_oee_higher_better(
         self, builder: ResponseBuilder, comparison_oee: ComparisonResult
@@ -473,7 +473,7 @@ class TestFormatComparisonResult:
         """OEE comparison: higher is better → 'wins with better'."""
         result = builder.format_comparison_result(comparison_oee)
         assert "Line 1" in result
-        assert "wins" in result.lower()
+        assert "value by" in result.lower()
 
     def test_format_comparison_brief_winner_only(
         self, brief_builder: ResponseBuilder, comparison_energy: ComparisonResult
@@ -481,7 +481,7 @@ class TestFormatComparisonResult:
         """Brief verbosity shows winner and difference."""
         result = brief_builder.format_comparison_result(comparison_energy)
         assert "Compressor 1" in result
-        assert "wins" in result.lower()
+        assert "value by" in result.lower()
 
     def test_format_comparison_includes_difference(
         self, builder: ResponseBuilder, comparison_energy: ComparisonResult

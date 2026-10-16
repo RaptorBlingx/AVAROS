@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from skill.domain.reneryo_models import MdspFinding
-from skill.services.language import is_turkish, normalize_phrase
+from skill.services.language import is_turkish, normalize_phrase, format_localized_number
 
 _CONTINUITY_RULE = "metric-source-recent-continuity"
 _FRESHNESS_RULE = "metric-resource-relative-freshness"
@@ -103,8 +103,8 @@ def _finding_explanation(finding: MdspFinding, language: str) -> str:
         if turkish:
             period = _period_name(evidence.get("period"), turkish=True)
             return (
-                f"MDSP, {period} dönemli regresyonun {driver_name} sürücüsünden "
-                f"daha sık çalıştığını tespit etti. Sürücü yaklaşık {cadence_days} "
+                f"MDSP, {period} dönemli regresyonun {driver_name} açıklayıcı değişkeninden "
+                f"daha sık çalıştığını tespit etti. Bu değişken yaklaşık {cadence_days} "
                 "günde bir güncellendiği için model dönemi veri sıklığından daha ayrıntılıdır."
             )
         period = _period_name(evidence.get("period"), turkish=False)
@@ -116,8 +116,8 @@ def _finding_explanation(finding: MdspFinding, language: str) -> str:
     if finding.rule_id == _REGRESSION_FIT_RULE:
         r_squared = _optional_number(evidence.get("rSquared"))
         normalized_rmse = _optional_number(evidence.get("normalizedRmsePct"))
-        r_text = f"{r_squared:.3f}" if r_squared is not None else ("yok" if turkish else "missing")
-        error_text = f"{normalized_rmse:.1f}%" if normalized_rmse is not None else ("yok" if turkish else "unavailable")
+        r_text = format_localized_number(r_squared, language, ".3f") if r_squared is not None else ("yok" if turkish else "missing")
+        error_text = (f"%{format_localized_number(normalized_rmse, language, '.1f')}" if turkish else f"{normalized_rmse:.1f}%") if normalized_rmse is not None else ("yok" if turkish else "unavailable")
         if turkish:
             return (
                 "Bu kayıtlı regresyon modeli geçici uyum kalitesi inceleme sınırına takıldı. "
@@ -190,7 +190,7 @@ def _evidence_explanation(finding: MdspFinding, language: str) -> str:
         if turkish:
             period = _period_name(evidence.get("period"), turkish=True)
             return (
-                f"Kanıtlar model döneminin {period}, {driver_name} sürücüsünün "
+                f"Kanıtlar model döneminin {period}, {driver_name} açıklayıcı değişkeninin "
                 f"gözlenen güncelleme sıklığının ise yaklaşık {cadence_days} gün "
                 "olduğunu gösteriyor."
             )
@@ -204,12 +204,12 @@ def _evidence_explanation(finding: MdspFinding, language: str) -> str:
         min_r_squared = _number(evidence.get("minimumRSquared"))
         normalized_rmse = _optional_number(evidence.get("normalizedRmsePct"))
         max_rmse = _number(evidence.get("maximumNormalizedRmsePct"))
-        r_text = f"{r_squared:.3f}" if r_squared is not None else ("yok" if turkish else "missing")
-        error_text = f"%{normalized_rmse:.1f}" if normalized_rmse is not None else ("yok" if turkish else "unavailable")
+        r_text = format_localized_number(r_squared, language, ".3f") if r_squared is not None else ("yok" if turkish else "missing")
+        error_text = f"%{format_localized_number(normalized_rmse, language, '.1f')}" if normalized_rmse is not None else ("yok" if turkish else "unavailable")
         if turkish:
             return (
                 f"Modelin R² değeri {r_text}; geçici alt sınır "
-                f"{min_r_squared:.2f}. Normalize hata {error_text}; "
+                f"{format_localized_number(min_r_squared, language, '.2f')}. Normalize hata {error_text}; "
                 f"geçici üst sınır %{max_rmse:.0f}."
             )
         return (
@@ -299,7 +299,7 @@ def _trigger_explanation(finding: MdspFinding, language: str) -> str:
         limit_days = model_days * 1.5
         if turkish:
             return (
-                "Kural, bir sürücünün gözlenen veri sıklığı model döneminin 1,5 "
+                "Kural, bir açıklayıcı değişkenin gözlenen veri sıklığı model döneminin 1,5 "
                 f"katından yavaş olduğunda tetiklenir. {driver_name} yaklaşık "
                 f"{_number_text(driver_days)} günde bir güncellenirken bu model için "
                 f"izin verilen sınır {_number_text(limit_days).replace('.', ',')} gündür."
@@ -320,13 +320,13 @@ def _trigger_explanation(finding: MdspFinding, language: str) -> str:
             conditions.append("R² değeri yok" if turkish else "R-squared is missing")
         elif r_squared < min_r_squared:
             conditions.append(
-                f"R² {r_squared:.3f}, {min_r_squared:.2f} alt sınırının altında"
+                f"R² {format_localized_number(r_squared, language, '.3f')}, {format_localized_number(min_r_squared, language, '.2f')} alt sınırının altında"
                 if turkish
                 else f"R-squared is {r_squared:.3f}, below {min_r_squared:.2f}"
             )
         if normalized_rmse is not None and normalized_rmse > max_rmse:
             conditions.append(
-                f"normalize hata %{normalized_rmse:.1f}, %{max_rmse:.0f} üst sınırının üzerinde"
+                f"normalize hata %{format_localized_number(normalized_rmse, language, '.1f')}, %{max_rmse:.0f} üst sınırının üzerinde"
                 if turkish
                 else f"normalized error is {normalized_rmse:.1f}%, above {max_rmse:.0f}%"
             )
@@ -425,7 +425,7 @@ def _entity_explanation(finding: MdspFinding, language: str) -> str:
         period = _period_name(finding.evidence.get("period"), turkish=turkish)
         drivers = _driver_names(finding.evidence)
         driver_text = ", ".join(drivers) or (
-            "sürücü bilgisi yok" if turkish else "no named driver"
+            "açıklayıcı değişken bilgisi yok" if turkish else "no named driver"
         )
         if turkish:
             return (

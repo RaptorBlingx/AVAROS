@@ -431,7 +431,7 @@ def test_signed_widget_month_range_reaches_trend_with_both_observations(
     assert periods[0].start == datetime(2026, 5, 1, tzinfo=timezone.utc)
     assert periods[0].end == datetime(2026, 7, 1, tzinfo=timezone.utc)
     assert expected_label in skill.spoken[-1][0]
-    assert "24.3" in skill.spoken[-1][0]
+    assert ("24,3" if language == "tr-TR" else "24.3") in skill.spoken[-1][0]
 
 
 def test_correct_turkish_ordinal_and_mistranscribed_period_keep_finding():

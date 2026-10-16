@@ -529,16 +529,14 @@ def evaluation_headline(
             f"{evaluation.evaluated_resource_count} kaynak değerlendirildi; "
             f"{evaluation.active_finding_count} etkin bulgu var ve "
             f"{evaluation.resolved_finding_count} bulgu çözüldü. {assessment_summary} "
-            "Tüm başlıkları duymak için “bunları listele” veya öncelikli olanlara "
-            "odaklanmak için “orta önem seviyesindekileri göster” diyebilirsiniz."
+            "Başlıkları görmek için “bunları listele” diyebilirsiniz."
         )
     return (
         f"MDSP completed a fresh evaluation of current Reneryo data. "
         f"It evaluated {evaluation.evaluated_resource_count} resources, found "
         f"{evaluation.active_finding_count} active findings, and resolved "
         f"{evaluation.resolved_finding_count}. {assessment_summary} "
-        "Say “List them” for every title, or “Show the medium ones” to focus on "
-        "the priority items."
+        "Say “List them” to see the titles."
     )
 
 

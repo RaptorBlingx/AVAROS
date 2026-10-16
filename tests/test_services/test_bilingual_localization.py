@@ -64,8 +64,8 @@ def test_language_switch_preserves_period_topic_and_original_input():
 @pytest.mark.parametrize("label,locale,expected", [
     ("latest available", "tr-TR", "mevcut en güncel"),
     ("yesterday", "tr-TR", "dün"),
-    ("June 2020", "tr-TR", "haziran 2020"),
-    ("haziran 2020", "en-US", "june 2020"),
+    ("June 2020", "tr-TR", "Haziran 2020"),
+    ("haziran 2020", "en-US", "June 2020"),
     ("2020-06-01 – 2020-06-30", "tr-TR", "2020-06-01 – 2020-06-30"),
 ])
 def test_period_labels_are_presentation_only(label, locale, expected):
@@ -117,7 +117,7 @@ def test_known_metadata_enums_are_not_record_names_or_unit_conversions():
     metric = ReneryoMetric("source-id", "PIECE - Open Weather", "COUNTER", "PIECE", 5000.25)
     text = metric_detail_headline(metric, "tr-TR")
     assert "PIECE - Open Weather" in text
-    assert "birikimli sayaç" in text and "kaynak grubu adet" in text
+    assert "birikimli sayaç" in text and "birim grubu adet" in text
     assert source_enum_label("UNKNOWN_SOURCE_CATEGORY", "tr-TR") == "UNKNOWN_SOURCE_CATEGORY"
     assert source_enum_label("ENERGY", "tr-TR") == "enerji"
     assert "kWh" not in text

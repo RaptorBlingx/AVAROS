@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Iterable
-from datetime import datetime
 
 from skill.domain.models import TimePeriod
 from skill.domain.reneryo_models import (
@@ -14,7 +13,7 @@ from skill.domain.reneryo_models import (
     ReneryoRegression,
 )
 from skill.services.language import (
-    is_turkish, period_display_name, format_localized_number, source_enum_label,
+    is_turkish, period_display_name, format_localized_number, source_enum_label, format_observation_time,
 )
 
 
@@ -25,13 +24,13 @@ def reneryo_capabilities_headline(language: str) -> str:
             "Future Gen için sayaçları, metrikleri, eğilimleri, regresyon "
             "analizlerini ve etkin MDSP bulgularını açıklayabilirim. Seçili bir "
             "bulgunun nedenini, kanıtını, dönemini ve ilgili varlığı da takip "
-            "edebilirim. Türkçe ve İngilizce çalışırım; salt okunurum."
+            "edebilirim. Türkçe ve İngilizce yanıt verebilirim."
         )
     return (
         "For Future Gen, I can explain meters, metrics, trends, regression "
         "analyses, and active MDSP findings. I can also follow a selected "
         "finding through its trigger, evidence, period, affected entity, and "
-        "related metric. I work in English and Turkish and am read-only."
+        "related metric. I can answer in English and Turkish."
     )
 
 
@@ -62,7 +61,7 @@ def regression_inventory_headline(
         if periods:
             headline += f" Model dönemleri {_natural_join(periods, turkish=True)}."
         if drivers:
-            headline += f" Sürücüler: {_natural_join(drivers, turkish=True)}."
+            headline += f" Açıklayıcı değişkenler: {_natural_join(drivers, turkish=True)}."
         if r_squared:
             headline += f" R² aralığı {_range(r_squared, turkish=True)}."
         headline += (
@@ -96,8 +95,8 @@ def regression_detail_headline(row: ReneryoRegression, language: str) -> str:
     slices = _natural_join(list(row.slice_names), turkish=turkish) or "—"
     period = _localized_period(row.period, turkish=turkish)
     training = f"{row.train_start.date()} – {row.train_end.date()}"
-    r_squared = f"{row.r_squared:.3f}" if row.r_squared is not None else "—"
-    rmse = f"{row.rmse:.3f}" if row.rmse is not None else "—"
+    r_squared = format_localized_number(row.r_squared, language, ".3f") if row.r_squared is not None else "—"
+    rmse = format_localized_number(row.rmse, language, ".3f") if row.rmse is not None else "—"
     if turkish:
         primary = "birincil" if row.primary else "birincil değil"
         regression_type = {
@@ -106,7 +105,7 @@ def regression_detail_headline(row: ReneryoRegression, language: str) -> str:
         }.get(row.regression_type.lower(), row.regression_type)
         return (
             f"Bu {regression_type} regresyon modeli {period} dönemlidir ve {primary}. "
-            f"Sürücüler: {drivers}. Bağlı dilimler: {slices}. Eğitim dönemi {training}; "
+            f"Açıklayıcı değişkenler: {drivers}. Bağlı dilimler: {slices}. Eğitim dönemi {training}; "
             f"R² {r_squared}, RMSE {rmse}."
         )
     primary = "primary" if row.primary else "not primary"
@@ -152,7 +151,7 @@ def meter_inventory_headline(
         if missing:
             headline += f" {period_name} dönemi için tüketim verisi eksik; eksik veri sıfır tüketim değildir."
         elif has_positive_consumption:
-            headline += f" {period_name} dönemi tüketimi {format_localized_number(total, language, ',.2f')}."
+            headline += f" {period_name} dönemi tüketimi {format_localized_number(total, language, ',.2f')}{' kWh' if all(m.energy_resource == 'ELECTRIC' for m in meters) else ''}."
         else:
             headline += (
                 f" {period_name} dönemi için dönen tüketim 0,00; bu, "
@@ -172,7 +171,7 @@ def meter_inventory_headline(
     if missing:
         headline += f" Consumption data for {period.display_name} is missing; missing data is not zero consumption."
     elif has_positive_consumption:
-        headline += f" Consumption for {period.display_name} totals {total:,.2f}."
+        headline += f" Consumption for {period.display_name} totals {total:,.2f}{' kWh' if all(m.energy_resource == 'ELECTRIC' for m in meters) else ''}."
     else:
         headline += (
             f" The returned consumption for {period.display_name} is 0.00; that "
@@ -201,34 +200,45 @@ def metric_inventory_headline(rows: Iterable[ReneryoMetric], language: str) -> s
         )
         if newest:
             headline += (
-                f" Bu envanterdeki en güncel metrik gözlemi {_timestamp(newest)}."
+                f" Bu envanterdeki en güncel metrik gözlemi {format_observation_time(newest, language)}."
             )
         return headline
-    headline = f"Future Gen has {len(metrics)} metrics: {_natural_join(names)}."
+    noun = "metric" if len(metrics) == 1 else "metrics"
+    headline = f"Future Gen has {len(metrics)} {noun}: {_natural_join(names)}."
     if newest:
         headline += (
-            f" The newest metric observation in this inventory is {_timestamp(newest)}."
+            f" The newest metric observation in this inventory is {format_observation_time(newest, language)}."
         )
     return headline
 
 
-def metric_detail_headline(row: ReneryoMetric, language: str) -> str:
+def metric_detail_headline(row: ReneryoMetric, language: str, *, value_only: bool = False) -> str:
     """Describe one context-selected metric using Reneryo-owned metadata."""
-    observed = _timestamp(row.last_value_at) if row.last_value_at else None
-    value = format_localized_number(row.last_value, language, ",.2f") if row.last_value is not None else None
+    observed = format_observation_time(row.last_value_at, language) if row.last_value_at else None
+    value = format_reneryo_value(row.last_value, row.unit_group, language) if row.last_value is not None else None
+    if value_only:
+        if value is None:
+            return (f"{row.name}: kayıtlı değer yok." if is_turkish(language)
+                    else f"{row.name}: no recorded value is available.")
+        text = f"{row.name}: {value}" + (f" ({observed})" if observed else "") + "."
+        if row.metric_type == "COUNTER":
+            text += (" Bu birikimli sayaç değeridir; dönem tüketimi veya üretimi değildir."
+                     if is_turkish(language) else
+                     " This is a cumulative counter reading, not period consumption or production.")
+        return text
     if is_turkish(language):
         headline = (
             f"İlgili metrik {row.name}; türü {source_enum_label(row.metric_type, language)}, "
-            f"kaynak grubu {source_enum_label(row.unit_group, language)}."
+            f"birim grubu {source_enum_label(row.unit_group, language)}."
         )
         if value and observed:
-            headline += f" Son gözlemi {observed} tarihinde {value}."
+            headline += f" Son kayıt: {value} ({observed})."
         elif observed:
             headline += f" Son gözlem zamanı {observed}."
         return headline
     headline = (
-        f"The related metric is {row.name}; its type is {row.metric_type} "
-        f"and its resource group is {row.unit_group}."
+        f"The related metric is {row.name}; its type is {source_enum_label(row.metric_type, language)} "
+        f"and its unit group is {source_enum_label(row.unit_group, language)}."
     )
     if value and observed:
         headline += f" Its latest observation was {value} at {observed}."
@@ -318,8 +328,21 @@ def _natural_join(values: Iterable[str], turkish: bool = False) -> str:
 def _range(values: Iterable[float], *, turkish: bool = False) -> str:
     numbers = list(values)
     separator = " ile " if turkish else " to "
-    return f"{min(numbers):.3f}{separator}{max(numbers):.3f}"
+    language = "tr-TR" if turkish else "en-US"
+    return f"{format_localized_number(min(numbers), language, '.3f')}{separator}{format_localized_number(max(numbers), language, '.3f')}"
 
 
-def _timestamp(value: datetime) -> str:
-    return value.strftime("%Y-%m-%d %H:%M UTC")
+def format_reneryo_value(value: float, unit_group: str, language: str) -> str:
+    """Display Reneryo base units (UtilUnit), without altering source evidence."""
+    displayed = value * 100 if unit_group == "RATE" else value
+    spec = ",.2f" if abs(displayed) >= 0.01 or displayed == 0 else ",.6f"
+    if 0 < abs(displayed) < 0.000001:
+        spec = ".2e"
+    number = format_localized_number(displayed, language, spec)
+    if "e" not in number:
+        number = number.rstrip("0").rstrip("," if is_turkish(language) else ".")
+    if unit_group == "RATE":
+        return f"%{number}" if is_turkish(language) else f"{number}%"
+    units = {"ENERGY": "kWh", "TEMPERATURE": "°C",
+             "PIECE": "adet" if is_turkish(language) else "unit" if value == 1 else "units"}
+    return f"{number} {units.get(unit_group, source_enum_label(unit_group, language))}".strip()

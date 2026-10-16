@@ -34,6 +34,16 @@ def speak_with_evidence(skill, headline: str, result: Any) -> None:
                 f"{name} değerleri neden farklı olabilir?",
                 f"{result.winner_id} için {name} eğilimini göster",
             ]
+    if isinstance(result, WhatIfResult):
+        # Use the same typed assumptions in speech and widget details.
+        assumption = skill.response_builder._format_whatif_assumptions(result)
+        response["assumptions"] = [assumption] if assumption else []
+        if is_turkish(language):
+            for row, label in zip(response["evidence_rows"], ("Başlangıç", "Senaryo")):
+                row["label"] = label
+            response["warnings"] = [
+                "Bu aritmetik senaryo karar desteği içindir; nedensel bir model değildir."
+            ]
     skill.speak(headline, meta={"avaros_response": response})
 
 

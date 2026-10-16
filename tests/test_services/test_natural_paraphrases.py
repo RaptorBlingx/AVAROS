@@ -70,8 +70,8 @@ def test_freshness_is_inventory_timestamp_not_history_or_consumption(text, langu
     answer = ask(skill, text, language)
     metric = next(m for m in asyncio.run(source.list_metrics()) if m.metric_id == identifier)
     assert answer["headline"] == f"{metric.name}: " + (
-        "son kayıt zamanı 2020-07-01T00:00:00+00:00." if language == "tr-TR"
-        else "latest recorded timestamp 2020-07-01T00:00:00+00:00."
+        "son kayıt zamanı 01.07.2020 00:00 UTC." if language == "tr-TR"
+        else "latest recorded timestamp 01 July 2020 00:00 UTC."
     )
     assert source.calls == []
     assert answer["evidence_rows"][0]["recorded_at"] == metric.last_value_at.isoformat()

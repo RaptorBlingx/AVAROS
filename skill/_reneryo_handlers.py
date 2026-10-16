@@ -46,7 +46,7 @@ from skill.services.futuregen_responses import (
     regression_detail_headline,
     regression_inventory_headline,
 )
-from skill.services.language import is_turkish, normalize_phrase, period_display_name
+from skill.services.language import is_turkish, normalize_phrase, period_display_name, format_localized_number
 from skill.services.period_resolution import (
     extract_period_phrase, named_month_reference, remove_period_reference,
     unsupported_period_reference, unsupported_time_precision,
@@ -609,7 +609,7 @@ def handle_reneryo_query(
                         else "the first observed value is zero, so a percentage change cannot be calculated."
                     )
             elif is_turkish(language):
-                headline = f"{trend.metric.name}, {period_label} döneminde %{abs(trend.change_percent):.1f} oranında {direction}."
+                headline = f"{trend.metric.name}, {period_label} döneminde %{format_localized_number(abs(trend.change_percent), language, '.1f')} oranında {direction}."
             else:
                 headline = f"{trend.metric.name} is {trend.direction} by {abs(trend.change_percent):.1f}% over {period_label}."
             if trend.requested_period_label:
@@ -727,7 +727,8 @@ def handle_reneryo_query(
                 rows = references
         response_rows = [selected_metric] if selected_metric is not None else rows
         headline = (
-            metric_detail_headline(selected_metric, language)
+            metric_detail_headline(selected_metric, language,
+                                   value_only=not detail_request and _metric_value_request(text))
             if selected_metric is not None
             else metric_inventory_headline(rows, language)
         )
@@ -1388,9 +1389,7 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
 def _semantic_clarification(skill, language: str) -> None:
     if is_turkish(language):
         headline = (
-            "Bu isteği güvenle eşleştiremedim. Bulguyu açıklamamı, kanıtı veya "
-            "dönemi göstermemi ya da metrik, sayaç, eğilim veya regresyonları "
-            "listelememi ister misiniz?"
+            "Hangi veriyi veya işlemi kastediyorsunuz? Ölçümün ya da bulgunun adını belirtir misiniz?"
         )
         suggestions = [
             "Bu bulgunun nedenini açıkla",
@@ -1399,9 +1398,7 @@ def _semantic_clarification(skill, language: str) -> None:
         ]
     else:
         headline = (
-            "I could not map that request confidently. Would you like the finding "
-            "explained, its evidence or period shown, or metrics, meters, trends, "
-            "or regressions listed?"
+            "Which data or operation do you mean? Please name the measurement or finding."
         )
         suggestions = [
             "Explain this finding",
@@ -1483,7 +1480,7 @@ def _regression_period_hint(text: str) -> str:
 def _regression_clarification(skill, rows, language: str) -> None:
     periods = sorted({row.period.lower() for row in rows})
     if is_turkish(language):
-        headline = "Hangi regresyon modelini kastediyorsunuz? Dönemini veya sürücüsünü belirtin."
+        headline = "Hangi regresyon modelini kastediyorsunuz? Dönemini veya açıklayıcı değişkenini belirtin."
         suggestions = [f"{period} regresyonunu açıkla" for period in periods]
     else:
         headline = "Which regression model do you mean? Name its period or driver."

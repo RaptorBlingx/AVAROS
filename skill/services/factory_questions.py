@@ -8,8 +8,9 @@ from datetime import datetime, timedelta, timezone
 
 from skill.domain.models import TimePeriod
 from skill.services.futuregen import match_metric, next_month
+from skill.services.futuregen_responses import format_reneryo_value
 from skill.services.language import (
-    is_turkish, normalize_phrase, period_display_name, format_localized_number, source_enum_label,
+    is_turkish, normalize_phrase, period_display_name, format_observation_time,
 )
 from skill.services.period_resolution import (
     extract_period_phrase,
@@ -525,7 +526,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
         )
     if request.kind in {"reading", "freshness"}:
         date = (
-            metric.last_value_at.isoformat()
+            format_observation_time(metric.last_value_at, language)
             if metric.last_value_at
             else ("bilinmiyor" if tr else "unknown")
         )
@@ -541,7 +542,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
                 "kayıtlı değer yok." if tr else "no recorded value is available."
             )
         else:
-            headline += f"{format_localized_number(metric.last_value, language)}; {date}; {source_enum_label(metric.unit_group, language)}. "
+            headline += f"{format_reneryo_value(metric.last_value, metric.unit_group, language)} ({date}). "
             if metric.metric_type == "COUNTER":
                 headline += (
                     "Bu birikimli sayaç değeridir, dönem tüketimi veya üretimi değildir."
@@ -553,7 +554,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
             evidence=[
                 {
                     "metric": metric.name,
-                    "recorded_at": date,
+                    "recorded_at": metric.last_value_at.isoformat() if metric.last_value_at else None,
                     "value": metric.last_value,
                     "type": metric.metric_type,
                     "unit_group": metric.unit_group,
@@ -608,7 +609,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
                 else "Reneryo returned no period values. "
             )
             + (
-                (f"Son kayıt zamanı: {metric.last_value_at.isoformat()}." if tr else f"Latest recorded timestamp: {metric.last_value_at.isoformat()}.")
+                (f"Son kayıt zamanı: {format_observation_time(metric.last_value_at, language)}." if tr else f"Latest recorded timestamp: {format_observation_time(metric.last_value_at, language)}.")
                 if metric.last_value_at
                 else ""
             ),
@@ -648,7 +649,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
                     f"{historical[-1].timestamp:%Y-%m}",
                 )
                 prefix = (
-                    f"{period_display_name(period.display_name, language)}: Dönem tüketimi mevcut değil. Tarihli tarihsel tüketimi gösteriyorum: "
+                    f"{period_display_name(period.display_name, language)}: Dönem tüketimi mevcut değil. Mevcut tarihsel tüketim: "
                     if tr
                     else f"{period_display_name(period.display_name, language)}: Period consumption is unavailable. Showing dated historical consumption instead: "
                 )
@@ -674,11 +675,11 @@ async def answer_factory_question(service, request, period, language) -> Factory
                 else "Reneryo returned no meter consumption for this period."
             )
         else:
-            headline = "; ".join(f"{m.name}: {format_localized_number(m.consumption, language)}" for m in meters)
+            headline = "; ".join(f"{m.name}: {format_reneryo_value(m.consumption, metric.unit_group, language)}" for m in meters)
             headline += (
-                ". Reneryo dönem tüketimi; gözlenen veriye dayanır, tam kapsam garantisi değildir."
+                ". Reneryo dönem tüketimi; veri kapsamı eksik olabilir."
                 if tr
-                else ". Reneryo period consumption from observed data; full coverage is not guaranteed."
+                else ". Reneryo period consumption; data coverage may be incomplete."
             )
         return FactoryAnswer(
             prefix
@@ -711,7 +712,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
         for p in points
     ]
     preview = "; ".join(
-        f"{p.timestamp.isoformat() if aggregation != 'MONTHLY' else p.timestamp.strftime('%Y-%m')}: {format_localized_number(p.value, language)}"
+        f"{format_observation_time(p.timestamp, language) if aggregation != 'MONTHLY' else p.timestamp.strftime('%Y-%m')}: {format_reneryo_value(p.value, metric.unit_group, language)}"
         for p in points[-3:]
     )
     label = (
@@ -721,8 +722,10 @@ async def answer_factory_question(service, request, period, language) -> Factory
     )
     headline = (
         prefix
-        + f"{metric.name}, {period_display_name(actual.display_name, language)}. {label}: {preview}. {source_enum_label(metric.unit_group, language)}. "
+        + f"{metric.name}, {period_display_name(actual.display_name, language)}. {label}: {preview}. "
     )
+    if len(points) == 1:
+        return FactoryAnswer(headline.strip(), evidence=rows, period=actual, **common)
     headline += (
         f"{len(points)} dönem gösteriliyor" if tr else f"Showing {len(points)} periods"
     )
@@ -735,9 +738,9 @@ async def answer_factory_question(service, request, period, language) -> Factory
     else:
         headline += "."
     headline += (
-        " Gözlenen veriye dayanır; çok aylı toplam hesaplanmadı."
+        " Dönemler ayrı gösterilmiştir; toplamları hesaplanmadı."
         if tr
-        else " Based on observed data; no multi-month total has been calculated."
+        else " Periods are shown separately; no combined total was calculated."
     )
     return FactoryAnswer(headline, evidence=rows, period=actual, **common)
 
@@ -745,7 +748,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
 def _fallback(label, tr):
     label = period_display_name(label, "tr-TR" if tr else "en-US")
     return (
-        f"{label} döneminde gözlem yok. Mevcut tarihsel veriyi gösteriyorum: "
+        f"{label} için kayıt yok. Mevcut tarihsel veri: "
         if tr
         else f"No observations for {label}. Showing available historical data instead: "
     )

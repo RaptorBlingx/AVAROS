@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable
 
-from skill.services.language import is_turkish, metric_display_name, period_display_name
+from skill.services.language import is_turkish, metric_display_name, period_display_name, format_localized_number
 
 from skill.domain.models import CanonicalMetric
 
@@ -108,7 +108,8 @@ class ResponseBuilder:
         else:
             period_clause = f" over {period}" if period else ""
             if result.sample_count > 0:
-                period_clause += f", based on {result.sample_count} observations"
+                sample_word = "observation" if result.sample_count == 1 else "observations"
+                period_clause += f", based on {result.sample_count} {sample_word}"
         response = (
             f"The {aggregation}{metric_name} for {asset_name} is {value}"
             f"{period_clause}."
@@ -164,11 +165,11 @@ class ResponseBuilder:
             )
             return f"For {period},{aggregation} {metric_name}: {values}. {outcome}.{quality_warning}"
         if self.verbosity == "brief":
-            return f"{values}. {winner} wins by {difference}."
+            return f"{values}. {winner} has a {'lower' if lower_is_better else 'higher'} value by {difference}."
         outcome = (
-            f"{winner} is more efficient by {difference}"
+            f"{winner} has a lower value by {difference}"
             if lower_is_better
-            else f"{winner} wins by {difference}"
+            else f"{winner} has a higher value by {difference}"
         )
         return (
             f"For {period},{aggregation} {metric_name}: {values}. "
@@ -792,9 +793,9 @@ class TurkishResponseBuilder(ResponseBuilder):
                 f"{outcome}."
             )
         outcome = (
-            f"{winner}, {difference} farkla daha verimli"
+            f"{winner} değeri {difference} daha düşük"
             if self._is_lower_better(result.metric)
-            else f"{winner}, {difference} farkla önde"
+            else f"{winner} değeri {difference} daha yüksek"
         )
         return f"{period_display_name(result.period.display_name, 'tr-TR')} için {metric}: {values}. {outcome}."
 
@@ -805,10 +806,10 @@ class TurkishResponseBuilder(ResponseBuilder):
             result.direction, result.direction
         )
         if self.verbosity == "brief":
-            return f"{direction}, yüzde {change:.1f}"
+            return f"{direction}, yüzde {self._format_number(change)}"
         if result.direction == "stable":
             return f"{metric}, {period_display_name(result.period.display_name, 'tr-TR')} boyunca sabit."
-        return f"{metric}, {period_display_name(result.period.display_name, 'tr-TR')} boyunca yüzde {change:.1f} {direction}."
+        return f"{metric}, {period_display_name(result.period.display_name, 'tr-TR')} boyunca yüzde {self._format_number(change)} {direction}."
 
     def format_anomaly_result(self, result: AnomalyResult) -> str:
         metric = metric_display_name(result.metric, "tr-TR")
@@ -844,7 +845,7 @@ class TurkishResponseBuilder(ResponseBuilder):
         }.get(result.drift_direction, result.drift_direction)
         return (
             f"{metric} {direction}; {result.periods_analyzed} veri noktasında "
-            f"günlük değişim {abs(result.drift_rate):.3f}."
+            f"günlük değişim {format_localized_number(abs(result.drift_rate), 'tr-TR', '.3f')}."
         )
 
     def format_forecast_result(self, result: ForecastReport) -> str:
@@ -864,11 +865,32 @@ class TurkishResponseBuilder(ResponseBuilder):
         metric = metric_display_name(result.target_metric, "tr-TR")
         baseline = self._format_value(result.baseline, result.unit)
         projected = self._format_value(result.projected, result.unit)
+        if baseline == projected and abs(result.delta) > 0:
+            baseline = self._format_value(result.baseline, result.unit, decimals=2)
+            projected = self._format_value(result.projected, result.unit, decimals=2)
         direction = "iyileşme" if result.is_improvement else "değişim"
+        assumption = self._format_whatif_assumptions(result)
+        confidence = " Senaryo değişimi büyük olduğu için güven düzeyi düşük." if result.confidence < 0.6 else ""
         return (
             f"Karar destek senaryosu: {metric}, {baseline} değerinden {projected} "
-            f"değerine gelir; yaklaşık yüzde {abs(result.delta_percent):.1f} {direction}."
+            f"değerine gelebilir; yaklaşık yüzde {self._format_number(abs(result.delta_percent))} {direction}."
+            f" {assumption}{confidence}"
         )
+
+    def _format_whatif_assumptions(self, result: WhatIfResult) -> str:
+        assumption = ""
+        if "target_value" in result.factors:
+            assumption = f" Varsayım: hedef değer {self._format_value(result.factors['target_value'], result.unit)}."
+        elif "assumed_kpi_change_percent" in result.factors:
+            change = result.factors["assumed_kpi_change_percent"]
+            label = "artış" if change > 0 else "azalış" if change < 0 else "değişim"
+            assumption = f" Varsayım: seçilen göstergede yüzde {self._format_number(abs(change))} {label}."
+        elif result.factors:
+            assumption = " Varsayımlar: " + ", ".join(
+                f"{name}: yüzde {self._format_number(value)} değişim"
+                for name, value in result.factors.items()
+            ) + "."
+        return assumption.strip()
 
     @staticmethod
     def _format_number(value: float) -> str:

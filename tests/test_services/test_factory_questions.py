@@ -159,7 +159,7 @@ async def test_empty_recent_window_uses_years_old_consumption_and_dates(language
     )
     assert answer.period.start == date(2020, 6)
     assert "2020-06" in answer.headline
-    assert ("October 2026" if language == "en-US" else "ekim 2026") in answer.headline
+    assert ("October 2026" if language == "en-US" else "Ekim 2026") in answer.headline
     assert answer.evidence[0]["consumption"] == 25
     assert "9000" not in answer.headline
     assert source.calls[-1] == ("meter", date(2020, 6), date(2020, 7))
@@ -188,7 +188,7 @@ async def test_no_period_data_never_returns_counter_as_consumption():
     )
     assert "no period values" in answer.headline
     assert "9000" not in answer.headline
-    assert "2020-07" in answer.headline
+    assert "01 July 2020" in answer.headline
 
 
 @pytest.mark.asyncio
@@ -200,7 +200,7 @@ async def test_multi_month_production_shows_domain_buckets_without_invented_sum(
         "en-US",
     )
     assert len(answer.evidence) == 2
-    assert "no multi-month total" in answer.headline
+    assert "no combined total" in answer.headline
     assert "5000" not in answer.headline
 
 
@@ -223,7 +223,7 @@ def test_followup_retains_metric_and_historical_year():
     assert handle_reneryo_query(skill, _message("And June?"))
     assert skill._futuregen_service.reneryo.calls[-1][1] == date(2020, 6)
     assert handle_reneryo_query(skill, _message("When was the last reading recorded?"))
-    assert "2020-07" in skill.spoken[-1][0]
+    assert "01 July 2020" in skill.spoken[-1][0]
 
 
 @pytest.mark.parametrize(
