@@ -264,6 +264,12 @@ def handle_reneryo_query(
         )) and bool(re.search(
             r"\b(?:which|what|list|available|configured|hangi|hangileri|liste\w*)\b", text
         )) and not bool(re.search(r"\b(?:how much|how many|ne kadar|kaç|kac)\b", text))
+        # Selecting which meters measured consumption is an inventory request,
+        # distinct from asking how much a meter consumed.
+        meter_inventory = bool(re.search(r"\b(?:meters?|sayaç\w*|sayac\w*)\b", text)) and bool(
+            re.search(r"\b(?:which|hangi|list|liste\w*)\b", text)
+        )
+        inventory_cue = inventory_cue or meter_inventory
         if inventory_cue and not allow_semantic and operation not in inventory_actions:
             # The initial deterministic pass must leave uncertain operation
             # ownership to the existing semantic pass, rather than read a total.

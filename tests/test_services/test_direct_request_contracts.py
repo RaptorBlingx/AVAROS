@@ -167,3 +167,15 @@ def test_future_calendar_modifiers_never_fall_through_to_latest(modifier):
     assert handle_reneryo_query(skill, _message(f'electricity in the {modifier} calendar month'))
     assert response(skill)['response_type'] == 'clarification'
     assert not skill._futuregen_service.reneryo.calls
+
+
+
+@pytest.mark.parametrize('text,language', [
+    ('Which meters record our electricity consumption?', 'en-US'),
+    ('Elektrik tüketimini hangi sayaçlar kaydediyor?', 'tr-TR'),
+])
+def test_meter_selector_retains_inventory_operation(text, language):
+    skill = harness()
+    assert handle_reneryo_query(skill, _message(text, language), allow_semantic=False)
+    assert response(skill)['response_type'] == 'meters'
+    assert skill._futuregen_service.reneryo.calls[0][0] == 'meter'
