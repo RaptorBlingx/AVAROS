@@ -36,7 +36,7 @@ from skill.services.finding_collection import (
 )
 from skill.services.finding_explanation import finding_headline
 from skill.services.finding_next_review import next_review_headline
-from skill.services.futuregen import FutureGenService, default_period, match_metric
+from skill.services.futuregen import FutureGenService, default_period, match_metric, metric_references
 from skill.services.futuregen_responses import (
     meter_inventory_headline,
     metric_detail_headline,
@@ -255,6 +255,14 @@ def handle_reneryo_query(
         SemanticAction.REGRESSIONS_LIST, SemanticAction.REGRESSION_DETAIL,
     }
     operation = _deterministic_action(text, state)
+    attribute_detail = (
+        _metric_attribute_request(text) and not _meter_reference(text)
+        and operation in {None, SemanticAction.METRICS_LIST, SemanticAction.METRIC_DETAIL}
+    )
+    if attribute_detail:
+        # An attribute of a metric is a detail request, not a collection.
+        operation = SemanticAction.METRIC_DETAIL
+        factory_request = None
     if factory_request is not None and factory_request.kind == "amount":
         # Existing inventory/definition verbs and entity nouns disambiguate the
         # requested view; energy vocabulary alone does not own the operation.
@@ -387,7 +395,7 @@ def handle_reneryo_query(
         SemanticAction.TREND_SHOW
         if factory_trend or (state.operation == "trend" and state.metric_name
                              and is_period_follow_up(utterance))
-        else _deterministic_action(text, state)
+        else operation
     )
     if action is None and corrected and state.metric_name:
         action = (
@@ -433,6 +441,21 @@ def handle_reneryo_query(
             _semantic_clarification(skill, language)
             _remember(skill, message, state, operation="clarification")
             return True
+
+    if (action is SemanticAction.METERS_LIST and _metric_value_request(text)
+            and not _meter_reference(text) and not _metric_collection_request(text)):
+        # A semantic action cannot replace an explicit metric value with an
+        # unrelated device inventory. Ground the subject before executing.
+        metric = _ground_metric_reference(skill, utterance)
+        if metric is None:
+            _metric_clarification(skill, [], language)
+            return True
+        period = extract_period_phrase(utterance)
+        action = (SemanticAction.TREND_SHOW if period and period not in {"latest", "en güncel"}
+                  else SemanticAction.METRIC_DETAIL)
+        resolution = SemanticResolution(
+            action, language, slots={"metric_name": metric.name}, reason="grounded_metric_subject"
+        )
 
     if action is SemanticAction.FINDINGS_EVALUATE and not is_evaluation_request(text):
         _semantic_clarification(skill, language)
@@ -612,21 +635,13 @@ def handle_reneryo_query(
         if action is SemanticAction.METERS_LIST:
             semantic_period = resolution.slots.get("period", "") if resolution else ""
             period = _query_period(skill, utterance, state.period, semantic_period)
+            references = metric_references(utterance, skill.dispatcher._run_async(service.metrics()))
+            if len(references) > 1:
+                _metric_clarification(skill, references, language)
+                return True
             rows = skill.dispatcher._run_async(service.meters(period))
-            if _has(
-                text,
-                "production",
-                "üretim",
-                "uretim",
-                "electric",
-                "elektrik",
-                "elektriğ",
-            ):
-                selected = match_metric(
-                    utterance, skill.dispatcher._run_async(service.metrics())
-                )
-                if selected is not None:
-                    rows = [row for row in rows if row.metric_id == selected.metric_id]
+            if references:
+                rows = [row for row in rows if row.metric_id == references[0].metric_id]
             headline = meter_inventory_headline(rows, period, language)
             evidence = [
                 {
@@ -662,10 +677,18 @@ def handle_reneryo_query(
                 if resolution is not None
                 else ""
             ) or state.metric_name
-            selected_metric = match_metric(
-                utterance if corrected or _is_metric_correction(text) else expected or text,
-                rows,
-            )
+            references = metric_references(utterance, rows)
+            if len(references) > 1:
+                _metric_clarification(skill, references, language)
+                return True
+            selected_metric = references[0] if references else None
+            # Explicit subjects outrank semantic/context slots. For an attribute
+            # or value request, inherit only subject-free dialogue shorthand.
+            if selected_metric is None and (
+                not (attribute_detail or _metric_value_request(text))
+                or _metric_detail_shorthand(text)
+            ):
+                selected_metric = match_metric(expected or text, rows)
         if action is SemanticAction.METRIC_DETAIL and selected_metric is None:
             _metric_clarification(skill, rows, language)
             _remember(skill, message, state, operation="metric_clarification")
@@ -1591,28 +1614,59 @@ def _scope_clarification(skill, language) -> None:
     )
 
 
+_METRIC_ATTRIBUTE = re.compile(
+    r"\b(?:types?|kind|units?|resource group|t[üu]r(?:[üu]\w*|de\w*|ler\w*)?|tip(?:i\w*|te\w*|ler\w*)?|birim\w*)\b"
+)
+_METRIC_VALUE = re.compile(
+    r"\b(?:values?|measurements?|readings?|latest|current|recent|"
+    r"değer\w*|deger\w*|ölçüm\w*|olcum\w*|güncel\w*|guncel\w*|son)\b"
+)
+
+
+def _meter_reference(text: str) -> bool:
+    return bool(re.search(
+        r"\b(?:meters?|devices?|instruments?|sayaç\w*|sayac\w*|cihaz\w*|"
+        r"donanım\w*|donanim\w*)\b", text
+    ))
+
+
+def _metric_collection_request(text: str) -> bool:
+    return bool(re.search(
+        r"\b(?:list|liste\w*|metrics|indicators|metrikler\w*|"
+        r"göstergeler\w*|gostergeler\w*)\b", text
+    ))
+
+
+def _metric_attribute_request(text: str) -> bool:
+    return (bool(_METRIC_ATTRIBUTE.search(text)) and not _metric_collection_request(text)
+            and not re.search(r"\b(?:how much|how many|ne kadar|kaç|kac)\b", text))
+
+
+def _metric_value_request(text: str) -> bool:
+    return bool(_METRIC_VALUE.search(text))
+
+
+def _metric_detail_shorthand(text: str) -> bool:
+    remainder = _METRIC_ATTRIBUTE.sub("", _METRIC_VALUE.sub("", text))
+    remainder = re.sub(
+        r"\b(?:what|which|is|are|was|the|a|an|its|it|this|that|metric|indicator|"
+        r"show|tell|me|please|and|of|about|ne|nedir|hangi|bu|bunun|onun|"
+        r"metri\w*|göster\w*|goster\w*|söyle\w*|soyle\w*|peki|birim\w*)\b", "", remainder
+    )
+    return not remainder.strip()
+
+
 def _ground_metric_reference(skill, utterance: str):
     """Resolve named/aliased metrics only from the live Reneryo inventory."""
     text = normalize_phrase(utterance)
-    if _has(
-        text,
-        "meter",
-        "measuring device",
-        "measurement device",
-        "measuring instrument",
-        "sayac",
-        "sayaç",
-        "olcum cihaz",
-        "ölçüm cihaz",
-        "olcum donanim",
-        "ölçüm donanım",
-    ):
+    if _meter_reference(text):
         return None
     try:
         rows = skill.dispatcher._run_async(_service(skill).metrics())
     except (AdapterError, ValidationError):
         return None
-    return match_metric(utterance, rows)
+    references = metric_references(utterance, rows)
+    return references[0] if len(references) == 1 else None
 
 
 def _looks_like_trend(text: str) -> bool:

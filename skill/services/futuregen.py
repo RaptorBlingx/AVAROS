@@ -135,8 +135,18 @@ def next_month(value: datetime) -> datetime:
     )
 
 
-def match_metric(utterance: str, metrics):
-    """Ground a natural metric reference in Reneryo-owned inventory data."""
+_METRIC_ALIASES = (
+    ("electric", "elektrik", "elektriğ", "elektrig", "energy", "enerji"),
+    ("production", "produce", "output", "uretim", "üretim", "üretti", "uretti"),
+    ("temperature", "sicaklik", "sıcaklık", "sicaklig", "sıcaklığ"),
+    ("humidity", "humid", "nem"),
+    ("heating degree", "isitma", "ısıtma"),
+    ("cooling degree", "sogutma", "soğutma"),
+    ("rain", "yagmur", "yağmur"),
+)
+
+
+def _metric_reference_text(utterance: str) -> str:
     normalized = normalize_phrase(utterance)
     # A correction names the unwanted metric first. Match only the replacement.
     correction = re.match(
@@ -148,20 +158,41 @@ def match_metric(utterance: str, metrics):
         turkish_correction = re.match(r"^.+?\b(?:değil|degil)\b\s+(.+)$", normalized)
         if turkish_correction:
             normalized = turkish_correction.group(1)
-    aliases = (
-        ("electric", "elektrik", "elektriğ", "elektrig", "energy", "enerji"),
-        ("production", "produce", "output", "uretim", "üretim", "üretti", "uretti"),
-        ("temperature", "sicaklik", "sıcaklık", "sicaklig", "sıcaklığ"),
-        ("humidity", "humid", "nem"),
-        ("heating degree", "isitma", "ısıtma"),
-        ("cooling degree", "sogutma", "soğutma"),
-        ("rain", "yagmur", "yağmur"),
-    )
+    return normalized
+
+
+def metric_references(utterance: str, metrics):
+    """Return inventory-backed references without choosing an ambiguous subject.
+
+    Exact names narrow aliases within their family. Unlike the legacy single
+    match helper, all explicit families must be available; callers must clarify multiple matches.
+    """
+    text = _metric_reference_text(utterance)
+    exact = [m for m in metrics if m.name and re.search(
+        rf"(?<!\w){re.escape(normalize_phrase(m.name))}(?!\w)", text
+    )]
+    found = {m.metric_id: m for m in exact}
+    for terms in _METRIC_ALIASES:
+        if not any(_contains_alias(text, normalize_phrase(t)) for t in terms):
+            continue
+        family = [m for m in metrics if any(
+            _contains_alias(normalize_phrase(m.name), normalize_phrase(t)) for t in terms
+        )]
+        if not family:
+            return []
+        selected = [m for m in family if m in exact] or family
+        found.update((m.metric_id, m) for m in selected)
+    return list(found.values())
+
+
+def match_metric(utterance: str, metrics):
+    """Ground a natural metric reference in Reneryo-owned inventory data."""
+    normalized = _metric_reference_text(utterance)
     for metric in metrics:
         name = normalize_phrase(metric.name)
         if name and (name in normalized or normalized in name):
             return metric
-    for terms in aliases:
+    for terms in _METRIC_ALIASES:
         normalized_terms = tuple(normalize_phrase(term) for term in terms)
         if any(_contains_alias(normalized, term) for term in normalized_terms):
             return next(
