@@ -152,3 +152,18 @@ def test_currency_code_does_not_treat_english_try_as_a_cost_request():
 
     assert is_cost_request('electricity amount in TRY')
     assert not is_cost_request('Try showing electricity consumption')
+
+
+
+@pytest.mark.parametrize('modifier', ['previous', 'prior', 'last'])
+def test_calendar_month_modifiers_resolve_to_calendar_period(modifier):
+    phrase = extract_period_phrase(f'electricity in the {modifier} calendar month')
+    assert phrase == 'last month'
+
+
+@pytest.mark.parametrize('modifier', ['next', 'coming', 'following'])
+def test_future_calendar_modifiers_never_fall_through_to_latest(modifier):
+    skill = harness()
+    assert handle_reneryo_query(skill, _message(f'electricity in the {modifier} calendar month'))
+    assert response(skill)['response_type'] == 'clarification'
+    assert not skill._futuregen_service.reneryo.calls

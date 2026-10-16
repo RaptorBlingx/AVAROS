@@ -20,7 +20,7 @@ _NAMED_MONTH = re.compile(rf"\b(?:{_MONTH_NAMES})\s+\d{{4}}\b")
 _PERIOD_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
     (re.compile(pattern), canonical)
     for pattern, canonical in (
-        (r"\b(?:previous|prior) calendar month\b", "last month"),
+        (r"\b(?:previous|prior|last) calendar month\b", "last month"),
         (r"\b(?:previous|last) month\b", "last month"),
         (r"\bpast month\b", "past month"),
         (r"\b(?:preceding|previous|last|past) four weeks\b", "last 4 weeks"),
@@ -156,7 +156,7 @@ def unsupported_period_reference(utterance: str) -> bool:
     # These windows are outside the current parser contract. Reject them even
     # alongside a recognized date rather than retaining/defaulting a window.
     if re.search(
-        r"\b(?:next|coming|following) (?:day|week|month|year)s?\b|"
+        r"\b(?:next|coming|following) (?:calendar )?(?:day|week|month|year)s?\b|"
         r"\b(?:tomorrow|yarın|yarin)\b|"
         r"\b(?:gelecek|önümüzdeki|onumuzdeki|sonraki) (?:gün|gun|hafta|ay|yıl|yil)\w*\b|"
         r"\b(?:last|previous|prior|past) (?:calendar )?year\b|"
