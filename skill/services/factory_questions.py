@@ -414,7 +414,7 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
 
 
 async def answer_factory_question(
-    service, request, period, language, *, timezone_name: str | None = None,
+    service, request, period, language, *, timezone_name: str | None = None, include_timezone: bool = False,
 ) -> FactoryAnswer:
     tr = is_turkish(language)
     if request.kind == "unsupported" and is_cost_request(request.utterance):
@@ -530,7 +530,7 @@ async def answer_factory_question(
         )
     if request.kind in {"reading", "freshness"}:
         date = (
-            format_observation_time(metric.last_value_at, language, timezone_name)
+            format_observation_time(metric.last_value_at, language, timezone_name, include_timezone=include_timezone)
             if metric.last_value_at
             else ("bilinmiyor" if tr else "unknown")
         )
@@ -621,7 +621,7 @@ async def answer_factory_question(
                 else "Reneryo returned no period values. "
             )
             + (
-                (f"Son kayıt zamanı: {format_observation_time(metric.last_value_at, language, timezone_name)}." if tr else f"Latest recorded timestamp: {format_observation_time(metric.last_value_at, language, timezone_name)}.")
+                (f"Son kayıt zamanı: {format_observation_time(metric.last_value_at, language, timezone_name, include_timezone=include_timezone)}." if tr else f"Latest recorded timestamp: {format_observation_time(metric.last_value_at, language, timezone_name, include_timezone=include_timezone)}.")
                 if metric.last_value_at
                 else ""
             ),
@@ -704,7 +704,7 @@ async def answer_factory_question(
         for p in points
     ]
     preview = "; ".join(
-        f"{format_observation_time(p.timestamp, language, timezone_name) if aggregation != 'MONTHLY' else p.timestamp.strftime('%Y-%m')}: {format_reneryo_value(p.value, metric.unit_group, language)}"
+        f"{format_observation_time(p.timestamp, language, timezone_name, include_timezone=include_timezone) if aggregation != 'MONTHLY' else p.timestamp.strftime('%Y-%m')}: {format_reneryo_value(p.value, metric.unit_group, language)}"
         for p in points[-3:]
     )
     cadence = {

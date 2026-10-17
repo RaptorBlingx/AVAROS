@@ -57,6 +57,24 @@ def request_timezone(self, message=None) -> str | None:
     return str(extra.get("site_timezone", "UTC") or "UTC")
 
 
+def request_time_format(self, message=None) -> dict:
+    """Presentation options only: explicit UTC never changes query boundaries."""
+    data = getattr(message, "data", {}) or {}
+    utterance = data.get("utterance")
+    if not isinstance(utterance, str):
+        alternatives = data.get("utterances")
+        utterance = alternatives[0] if isinstance(alternatives, list) and alternatives else ""
+    text = normalize_phrase(str(utterance))
+    utc_requested = bool(re.search(r"\butc\b", text))
+    details = utc_requested or any(term in text for term in (
+        "time zone", "timezone", "saat dilimi", "europe istanbul",
+    ))
+    return {
+        "timezone_name": "UTC" if utc_requested else request_timezone(self, message),
+        "include_timezone": details,
+    }
+
+
 def parse_period(self, period_str: str, message=None, *, now=None) -> TimePeriod:
     """Parse natural language period into TimePeriod value object."""
     try:

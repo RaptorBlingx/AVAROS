@@ -67,15 +67,20 @@ class FutureGenService:
                     f"available monthly history {points[0].timestamp:%Y-%m} – {points[-1].timestamp:%Y-%m}",
                 )
         change = None
-        if len(points) > 1 and points[0].value != 0:
-            change = ((points[-1].value - points[0].value) / abs(points[0].value)) * 100
+        delta = points[-1].value - points[0].value if len(points) > 1 else None
+        temperature = metric.unit_group == "TEMPERATURE"
+        # Celsius is Reneryo's base temperature unit. Its zero is arbitrary:
+        # narrate an endpoint difference, never a relative percentage.
+        if delta is not None and not temperature and points[0].value != 0:
+            change = (delta / abs(points[0].value)) * 100
         direction = "unavailable"
-        if change is not None and change > 1:
-            direction = "increasing"
-        elif change is not None and change < -1:
-            direction = "decreasing"
-        elif change is not None:
-            direction = "stable"
+        directional_change = delta if temperature else change
+        threshold = 0 if temperature else 1
+        if directional_change is not None:
+            direction = (
+                "increasing" if directional_change > threshold else
+                "decreasing" if directional_change < -threshold else "stable"
+            )
         return ReneryoTrend(
             metric=metric,
             period_label=period.display_name,
@@ -83,6 +88,7 @@ class FutureGenService:
             points=tuple(points),
             direction=direction,
             change_percent=change,
+            change_absolute=delta,
             requested_period_label=requested_period_label,
             period_start=period.start,
             period_end=period.end,

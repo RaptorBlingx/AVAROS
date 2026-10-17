@@ -22,20 +22,20 @@ def finding_headline(
     language: str,
     *,
     action: str = "",
-    timezone_name: str | None = None,
+    timezone_name: str | None = None, include_timezone: bool = False,
 ) -> str:
     """Return a natural deterministic answer for one finding turn."""
     normalized = normalize_phrase(text)
     if action == "finding.period" or _has(
         normalized, "period", "window", "donem", "dönem", "zaman"
     ):
-        return _period_explanation(finding, language, timezone_name)
+        return _period_explanation(finding, language, timezone_name, include_timezone)
     if action == "finding.entity" or _has(
         normalized, "entity", "affect", "varlik", "varlık", "etkiliyor"
     ):
         return _entity_explanation(finding, language)
     if action == "finding.evidence" or _has(normalized, "evidence", "kanit", "kanıt"):
-        return _evidence_explanation(finding, language, timezone_name)
+        return _evidence_explanation(finding, language, timezone_name, include_timezone)
     if action == "finding.trigger" or _has(
         normalized,
         "why",
@@ -58,18 +58,18 @@ def _finding_explanation(finding: MdspFinding, language: str) -> str:
     if finding.rule_id == _CONTINUITY_RULE:
         source = _source_name(evidence.get("source"))
         resources = _integer(evidence.get("affectedResourceCount"))
-        gaps = _integer(evidence.get("recentGapCount"))
-        hours = _gap_hours(evidence.get("longestGap"))
+        duration = _gap_duration(evidence.get("longestGap"), language)
+        single = resources == 1 and _integer(evidence.get("recentGapCount")) == 1
+        gap_label = "önemli veri boşluğu" if single else "önemli veri boşlukları"
         if turkish:
             return (
-                f"MDSP, son 30 günlük izleme döneminde {resources} {source} "
-                f"kaynağını etkileyen {gaps} önemli veri boşluğu buldu. En uzun "
-                f"boşluk yaklaşık {hours} saat sürdü."
+                f"MDSP, {resources} {source} kaynağında {gap_label} buldu. "
+                f"En uzun boşluk {duration} sürdü. Bu aralıkta veri kapsamı eksik; nedeni henüz belirlenmiş değil."
             )
+        noun = "resource" if resources == 1 else "resources"
         return (
-            f"MDSP found {gaps} significant data gaps affecting {resources} "
-            f"{source} resources during the latest 30-day monitoring window. "
-            f"The longest gap lasted about {hours} hours."
+            f"MDSP found {'a significant data gap' if single else 'significant data gaps'} in {resources} {source} {noun}. "
+            f"The longest lasted {duration}. Observation coverage is incomplete over this interval; the cause is unconfirmed."
         )
     if finding.rule_id == _FRESHNESS_RULE:
         metric = str(evidence.get("metricName") or finding.metric_name or "the metric")
@@ -85,7 +85,7 @@ def _finding_explanation(finding: MdspFinding, language: str) -> str:
             return (
                 f"MDSP, {metric} için bu kaynağın son gözleminin Reneryo'daki "
                 f"en güncel verinin yaklaşık {lag} saat gerisinde olduğunu "
-                f"tespit etti.{detail}"
+                f"tespit etti. Bu kaynağın güncel izleme için kullanılabilirliği doğrulanmalı.{detail}"
             )
         detail = (
             " Another source for the same metric is current, so this finding is "
@@ -95,7 +95,7 @@ def _finding_explanation(finding: MdspFinding, language: str) -> str:
         )
         return (
             f"MDSP found that this source's latest observation for {metric} is "
-            f"about {lag} hours behind the latest data in Reneryo.{detail}"
+            f"about {lag} hours behind the latest data in Reneryo. Its suitability for current monitoring needs review.{detail}"
         )
     if finding.rule_id == _REGRESSION_CADENCE_RULE:
         driver = _first_driver(evidence)
@@ -104,15 +104,13 @@ def _finding_explanation(finding: MdspFinding, language: str) -> str:
         if turkish:
             period = _period_name(evidence.get("period"), turkish=True)
             return (
-                f"MDSP, {period} dönemli regresyonun {driver_name} açıklayıcı değişkeninden "
-                f"daha sık çalıştığını tespit etti. Bu değişken yaklaşık {cadence_days} "
-                "günde bir güncellendiği için model dönemi veri sıklığından daha ayrıntılıdır."
+                f"MDSP, {period} model döneminin dayandığı veriden daha ayrıntılı olduğunu tespit etti. "
+                f"{driver_name} yaklaşık {cadence_days} günde bir güncelleniyor; uygun model dönemi incelenmeli."
             )
         period = _period_name(evidence.get("period"), turkish=False)
         return (
-            f"MDSP found that the {period} regression runs more frequently than "
-            f"its {driver_name} driver updates. The driver updates about every "
-            f"{cadence_days} days, so the model period is finer than its supporting data."
+            f"MDSP found that the {period} model period is finer than its supporting data. "
+            f"The {driver_name} driver updates about every {cadence_days} days; the appropriate model period needs review."
         )
     if finding.rule_id == _REGRESSION_FIT_RULE:
         r_squared = _optional_number(evidence.get("rSquared"))
@@ -122,22 +120,22 @@ def _finding_explanation(finding: MdspFinding, language: str) -> str:
         if turkish:
             return (
                 "Bu kayıtlı regresyon modeli geçici uyum kalitesi inceleme sınırına takıldı. "
-                f"R²: {r_text}; normalize hata: {error_text}."
+                f"R²: {r_text}; normalize hata: {error_text}. Modelin amaçlanan kullanımına uygunluğu incelenmeli; bu bulgu yerine başka bir model seçmez."
             )
         return (
             "This saved regression model crossed a provisional fit-quality review gate. "
-            f"R-squared: {r_text}; normalized error: {error_text}."
+            f"R-squared: {r_text}; normalized error: {error_text}. Its suitability for the intended use needs review; this finding does not select a replacement model."
         )
     if finding.rule_id == _REGRESSION_PRIMARY_RULE:
         results = _integer(evidence.get("resultCount"))
-        seu_name = str(evidence.get("seuName") or evidence.get("seuId") or "this SEU")
+        seu_name = str(evidence.get("seuName") or ("bu SEU" if turkish else "this SEU"))
         if turkish:
             return (
                 f"{seu_name} için {results} kayıtlı uygun regresyon sonucu var ancak "
                 "hiçbiri birincil değil. Birincil sonuç gerekip gerekmediği iş politikasıyla doğrulanmalıdır."
             )
         return (
-            f"{seu_name} has {results} eligible saved regression results, but none "
+            f"{seu_name} has {results} eligible saved regression {'result' if results == 1 else 'results'}, but none "
             "is primary. Whether one is required needs business confirmation."
         )
     title = _clean_text(finding.title.for_language(language), finding)
@@ -145,7 +143,7 @@ def _finding_explanation(finding: MdspFinding, language: str) -> str:
     return f"{_sentence(title)} {_sentence(summary)}".strip()
 
 
-def _evidence_explanation(finding: MdspFinding, language: str, timezone_name: str | None = None) -> str:
+def _evidence_explanation(finding: MdspFinding, language: str, timezone_name: str | None = None, include_timezone: bool = False) -> str:
     evidence = finding.evidence
     turkish = is_turkish(language)
     if finding.rule_id == _CONTINUITY_RULE:
@@ -153,24 +151,25 @@ def _evidence_explanation(finding: MdspFinding, language: str, timezone_name: st
         resources = _integer(evidence.get("affectedResourceCount"))
         gaps = _integer(evidence.get("recentGapCount"))
         gap = _mapping(evidence.get("longestGap"))
-        hours = _gap_hours(gap)
-        start = _time(gap.get("start"), language, timezone_name)
-        end = _time(gap.get("end"), language, timezone_name)
+        duration = _gap_duration(gap, language)
+        start = _time(gap.get("start"), language, timezone_name, include_timezone)
+        end = _time(gap.get("end"), language, timezone_name, include_timezone)
         if turkish:
             return (
-                f"Kanıtlar, {resources} {source} kaynağında {gaps} yakın tarihli "
-                f"önemli boşluk olduğunu gösteriyor. En uzun boşluk {start} ile "
-                f"{end} arasında yaklaşık {hours} saat sürdü."
+                f"Kanıtlar, {resources} {source} kaynağında kaynak başına en fazla {gaps} "
+                f"yakın tarihli önemli boşluk olduğunu gösteriyor. En uzun boşluk {start} ile "
+                f"{end} arasında {duration} sürdü."
             )
         return (
-            f"The evidence shows {gaps} recent significant gaps across {resources} "
-            f"{source} resources. The longest ran from {start} to {end} and "
-            f"lasted about {hours} hours."
+            f"The evidence shows up to {gaps} recent significant "
+            f"{'gap' if gaps == 1 else 'gaps'} per resource across {resources} "
+            f"{source} {'resource' if resources == 1 else 'resources'}. The longest ran from {start} to {end} and "
+            f"lasted {duration}."
         )
     if finding.rule_id == _FRESHNESS_RULE:
         metric = str(evidence.get("metricName") or finding.metric_name or "the metric")
-        observed = _time(evidence.get("lastObservationAt"), language, timezone_name)
-        watermark = _time(evidence.get("sourceWatermark") or finding.source_watermark, language, timezone_name)
+        observed = _time(evidence.get("lastObservationAt"), language, timezone_name, include_timezone)
+        watermark = _time(evidence.get("sourceWatermark") or finding.source_watermark, language, timezone_name, include_timezone)
         lag = round(_number(evidence.get("lagHours")))
         samples = _integer(evidence.get("observedSampleCount"))
         if turkish:
@@ -250,18 +249,18 @@ def _trigger_explanation(finding: MdspFinding, language: str) -> str:
     turkish = is_turkish(language)
     if finding.rule_id == _CONTINUITY_RULE:
         gaps = _integer(evidence.get("recentGapCount"))
-        hours = _gap_hours(evidence.get("longestGap"))
+        duration = _gap_duration(evidence.get("longestGap"), language)
         if turkish:
             return (
                 "Bu kural, son 30 günde bir boşluk hem gözlenen veri sıklığının "
                 "altı katını hem de altı saati aştığında tetiklenir. Bu kaynakta "
-                f"{gaps} boşluk eşiği aştı; en uzunu yaklaşık {hours} saat sürdü."
+                f"kaynak başına en fazla {gaps} boşluk eşiği aştı; en uzunu {duration} sürdü."
             )
         return (
             "This rule triggers when a gap in the latest 30 days exceeds both "
             "six observed cadences and six hours. Here, "
-            f"{gaps} gaps crossed that threshold, and the longest lasted about "
-            f"{hours} hours."
+            f"up to {gaps} {'gap' if gaps == 1 else 'gaps'} per resource crossed that threshold, and the longest lasted "
+            f"{duration}."
         )
     if finding.rule_id == _FRESHNESS_RULE:
         lag = round(_number(evidence.get("lagHours")))
@@ -359,29 +358,31 @@ def _trigger_explanation(finding: MdspFinding, language: str) -> str:
     return _finding_explanation(finding, language)
 
 
-def _period_explanation(finding: MdspFinding, language: str, timezone_name: str | None = None) -> str:
+def _period_explanation(finding: MdspFinding, language: str, timezone_name: str | None = None, include_timezone: bool = False) -> str:
     turkish = is_turkish(language)
     if finding.rule_id == _CONTINUITY_RULE:
         gap = _mapping(finding.evidence.get("longestGap"))
-        start = _time(gap.get("start"), language, timezone_name)
-        end = _time(gap.get("end"), language, timezone_name)
-        hours = _gap_hours(gap)
+        start = _time(gap.get("start"), language, timezone_name, include_timezone)
+        end = _time(gap.get("end"), language, timezone_name, include_timezone)
+        window_start = _time(finding.evaluation_start, language, timezone_name, include_timezone)
+        window_end = _time(finding.evaluation_end, language, timezone_name, include_timezone)
+        duration = _gap_duration(gap, language)
         if turkish:
             return (
-                "Bu bulgu, kuralın son 30 günlük yakın dönem penceresini kapsıyor. "
-                f"Bulgu içindeki en uzun veri boşluğu {start} ile {end} arasında "
-                f"yaklaşık {hours} saat sürdü."
+                f"Değerlendirme aralığı {window_start} ile {window_end}. "
+                f"En uzun boşluk {start} ile {end} arasında {duration} sürdü. "
+                "Kural, bitişi değerlendirme aralığına giren boşlukları seçer; süre boşluğun tamamına aittir ve başlangıcı bu aralıktan önce olabilir."
             )
         return (
-            "This finding covers the rule's most recent 30-day lookback window. "
-            f"The longest gap in the finding ran from {start} to {end} and "
-            f"lasted about {hours} hours."
+            f"The evaluation window is {window_start} to {window_end}. "
+            f"The longest gap ran from {start} to {end}, lasting {duration}. "
+            "The rule selects gaps whose end falls in the lookback window; the duration covers the whole gap, which may start before that window."
         )
     if finding.rule_id == _FRESHNESS_RULE:
-        observed = _time(finding.evidence.get("lastObservationAt"), language, timezone_name)
+        observed = _time(finding.evidence.get("lastObservationAt"), language, timezone_name, include_timezone)
         watermark = _time(
             finding.evidence.get("sourceWatermark") or finding.source_watermark,
-            language, timezone_name,
+            language, timezone_name, include_timezone,
         )
         if turkish:
             return (
@@ -392,8 +393,8 @@ def _period_explanation(finding: MdspFinding, language: str, timezone_name: str 
             f"This finding compares the source's latest observation at {observed} "
             f"with Reneryo's source watermark at {watermark}."
         )
-    start = _time(finding.evaluation_start, language, timezone_name)
-    end = _time(finding.evaluation_end, language, timezone_name)
+    start = _time(finding.evaluation_start, language, timezone_name, include_timezone)
+    end = _time(finding.evaluation_end, language, timezone_name, include_timezone)
     if turkish:
         return (
             f"Bu bulgu {start} ile {end} arasındaki veri kullanılarak değerlendirildi."
@@ -421,7 +422,7 @@ def _entity_explanation(finding: MdspFinding, language: str) -> str:
             )
         return (
             f"This finding affects the {source} integration source and "
-            f"{len(names)} metrics: {metrics}."
+            f"{len(names)} {'metric' if len(names) == 1 else 'metrics'}: {metrics}."
         )
     if finding.rule_id in {_REGRESSION_CADENCE_RULE, _REGRESSION_FIT_RULE}:
         period = _period_name(finding.evidence.get("period"), turkish=turkish)
@@ -542,8 +543,20 @@ def _join_conditions(values: list[str], *, turkish: bool) -> str:
     return conjunction.join(values)
 
 
-def _gap_hours(value: Any) -> int:
-    return round(_number(_mapping(value).get("durationSeconds")) / 3600)
+def _gap_duration(value: Any, language: str) -> str:
+    seconds = _optional_number(_mapping(value).get("durationSeconds"))
+    if seconds is None or seconds < 0:
+        return "bilinmeyen bir süre" if is_turkish(language) else "an unknown duration"
+    minutes = round(seconds / 60)
+    hours, minutes = divmod(minutes, 60)
+    if is_turkish(language):
+        return (f"{hours} saat" + (f" {minutes} dakika" if minutes else "")) if hours else f"{minutes} dakika"
+    parts = []
+    if hours:
+        parts.append(f"{hours} {'hour' if hours == 1 else 'hours'}")
+    if minutes or not parts:
+        parts.append(f"{minutes} {'minute' if minutes == 1 else 'minutes'}")
+    return " ".join(parts)
 
 
 def _cadence_days(value: Any) -> int:
@@ -559,7 +572,7 @@ def _period_name(value: Any, *, turkish: bool) -> str:
     return normalized.lower()
 
 
-def _time(value: Any, language: str, timezone_name: str | None) -> str:
+def _time(value: Any, language: str, timezone_name: str | None, include_timezone: bool = False) -> str:
     if isinstance(value, datetime):
         parsed = value
     else:
@@ -570,7 +583,7 @@ def _time(value: Any, language: str, timezone_name: str | None) -> str:
             parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
         except ValueError:
             return raw
-    return format_observation_time(parsed, language, timezone_name)
+    return format_observation_time(parsed, language, timezone_name, include_timezone=include_timezone)
 
 
 def _has(text: str, *words: str) -> bool:

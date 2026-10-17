@@ -170,7 +170,7 @@ def meter_inventory_headline(
 
 
 def metric_inventory_headline(
-    rows: Iterable[ReneryoMetric], language: str, *, timezone_name: str | None = None,
+    rows: Iterable[ReneryoMetric], language: str, *, timezone_name: str | None = None, include_timezone: bool = False,
 ) -> str:
     """Summarize the metric inventory and its observable data watermark."""
     metrics = list(rows)
@@ -191,27 +191,27 @@ def metric_inventory_headline(
         )
         if newest:
             headline += (
-                f" Bu envanterdeki en güncel metrik gözlemi {format_observation_time(newest, language, timezone_name)}."
+                f" Bu envanterdeki en güncel metrik gözlemi {format_observation_time(newest, language, timezone_name, include_timezone=include_timezone)}."
             )
         return headline
     noun = "metric" if len(metrics) == 1 else "metrics"
     headline = f"Future Gen has {len(metrics)} {noun}: {_natural_join(names)}."
     if newest:
         headline += (
-            f" The newest metric observation in this inventory is {format_observation_time(newest, language, timezone_name)}."
+            f" The newest metric observation in this inventory is {format_observation_time(newest, language, timezone_name, include_timezone=include_timezone)}."
         )
     return headline
 
 
-def metric_detail_headline(row: ReneryoMetric, language: str, *, value_only: bool = False, timezone_name: str | None = None) -> str:
+def metric_detail_headline(row: ReneryoMetric, language: str, *, value_only: bool = False, timezone_name: str | None = None, include_timezone: bool = False) -> str:
     """Describe one context-selected metric using Reneryo-owned metadata."""
-    observed = format_observation_time(row.last_value_at, language, timezone_name) if row.last_value_at else None
+    observed = format_observation_time(row.last_value_at, language, timezone_name, include_timezone=include_timezone) if row.last_value_at else None
     value = format_reneryo_value(row.last_value, row.unit_group, language) if row.last_value is not None else None
     if value_only:
         if value is None:
             return (f"{row.name}: kayıtlı değer yok." if is_turkish(language)
                     else f"{row.name}: no recorded value is available.")
-        text = f"{row.name}: {value}" + (f" ({observed})" if observed else "") + "."
+        text = f"{row.name}: {value}" + (f"; {observed}" if observed else "") + "."
         if row.metric_type == "COUNTER":
             text += (" Bu birikimli sayaç değeridir; dönem tüketimi veya üretimi değildir."
                      if is_turkish(language) else
@@ -251,7 +251,7 @@ def finding_inventory_headline(result: MdspFindingList, language: str) -> str:
             f"{_domain_summary(domains, turkish=True)}."
         )
     return (
-        f"There are {result.active_count} active findings: "
+        f"{'There is' if result.active_count == 1 else 'There are'} {result.active_count} active {'finding' if result.active_count == 1 else 'findings'}: "
         f"{severities.get('HIGH', 0)} high, {severities.get('MEDIUM', 0)} medium "
         f"and {severities.get('LOW', 0)} low. {_domain_summary(domains)}."
     )
@@ -334,3 +334,22 @@ def format_reneryo_value(value: float, unit_group: str, language: str) -> str:
     units = {"ENERGY": "kWh", "TEMPERATURE": "°C", "VOLUME": "m³", "WEIGHT": "kg",
              "PIECE": "adet" if is_turkish(language) else "unit" if value == 1 else "units"}
     return f"{number} {units.get(unit_group, source_enum_label(unit_group, language))}".strip()
+
+
+def temperature_trend_headline(trend, language: str) -> str:
+    """Describe Reneryo Celsius endpoints without an origin-dependent ratio."""
+    first, last = trend.points[0].value, trend.points[-1].value
+    delta = last - first
+    start = format_reneryo_value(first, "TEMPERATURE", language)
+    end = format_reneryo_value(last, "TEMPERATURE", language)
+    difference = format_reneryo_value(abs(delta), "TEMPERATURE", language)
+    period = period_display_name(trend.period_label, language)
+    if is_turkish(language):
+        if delta == 0:
+            return f"{trend.metric.name}, {period}: ilk ve son değer {start}; net değişim yok."
+        direction = "artış" if delta > 0 else "düşüş"
+        return f"{trend.metric.name}, {period}: ilk değer {start}, son değer {end}; {difference} {direction}."
+    if delta == 0:
+        return f"{trend.metric.name}, {period}: first and last values were {start}; no net change."
+    direction = "rise" if delta > 0 else "drop"
+    return f"{trend.metric.name}, {period}: first {start}, last {end}; a {direction} of {difference}."

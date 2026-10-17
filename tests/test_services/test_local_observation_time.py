@@ -28,16 +28,18 @@ OBSERVED = datetime(2026, 12, 31, 22, 30, tzinfo=UTC)
 
 
 @pytest.mark.parametrize("language,expected", [
-    ("en-US", "01 January 2027 01:30 (Europe/Istanbul, UTC+03:00)"),
-    ("tr-TR", "01.01.2027 01:30 (Europe/Istanbul, UTC+03:00)"),
+    ("en-US", "01 January 2027 01:30"),
+    ("tr-TR", "01.01.2027 01:30"),
 ])
 def test_verified_zone_changes_presentation_across_year_boundary(language, expected):
     assert format_observation_time(OBSERVED, language, "Europe/Istanbul") == expected
     assert OBSERVED.isoformat() == "2026-12-31T22:30:00+00:00"
     spoken = speech_text(expected, language)
-    assert "01:30" in spoken and "UTC" in spoken
-    assert ("1 Ocak 2027" in spoken and "İstanbul saati" in spoken) if language == "tr-TR" else "Istanbul time" in spoken
-    assert "3 saat" in spoken if language == "tr-TR" else "3 hours" in spoken
+    assert "01:30" in spoken and "UTC" not in spoken
+    assert "Europe/Istanbul" not in spoken
+    if language == "tr-TR":
+        assert "1 Ocak 2027 saat 01:30" in spoken
+
 
 
 @pytest.mark.parametrize("instant,expected", [
@@ -47,13 +49,13 @@ def test_verified_zone_changes_presentation_across_year_boundary(language, expec
     ("2026-03-29T01:30:00+00:00", "29 March 2026 03:30 (Europe/Berlin, UTC+02:00)"),
 ])
 def test_dst_repeated_hour_stays_distinguishable(instant, expected):
-    rendered = format_observation_time(datetime.fromisoformat(instant), "en-US", "Europe/Berlin")
+    rendered = format_observation_time(datetime.fromisoformat(instant), "en-US", "Europe/Berlin", include_timezone=True)
     assert rendered == expected
     assert "UTC plus" in speech_text(rendered, "en-US")
 
 
 def test_fractional_offset_is_audible():
-    rendered = format_observation_time(OBSERVED, "tr-TR", "Asia/Kathmandu")
+    rendered = format_observation_time(OBSERVED, "tr-TR", "Asia/Kathmandu", include_timezone=True)
     assert "UTC+05:45" in rendered
     assert "UTC artı 5 saat 45 dakika" in speech_text(rendered, "tr-TR")
 
@@ -98,7 +100,7 @@ def test_signed_freshness_preserves_utc_evidence_and_ignores_client_zone(languag
     assert "America/New_York" not in response["headline"]
     if binding == "Europe/Istanbul":
         assert "01:30" in spoken and "01:30" in response["headline"]
-        assert "Europe/Istanbul" in response["headline"]
+        assert "Europe/Istanbul" not in response["headline"]
     else:
         assert "22:30 UTC" in spoken and "22:30 UTC" in response["headline"]
 
@@ -116,8 +118,8 @@ def test_inventory_value_and_empty_trend_use_same_zone(language, question):
     assert handle_reneryo_query(skill, _message(question, language))
     spoken, kwargs = skill.spoken[-1]
     response = kwargs["meta"]["avaros_response"]
-    assert "01:30" in response["headline"] and "Europe/Istanbul" in response["headline"]
-    assert "01:30" in spoken and "UTC" in spoken
+    assert "01:30" in response["headline"] and "Europe/Istanbul" not in response["headline"]
+    assert "01:30" in spoken and "UTC" not in spoken
     if source.metric_values.called:
         args = source.metric_values.call_args.args
         assert args[:3] == ("humidity", datetime(2024, 12, 31, 21, tzinfo=UTC), datetime(2025, 1, 31, 21, tzinfo=UTC))
@@ -135,7 +137,7 @@ async def test_hourly_history_preserves_source_instants_and_requested_bounds(lan
         FutureGenService(source), FactoryRequest("history", "humidity", question),
         period, language, timezone_name="Europe/Istanbul",
     )
-    assert "01:30" in answer.headline and "Europe/Istanbul" in answer.headline
+    assert "01:30" in answer.headline and "Europe/Istanbul" not in answer.headline
     assert answer.evidence[0]["time"] == OBSERVED.isoformat()
     assert source.metric_values.call_args.args[1:3] == (
         datetime(2026, 12, 31, 21, tzinfo=UTC), datetime(2027, 1, 1, 21, tzinfo=UTC),
@@ -157,7 +159,7 @@ def test_mdsp_observation_narration_localizes_without_mutating_evidence(language
     assert handle_reneryo_query(skill, message)
     spoken, kwargs = skill.spoken[-1]
     response = kwargs["meta"]["avaros_response"]
-    assert "01:30" in spoken and "Europe/Istanbul" in response["headline"]
+    assert "01:30" in spoken and "Europe/Istanbul" not in response["headline"]
     assert response["evidence_rows"][0]["lastObservationAt"] == OBSERVED.isoformat()
     assert finding.evidence == before and skill._futuregen_service.evaluations == 0
 

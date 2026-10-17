@@ -42,7 +42,7 @@ _COMPARISON_ENTITY = re.compile(
 )
 _NON_ENTITY = re.compile(
     rf"^(?:{_MONTH_NAMES}|today|yesterday|last|past|previous|this|that|same|"
-    r"current|latest|now|whole|entire|factory|period|data|history|readings?|"
+    r"current|latest|now|whole|entire|factory|period|data|history|readings?|utc|"
     r"electricity|energy|production|output|temperature|humidity|metrics?|meters?|"
     r"oee|throughput|scrap|waste|units?|pieces?|each|per|reneryo|what|that|this|it|"
     r"configured-asset|measurement|"

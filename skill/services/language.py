@@ -129,6 +129,7 @@ def source_enum_label(value: str, language: str | None) -> str:
 
 def format_observation_time(
     value: datetime, language: str | None, timezone_name: str | None = None,
+    *, include_timezone: bool = False,
 ) -> str:
     """Render an instant in a verified request timezone, without changing it.
 
@@ -148,6 +149,8 @@ def format_observation_time(
         return stamp
     if zone is None or zone.key == "UTC":
         return stamp + " UTC"
+    if not include_timezone:
+        return stamp
     offset = value.strftime("%z")
     return f"{stamp} ({zone.key}, UTC{offset[:3]}:{offset[3:]})"
 
@@ -155,13 +158,12 @@ def format_observation_time(
 def speech_text(text: str, language: str) -> str:
     """Adapt quantity spelling for TTS without changing facts or limitations."""
     turkish = is_turkish(language)
-    # Only timestamp presentations carrying an explicit timezone are expanded.
-    # Raw source/evidence strings and ambiguous dates are left untouched.
+    # Only presentation timestamps are expanded; evidence never passes here.
     if turkish:
         months = ("Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
                   "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık")
         text = re.sub(
-            r"\b(\d{2})\.(0[1-9]|1[0-2])\.(\d{4}) (\d{2}:\d{2})(?= UTC| \([^()]+, UTC)",
+            r"\b(\d{2})\.(0[1-9]|1[0-2])\.(\d{4}) (\d{2}:\d{2})(?!\d)",
             lambda m: f"{int(m[1])} {months[int(m[2]) - 1]} {m[3]} saat {m[4]}",
             text,
         )

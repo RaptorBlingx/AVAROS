@@ -14,7 +14,7 @@ from skill._metric_handlers import _resolve_kpi_period as _resolve_kpi_period_im
 from skill.domain.exceptions import ValidationError
 from skill.domain.models import CanonicalMetric, ScenarioParameter, WhatIfScenario
 from skill.domain.results import KPIResult
-from skill._helpers import request_timezone
+from skill._helpers import request_time_format
 from skill.services.dia_response import clarification_metadata, speak_with_evidence, speak_information
 from skill.services.language import is_turkish
 from skill.services.period_resolution import remove_period_reference
@@ -105,7 +105,7 @@ def handle_metric_query_fallback(skill: "AVAROSSkill", message: Message) -> bool
             asset_id=asset_id,
             period=period,
         )
-        response = skill.response_builder.format_kpi_result(result, timezone_name=request_timezone(skill, message))
+        response = skill.response_builder.format_kpi_result(result, **request_time_format(skill, message))
         speak_with_evidence(skill, response, result)
         remember_kpi_result(skill, message, result)
         return True
@@ -274,7 +274,7 @@ def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
             asset_id=asset_id,
             period=period,
         )
-        response = skill.response_builder.format_kpi_result(result, timezone_name=request_timezone(skill, message))
+        response = skill.response_builder.format_kpi_result(result, **request_time_format(skill, message))
         speak_with_evidence(skill, response, result)
         remember_kpi_result(skill, message, result)
 

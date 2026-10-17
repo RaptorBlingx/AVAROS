@@ -161,9 +161,9 @@ def test_english_finding_explanation_is_natural():
         _recent_gap_finding(), "explain this decision-support finding", "en-US"
     )
 
-    assert "4 significant data gaps" in answer
+    assert "significant data gaps" in answer
     assert "5 OpenWeather resources" in answer
-    assert "29 hours" in answer
+    assert "28 hours 31 minutes" in answer
     assert "resource(s)" not in answer
     assert "OPEN_WEATHER" not in answer
 
@@ -171,9 +171,9 @@ def test_english_finding_explanation_is_natural():
 def test_turkish_finding_explanation_is_natural():
     answer = finding_headline(_recent_gap_finding(), "bu bulguyu açıkla", "tr-TR")
 
-    assert "4 önemli veri boşluğu" in answer
-    assert "5 OpenWeather kaynağını" in answer
-    assert "29 saat" in answer
+    assert "önemli veri boşlukları" in answer
+    assert "5 OpenWeather kaynağında" in answer
+    assert "28 saat 31 dakika" in answer
     assert "resource(s)" not in answer
     assert "OPEN_WEATHER" not in answer
 
@@ -183,10 +183,11 @@ def test_recent_gap_period_uses_rule_lookback_and_actual_gap_interval():
         _recent_gap_finding(), "what period does this finding cover", "en-US"
     )
 
-    assert "most recent 30-day lookback window" in answer
+    assert "The evaluation window is" in answer
+    assert "duration covers the whole gap" in answer
     assert "06 September 2026 01:53 UTC" in answer
     assert "07 September 2026 06:24 UTC" in answer
-    assert "29 hours" in answer
+    assert "28 hours 31 minutes" in answer
     assert "2023-09-18" not in answer
 
 
@@ -205,9 +206,9 @@ def test_finding_evidence_follow_up_is_localized():
     )
 
     assert "5 OpenWeather kaynağında" in answer
-    assert "4 yakın tarihli önemli boşluk" in answer
+    assert "kaynak başına en fazla 4 yakın tarihli önemli boşluk" in answer
     assert "06.09.2026 01:53 UTC" in answer
-    assert "29 saat" in answer
+    assert "28 saat 31 dakika" in answer
     assert "affectedResourceCount" not in answer
     assert "recentGapCount" not in answer
 
@@ -217,9 +218,9 @@ def test_english_evidence_is_humanized_without_raw_keys():
         _recent_gap_finding(), "what evidence supports this finding", "en-US"
     )
 
-    assert "4 recent significant gaps across 5 OpenWeather resources" in answer
+    assert "up to 4 recent significant gaps per resource across 5 OpenWeather resources" in answer
     assert "06 September 2026 01:53 UTC" in answer
-    assert "29 hours" in answer
+    assert "28 hours 31 minutes" in answer
     assert "affectedResourceCount" not in answer
     assert "recentGapCount" not in answer
 
