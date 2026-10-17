@@ -23,6 +23,7 @@ from skill.services.factory_questions import (
     cost_limitation_headline,
     is_cost_request,
     is_historical_change_question,
+    is_freshness_question,
 )
 from skill.services.finding_collection import (
     FindingFilters,
@@ -260,12 +261,44 @@ def handle_reneryo_query(
         ))
         return True
 
+    grounded_read_metric = None
+    timestamp_request = is_freshness_question(text)
     factory_request = classify_factory_question(utterance, state)
     inventory_actions = {
         SemanticAction.METERS_LIST, SemanticAction.METRICS_LIST,
         SemanticAction.REGRESSIONS_LIST, SemanticAction.REGRESSION_DETAIL,
     }
     operation = _deterministic_action(text, state)
+    if ((operation is None or operation in {SemanticAction.METRIC_DETAIL, SemanticAction.METRICS_LIST} or operation in _FINDING_ACTIONS)
+            and not _has(text, "finding", "bulgu", "alert", "uyarı", "uyari", "regression", "regresyon", "model")
+            and not _meter_reference(text) and not _looks_like_trend(text)
+            and not _metric_collection_request(text)
+            and (_metric_value_request(text, specific=True) or _metric_attribute_request(text) or timestamp_request)
+            and (factory_request is None or factory_request.kind in {"reading", "freshness"})):
+        rows = skill._safe_dispatch(
+            "resolve_metric_read", lambda: skill.dispatcher._run_async(_service(skill).metrics())
+        )
+        if rows is None:
+            _remember(skill, message, DialogueState(organization_id=state.organization_id, language=language),
+                      operation="metric_clarification", pending_clarification="metric unavailable")
+            return True
+        references = metric_references(utterance, rows)
+        shorthand = _metric_detail_shorthand(text)
+        if not references and shorthand and state.operation in {"metric_detail", "trend", "factory_history"}:
+            references = metric_references(state.metric_name, rows)
+        if len(references) == 1:
+            # Keep the existing counter/factory read path when its subject agrees.
+            factory_subjects = metric_references(factory_request.metric_hint, rows) if factory_request else []
+            if not factory_subjects or factory_subjects != references:
+                factory_request = None
+                grounded_read_metric = references[0]
+                semantic_resolution = _metric_read_resolution(grounded_read_metric, utterance, language)
+                operation = semantic_resolution.action
+        elif references or not shorthand or has_metric_alias(utterance) or (timestamp_request and not state.active_finding_id):
+            _metric_clarification(skill, references, language)
+            _remember(skill, message, DialogueState(organization_id=state.organization_id, language=language),
+                      operation="metric_clarification", pending_clarification="metric")
+            return True
     detail_request = (
         (_metric_attribute_request(text) or (
             _singular_metric_request(text) and not extract_period_phrase(utterance)
@@ -554,7 +587,7 @@ def handle_reneryo_query(
                 message,
                 state,
                 operation="regression_detail" if selected is not None else "regressions",
-                entity_id=selected.regression_id if selected is not None else state.entity_id,
+                entity_id=selected.regression_id if selected is not None else "",
             )
             return True
         if action is SemanticAction.TREND_SHOW:
@@ -576,7 +609,7 @@ def handle_reneryo_query(
                     raise ValidationError(message="Metric not found", code="METRIC_NOT_FOUND")
                 if len(references) > 1:
                     _metric_clarification(skill, references, language)
-                    _remember(skill, message, state, operation="clarification",
+                    _remember(skill, message, DialogueState(organization_id=state.organization_id, language=language), operation="clarification",
                               metric_name="", metrics=(), asset_ids=(), answer_evidence=(),
                               pending_clarification="metric")
                     return True
@@ -725,7 +758,11 @@ def handle_reneryo_query(
         if action not in {SemanticAction.METRICS_LIST, SemanticAction.METRIC_DETAIL}:
             _semantic_clarification(skill, language)
             return True
-        rows = skill.dispatcher._run_async(service.metrics())
+        rows = (
+            [grounded_read_metric]
+            if action is SemanticAction.METRIC_DETAIL and grounded_read_metric is not None
+            else skill.dispatcher._run_async(service.metrics())
+        )
         selected_metric = None
         if action is SemanticAction.METRIC_DETAIL:
             expected = (
@@ -759,10 +796,21 @@ def handle_reneryo_query(
             if references:
                 # A collection may contain several members of a metric family.
                 rows = references
+        timestamp_only = selected_metric is not None and timestamp_request
+        if timestamp_only and extract_period_phrase(utterance) not in {"", "latest", "en güncel"}:
+            speak_information(skill,
+                ("Metrik envanteri yalnızca en son gözlem zamanını sağlıyor; istenen dönemi bu kayıtla değiştirmedim."
+                 if is_turkish(language) else
+                 "The metric inventory provides only the latest observation timestamp; I have not substituted it for the requested period."),
+                language=language, response_type="unavailable")
+            _remember(skill, message, DialogueState(organization_id=state.organization_id, language=language),
+                      operation="metric_clarification", pending_clarification="timestamp period")
+            return True
         response_rows = [selected_metric] if selected_metric is not None else rows
         headline = (
             metric_detail_headline(selected_metric, language,
                                    value_only=not detail_request and _metric_value_request(text),
+                                   timestamp_only=timestamp_only,
                                    **request_time_format(skill, message))
             if selected_metric is not None
             else metric_inventory_headline(rows, language, **request_time_format(skill, message))
@@ -790,8 +838,9 @@ def handle_reneryo_query(
             state,
             operation="metric_detail" if selected_metric is not None else "metrics",
             metric_name=(
-                selected_metric.name if selected_metric is not None else state.metric_name
+                selected_metric.name if selected_metric is not None else ""
             ),
+            period=None,
         )
         return True
 
@@ -1223,6 +1272,13 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
         ):
             return SemanticAction.REGRESSION_DETAIL
         return SemanticAction.REGRESSIONS_LIST
+    if not _has(text, "finding", "bulgu", "alert", "uyarı", "uyari"):
+        explicit = _explicit_domain_action(text)
+        if explicit is not None:
+            if (explicit is SemanticAction.METRICS_LIST and state.metric_name
+                    and _metric_detail_shorthand(text)):
+                return SemanticAction.METRIC_DETAIL
+            return explicit
     if state.metric_name and _is_metric_correction(text):
         return (
             SemanticAction.TREND_SHOW
@@ -1382,6 +1438,11 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
             return SemanticAction.FINDING_EXPLAIN
         if not explicit_domain_switch and _has(text, "explain", "acikla", "açıkla"):
             return SemanticAction.FINDING_EXPLAIN
+    return _explicit_domain_action(text)
+
+
+def _explicit_domain_action(text: str) -> SemanticAction | None:
+    """Existing subject/operation cues, evaluated before contextual keywords."""
     if _has(
         text,
         "meter",
@@ -1580,6 +1641,24 @@ def _context_state(skill, message) -> DialogueState:
 
 
 def _remember(skill, message, state, **changes) -> None:
+    def owner(operation):
+        if operation in {"finding", "findings", "evaluation"}:
+            return "finding"
+        if operation in {"metric_detail", "metrics", "trend", "factory_history", "factory_selection", "metric_clarification"}:
+            return "metric"
+        if operation in {"regressions", "regression_detail", "regression_clarification"}:
+            return "regression"
+        return operation
+
+    operation = changes.get("operation", state.operation)
+    previous_owner = owner(state.operation)
+    if state.operation in {"clarification", "metric_clarification"}:
+        if state.active_finding_id or state.finding_ids:
+            previous_owner = "finding"
+        elif state.metric_name:
+            previous_owner = "metric"
+    if operation != "clarification" and owner(operation) != previous_owner:
+        state = DialogueState(organization_id=state.organization_id, language=state.language)
     skill._dialogue_state_store.put(
         message_session_id(message), replace(state, **changes)
     )
@@ -1769,7 +1848,7 @@ def _metric_value_request(text: str, *, specific: bool = False) -> bool:
 
 def _metric_read_resolution(metric, utterance: str, language: str) -> SemanticResolution:
     period = extract_period_phrase(utterance)
-    action = (SemanticAction.TREND_SHOW if period and period not in {"latest", "en güncel"}
+    action = (SemanticAction.TREND_SHOW if period and period not in {"latest", "en güncel"} and not is_freshness_question(utterance)
               else SemanticAction.METRIC_DETAIL)
     slots = {"metric_name": metric.name}
     if period:
@@ -1782,6 +1861,8 @@ def _metric_detail_shorthand(text: str) -> bool:
     remainder = re.sub(
         r"\b(?:what|which|is|are|was|the|a|an|its|it|this|that|metric|indicator|"
         r"show|tell|me|please|and|of|about|ne|nedir|hangi|bu|bunun|onun|"
+        r"when|does|have|recorded|updated|refreshed|received|timestamp|observations?|time|date|last|in|utc|"
+        r"how|that|our|up|to|old|data|veri\w*|en|gözlem\w*|gozlem\w*|related|indicator|ilgili|gösterge|gosterge|zaman|zamanı|zamani|kaydedildi|güncellendi|guncellendi|kayıt|kayit|tarihi|olarak|dahil|"
         r"metri\w*|göster\w*|goster\w*|söyle\w*|soyle\w*|peki|birim\w*)\b", "", remainder
     )
     return not remainder.strip()

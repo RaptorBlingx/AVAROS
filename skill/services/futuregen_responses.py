@@ -203,10 +203,16 @@ def metric_inventory_headline(
     return headline
 
 
-def metric_detail_headline(row: ReneryoMetric, language: str, *, value_only: bool = False, timezone_name: str | None = None, include_timezone: bool = False) -> str:
+def metric_detail_headline(row: ReneryoMetric, language: str, *, value_only: bool = False, timestamp_only: bool = False, timezone_name: str | None = None, include_timezone: bool = False) -> str:
     """Describe one context-selected metric using Reneryo-owned metadata."""
     observed = format_observation_time(row.last_value_at, language, timezone_name, include_timezone=include_timezone) if row.last_value_at else None
     value = format_reneryo_value(row.last_value, row.unit_group, language) if row.last_value is not None else None
+    if timestamp_only:
+        if observed:
+            return (f"{row.name}: son kayıt zamanı {observed}." if is_turkish(language)
+                    else f"{row.name}: latest recorded timestamp {observed}.")
+        return (f"{row.name}: kayıt zamanı mevcut değil." if is_turkish(language)
+                else f"{row.name}: no observation timestamp is available.")
     if value_only:
         if value is None:
             return (f"{row.name}: kayıtlı değer yok." if is_turkish(language)

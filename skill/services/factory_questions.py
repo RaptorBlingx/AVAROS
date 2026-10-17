@@ -65,12 +65,20 @@ def cost_limitation_headline(language: str) -> str:
 def is_freshness_question(text: str) -> bool:
     """Recognize last-observation questions, not a freshness policy judgment."""
     text = normalize_phrase(text)
-    return (_has(text, "last") and _has(text, "observation")) or _has(
-        text, "updated", "update", "fresh", "last data", "last observation",
-        "son veri", "ne zaman", "how old", "recorded", "is current",
+    temporal = _has(
+        text, "timestamp", "observation time", "observation date", "kayıt zamanı", "kayit zamani",
+        "ölçüm tarihi", "olcum tarihi", "updated", "update", "fresh",
+        "ne zaman", "how old", "recorded", "is current",
         "consumption current", "ne kadar eski", "ne kadar güncel",
         "ne kadar guncel", "güncel mi", "guncel mi", "up to date",
         "how recent", "last received", "last refreshed",
+    )
+    # An explicit value field is not a timestamp request merely because it
+    # refers to the last observation. Temporal/freshness cues still own the field.
+    return temporal or (
+        (_has(text, "last data", "last observation", "son veri")
+         or (_has(text, "last") and _has(text, "observation")))
+        and not re.search(r"\b(?:values?|değer\w*|deger\w*)\b", text)
     )
 
 
