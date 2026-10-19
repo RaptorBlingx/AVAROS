@@ -263,7 +263,10 @@ def handle_reneryo_query(
         return True
 
     grounded_read_metric = None
-    timestamp_request = is_freshness_question(text)
+    timestamp_request = is_freshness_question(text) or (
+        state.operation == "metric_detail" and bool(state.metric_name)
+        and bool(re.fullmatch(r"(?:in )?utc(?: olarak)?(?: (?:please|söyle|soyle))?", text))
+    )
     factory_request = classify_factory_question(utterance, state)
     inventory_actions = {
         SemanticAction.METERS_LIST, SemanticAction.METRICS_LIST,
@@ -274,6 +277,7 @@ def handle_reneryo_query(
             and not _has(text, "finding", "bulgu", "alert", "uyarı", "uyari", "regression", "regresyon", "model")
             and not _meter_reference(text) and not _looks_like_trend(text)
             and not _metric_collection_request(text)
+            and not is_review_question(text)
             and (_metric_value_request(text, specific=True) or _metric_attribute_request(text) or timestamp_request)
             and (factory_request is None or factory_request.kind in {"reading", "freshness"})):
         rows = skill._safe_dispatch(
@@ -1860,7 +1864,7 @@ def _metric_detail_shorthand(text: str) -> bool:
     remainder = _METRIC_ATTRIBUTE.sub("", _METRIC_VALUE.sub("", text))
     remainder = re.sub(
         r"\b(?:what|which|is|are|was|the|a|an|its|it|this|that|metric|indicator|"
-        r"show|tell|me|please|and|of|about|ne|nedir|hangi|bu|bunun|onun|"
+        r"show|tell|me|please|and|of|about|ne|nedir|kaç|kac|hangi|bu|bunun|onun|"
         r"when|does|have|recorded|updated|refreshed|received|timestamp|observations?|time|date|last|in|utc|"
         r"how|that|our|up|to|old|data|veri\w*|en|gözlem\w*|gozlem\w*|related|indicator|ilgili|gösterge|gosterge|zaman|zamanı|zamani|kaydedildi|güncellendi|guncellendi|kayıt|kayit|tarihi|olarak|dahil|"
         r"metri\w*|göster\w*|goster\w*|söyle\w*|soyle\w*|peki|birim\w*)\b", "", remainder

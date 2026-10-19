@@ -197,3 +197,44 @@ def test_explicit_value_field_is_preserved_when_switching_from_a_finding(languag
     assert r['response_type'] == 'metrics'
     assert r['evidence_rows'][0]['id'] == 'humidity'
     assert '%' in r['headline'] and 'latest recorded timestamp' not in r['headline']
+
+
+@pytest.mark.parametrize('question', ['Değeri kaç?', 'Degeri kac?'])
+def test_short_value_question_retains_the_observation_subject(question):
+    skill = harness()
+    query(skill, 'Son nem ölçümü ne zaman kaydedildi?', 'tr-TR')
+    r = query(skill, question, 'tr-TR')
+    assert r['response_type'] == 'metrics'
+    assert r['evidence_rows'][0]['id'] == 'humidity'
+    assert '%61' in r['headline']
+
+
+@pytest.mark.parametrize('language,question', [
+    ('tr-TR', 'UTC olarak söyle.'), ('en-US', 'In UTC please.'),
+])
+def test_timezone_only_followup_retains_latest_observation_subject(language, question):
+    skill = harness()
+    query(skill, 'When was the latest humidity observation recorded?', language)
+    r = query(skill, question, language)
+    assert r['response_type'] == 'metrics'
+    assert r['evidence_rows'][0]['id'] == 'humidity'
+    assert '22:30 UTC' in r['headline']
+
+
+def test_unknown_value_subject_does_not_inherit_the_last_observation():
+    skill = harness()
+    query(skill, 'Son nem ölçümü ne zaman kaydedildi?', 'tr-TR')
+    r = query(skill, 'Titreşim değeri kaç?', 'tr-TR')
+    assert r['response_type'] == 'clarification'
+
+
+def test_review_timing_question_does_not_become_a_metric_timestamp_request():
+    skill = harness()
+    query(skill, 'List active findings.')
+    query(skill, 'Explain the first one.')
+    query(skill, 'Hangi dönemi kapsıyor?', 'tr-TR')
+    before = skill._futuregen_service.metrics.await_count
+    r = query(skill, 'Ne zaman tekrar kontrol etmeliyim?', 'tr-TR')
+    assert r['response_type'] == 'finding'
+    assert skill._futuregen_service.metrics.await_count == before
+    assert skill._futuregen_service.evaluations == 0
