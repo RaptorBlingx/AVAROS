@@ -236,7 +236,7 @@ def test_mixed_units_remain_individual_values(language):
     assert "105" not in text and "100 kWh" in text and "5 m³" in text
     assert "105" not in text and "totals" not in text
     assert (
-        "kilovat saat" in speech_text(text, language)
+        "kilovatsaat" in speech_text(text, language)
         if language == "tr-TR"
         else "kilowatt hours" in speech_text(text, language)
     )
@@ -253,7 +253,11 @@ def test_local_bucket_contract_and_small_quantity_presentation():
             display = format_reneryo_value(value, "ENERGY", language)
             speech = speech_text(display, language)
             assert "e-" not in speech and "e+" not in speech
-            assert quantity_number(value, language, grouped=False) in speech
+            if language == "en-US":
+                assert quantity_number(value, language, grouped=False) in speech
+            else:
+                from skill.services.turkish_speech import spoken_number
+                assert spoken_number(quantity_number(value, language, grouped=False)) in speech
 
 
 def test_long_inventory_has_compact_headline():

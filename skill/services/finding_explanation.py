@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from skill.domain.reneryo_models import MdspFinding
+from skill.services.response_localization import source_metric_label
 from skill.services.language import is_turkish, normalize_phrase, format_localized_number, format_observation_time
 
 _CONTINUITY_RULE = "metric-source-recent-continuity"
@@ -72,7 +73,7 @@ def _finding_explanation(finding: MdspFinding, language: str) -> str:
             f"The longest lasted {duration}. Observation coverage is incomplete over this interval; the cause is unconfirmed."
         )
     if finding.rule_id == _FRESHNESS_RULE:
-        metric = str(evidence.get("metricName") or finding.metric_name or "the metric")
+        metric = source_metric_label(str(evidence.get("metricName") or finding.metric_name or "the metric"), language)
         lag = round(_number(evidence.get("lagHours")))
         sibling_current = bool(evidence.get("currentSiblingResourceId"))
         if turkish:
@@ -167,7 +168,7 @@ def _evidence_explanation(finding: MdspFinding, language: str, timezone_name: st
             f"lasted {duration}."
         )
     if finding.rule_id == _FRESHNESS_RULE:
-        metric = str(evidence.get("metricName") or finding.metric_name or "the metric")
+        metric = source_metric_label(str(evidence.get("metricName") or finding.metric_name or "the metric"), language)
         observed = _time(evidence.get("lastObservationAt"), language, timezone_name, include_timezone)
         watermark = _time(evidence.get("sourceWatermark") or finding.source_watermark, language, timezone_name, include_timezone)
         lag = round(_number(evidence.get("lagHours")))

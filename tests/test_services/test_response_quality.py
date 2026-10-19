@@ -41,12 +41,13 @@ def test_metric_source_record_and_value_stay_unchanged():
     assert '%94' in metric_detail_headline(metric, 'tr-TR')
     assert '94%' in metric_detail_headline(metric, 'en-US')
     assert metric.last_value == .94 and metric.metric_id == 'h'
-    assert metric.name in metric_detail_headline(metric, 'tr-TR')
+    assert 'Hava nemi' in metric_detail_headline(metric, 'tr-TR')
+    assert metric.name == 'Humidity - Open Weather'
 
 
 def test_historical_fallback_label_does_not_leak_english():
     text = period_display_name('available monthly history 2020-05 – 2020-06', 'tr-TR')
-    assert text == 'mevcut aylık geçmiş 2020-05 – 2020-06'
+    assert text == 'mevcut aylık geçmiş Mayıs 2020 – Haziran 2020'
 
 
 def test_simple_value_answer_keeps_counter_boundary_and_observation_date():

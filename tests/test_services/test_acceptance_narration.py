@@ -39,7 +39,7 @@ def test_temperature_answers_use_celsius_endpoints_not_percentages(language, que
     response = kwargs['meta']['avaros_response']
     assert response['response_type'] == 'trend'
     assert '%' not in response['headline'] and 'percent' not in spoken and 'yüzde' not in spoken
-    assert '°C' in response['headline'] and 'Celsius' in spoken
+    assert '°C' in response['headline'] and ('derece' if language == 'tr-TR' else 'Celsius') in spoken
     assert [row['value'] for row in response['evidence_rows']] == [first, last]
     assert [row['time'] for row in response['evidence_rows']] == [p.timestamp.isoformat() for p in points]
     assert ('no net change' in response['headline'] or 'net değişim yok' in response['headline']) == (first == last)

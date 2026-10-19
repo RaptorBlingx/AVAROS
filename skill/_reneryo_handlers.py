@@ -16,6 +16,7 @@ from skill.domain.exceptions import AdapterError, AVAROSError, ValidationError
 from skill.services.conversation_state import DialogueState, message_session_id
 from skill._helpers import request_time_format
 from skill.services.language import format_observation_time
+from skill.services.response_localization import source_metric_label
 from skill.services.dia_response import speak_information
 from skill.services.factory_questions import (
     answer_factory_question,
@@ -630,17 +631,12 @@ def handle_reneryo_query(
                     )
                     return True
                 raise
-            direction = {
-                "increasing": "artıyor",
-                "decreasing": "azalıyor",
-                "stable": "sabit",
-            }.get(trend.direction, trend.direction)
             period_label = _localized_period_label(trend.period_label, language)
             if not trend.points:
                 observed_at = trend.metric.last_value_at
                 last_seen = format_observation_time(observed_at, language, **request_time_format(skill, message)) if observed_at else None
                 if is_turkish(language):
-                    headline = f"{trend.metric.name} için {period_label} döneminde gözlem bulunamadı; eğilim hesaplanamıyor."
+                    headline = f"{source_metric_label(trend.metric.name, language)} için {period_label} döneminde gözlem bulunamadı; eğilim hesaplanamıyor."
                     if last_seen:
                         headline += f" Son kayıtlı gözlem {last_seen} tarihinde."
                 else:
@@ -656,7 +652,7 @@ def handle_reneryo_query(
             elif trend.change_percent is None:
                 first_seen = format_observation_time(trend.points[0].timestamp, language, **request_time_format(skill, message))
                 if is_turkish(language):
-                    headline = f"{trend.metric.name} için {period_label} döneminde " + (
+                    headline = f"{source_metric_label(trend.metric.name, language)} için {period_label} döneminde " + (
                         f"yalnızca bir gözlem var ({first_seen}); eğilim hesaplanamıyor."
                         if len(trend.points) == 1
                         else "ilk gözlem sıfır olduğu için yüzde değişim hesaplanamıyor."
@@ -668,7 +664,9 @@ def handle_reneryo_query(
                         else "the first observed value is zero, so a percentage change cannot be calculated."
                     )
             elif is_turkish(language):
-                headline = f"{trend.metric.name}, {period_label} döneminde %{format_localized_number(abs(trend.change_percent), language, '.1f')} oranında {direction}."
+                headline = (f"{period_label[:1].upper() + period_label[1:]} döneminde {source_metric_label(trend.metric.name, language)}, "
+                            f"ilk ölçüme göre %{format_localized_number(abs(trend.change_percent), language, '.1f')} "
+                            + ("arttı." if trend.change_percent > 0 else "azaldı." if trend.change_percent < 0 else "değişmedi."))
             else:
                 headline = f"{trend.metric.name} is {trend.direction} by {abs(trend.change_percent):.1f}% over {period_label}."
             if trend.requested_period_label:
@@ -699,6 +697,7 @@ def handle_reneryo_query(
                 language=language,
                 response_type="trend",
                 evidence_rows=evidence,
+                source_metric={"id": trend.metric.metric_id, "name": trend.metric.name, "unit_group": trend.metric.unit_group},
             )
             _remember(
                 skill,
@@ -1155,6 +1154,7 @@ def _finding_response(skill, message, service, state, text, language, action) ->
         language=language,
         response_type="findings",
         evidence_rows=evidence,
+        spoken_headline=collection_headline(result, filters, language, spoken=True),
     )
     _remember(
         skill,

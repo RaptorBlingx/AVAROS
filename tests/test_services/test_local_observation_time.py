@@ -35,10 +35,10 @@ def test_verified_zone_changes_presentation_across_year_boundary(language, expec
     assert format_observation_time(OBSERVED, language, "Europe/Istanbul") == expected
     assert OBSERVED.isoformat() == "2026-12-31T22:30:00+00:00"
     spoken = speech_text(expected, language)
-    assert "01:30" in spoken and "UTC" not in spoken
+    assert ("saat bir otuz" if language == "tr-TR" else "01:30") in spoken and "UTC" not in spoken
     assert "Europe/Istanbul" not in spoken
     if language == "tr-TR":
-        assert "1 Ocak 2027 saat 01:30" in spoken
+        assert "bir Ocak iki bin yirmi yedi saat bir otuz" in spoken
 
 
 
@@ -57,7 +57,7 @@ def test_dst_repeated_hour_stays_distinguishable(instant, expected):
 def test_fractional_offset_is_audible():
     rendered = format_observation_time(OBSERVED, "tr-TR", "Asia/Kathmandu", include_timezone=True)
     assert "UTC+05:45" in rendered
-    assert "UTC artı 5 saat 45 dakika" in speech_text(rendered, "tr-TR")
+    assert "evrensel eşgüdümlü zaman artı beş saat kırk beş dakika" in speech_text(rendered, "tr-TR")
 
 
 @pytest.mark.parametrize("binding", [None, "", "Invalid/Zone", "../Europe/Istanbul"])
@@ -99,10 +99,10 @@ def test_signed_freshness_preserves_utc_evidence_and_ignores_client_zone(languag
     assert response["evidence_rows"][0]["value"] == 9000
     assert "America/New_York" not in response["headline"]
     if binding == "Europe/Istanbul":
-        assert "01:30" in spoken and "01:30" in response["headline"]
+        assert ("saat bir otuz" if language == "tr-TR" else "01:30") in spoken and "01:30" in response["headline"]
         assert "Europe/Istanbul" not in response["headline"]
     else:
-        assert "22:30 UTC" in spoken and "22:30 UTC" in response["headline"]
+        assert ("saat yirmi iki otuz evrensel eşgüdümlü zaman" if language == "tr-TR" else "22:30 UTC") in spoken and "22:30 UTC" in response["headline"]
 
 
 @pytest.mark.parametrize("language,question", [
@@ -119,7 +119,7 @@ def test_inventory_value_and_empty_trend_use_same_zone(language, question):
     spoken, kwargs = skill.spoken[-1]
     response = kwargs["meta"]["avaros_response"]
     assert "01:30" in response["headline"] and "Europe/Istanbul" not in response["headline"]
-    assert "01:30" in spoken and "UTC" not in spoken
+    assert ("saat bir otuz" if language == "tr-TR" else "01:30") in spoken and "UTC" not in spoken
     if source.metric_values.called:
         args = source.metric_values.call_args.args
         assert args[:3] == ("humidity", datetime(2024, 12, 31, 21, tzinfo=UTC), datetime(2025, 1, 31, 21, tzinfo=UTC))
@@ -159,7 +159,7 @@ def test_mdsp_observation_narration_localizes_without_mutating_evidence(language
     assert handle_reneryo_query(skill, message)
     spoken, kwargs = skill.spoken[-1]
     response = kwargs["meta"]["avaros_response"]
-    assert "01:30" in spoken and "Europe/Istanbul" not in response["headline"]
+    assert ("saat bir otuz" if language == "tr-TR" else "01:30") in spoken and "Europe/Istanbul" not in response["headline"]
     assert response["evidence_rows"][0]["lastObservationAt"] == OBSERVED.isoformat()
     assert finding.evidence == before and skill._futuregen_service.evaluations == 0
 
@@ -171,7 +171,7 @@ def test_canonical_latest_kpi_keeps_source_metadata(language, builder):
     text = builder().format_kpi_result(result, timezone_name="Europe/Istanbul")
     speak_with_evidence(skill, text, result)
     response = skill.speak.call_args.kwargs["meta"]["avaros_response"]
-    assert "01:30" in response["headline"] and "01:30" in response["speech_text"]
+    assert "01:30" in response["headline"] and ("saat bir otuz" if language == "tr-TR" else "01:30") in response["speech_text"]
     assert response["source_times"]["observed_at"] == OBSERVED.isoformat()
     assert response["evidence_rows"][0]["observation_time"] == OBSERVED.isoformat()
     assert result.source_observed_at is OBSERVED

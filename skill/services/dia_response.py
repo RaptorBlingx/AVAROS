@@ -57,6 +57,8 @@ def speak_information(
     evidence_rows: list[dict[str, Any]] | None = None,
     warnings: list[str] | None = None,
     suggestions: list[str] | None = None,
+    spoken_headline: str | None = None,
+    source_metric: dict[str, str] | None = None,
 ) -> None:
     """Speak non-result information with the same browser metadata contract."""
     language = normalize_language_tag(language or getattr(skill, "_response_language", "en-US"))
@@ -70,7 +72,9 @@ def speak_information(
         "assumptions": [],
         "suggested_follow_ups": list(suggestions or []),
     }
-    response["speech_text"] = speech_text(headline, language)
+    if source_metric is not None:
+        response["source_metric"] = dict(source_metric)
+    response["speech_text"] = speech_text(spoken_headline if spoken_headline is not None else headline, language)
     skill.speak(
         response["speech_text"],
         meta={"language": language, "avaros_response": response},

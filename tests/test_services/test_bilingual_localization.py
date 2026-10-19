@@ -92,7 +92,9 @@ def test_turkish_collection_localizes_owned_words_and_preserves_source_name_and_
     _speak_result_collection(skill, "KPI results", rows)
     text = skill.speak.call_args.args[0]
     metadata = skill.speak.call_args.kwargs["meta"]["avaros_response"]
-    assert text == "KPI sonuçları: Cooling degree days - Open Weather toplam ekipman etkinliği yüzde 82,5; Cooling degree days - Open Weather toplam ekipman etkinliği yüzde 75."
+    assert metadata["headline"] == "KPI sonuçları: Cooling degree days - Open Weather toplam ekipman etkinliği yüzde 82,5; Cooling degree days - Open Weather toplam ekipman etkinliği yüzde 75."
+    assert "ka pe i sonuçları" in text and "yüzde seksen iki virgül beş" in text
+    assert text == metadata["speech_text"]
     assert metadata["language"] == "tr-TR"
     assert [r["value"] for r in metadata["evidence_rows"]] == [82.5, 75]
     assert all(r["asset_id"] == "Line-10" and r["unit"] == "%" and r["metric"] == "oee" for r in metadata["evidence_rows"])
@@ -117,7 +119,7 @@ def test_known_metadata_enums_are_not_record_names_or_unit_conversions():
     metric = ReneryoMetric("source-id", "PIECE - Open Weather", "COUNTER", "PIECE", 5000.25)
     text = metric_detail_headline(metric, "tr-TR")
     assert "PIECE - Open Weather" in text
-    assert "birikimli sayaç" in text and "birim grubu adet" in text
+    assert "birikimli sayaç" in text and "5.000,25 adet" in text
     assert source_enum_label("UNKNOWN_SOURCE_CATEGORY", "tr-TR") == "UNKNOWN_SOURCE_CATEGORY"
     assert source_enum_label("ENERGY", "tr-TR") == "enerji"
     assert "kWh" not in text
@@ -171,3 +173,33 @@ def test_final_browser_clarification_uses_current_locale_after_exhausted_recover
     metadata = skill.speak.call_args.kwargs["meta"]["avaros_response"]
     assert metadata["language"] == locale
     assert metadata["suggested_follow_ups"][0] == ("Neler yapabilirsin?" if locale == "tr-TR" else "What can you do?")
+
+
+def test_turkish_speech_preserves_quantity_meaning_and_is_idempotent():
+    from skill.services.language import speech_text
+
+    examples = {
+        "15,7 °C'den 15,92 °C'ye; yaklaşık 0,22 °C artış.":
+            "on beş virgül yedi dereceden on beş virgül doksan iki dereceye; yaklaşık sıfır virgül yirmi iki derecelik bir artış.",
+        "25%; 100 kWh; 3,5 m³; -0,005 kg.":
+            "yüzde yirmi beş; yüz kilovatsaat; üç virgül beş metreküp; eksi sıfır virgül sıfır sıfır beş kilogram.",
+        "01.07.2026 00:00; saat 14:30; süre 00:00; Haziran 2026; MDSP ve OEE.":
+            "bir Temmuz iki bin yirmi altı gece yarısı; saat on dört otuz; süre 00:00; Haziran iki bin yirmi altı; em de se pe ve o e e.",
+    }
+    for written, expected in examples.items():
+        assert speech_text(written, "tr-TR") == expected
+        assert speech_text(expected, "tr-TR") == expected
+        assert speech_text(written, "en-US") != expected
+    assert speech_text("metric-123 https://example.com/123 [[raw123]]", "tr-TR") == "metric-123 https://example.com/123 [[raw123]]"
+
+
+def test_known_weather_labels_are_presentation_only():
+    from skill.services.response_localization import source_metric_label, localize_metric_labels
+
+    row = ReneryoMetric("source-id", "Humidity - Open Weather", "GAUGE", "RATE", .94)
+    before = deepcopy(row)
+    assert "hava nemi %94" in metric_detail_headline(row, "tr-TR", value_only=True)
+    assert source_metric_label(row.name, "en-US") == row.name
+    assert source_metric_label("Temperature - Boiler 2", "tr-TR") == "Temperature - Boiler 2"
+    assert localize_metric_labels("Temperature - Boiler 2", "tr-TR") == "Temperature - Boiler 2"
+    assert row == before

@@ -39,6 +39,7 @@ from schemas.voice import (
 )
 from services.piper_pronunciation import render_piper_text
 from skill.services.settings import SettingsService
+from skill.services.language import speech_text
 
 
 router = APIRouter(prefix="/api/v1/voice", tags=["voice"])
@@ -405,6 +406,9 @@ def _synthesize_wav(payload: SpeechRequest) -> bytes:
     if not SERVER_TTS_ENABLED:
         raise HTTPException(status_code=503, detail="Server TTS is disabled")
 
+    # The widget normally sends speech_text already. Other callers may send
+    # a headline; the idempotent shared renderer covers every server engine.
+    payload = payload.model_copy(update={"text": speech_text(payload.text, payload.language)})
     engine = SERVER_TTS_ENGINE or "auto"
     if _is_turkish(payload.language):
         if engine in {"auto", "piper"}:
