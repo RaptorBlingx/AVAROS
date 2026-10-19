@@ -106,7 +106,7 @@ const SERVER_TTS_FETCH_TIMEOUT_MS = 15000;
 function makeMessage(
   source: "user" | "avaros",
   text: string,
-  details: Pick<ChatMessage, "inputKind" | "language"> = {},
+  details: Pick<ChatMessage, "inputKind" | "language" | "inventoryNames"> = {},
 ): ChatMessage {
   return {
     id:
@@ -691,7 +691,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
   }, []);
 
   const resolveAssistantMessage = useCallback(
-    (text: string, language = activeLanguageRef.current) => {
+    (text: string, language = activeLanguageRef.current, speechText?: string, inventoryNames?: string[]) => {
       const cleaned = text.trim();
       if (!cleaned) return;
       const responseLocale = pendingVoiceResponseLanguageRef.current
@@ -706,14 +706,14 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       if (modeRef.current === "wake-word") {
         setVoiceTurnStatus("responding");
       }
-      appendMessage(makeMessage("avaros", cleaned));
+      appendMessage(makeMessage("avaros", cleaned, { language: responseLocale.startsWith("tr") ? "tr-TR" : "en-US", inventoryNames }));
       const now = Date.now();
       const isDuplicateSpeech =
         lastAssistantSpeechRef.current.text === cleaned &&
         now - lastAssistantSpeechRef.current.at < SPEECH_EVENT_DEDUP_MS;
       lastAssistantSpeechRef.current = { text: cleaned, at: now };
       if (!isDuplicateSpeech) {
-        void speakAssistantText(cleaned, responseLocale).finally(() => {
+        void speakAssistantText(speechText?.trim() || cleaned, responseLocale).finally(() => {
           if (modeRef.current === "wake-word") {
             setVoiceTurnStatus("rearming");
           }
@@ -1240,10 +1240,13 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     const offState = manager.onState((nextState) => {
       setConnectionState(nextState);
     });
-    const offSpeak = manager.onSpeak((text, language) => {
-      resolveAssistantMessage(text, language);
+    const offSpeak = manager.onSpeak((text, language, speechText, inventoryNames) => {
+      resolveAssistantMessage(text, language, speechText, inventoryNames);
     });
     const offMouthText = manager.on("enclosure.mouth.text", (message) => {
+      // This is a fallback for replies without a speak event. A separate
+      // speech rendering must not replace the displayed headline or play twice.
+      if (responseResolvedRef.current) return;
       const maybeText =
         (message.data.text as string | undefined) ??
         (message.data.utterance as string | undefined) ??

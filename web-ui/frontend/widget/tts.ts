@@ -46,7 +46,14 @@ export function splitWidgetTtsText(
 function splitLongSentence(sentence: string, maxChars: number): string[] {
   const chunks: string[] = [];
   let current = "";
-  for (const word of sentence.split(/\s+/)) {
+  // Keep a spoken number and its unit in the same playback clip.
+  const numberWord = "(?:sıfır|bir|iki|üç|dört|beş|altı|yedi|sekiz|dokuz|on|yirmi|otuz|kırk|elli|altmış|yetmiş|seksen|doksan|yüz|bin|milyon|milyar|trilyon|virgül|eksi|artı|yüzde)";
+  const unit = "(?:derece(?:den|ye|lik)?|kilovatsaat|megavatsaat|kilovat|megavat|metreküp|kilogram|saat|dakika|saniye|gün)";
+  const atoms = sentence.match(new RegExp(
+    `(?<![\\p{L}\\p{N}_-])${numberWord}(?: ${numberWord})*(?: ${unit})?(?![\\p{L}\\p{N}_-])[.,;:!?]?|\\S+`, "gu",
+  )) ?? [];
+  const boundedAtoms = atoms.flatMap((atom) => atom.length > maxChars ? atom.split(/\s+/) : [atom]);
+  for (const word of boundedAtoms) {
     const next = current ? `${current} ${word}` : word;
     if (next.length > maxChars && current) {
       chunks.push(current);

@@ -52,3 +52,85 @@ describe("widget conversation language", () => {
     expect(normalizeWidgetLanguage("en-gb")).toBe("en-US");
   });
 });
+
+
+it.each([
+  ["I need energy consumption for yesterday.", "tr-TR", "en-US"],
+  ["What should I check in the factory data?", "tr-TR", "en-US"],
+  ["What should I review next?", "tr-TR", "en-US"],
+  ["Peki Haziran?", "en-US", "tr-TR"],
+  ["Peki dun?", "en-US", "tr-TR"],
+  ["And June?", "tr-TR", "en-US"],
+  ["And yesterday?", "tr-TR", "en-US"],
+  ["Show Tesis Toplam Üretim Miktarı", "tr-TR", "en-US"],
+  ["İlgili metriği göster", "en-US", "tr-TR"],
+  ["123", "tr-TR", "tr-TR"],
+  ["Line-10 OEE", "en-US", "en-US"],
+])("detects %s without changing its text", (text, fallback, expected) => {
+  expect(detectWidgetLanguage(text, fallback)).toBe(expected);
+});
+
+it("keeps a current-turn switch across neutral follow-ups and response metadata", () => {
+  let language = "en-US";
+  for (const [text, expected] of [
+    ["Peki Haziran?", "tr-TR"], ["2020", "tr-TR"],
+    ["And production for the same period?", "en-US"], ["Line-10", "en-US"],
+  ]) {
+    language = detectWidgetLanguage(text, language);
+    expect(language).toBe(expected);
+    language = responseLanguage({data: {meta: {avaros_response: {language}}}}, language);
+    expect(language).toBe(expected);
+  }
+});
+
+it.each([
+  ["Bunun sorumlusu kim?", "en-US", "tr-TR"],
+  ["Who owns it?", "tr-TR", "en-US"],
+  ["Neyi incelemem gerekiyor?", "en-US", "tr-TR"],
+  ["How recent is that data?", "tr-TR", "en-US"],
+])("keeps D08 paraphrases in their current-turn language: %s", (text, fallback, expected) => {
+  expect(detectWidgetLanguage(text, fallback)).toBe(expected);
+});
+
+
+it.each([
+  ["Compare them.", "tr-TR", "en-US"],
+  ["İkisini karşılaştır.", "en-US", "tr-TR"],
+  ["Onları karşılaştır.", "en-US", "tr-TR"],
+  ["And yesterday?", "tr-TR", "en-US"],
+  ["Peki dün?", "en-US", "tr-TR"],
+])("switches comparison and period follow-ups: %s", (text, fallback, expected) => {
+  expect(detectWidgetLanguage(text, fallback)).toBe(expected);
+});
+
+it.each([
+  ["Haziran 2020 Electric Main Meter ve Meter 1 toplam enerji tüketimini karşılaştır", "en-US", "tr-TR"],
+  ["Electric Main Meter ile Meter 1 enerji tüketimini karşılaştır", "en-US", "tr-TR"],
+  ["Compare Tesis Toplam Elektrik Tüketimi for June 2020", "tr-TR", "en-US"],
+])("keeps comparison verbs in the current language around source names: %s", (text, fallback, expected) => {
+  expect(detectWidgetLanguage(text, fallback)).toBe(expected);
+});
+
+it.each([
+  ["Hat 1'i kapat", "en-US", "tr-TR"],
+  ["Hat 1'i durdur", "en-US", "tr-TR"],
+  ["OEE hedefini ayarla", "en-US", "tr-TR"],
+  ["Turn off Line 1", "tr-TR", "en-US"],
+  ["Change settings", "tr-TR", "en-US"],
+])("recognizes the language of unsupported commands: %s", (text, fallback, expected) => {
+  expect(detectWidgetLanguage(text, fallback)).toBe(expected);
+});
+
+it.each([
+  ["Tell me the unit group of Tesis Toplam Üretim Miktarı.", "tr-TR", "en-US"],
+  ["Could you describe Tesis Toplam Elektrik Tüketimi?", "tr-TR", "en-US"],
+  ["The type of Tesis Toplam Üretim Miktarı?", "tr-TR", "en-US"],
+  ["Electric Main Meter metriğini açıklar mısınız?", "en-US", "tr-TR"],
+  ["Electric Main Meter metrigini aciklar misiniz?", "en-US", "tr-TR"],
+  ["Temperature - Open Weather için veri var mı?", "en-US", "tr-TR"],
+  ["What is its type?", "tr-TR", "en-US"],
+  ["Bunun türü nedir?", "en-US", "tr-TR"],
+  ["Line-A OEE", "tr-TR", "tr-TR"],
+])("uses the request language around foreign source names: %s", (text, fallback, expected) => {
+  expect(detectWidgetLanguage(text, fallback)).toBe(expected);
+});

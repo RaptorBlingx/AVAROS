@@ -8,6 +8,7 @@ import { WidgetPanel } from "./WidgetPanel";
 function renderPanel(
   visualState: "processing" | "speaking",
   processing: boolean,
+  messages: import("./types").ChatMessage[] = [],
 ) {
   const onCancelRequest = vi.fn();
   const onStopSpeaking = vi.fn();
@@ -16,7 +17,7 @@ function renderPanel(
     <WidgetPanel
       mode="text"
       disabledModes={[]}
-      messages={[]}
+      messages={messages}
       connectionState="connected"
       listeningSupported
       listeningActive={false}
@@ -174,4 +175,16 @@ describe("embedded WidgetPanel interruption", () => {
     fireEvent.click(screen.getByRole("button", { name: "TR" }));
     expect(onWakeVoiceLanguageChange).toHaveBeenCalledWith("tr-TR");
   });
+});
+
+
+it("keeps a long inventory behind a native expansion", () => {
+  const names = Array.from({length: 20}, (_, index) => `Ölçüm ${index + 1}`);
+  renderPanel("speaking", false, [{id: "inventory", source: "avaros", text: "20 metrik; üç örnek ve 17 tane daha.", timestamp: new Date(), language: "tr-TR", inventoryNames: names}]);
+  const summary = screen.getByText("Tümünü göster");
+  const details = summary.closest("details");
+  expect(details?.open).toBe(false);
+  fireEvent.click(summary);
+  expect(details?.open).toBe(true);
+  expect(screen.getByText("Ölçüm 20")).toBeTruthy();
 });

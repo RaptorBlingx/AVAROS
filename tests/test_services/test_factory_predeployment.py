@@ -46,6 +46,9 @@ def test_alternative_amount_questions_return_dated_history_not_legacy_zero(
     question, language
 ):
     r = ask(harness(), question, language)
+    if "last 30 days" in question:
+        assert r["response_type"] == "unavailable" and not r["evidence_rows"]
+        return
     assert r["evidence_rows"]
     assert "2020-06" in r["headline"]
     assert "0,00" not in r["headline"] and "0.00" not in r["headline"]
@@ -283,7 +286,7 @@ def test_explicit_inventory_intents_are_left_to_existing_handlers(question):
 
 
 @pytest.mark.parametrize("language", ["en-US", "tr-TR"])
-def test_missing_meter_calculation_falls_back_even_when_metric_bucket_exists(language):
+def test_missing_meter_calculation_keeps_requested_window(language):
     class MissingInWindow(Source):
         async def list_meters(self, start, end):
             amount = None if end == date(2020, 6, 16) else 25
@@ -297,10 +300,9 @@ def test_missing_meter_calculation_falls_back_even_when_metric_bucket_exists(lan
     skill = harness(MissingInWindow())
     r = ask(skill, "Electricity consumption from 2020-06-01 to 2020-06-15", language)
     assert "2020-06-01" in r["headline"] and "2020-06-15" in r["headline"]
-    assert r["evidence_rows"][0]["consumption"] == 25
-    assert skill._dialogue_state_store.get("collection-session").period == TimePeriod(
-        date(2020, 6), date(2020, 7), "2020-06"
-    )
+    assert r["evidence_rows"][0]["consumption"] is None
+    assert skill._dialogue_state_store.get("collection-session").period.start == date(2020, 6)
+    assert skill._dialogue_state_store.get("collection-session").period.end == date(2020, 6, 16)
 
 
 @pytest.mark.parametrize("language", ["en-US", "tr-TR"])

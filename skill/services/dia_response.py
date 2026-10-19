@@ -6,15 +6,46 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from skill.services.language import normalize_language_tag, is_turkish, metric_display_name, period_display_name, speech_text
 from skill.domain.results import ComparisonResult, KPIResult, TrendResult, WhatIfResult
 
 
 def speak_with_evidence(skill, headline: str, result: Any) -> None:
     """Speak a compatible headline and attach an inspectable evidence payload."""
-    skill.speak(
-        headline,
-        meta={"avaros_response": build_response_metadata(headline, result)},
-    )
+    response = build_response_metadata(headline, result)
+    response["language"] = normalize_language_tag(getattr(skill, "_response_language", "en-US"))
+    language = response["language"]
+    metric = getattr(result, "metric", None)
+    if is_turkish(language):
+        for row in response.get("evidence_rows", []):
+            if metric is not None and "metric_label" in row:
+                row["metric_label"] = metric_display_name(metric, language)
+        if "period" in response:
+            response["period"]["label"] = period_display_name(response["period"]["label"], language)
+        if isinstance(result, KPIResult):
+            name = metric_display_name(result.metric, language)
+            response["suggested_follow_ups"] = [
+                f"{result.asset_id} için {name} eğilimini göster",
+                f"Tüm hatlar için {name} değerlerini karşılaştır",
+            ]
+        elif isinstance(result, ComparisonResult):
+            name = metric_display_name(result.metric, language)
+            response["suggested_follow_ups"] = [
+                f"{name} değerleri neden farklı olabilir?",
+                f"{result.winner_id} için {name} eğilimini göster",
+            ]
+    if isinstance(result, WhatIfResult):
+        # Use the same typed assumptions in speech and widget details.
+        assumption = skill.response_builder._format_whatif_assumptions(result)
+        response["assumptions"] = [assumption] if assumption else []
+        if is_turkish(language):
+            for row, label in zip(response["evidence_rows"], ("Başlangıç", "Senaryo")):
+                row["label"] = label
+            response["warnings"] = [
+                "Bu aritmetik senaryo karar desteği içindir; nedensel bir model değildir."
+            ]
+    response["speech_text"] = speech_text(headline, language)
+    skill.speak(response["speech_text"], meta={"avaros_response": response})
 
 
 def speak_information(
@@ -26,8 +57,11 @@ def speak_information(
     evidence_rows: list[dict[str, Any]] | None = None,
     warnings: list[str] | None = None,
     suggestions: list[str] | None = None,
+    spoken_headline: str | None = None,
+    source_metric: dict[str, str] | None = None,
 ) -> None:
     """Speak non-result information with the same browser metadata contract."""
+    language = normalize_language_tag(language or getattr(skill, "_response_language", "en-US"))
     response = {
         "response_type": response_type,
         "query_id": str(uuid.uuid4()),
@@ -38,8 +72,11 @@ def speak_information(
         "assumptions": [],
         "suggested_follow_ups": list(suggestions or []),
     }
+    if source_metric is not None:
+        response["source_metric"] = dict(source_metric)
+    response["speech_text"] = speech_text(spoken_headline if spoken_headline is not None else headline, language)
     skill.speak(
-        headline,
+        response["speech_text"],
         meta={"language": language, "avaros_response": response},
     )
 

@@ -100,7 +100,7 @@ class GenericRestAdapter(
         period: TimePeriod,
     ) -> KPIResult:
         """Fetch KPI from mapped endpoint and parse mapped value."""
-        self._ensure_initialized()
+        await self._ensure_read_session()
         native_binding = self._resolve_native_metric_binding(metric=metric, asset_id=asset_id)
         if native_binding is not None:
             return await self._query_native_metric_kpi(
@@ -242,7 +242,7 @@ class GenericRestAdapter(
         period: TimePeriod,
     ) -> ComparisonResult:
         """Fetch mapped KPI for each asset and return ranked comparison."""
-        self._ensure_initialized()
+        await self._ensure_read_session()
         if len(asset_ids) < 2:
             raise AdapterError(
                 message="Comparison requires at least two asset IDs",
@@ -316,7 +316,7 @@ class GenericRestAdapter(
         granularity: str = "daily",
     ) -> TrendResult:
         """Fetch trend endpoint and parse generic time-series payload."""
-        self._ensure_initialized()
+        await self._ensure_read_session()
         if self._is_energy_only_asset(asset_id):
             raise AdapterError(
                 message=f"Trend is not available for energy-only asset '{asset_id}'",
@@ -388,7 +388,7 @@ class GenericRestAdapter(
         period: TimePeriod,
     ) -> dict | list:
         """Fetch and return mapped endpoint payload without normalization."""
-        self._ensure_initialized()
+        await self._ensure_read_session()
         if (
             self._is_energy_only_asset(asset_id)
             and metric != CanonicalMetric.ENERGY_TOTAL
@@ -433,7 +433,7 @@ class GenericRestAdapter(
 
     async def discover_assets(self) -> list[Asset]:
         """Return live-discovered upstream assets for wizard discovery views."""
-        self._ensure_initialized()
+        await self._ensure_read_session()
         return await self._discover_assets_from_api()
 
     def supports_asset_discovery(self) -> bool:
@@ -496,6 +496,11 @@ class GenericRestAdapter(
                 except ValueError:
                     continue
         return pairs
+
+    async def _ensure_read_session(self) -> None:
+        """Retry initialization on a requested read after a startup outage."""
+        if self._session is None:
+            await self.initialize()
 
     async def initialize(self) -> None:
         """Create HTTP session and validate configured base URL is reachable."""

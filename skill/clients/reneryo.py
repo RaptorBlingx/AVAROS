@@ -107,6 +107,7 @@ class ReneryoClient:
                     consumption=_optional_float(row.get("consumption")),
                     metric_id=str(metric.get("id", "")),
                     metric_name=str(metric.get("name", "")),
+                    unit_group=str(metric.get("unitGroup", "")),
                     slice_names=tuple(
                         str(item.get("department", {}).get("name", ""))
                         for item in slices

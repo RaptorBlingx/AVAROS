@@ -70,5 +70,9 @@ PIPER_TR_CONFIG_PATH = os.environ.get(
     "/opt/avaros/tts/piper/tr_TR-dfki-medium.onnx.json",
 )
 PIPER_LENGTH_SCALE = float(os.environ.get("AVAROS_PIPER_LENGTH_SCALE", "1.0"))
+# Keep global tuning as the baseline; Turkish is calibrated on real speech.
+PIPER_TR_LENGTH_SCALE = float(os.environ.get(
+    "AVAROS_PIPER_TR_LENGTH_SCALE", str(PIPER_LENGTH_SCALE * 0.82),
+))
 PIPER_NOISE_SCALE = float(os.environ.get("AVAROS_PIPER_NOISE_SCALE", "0.667"))
 PIPER_NOISE_W_SCALE = float(os.environ.get("AVAROS_PIPER_NOISE_W_SCALE", "0.8"))

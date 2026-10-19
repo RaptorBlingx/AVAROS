@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import pytest
 
 from skill._reneryo_handlers import _deterministic_action, _query_period
-from skill.domain.models import TimePeriod
+from skill.domain.models import TimePeriod, CanonicalMetric
 from skill.services.conversation_state import DialogueState
 from skill.services.period_resolution import extract_period_phrase
 from skill.services.semantic_resolver import SemanticAction
@@ -121,3 +121,55 @@ def test_named_month_range_trend_includes_both_months(utterance, first_month, la
 def test_named_month_range_rejects_reversed_months():
     with pytest.raises(ValueError, match="end month"):
         TimePeriod.from_natural_language("July to June 2026")
+
+
+TIME_REQUESTS = [
+    ("Show OEE for Line 10 at 14:30", "en-US"),
+    ("Show electricity consumption today at 14:30", "en-US"),
+    ("Show latest production at 2 pm", "en-US"),
+    ("Show latest production at two pm", "en-US"),
+    ("Compare OEE for Line 1 and Line 10 yesterday at 14:30:15", "en-US"),
+    ("Show OEE for Line 10 at noon", "en-US"),
+    ("Show electricity consumption on 2020-06-15T14:30:00Z", "en-US"),
+    ("And at 14:30?", "en-US"),
+    ("Hat 10 OEE değerini saat 14:30 için göster", "tr-TR"),
+    ("Bugün saat 14.30 elektrik tüketimini göster", "tr-TR"),
+    ("Son üretim miktarını saat 14 için göster", "tr-TR"),
+    ("Son üretim miktarını saat iki için göster", "tr-TR"),
+    ("Dün saat 14:30 Hat 1 ve Hat 10 OEE değerlerini karşılaştır", "tr-TR"),
+    ("Hat 10 OEE değerini 14.30'da göster", "tr-TR"),
+    ("Peki saat 14:30?", "tr-TR"),
+    ("Show OEE for Line 10 at 14 : 30", "en-US"),
+]
+
+
+@pytest.mark.parametrize("utterance,language", TIME_REQUESTS)
+def test_unsupported_clock_precision_is_not_a_date_or_latest_window(utterance, language):
+    from skill.services.period_resolution import unsupported_time_precision, unsupported_period_reference
+    from skill.services.dia_query import parse_structured_query
+    from tests.test_services.test_explicit_query_scope import ASSETS
+
+    assert unsupported_time_precision(utterance)
+    assert unsupported_period_reference(utterance)
+    prior = DialogueState(
+        operation="kpi", metrics=(CanonicalMetric.OEE,),
+        asset_ids=("Line-10",), period=TimePeriod.latest(),
+    )
+    query = parse_structured_query(utterance, assets=ASSETS, prior=prior)
+    assert "Time-of-day" in query.ambiguity
+    assert query.period is None
+
+
+@pytest.mark.parametrize("utterance", [
+    "Show OEE for Line 10 yesterday", "Hat 10 OEE değerini dün göster",
+    "Show electricity consumption on June 15 2020", "15 Haziran 2020 üretimini göster",
+    "Show electricity consumption from 2020-06-01 to 2020-06-30",
+    "Show electricity consumption last 30 days", "Son 30 gün elektrik tüketimini göster",
+    "Show current OEE", "En güncel elektrik tüketimini göster",
+    "When was electricity last updated?", "Elektrik verisi ne zaman kaydedildi?",
+    "Show OEE for Line 14", "Show production of 14.30 units",
+])
+def test_supported_time_and_non_time_numbers_are_not_clock_qualifiers(utterance):
+    from skill.services.period_resolution import unsupported_time_precision
+
+    assert not unsupported_time_precision(utterance)

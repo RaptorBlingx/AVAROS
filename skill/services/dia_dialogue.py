@@ -11,14 +11,17 @@ from skill._system_handlers import _status_freshness_clause
 from skill.domain.models import CanonicalMetric, TimePeriod
 from skill.services.capability_manifest import build_capability_manifest
 from skill.services.conversation_state import DialogueState, message_session_id
-from skill.services.dia_query import QueryOperation, parse_structured_query
+from skill.services.dia_query import QueryOperation, parse_structured_query, is_structured_follow_up
+from skill.domain.exceptions import AVAROSError
 from skill.services.dia_response import (
     clarification_metadata,
     speak_information,
     speak_with_evidence,
 )
 from skill.services.futuregen_responses import reneryo_capabilities_headline
-from skill.services.language import normalize_phrase
+from skill.services.language import is_turkish, metric_display_name, normalize_phrase, normalize_language_tag, period_display_name, speech_text
+from skill.services.response_localization import localized_system_text, localized_error_message
+from skill.services.query_scope import entity_scope
 from skill.services.metric_knowledge import get_metric_knowledge
 
 _HEADLINE_METRICS = (
@@ -32,6 +35,11 @@ _HEADLINE_METRICS = (
 
 def try_handle_structured_query(skill, message, *, include_simple_kpi: bool = False) -> bool:
     """Parse and execute rich operations before legacy KPI intent fallback."""
+    from skill._system_handlers import try_handle_read_only_request
+
+    if try_handle_read_only_request(skill, message):
+        return True
+
     utterance = skill._extract_utterance_text(message).strip()
     if not utterance:
         return False
@@ -52,12 +60,22 @@ def try_handle_structured_query(skill, message, *, include_simple_kpi: bool = Fa
     store = getattr(skill, "_dialogue_state_store", None)
     session_id = message_session_id(message)
     prior = store.get(session_id) if store is not None else None
+    if store is not None and has_signed_widget_context(message):
+        # Bind pending/error frames as well as successful answers to this org.
+        # _context_state also discards a frame retained under another org.
+        from skill._reneryo_handlers import _context_state
+
+        prior = _context_state(skill, message)
+        store.put(session_id, prior)
     assets = skill._get_asset_registry()
+    from skill._helpers import request_clock
+
     query = parse_structured_query(
         utterance,
         assets=assets,
         prior=prior,
-        timezone_name=_site_timezone(skill),
+        timezone_name=_site_timezone(skill, message),
+        now=request_clock(message),
     )
 
     should_claim = (
@@ -83,6 +101,7 @@ def try_handle_structured_query(skill, message, *, include_simple_kpi: bool = Fa
         and query.scope_kind != "all_assets"
         and not _is_follow_up(utterance)
         and not query.ambiguity
+        and not (include_simple_kpi and entity_scope(utterance, assets)[0])
     ):
         return False
 
@@ -178,31 +197,66 @@ def try_handle_structured_query(skill, message, *, include_simple_kpi: bool = Fa
         metrics = metrics[:3]
 
     period = query.period or TimePeriod.latest()
-    if query.operation in {QueryOperation.COMPARE, QueryOperation.RANK, QueryOperation.AVERAGE}:
-        if len(asset_ids) < 2:
-            _speak_clarification(skill, "Please name at least two assets, or say all lines.", [])
-            _remember(store, session_id, query, pending="comparison assets")
-            return True
-        _handle_composite_operation(skill, query.operation, metrics[0], asset_ids, period)
-    elif query.operation is QueryOperation.SUMMARY or len(metrics) > 1:
-        _handle_summary(skill, metrics, asset_ids, period)
-    elif query.operation is QueryOperation.TARGET:
-        _handle_target(skill, metrics[0], asset_ids[0], period)
-    elif query.operation is QueryOperation.DIAGNOSE:
-        _handle_diagnosis(skill, metrics[0], asset_ids, period)
-    elif query.operation is QueryOperation.RECOMMEND:
-        _handle_recommendation(skill, metrics[0], asset_ids[0], period)
-    elif query.operation is QueryOperation.TREND:
-        _handle_trends(skill, metrics[0], asset_ids, period)
-    else:
-        _handle_kpis(skill, metrics, asset_ids, period)
+    try:
+        if (query.operation is QueryOperation.KPI
+                and metrics == [CanonicalMetric.ENERGY_TOTAL] and len(asset_ids) == 1):
+            from skill._metric_handlers import _resolve_energy_total_default_period
+
+            default_period = _resolve_energy_total_default_period(
+                skill, asset_id=asset_ids[0], has_requested_period=query.period is not None,
+            )
+            period = query.period or default_period
+        if query.operation in {QueryOperation.COMPARE, QueryOperation.RANK, QueryOperation.AVERAGE}:
+            if len(metrics) != 1:
+                _speak_clarification(skill, "Please choose one metric to compare.", _metric_suggestions(skill))
+                _remember(store, session_id, query, pending="comparison metric")
+                return True
+            if len(asset_ids) < 2:
+                _speak_clarification(skill, "Please name at least two assets, or say all lines.", [])
+                _remember(store, session_id, query, pending="comparison assets")
+                return True
+            _handle_composite_operation(skill, query.operation, metrics[0], asset_ids, period)
+        elif query.operation is QueryOperation.SUMMARY or len(metrics) > 1:
+            _handle_summary(skill, metrics, asset_ids, period)
+        elif query.operation is QueryOperation.TARGET:
+            _handle_target(skill, metrics[0], asset_ids[0], period, timezone_name=_site_timezone(skill, message))
+        elif query.operation is QueryOperation.DIAGNOSE:
+            _handle_diagnosis(skill, metrics[0], asset_ids, period)
+        elif query.operation is QueryOperation.RECOMMEND:
+            _handle_recommendation(skill, metrics[0], asset_ids[0], period)
+        elif query.operation is QueryOperation.TREND:
+            _handle_trends(skill, metrics[0], asset_ids, period)
+        else:
+            _handle_kpis(skill, metrics, asset_ids, period, timezone_name=_site_timezone(skill, message))
+    except AVAROSError as error:
+        # A resolved data failure is not an unresolved equipment request.
+        # Preserve the requested operation, participants, metric and period.
+        text = (
+            ("İstenen metrik, karşılaştırmadaki tüm ekipmanlar için eşlenmemiş. "
+             "Bu metrik için eşlemesi olan ekipmanları seçin."
+             if is_turkish(skill._response_language) else
+             "The requested metric is not mapped for every comparison participant. "
+             "Choose participants with a mapping for that metric.")
+            if query.operation in {QueryOperation.COMPARE, QueryOperation.RANK, QueryOperation.AVERAGE}
+            and error.code in {"ASSET_METRIC_UNAVAILABLE", "METRIC_NOT_SUPPORTED", "GENERIC_REST_MAPPING_NOT_FOUND"}
+            else localized_error_message(error, skill._response_language)
+        )
+        speak_information(skill, text,
+                          response_type="unavailable")
+        _remember(store, session_id, query, pending="comparison data" if query.operation in {QueryOperation.COMPARE, QueryOperation.RANK, QueryOperation.AVERAGE} else "data")
+        return True
 
     remembered = DialogueState(
         metrics=tuple(metrics),
         asset_ids=tuple(asset_ids),
         period=period,
         operation=query.operation.value,
-        answer_evidence=_conversation_candidates(prior, asset_ids, utterance),
+        answer_evidence=_conversation_candidates(prior, asset_ids, utterance, metrics, period),
+        organization_id=(
+            str(message.context["reneryo_context"]["organization_id"])
+            if has_signed_widget_context(message) else getattr(prior, "organization_id", "")
+        ),
+        language=normalize_language_tag(getattr(skill, "_response_language", "en-US")),
     )
     if store is not None:
         store.put(session_id, remembered)
@@ -253,14 +307,14 @@ def _is_explicit_capabilities_request(text: str) -> bool:
     )
 
 
-def _handle_kpis(skill, metrics, asset_ids, period) -> None:
+def _handle_kpis(skill, metrics, asset_ids, period, *, timezone_name: str | None = None) -> None:
     results = [
         skill.dispatcher.get_kpi(metric=metric, asset_id=asset_id, period=period)
         for asset_id in asset_ids
         for metric in metrics
     ]
     if len(results) == 1:
-        text = skill.response_builder.format_kpi_result(results[0])
+        text = skill.response_builder.format_kpi_result(results[0], timezone_name=timezone_name)
         speak_with_evidence(skill, text, results[0])
         return
     _speak_result_collection(skill, "KPI results", results)
@@ -315,9 +369,9 @@ def _handle_definition(skill, metrics) -> None:
     speak_information(skill, " ".join(parts), response_type="definition")
 
 
-def _handle_target(skill, metric, asset_id, period) -> None:
+def _handle_target(skill, metric, asset_id, period, *, timezone_name: str | None = None) -> None:
     result = skill.dispatcher.get_kpi(metric, asset_id, period)
-    value = skill.response_builder.format_kpi_result(result)
+    value = skill.response_builder.format_kpi_result(result, timezone_name=timezone_name)
     objective = None
     if skill.settings_service is not None and hasattr(skill.settings_service, "get_kpi_objective"):
         objective = skill.settings_service.get_kpi_objective(metric.value, asset_id)
@@ -498,7 +552,7 @@ def _speak_result_collection(skill, title, results, warnings=None) -> None:
     rows = [
         {
             "metric": result.metric.value,
-            "metric_label": result.metric.display_name,
+            "metric_label": metric_display_name(result.metric, getattr(skill, "_response_language", "en-US")),
             "asset_id": result.asset_id,
             "value": result.value,
             "unit": result.unit,
@@ -507,10 +561,20 @@ def _speak_result_collection(skill, title, results, warnings=None) -> None:
         }
         for result in results
     ]
-    headline = title if title.endswith(".") else f"{title}: " + "; ".join(
-        f"{row['asset_id']} {row['metric_label']} {row['value']:g} {row['unit']}"
-        for row in rows[:3]
-    ) + (f"; and {len(rows) - 3} more in the evidence card" if len(rows) > 3 else "") + "."
+    turkish = is_turkish(getattr(skill, "_response_language", "en-US"))
+    if turkish:
+        title = {"KPI results": "KPI sonuçları", "Factory summary": "Fabrika özeti"}.get(title, title)
+        parts = [
+            f"{skill.response_builder._format_asset_name(result.asset_id)} "
+            f"{metric_display_name(result.metric, 'tr-TR')} "
+            f"{skill.response_builder._format_value(result.value, result.unit)}"
+            for result in results[:3]
+        ]
+        remaining = f"; kanıt kartında {len(rows) - 3} sonuç daha var" if len(rows) > 3 else ""
+    else:
+        parts = [f"{row['asset_id']} {row['metric_label']} {row['value']:g} {row['unit']}" for row in rows[:3]]
+        remaining = f"; and {len(rows) - 3} more in the evidence card" if len(rows) > 3 else ""
+    headline = title if title.endswith(".") else f"{title}: " + "; ".join(parts) + remaining + "."
     _speak_meta(skill, headline, results, response_type="summary", warnings=warnings or [])
 
 
@@ -520,7 +584,7 @@ def _speak_meta(skill, headline, results, *, response_type, warnings=None) -> No
         if hasattr(result, "metric") and hasattr(result, "value"):
             rows.append({
                 "metric": result.metric.value,
-                "metric_label": result.metric.display_name,
+                "metric_label": metric_display_name(result.metric, getattr(skill, "_response_language", "en-US")),
                 "asset_id": result.asset_id,
                 "value": result.value,
                 "unit": result.unit,
@@ -533,12 +597,16 @@ def _speak_meta(skill, headline, results, *, response_type, warnings=None) -> No
             })
     first = results[0] if results else None
     period = getattr(first, "period", None)
-    skill.speak(headline, meta={"avaros_response": {
+    language = normalize_language_tag(getattr(skill, "_response_language", "en-US"))
+    spoken = speech_text(headline, language)
+    skill.speak(spoken, meta={"avaros_response": {
+        "speech_text": spoken,
         "response_type": response_type,
+        "language": normalize_language_tag(getattr(skill, "_response_language", "en-US")),
         "query_id": getattr(first, "recommendation_id", "") or str(uuid.uuid4()),
         "headline": headline,
         "period": {
-            "label": getattr(period, "display_name", ""),
+            "label": period_display_name(getattr(period, "display_name", ""), getattr(skill, "_response_language", "en-US")),
             "start": getattr(period, "start", None).isoformat() if period else None,
             "end": getattr(period, "end", None).isoformat() if period else None,
         },
@@ -553,13 +621,20 @@ def _speak_meta(skill, headline, results, *, response_type, warnings=None) -> No
 
 
 def _speak_clarification(skill, headline: str, suggestions: list[str]) -> None:
-    skill.speak(headline, meta={"avaros_response": clarification_metadata(headline, suggestions)})
+    language = normalize_language_tag(getattr(skill, "_response_language", "en-US"))
+    headline = localized_system_text(headline, language)
+    metadata = clarification_metadata(headline, suggestions)
+    metadata["language"] = language
+    metadata["speech_text"] = speech_text(headline, language)
+    skill.speak(metadata["speech_text"], meta={"avaros_response": metadata})
 
 
 def _remember(store, session_id, query, *, pending="") -> None:
     if store is None:
         return
+    prior = store.get(session_id) or DialogueState()
     store.put(session_id, DialogueState(
+        organization_id=prior.organization_id, language=prior.language,
         metrics=query.metrics,
         asset_ids=query.asset_ids,
         period=query.period,
@@ -575,7 +650,9 @@ def remember_kpi_result(skill, message, result) -> None:
         return
     asset_id = str(getattr(result, "asset_id", "") or "").strip()
     evidence = ({"asset_id": asset_id},) if asset_id else ()
+    signed = (getattr(message, "context", {}) or {}).get("reneryo_context", {})
     store.put(message_session_id(message), DialogueState(
+        organization_id=str(signed.get("organization_id", "")) if isinstance(signed, dict) else "",
         metrics=(result.metric,),
         asset_ids=(asset_id,) if asset_id else (),
         period=result.period,
@@ -598,22 +675,21 @@ def _period_suggestions() -> list[str]:
     return ["Use last month", "Use past 30 days", "Use 2026-07-01 to 2026-07-31"]
 
 
-def _site_timezone(skill) -> str:
-    try:
-        config = skill.settings_service.get_profile(skill._resolve_active_profile())
-        return str(config.extra_settings.get("site_timezone", "UTC") or "UTC") if config else "UTC"
-    except Exception:
-        return "UTC"
+def _site_timezone(skill, message=None) -> str | None:
+    from skill._helpers import request_timezone
+
+    return request_timezone(skill, message)
 
 
 def _is_follow_up(utterance: str) -> bool:
-    return utterance.lower().startswith(("and ", "what about", "how about", "why", "compare them", "use the same"))
+    return is_structured_follow_up(normalize_phrase(utterance))
 
 
-def _conversation_candidates(prior, asset_ids: list[str], utterance: str) -> tuple[dict[str, Any], ...]:
+def _conversation_candidates(prior, asset_ids: list[str], utterance: str, metrics, period) -> tuple[dict[str, Any], ...]:
     """Keep only asset identifiers needed by pronoun-based comparisons."""
     candidates: list[str] = []
-    if prior is not None and _is_follow_up(utterance):
+    if (prior is not None and _is_follow_up(utterance)
+            and tuple(metrics) == prior.metrics and period == prior.period):
         candidates.extend(
             str(row.get("asset_id", ""))
             for row in prior.answer_evidence

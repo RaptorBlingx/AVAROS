@@ -30,6 +30,7 @@ class ReneryoMeter:
     metric_id: str
     metric_name: str
     slice_names: tuple[str, ...] = ()
+    unit_group: str = ""
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,7 @@ class ReneryoTrend:
     requested_period_label: str = ""
     period_start: datetime | None = None
     period_end: datetime | None = None
+    change_absolute: float | None = None
 
 
 @dataclass(frozen=True)

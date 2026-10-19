@@ -79,6 +79,7 @@ from skill.services.settings import KNOWN_INTENTS
 from skill.services.prevention_runtime import resolve_prevention_config
 from skill.services.response_builder import ResponseBuilder, create_response_builder
 from skill.services.language import normalize_language_tag, normalize_phrase
+from skill.services.response_localization import localized_error_message, localized_system_text
 from skill.services.conversation_state import DialogueStateStore
 from skill.services.dia_dialogue import try_handle_structured_query
 from skill.services.dia_response import speak_information
@@ -323,6 +324,10 @@ class AVAROSSkill(FallbackSkill):
         @wraps(handler)
         def _guarded(message: Message) -> Any:
             self._sync_response_language(message)
+            from skill._system_handlers import try_handle_read_only_request
+
+            if try_handle_read_only_request(self, message):
+                return None
             if intent_name and self.settings_service is not None:
                 try:
                     if not self.settings_service.is_intent_active(intent_name):
@@ -863,7 +868,7 @@ class AVAROSSkill(FallbackSkill):
                 self.log.warning("Dispatcher recovery failed: %s", exc)
 
             if self.dispatcher is None:
-                self.speak("AVAROS is still initializing. Please try again.")
+                self.speak(localized_system_text("AVAROS is still initializing. Please try again.", self._response_language))
                 return None
 
         if self.response_builder is None:
@@ -880,19 +885,20 @@ class AVAROSSkill(FallbackSkill):
             return action()
         except AVAROSError as exc:
             self.log.error("Error in %s: %s", handler_name, exc, exc_info=True)
+            user_message = localized_error_message(exc, self._response_language)
             speak_information(
                 self,
-                exc.user_message,
+                user_message,
                 response_type="unavailable" if "NOT_CONFIGURED" in exc.code else "error",
-                warnings=[exc.user_message],
+                warnings=[user_message],
             )
             return None
         except FutureTimeoutError as exc:
             self.log.error("Timeout in %s: %s", handler_name, exc, exc_info=True)
             speak_information(
                 self,
-                "The data platform did not respond in time. "
-                "Please check the platform connection and try again.",
+                localized_system_text("The data platform did not respond in time. "
+                "Please check the platform connection and try again.", self._response_language),
                 response_type="timeout",
             )
             return None
@@ -903,7 +909,7 @@ class AVAROSSkill(FallbackSkill):
             self.log.error("Error in %s: %s", handler_name, exc, exc_info=True)
             speak_information(
                 self,
-                "Sorry, I encountered an error. Please try again.",
+                localized_system_text("Sorry, I encountered an error. Please try again.", self._response_language),
                 response_type="error",
             )
             return None

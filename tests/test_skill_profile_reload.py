@@ -1129,6 +1129,7 @@ class TestMetricFallback:
             Asset("620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4", "Seu", "seu")
         ])
         skill.settings_service = Mock()
+        skill.settings_service.get_profile.return_value = None
         skill.settings_service.get_asset_mappings.return_value = {
             "620aa6a4-c1b3-431b-8bec-dc82ac0cd6b4": {
                 "display_name": "Seu",
@@ -1148,7 +1149,8 @@ class TestMetricFallback:
 
         handled = skill.handle_metric_query_fallback(msg)
 
-        assert handled is False
+        # A narrated failure owns the turn; falling through would retry it.
+        assert handled is True
         skill.dispatcher.get_kpi.assert_not_called()
         _assert_structured_speak(
             skill,
@@ -1197,6 +1199,7 @@ class TestMetricFallback:
             Asset("Electric-Main-Meter", "Electric Main Meter", "machine")
         ])
         skill.settings_service = Mock()
+        skill.settings_service.get_profile.return_value = None
         skill.settings_service.get_asset_mappings.return_value = {
             "Electric-Main-Meter": {
                 "display_name": "Electric Main Meter",
@@ -1219,7 +1222,8 @@ class TestMetricFallback:
 
         handled = skill.handle_metric_query_fallback(msg)
 
-        assert handled is False
+        # A narrated failure owns the turn; falling through would retry it.
+        assert handled is True
         skill.dispatcher.get_kpi.assert_not_called()
         _assert_structured_speak(
             skill,
@@ -1241,6 +1245,7 @@ class TestMetricFallback:
             Asset("Electric-Main-Meter", "Electric Main Meter", "machine")
         ])
         skill.settings_service = Mock()
+        skill.settings_service.get_profile.return_value = None
         skill.settings_service.get_asset_mappings.return_value = {
             "Electric-Main-Meter": {
                 "display_name": "Electric Main Meter",
@@ -1264,7 +1269,8 @@ class TestMetricFallback:
 
         handled = skill.handle_metric_query_fallback(msg)
 
-        assert handled is False
+        # A narrated failure owns the turn; falling through would retry it.
+        assert handled is True
         skill.dispatcher.get_kpi.assert_not_called()
         _assert_structured_speak(
             skill,
@@ -1290,6 +1296,7 @@ class TestMetricFallback:
             ),
         ])
         skill.settings_service = Mock()
+        skill.settings_service.get_profile.return_value = None
         skill.settings_service.get_asset_mappings.return_value = {
             "Gas-Main-Meter": {
                 "display_name": "Gas Main Meter",
@@ -1321,7 +1328,8 @@ class TestMetricFallback:
 
         handled = skill.handle_metric_query_fallback(msg)
 
-        assert handled is False
+        # A narrated failure owns the turn; falling through would retry it.
+        assert handled is True
         skill.dispatcher.get_kpi.assert_not_called()
         _assert_structured_speak(
             skill,

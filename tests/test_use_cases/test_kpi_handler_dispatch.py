@@ -74,7 +74,7 @@ def test_generic_kpi_handler_dispatches_energy_per_unit():
         asset_id="Line-1",
         period=skill._parse_period.return_value,
     )
-    skill.response_builder.format_kpi_result.assert_called_once_with(result)
+    skill.response_builder.format_kpi_result.assert_called_once_with(result, timezone_name="UTC")
     skill.speak.assert_called_once()
     assert skill.speak.call_args.args == ("ok",)
     assert "avaros_response" in skill.speak.call_args.kwargs["meta"]

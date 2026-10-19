@@ -46,6 +46,39 @@ def handle_help(skill: "AVAROSSkill", message: Message) -> None:
     handle_help_capabilities_list(skill, message)
 
 
+def try_handle_read_only_request(skill: AVAROSSkill, message: Message) -> bool:
+    """Keep unsupported settings/control commands out of data routing."""
+    from skill.services.request_boundary import read_only_request_kind
+
+    kind = read_only_request_kind(skill._extract_utterance_text(message))
+    if not kind:
+        return False
+    language = getattr(skill, "_response_language", "en-US")
+    context = getattr(message, "context", {}) or {}
+    signed = context.get("reneryo_context", {})
+    if context.get("reneryo_widget_session_validated") is True and isinstance(signed, dict):
+        language = signed.get("language") or language
+    turkish = is_turkish(language)
+    if kind == "settings":
+        headline = (
+            "Sohbet üzerinden ayarları değiştiremiyorum. Ayarları incelemek veya "
+            "değiştirmek için yetkili yapılandırma arayüzünü kullanın."
+            if turkish else
+            "I cannot change settings through chat. Use the authorized configuration "
+            "interface to review or change settings."
+        )
+    else:
+        headline = (
+            "AVAROS salt okunurdur ve ekipmanı kontrol edemez. Onaylı ekipman "
+            "kontrol sistemini ve tesis güvenlik prosedürünü kullanın."
+            if turkish else
+            "AVAROS is read-only and cannot control equipment. "
+            "Use the approved equipment control system and site safety procedure."
+        )
+    speak_information(skill, headline, language=language, response_type="read_only_boundary")
+    return True
+
+
 def handle_control_turn_on(skill: "AVAROSSkill", message: Message) -> None:
     """Explain the advisory-only control boundary without changing state."""
     speak_information(skill,

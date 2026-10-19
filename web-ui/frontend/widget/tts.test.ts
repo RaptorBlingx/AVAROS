@@ -37,6 +37,19 @@ describe("widget TTS helpers", () => {
     );
   });
 
+  it("keeps Turkish spoken numbers together with their units", () => {
+    const text = "Eylül iki bin yirmi altı döneminde hava sıcaklığı yirmi iki virgül altı dereceden on altı virgül kırk bir dereceye düştü. " +
+      "Elektrik tüketimi elli dokuz bin altı yüz kırk beş virgül doksan üç kilovatsaat.";
+    const energy = "Verisi bulunan son dönem Haziran iki bin yirmi altı: Future Gen Ana Elektrik Sayacı: elli dokuz bin altı yüz kırk beş virgül doksan üç kilovatsaat.";
+    expect(splitWidgetTtsText(energy).join(" ")).toBe(energy);
+    const chunks = splitWidgetTtsText(text);
+    expect(chunks.join(" ")).toBe(text);
+    for (const quantity of ["yirmi iki virgül altı dereceden", "on altı virgül kırk bir dereceye", "elli dokuz bin altı yüz kırk beş virgül doksan üç kilovatsaat"]) {
+      expect(chunks.some((chunk) => chunk.includes(quantity))).toBe(true);
+    }
+    expect(chunks.every((chunk) => chunk.length <= WIDGET_TTS_CHUNK_MAX_CHARS)).toBe(true);
+  });
+
   it("resolves the widget TTS endpoint from the configured AVAROS URL", () => {
     expect(resolveServerTtsUrl("https://avaros.reneryo.com/base")).toBe(
       "https://avaros.reneryo.com/voice/tts",

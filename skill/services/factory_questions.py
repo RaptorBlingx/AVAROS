@@ -7,11 +7,16 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 from skill.domain.models import TimePeriod
-from skill.services.futuregen import match_metric, next_month
-from skill.services.language import is_turkish, normalize_phrase
+from skill.services.reneryo_periods import history_resolution, meter_window_exact
+from skill.services.futuregen import metric_references, next_month
+from skill.services.futuregen_responses import format_reneryo_value
+from skill.services.language import (
+    is_turkish, normalize_phrase, period_display_name, format_observation_time,
+)
 from skill.services.period_resolution import (
     extract_period_phrase,
     named_month_reference,
+    remove_period_reference,
     unsupported_period_reference,
 )
 
@@ -38,6 +43,61 @@ def _has(text, *terms):
     return any(re.search(rf"(?<!\w){re.escape(term)}", text) for term in terms)
 
 
+def is_cost_request(utterance: str) -> bool:
+    text = normalize_phrase(utterance)
+    if _has(text, "finding", "bulgu", "rule", "kural", "regression", "regresyon"):
+        return False
+    return bool(re.search(r"\bTRY\b", utterance)) or bool(re.search(
+        r"\b(?:cost\w*|paid|pay|payment\w*|bill\w*|spend|spent)\b|"
+        r"\b(?:maliyet|öde|ode|fatura|ücret|ucret)\w*|"
+        r"\b(?:para|lira(?:ya|yı|yi|lık|lik|dan|da)?|tl|eur|usd|euros?|dollars?)\b", text,
+    ))
+
+
+def cost_limitation_headline(language: str) -> str:
+    return (
+        "İstenen maliyet veya ödeme tutarı için doğrulanmış Reneryo verisi mevcut değil."
+        if is_turkish(language)
+        else "Verified Reneryo cost or payment data is not available for the requested amount."
+    )
+
+
+def is_freshness_question(text: str) -> bool:
+    """Recognize last-observation questions, not a freshness policy judgment."""
+    text = normalize_phrase(text)
+    temporal = _has(
+        text, "timestamp", "observation time", "observation date", "kayıt zamanı", "kayit zamani",
+        "ölçüm tarihi", "olcum tarihi", "updated", "update", "fresh",
+        "ne zaman", "how old", "recorded", "is current",
+        "consumption current", "ne kadar eski", "ne kadar güncel",
+        "ne kadar guncel", "güncel mi", "guncel mi", "up to date",
+        "how recent", "last received", "last refreshed",
+    )
+    # An explicit value field is not a timestamp request merely because it
+    # refers to the last observation. Temporal/freshness cues still own the field.
+    return temporal or (
+        (_has(text, "last data", "last observation", "son veri")
+         or (_has(text, "last") and _has(text, "observation")))
+        and not re.search(r"\b(?:values?|değer\w*|deger\w*)\b", text)
+    )
+
+
+def is_historical_change_question(text: str) -> bool:
+    """Bounded past-change questions reuse the existing historical trend path."""
+    text = normalize_phrase(text)
+    if _has(text, "settings", "configuration", "ayar", "price", "cost", "maliyet"):
+        return False
+    return bool(re.search(
+        r"\b(?:how (?:did|has|have)|did|has|have)\b.*"
+        r"\b(?:change(?:d)?|increase(?:d)?|decrease(?:d)?)\b|"
+        r"\bnasıl değiş(?:ti|miş)\b|\bnasil degis(?:ti|mis)\b|"
+        r"\b(?:arttı|artti|azaldı|azaldi|yükseldi|yukseldi|düştü|dustu) m[ıi]\b|"
+        r"\b(?:direction|go up|go down|rise|fall|gidişat\w*|gidisat\w*)\b|"
+        r"\b(?:art|azal|yüksel|yuksel|düş|dus)(?:mış|mis|miş|mus|müş|muş)\b",
+        text,
+    ))
+
+
 def classify_factory_question(utterance, state) -> FactoryRequest | None:
     text = normalize_phrase(utterance)
     # Findings, policy, regressions and weather keep their established dialogue.
@@ -57,7 +117,8 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
         "weather",
         "temperature",
         "humidity",
-        "sıcaklık",
+        "sıcakl",
+        "sicakl",
         "nem",
         "turn off",
         "turn on",
@@ -131,6 +192,9 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
         )
     )
     follow_up = context and (
+        is_freshness_question(text)
+        or is_historical_change_question(text)
+        or
         _has(
             text,
             "and",
@@ -172,6 +236,8 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
     )
     if energy and production:
         return FactoryRequest("clarify", "", utterance)
+    if is_cost_request(utterance):
+        return FactoryRequest("unsupported", hint, utterance)
     # Resource/entity qualifiers must never be discarded by the generic consumption alias.
     if _has(
         text,
@@ -209,7 +275,7 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
     } and _has(text, "its", "this", "bunun", "onun"):
         return FactoryRequest("scope_unavailable", hint, utterance)
     phrase = extract_period_phrase(utterance)
-    remainder = text.replace(phrase, "") if phrase else text
+    remainder = remove_period_reference(text)
     remainder = re.sub(r"\b(?:19|20)\d{2}\b", "", remainder)
     remainder = re.sub(
         r"\b(?:same period|that period|this period|aynı dönem|ayni donem|bu dönem|bu donem)\b",
@@ -237,7 +303,7 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
         "hat ",
         "bölüm",
         "bolum",
-    ) or re.search(r"\b(?:for|by|at|in)\s+(?:the\s+)?[a-zçğıöşü][\w-]*", remainder):
+    ):
         return FactoryRequest("scope_unavailable", hint, utterance)
     reading = _has(
         text,
@@ -249,7 +315,7 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
         "birikimli",
     ) or (_has(text, "değer", "deger") and not consumption and not production)
     if _has(text, "metric", "metrik", "metriğ", "metrig") or (
-        _has(text, "meter", "sayaç", "sayac") and not reading
+        _has(text, "meter", "sayaç", "sayac") and not reading and not consumption
     ):
         return None
     latest = _has(
@@ -269,8 +335,6 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
         "forecast",
         "predict",
         "tahmin",
-        "cost",
-        "maliyet",
         "per unit",
         "birim başına",
         "oee",
@@ -285,15 +349,19 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
         "save",
         "reduce",
         "tasarruf",
-        "verim",
         "azalt",
         "maximum",
         "maksimum",
         "minimum",
         "average",
         "ortalama",
-    ):
+    ) or any(word.startswith("verim") and not word.startswith("verimiz")
+             for word in text.split()):
+        # veri+miz (our data) is not verim (efficiency). Keep the existing
+        # efficiency boundary, including verimi/verimlilik/verimimiz forms.
         return FactoryRequest("unsupported", hint, utterance)
+    if is_historical_change_question(text) or re.search(r"\bseyr(?:i|ini)\b", text):
+        return FactoryRequest("trend", hint, utterance, use_period)
     if _has(
         text,
         "trend",
@@ -316,24 +384,7 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
         and not production
     ):
         return FactoryRequest("trend", hint, utterance, True)
-    if (_has(text, "last") and _has(text, "observation")) or _has(
-        text,
-        "updated",
-        "update",
-        "fresh",
-        "last data",
-        "last observation",
-        "son veri",
-        "ne zaman",
-        "how old",
-        "recorded",
-        "is current",
-        "consumption current",
-        "ne kadar eski",
-        "ne kadar güncel",
-        "ne kadar guncel",
-        "güncel mi",
-    ):
+    if is_freshness_question(text):
         return FactoryRequest("freshness", hint, utterance)
     if context and _has(
         text,
@@ -370,8 +421,12 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
     return FactoryRequest("amount", hint, utterance, use_period)
 
 
-async def answer_factory_question(service, request, period, language) -> FactoryAnswer:
+async def answer_factory_question(
+    service, request, period, language, *, timezone_name: str | None = None, include_timezone: bool = False,
+) -> FactoryAnswer:
     tr = is_turkish(language)
+    if request.kind == "unsupported" and is_cost_request(request.utterance):
+        return FactoryAnswer(cost_limitation_headline(language), "unavailable")
     suggestions = (
         [
             "En son elektrik tüketimini göster",
@@ -411,7 +466,8 @@ async def answer_factory_question(service, request, period, language) -> Factory
             suggestions=suggestions,
         )
     metrics = await service.metrics()
-    metric = match_metric(request.metric_hint, metrics)
+    references = metric_references(request.utterance, metrics) or metric_references(request.metric_hint, metrics)
+    metric = references[0] if len(references) == 1 else None
     group = (
         "ENERGY"
         if request.metric_hint == "electricity"
@@ -429,7 +485,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
     ]
     if len(named) == 1:
         metric = named[0]
-    if len(candidates) > 1 and len(named) != 1:
+    if (len(references) > 1 or len(candidates) > 1) and len(named) != 1:
         return FactoryAnswer(
             (
                 "Birden fazla ölçüm var; lütfen adını seçin."
@@ -465,16 +521,18 @@ async def answer_factory_question(service, request, period, language) -> Factory
     )
     if request.kind == "period":
         return FactoryAnswer(
-            f"{metric.name}: {period.display_name}; {period.start.isoformat()} – {period.end.isoformat()}.",
+            f"{metric.name}: {period_display_name(period.display_name, language)}; "
+            f"{format_observation_time(period.start, language, timezone_name, include_timezone=include_timezone)} – "
+            f"{format_observation_time(period.end, language, timezone_name, include_timezone=include_timezone)}.",
             period=period,
             **common,
         )
     if request.kind in {"reading", "freshness"} and explicit_window:
         return FactoryAnswer(
             (
-                f"{period.display_name}: Bu erişim arayüzü tarihsel birikimli sayaç değerlerini veya tarihsel güncellik kayıtlarını sunmuyor; yalnızca son değer ve dönem toplamları mevcut. İstenen okumayı son değerle değiştirmedim."
+                f"{period_display_name(period.display_name, language)}: Bu erişim arayüzü tarihsel birikimli sayaç değerlerini veya tarihsel güncellik kayıtlarını sunmuyor; yalnızca son değer ve dönem toplamları mevcut. İstenen okumayı son değerle değiştirmedim."
                 if tr
-                else f"{period.display_name}: This access interface does not expose historical cumulative readings or historical freshness snapshots; it provides the latest reading and period aggregates. I have not substituted the latest reading for the requested one."
+                else f"{period_display_name(period.display_name, language)}: This access interface does not expose historical cumulative readings or historical freshness snapshots; it provides the latest reading and period aggregates. I have not substituted the latest reading for the requested one."
             ),
             "unavailable",
             period=period,
@@ -482,7 +540,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
         )
     if request.kind in {"reading", "freshness"}:
         date = (
-            metric.last_value_at.isoformat()
+            format_observation_time(metric.last_value_at, language, timezone_name, include_timezone=include_timezone)
             if metric.last_value_at
             else ("bilinmiyor" if tr else "unknown")
         )
@@ -498,7 +556,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
                 "kayıtlı değer yok." if tr else "no recorded value is available."
             )
         else:
-            headline += f"{metric.last_value:g}; {date}; {metric.unit_group}. "
+            headline += f"{format_reneryo_value(metric.last_value, metric.unit_group, language)} ({date}). "
             if metric.metric_type == "COUNTER":
                 headline += (
                     "Bu birikimli sayaç değeridir, dönem tüketimi veya üretimi değildir."
@@ -510,7 +568,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
             evidence=[
                 {
                     "metric": metric.name,
-                    "recorded_at": date,
+                    "recorded_at": metric.last_value_at.isoformat() if metric.last_value_at else None,
                     "value": metric.last_value,
                     "type": metric.metric_type,
                     "unit_group": metric.unit_group,
@@ -528,6 +586,14 @@ async def answer_factory_question(service, request, period, language) -> Factory
     aggregation = "MONTHLY" if month_aligned else "DAILY"
     if request.kind == "amount" and metric.unit_group == "ENERGY":
         aggregation = "DAILY" if (period.end - period.start).days > 7 else "HOURLY"
+    if explicit_window:
+        aggregation = history_resolution(period, aggregation)
+    if request.kind == "amount" and metric.unit_group == "ENERGY" and explicit_window and not meter_window_exact(period.start, period.end):
+        return FactoryAnswer(
+            ("Reneryo sayaç toplamlarının veri aralıkları istenen yerel dönemle örtüşmüyor; bu dönem için kesin tüketim veremiyorum." if tr else
+             "Reneryo meter aggregate boundaries do not match the requested window; exact consumption for this period is unavailable."),
+            "unavailable", metric_name=metric.name, period=period,
+        )
     points = (
         await service.reneryo.metric_values(
             metric.metric_id, period.start, period.end, aggregation
@@ -554,7 +620,7 @@ async def answer_factory_question(service, request, period, language) -> Factory
         )
         total_count = len(points)
         aggregation = "MONTHLY"
-    if not points:
+    if not points and not explicit_window:
         points, total_count = await service.reneryo.recent_metric_values(metric)
         aggregation = "MONTHLY"
     if not points:
@@ -565,10 +631,12 @@ async def answer_factory_question(service, request, period, language) -> Factory
                 else "Reneryo returned no period values. "
             )
             + (
-                f"Son kayıt zamanı: {metric.last_value_at.isoformat()}."
+                (f"Son kayıt zamanı: {format_observation_time(metric.last_value_at, language, timezone_name, include_timezone=include_timezone)}." if tr else f"Latest recorded timestamp: {format_observation_time(metric.last_value_at, language, timezone_name, include_timezone=include_timezone)}.")
                 if metric.last_value_at
                 else ""
             ),
+            period=period if explicit_window else None,
+            response_type="unavailable",
             **common,
         )
     actual = (
@@ -592,28 +660,6 @@ async def answer_factory_question(service, request, period, language) -> Factory
         meters = [
             m for m in await service.meters(actual) if m.metric_id == metric.metric_id
         ]
-        if (
-            explicit_window
-            and not fallback
-            and (not meters or any(m.consumption is None for m in meters))
-        ):
-            historical, _ = await service.reneryo.recent_metric_values(metric)
-            if historical:
-                actual = TimePeriod(
-                    historical[-1].timestamp,
-                    next_month(historical[-1].timestamp),
-                    f"{historical[-1].timestamp:%Y-%m}",
-                )
-                prefix = (
-                    f"{period.display_name}: Dönem tüketimi mevcut değil. Tarihli tarihsel tüketimi gösteriyorum: "
-                    if tr
-                    else f"{period.display_name}: Period consumption is unavailable. Showing dated historical consumption instead: "
-                )
-                meters = [
-                    m
-                    for m in await service.meters(actual)
-                    if m.metric_id == metric.metric_id
-                ]
         rows = [
             {
                 "meter": m.name,
@@ -631,20 +677,20 @@ async def answer_factory_question(service, request, period, language) -> Factory
                 else "Reneryo returned no meter consumption for this period."
             )
         else:
-            headline = "; ".join(f"{m.name}: {m.consumption:g}" for m in meters)
+            headline = "; ".join(f"{m.name}: {format_reneryo_value(m.consumption, metric.unit_group, language)}" for m in meters)
             headline += (
-                ". Reneryo dönem tüketimi; gözlenen veriye dayanır, tam kapsam garantisi değildir."
+                ". Reneryo dönem tüketimi; veri kapsamı eksik olabilir."
                 if tr
-                else ". Reneryo period consumption from observed data; full coverage is not guaranteed."
+                else ". Reneryo period consumption; data coverage may be incomplete."
             )
         return FactoryAnswer(
             prefix
             + (
-                ("En son mevcut dönem " if tr else "Latest available period ")
+                ("Verisi bulunan son dönem " if tr else "Latest available period ")
                 if not explicit_window
                 else ""
             )
-            + f"{actual.display_name}: "
+            + f"{period_display_name(actual.display_name, language)}: "
             + headline,
             evidence=rows,
             period=actual,
@@ -668,18 +714,20 @@ async def answer_factory_question(service, request, period, language) -> Factory
         for p in points
     ]
     preview = "; ".join(
-        f"{p.timestamp.isoformat() if aggregation != 'MONTHLY' else p.timestamp.strftime('%Y-%m')}: {p.value:g}"
+        f"{format_observation_time(p.timestamp, language, timezone_name, include_timezone=include_timezone) if aggregation != 'MONTHLY' else period_display_name(p.timestamp.strftime('%Y-%m'), language)}: {format_reneryo_value(p.value, metric.unit_group, language)}"
         for p in points[-3:]
     )
-    label = (
-        ("Reneryo aylık dönem değerleri" if tr else "Reneryo monthly period values")
-        if aggregation == "MONTHLY"
-        else ("Reneryo günlük dönem değerleri" if tr else "Reneryo daily period values")
-    )
+    cadence = {
+        "MONTHLY": ("aylık", "monthly"), "DAILY": ("günlük", "daily"),
+        "HOURLY": ("saatlik", "hourly"), "MINUTELY": ("dakikalık", "minutely"),
+    }[aggregation][0 if tr else 1]
+    label = f"Reneryo {cadence} dönem değerleri" if tr else f"Reneryo {cadence} period values"
     headline = (
         prefix
-        + f"{metric.name}, {actual.display_name}. {label}: {preview}. {metric.unit_group}. "
+        + f"{metric.name}, {period_display_name(actual.display_name, language)}. {label}: {preview}. "
     )
+    if len(points) == 1:
+        return FactoryAnswer(headline.strip(), evidence=rows, period=actual, **common)
     headline += (
         f"{len(points)} dönem gösteriliyor" if tr else f"Showing {len(points)} periods"
     )
@@ -692,16 +740,17 @@ async def answer_factory_question(service, request, period, language) -> Factory
     else:
         headline += "."
     headline += (
-        " Gözlenen veriye dayanır; çok aylı toplam hesaplanmadı."
+        " Dönemler ayrı gösterilmiştir; toplamları hesaplanmadı."
         if tr
-        else " Based on observed data; no multi-month total has been calculated."
+        else " Periods are shown separately; no combined total was calculated."
     )
     return FactoryAnswer(headline, evidence=rows, period=actual, **common)
 
 
 def _fallback(label, tr):
+    label = period_display_name(label, "tr-TR" if tr else "en-US")
     return (
-        f"{label} döneminde gözlem yok. Mevcut tarihsel veriyi gösteriyorum: "
+        f"{label} için kayıt yok. Mevcut tarihsel veri: "
         if tr
         else f"No observations for {label}. Showing available historical data instead: "
     )

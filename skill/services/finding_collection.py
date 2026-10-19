@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from skill.services.response_localization import localize_metric_labels
+
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -119,7 +121,12 @@ class FindingFilters:
 
 
 def is_evaluation_request(text: str) -> bool:
-    """Recognize a request to run MDSP, not merely read existing findings."""
+    """Require an affirmative command, not a verb stem or an analysis question.
+
+    This predicate also gates semantic evaluation proposals before execution.
+    Turkish suffixes matter: ``kontrol etmeliyim`` and ``kontrol etme`` do not
+    authorize the imperative ``kontrol et``.
+    """
     text = _normalized_text(text)
     if is_negated_evaluation_request(text):
         return False
@@ -127,19 +134,27 @@ def is_evaluation_request(text: str) -> bool:
         text, "data", "veri", "veriyi", "verileri"
     ):
         return False
-    evaluation_verbs = (
-        "analy",
-        "evaluate",
-        "assessment",
-        "assess ",
-        "run a check",
-        "check current",
-        "degerlendir",
-        "değerlendir",
-        "analiz",
-        "incele",
-        "kontrol et",
+    english_command = re.search(
+        r"^(?:please\s+)?(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+)?"
+        r"(?:analy[sz]e|evaluate|assess|(?:run|carry\s+out|perform)\s+(?:(?:a|an|the|new|fresh|manual|mdsp|decision[- ]support)\s+)*"
+        r"(?:check|evaluation|assessment|analysis)|check\s+current)\b",
+        text.strip(),
     )
+    turkish_command = re.search(
+        r"\b(?:(?:analiz|kontrol)\s+(?:et|yap|eder\s+misin|edebilir\s+misin)|"
+        r"degerlendir(?:ir\s+misin)?|incele|"
+        r"(?:analiz(?:i|ini)?|degerlendirme(?:yi|sini|si)?)\s+"
+        r"(?:cal[ıi]st[ıi]r|baslat|yap)(?:man[ıi]\s+istiyorum|[ıi]r\s+m[ıi]s[ıi]n|abilir\s+misin)?)\b"
+        r"(?=\s*(?:[.!?]*$|ve\b|lutfen\s*[.!?]*$))",
+        text,
+    )
+    # A how/what/should question asks for information even when it contains an
+    # exact imperative as quoted wording. A polite 'can you' command is explicit.
+    information_prefix = text[:turkish_command.start()] if turkish_command else text
+    if not english_command and _has(
+        information_prefix, "how", "what", "should", "nasil", "nasıl", "ne", "neyi", "neleri"
+    ):
+        return False
     data_cues = (
         "data",
         "current",
@@ -148,7 +163,11 @@ def is_evaluation_request(text: str) -> bool:
         "finding",
         "attention",
         "reneryo",
+        "mdsp",
         "veri",
+        "veriyi",
+        "verileri",
+        "veriler",
         "guncel",
         "güncel",
         "simdi",
@@ -156,8 +175,31 @@ def is_evaluation_request(text: str) -> bool:
         "bulgu",
         "dikkat",
     )
-    return any(cue in text for cue in evaluation_verbs) and any(
-        cue in text for cue in data_cues
+    return bool(english_command or turkish_command) and _has(text, *data_cues)
+
+
+def is_finding_evidence_question(text: str) -> bool:
+    """Bounded evidence paraphrases; never a general analysis instruction."""
+    return bool(re.fullmatch(
+        r"(?:hangi verilere dayan[ıi]yor|hangi veriye dayan[ıi]yor|"
+        r"what evidence supports (?:it|this finding)|supporting facts|"
+        r"(?:bulguyu )?destekleyen (?:veri|gercek)(?:ler)?(?:i goster)?)",
+        _normalized_text(text).strip(" .?!"),
+    ))
+
+
+def is_review_question(text: str) -> bool:
+    """Recognize bounded EN/TR questions about what the user should inspect."""
+    text = _normalized_text(text)
+    return bool(
+        re.fullmatch(r"(?:peki |simdi )?ne yapmam[ıi] onerirsin", text.strip(" .?!"))
+        or re.search(r"\bwhat\s+should\s+(?:i|we)\s+(?:check|review|inspect|look\s+(?:at|into))\b", text)
+        or re.search(r"\bwhat\s+(?:needs|should be)\s+(?:reviewing|reviewed|checked|inspected)\b", text)
+        or (
+            _has(text, "ne", "neyi", "neleri")
+            and re.search(r"\b(?:kontrol\s+etmeliy(?:im|iz)|incelemeliy(?:im|iz)|gozden\s+gecirmeliy(?:im|iz)|"
+                          r"(?:kontrol\s+etmem(?:iz)?|incelemem(?:iz)?)\s+gerekiyor)\b", text)
+        )
     )
 
 
@@ -169,7 +211,9 @@ def is_negated_evaluation_request(text: str) -> bool:
         text,
     ):
         return True
-    return _has(
+    return bool(re.search(
+        r"\b(?:cal[ıi]st[ıi]rma|baslatma|degerlendirme yapma|degerlendirme cal[ıi]st[ıi]rma)\b", text
+    )) or _has(
         text, "analiz etme", "analiz yapma", "veriyi degerlendirme", "veriyi inceleme"
     )
 
@@ -326,16 +370,17 @@ def filters_for(text: str, state: DialogueState) -> FindingFilters:
     ):
         severity, domain = "", ""
 
-    if _has(text, "resolved", "cozuldu", "çözüldü", "cozulmus", "çözülmüş"):
+    if _has(text, "resolved", "cozuldu", "cozulmus", "no longer active", "not active",
+            "etkin olmayan", "aktif olmayan"):
         status = "RESOLVED"
     elif _has(text, "active", "unresolved", "open", "aktif", "cozulmemis", "çözülmemiş", "acik", "açık"):
         status = "ACTIVE"
 
-    if _has(text, "high", "yüksek"):
+    if _has(text, "high", "yuksek"):
         severity = "HIGH"
     elif _has(text, "medium", "orta"):
         severity = "MEDIUM"
-    elif _has(text, "low", "düşük"):
+    elif _has(text, "low", "dusuk"):
         severity = "LOW"
     elif _has(text, "info", "bilgi"):
         severity = "INFO"
@@ -446,7 +491,7 @@ def _edit_distance_at_most_one(left: str, right: str) -> bool:
 
 
 def collection_headline(
-    result: MdspFindingList, filters: FindingFilters, language: str
+    result: MdspFindingList, filters: FindingFilters, language: str, *, spoken: bool = False,
 ) -> str:
     """Narrate the actual filtered records, not only an aggregate count."""
     rows = list(result.findings)
@@ -457,13 +502,22 @@ def collection_headline(
             if is_turkish(language)
             else f"There are no {filter_text.lower()} findings."
         )
-    items = "; ".join(
-        f"{index}. {_localized_severity(row.severity, language)} — {row.title.for_language(language)}"
-        for index, row in enumerate(rows, start=1)
-    )
+    if spoken and is_turkish(language):
+        ordinals = ("Birinci", "İkinci", "Üçüncü")
+        items = ". ".join(
+            f"{ordinals[index]} bulgu, {_localized_severity(row.severity, language).lower()} önem düzeyinde: {localize_metric_labels(row.title.for_language(language), language)}"
+            for index, row in enumerate(rows[:3])
+        )
+    else:
+        items = "; ".join(
+            f"{index}. {_localized_severity(row.severity, language)} — {localize_metric_labels(row.title.for_language(language), language)}"
+            for index, row in enumerate(rows, start=1)
+        )
     if is_turkish(language):
         return (
             f"{len(rows)} {filter_text} bulgu var: {items}. "
+            + ("Diğer bulguları ekrandaki listede görebilirsiniz. " if spoken and len(rows) > 3 else "")
+            +
             "Birini açıklamam için örneğin “ilkini açıkla” diyebilirsiniz."
         )
     return (
@@ -486,16 +540,14 @@ def evaluation_headline(
             f"{evaluation.evaluated_resource_count} kaynak değerlendirildi; "
             f"{evaluation.active_finding_count} etkin bulgu var ve "
             f"{evaluation.resolved_finding_count} bulgu çözüldü. {assessment_summary} "
-            "Tüm başlıkları duymak için “bunları listele” veya öncelikli olanlara "
-            "odaklanmak için “orta önem seviyesindekileri göster” diyebilirsiniz."
+            "Başlıkları görmek için “bunları listele” diyebilirsiniz."
         )
     return (
         f"MDSP completed a fresh evaluation of current Reneryo data. "
         f"It evaluated {evaluation.evaluated_resource_count} resources, found "
         f"{evaluation.active_finding_count} active findings, and resolved "
         f"{evaluation.resolved_finding_count}. {assessment_summary} "
-        "Say “List them” for every title, or “Show the medium ones” to focus on "
-        "the priority items."
+        "Say “List them” to see the titles."
     )
 
 

@@ -19,7 +19,7 @@ type EncryptedEnvelope = {
 };
 
 type StateListener = (state: WidgetConnectionState) => void;
-type SpeakListener = (text: string, language: string) => void;
+type SpeakListener = (text: string, language: string, speechText?: string, inventoryNames?: string[]) => void;
 type EventListener = (message: BusMessage) => void;
 
 const DEFAULT_SESSION_SITE = "default";
@@ -594,7 +594,14 @@ export class ConnectionManager {
     this.setLanguage(language);
     this.speakListeners.forEach((listener) => {
       try {
-        listener(speakText, language);
+        const meta = (envelope.payload as BusMessage).data.meta as Record<string, unknown> | undefined;
+        const response = meta?.avaros_response as Record<string, unknown> | undefined;
+        const headline = typeof response?.headline === "string" ? response.headline : speakText;
+        const inventoryNames = Array.isArray(response?.evidence_rows)
+          ? response.evidence_rows.flatMap((row: Record<string, unknown>) =>
+              typeof row.name === "string" ? [row.name] : [])
+          : undefined;
+        listener(headline, language, speakText, inventoryNames);
       } catch {
         // Listener errors must not break dispatch.
       }

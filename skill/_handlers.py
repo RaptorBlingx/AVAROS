@@ -14,7 +14,12 @@ from skill._metric_handlers import _resolve_kpi_period as _resolve_kpi_period_im
 from skill.domain.exceptions import ValidationError
 from skill.domain.models import CanonicalMetric, ScenarioParameter, WhatIfScenario
 from skill.domain.results import KPIResult
-from skill.services.dia_response import clarification_metadata, speak_with_evidence
+from skill._helpers import request_time_format
+from skill.services.dia_response import clarification_metadata, speak_with_evidence, speak_information
+from skill.services.language import is_turkish
+from skill.services.period_resolution import remove_period_reference
+from skill.services.quantities import normalize_quantity_expressions
+from skill.services.query_scope import entity_scope, is_comparison_request
 from skill.services.dia_dialogue import (
     _is_explicit_capabilities_request,
     is_browser_message,
@@ -29,11 +34,17 @@ if TYPE_CHECKING:
 
 def handle_metric_query_fallback(skill: "AVAROSSkill", message: Message) -> bool:
     """Fallback: resolve metric KPI queries missed by strict intent parsing."""
+    from skill._system_handlers import try_handle_read_only_request
+
+    if try_handle_read_only_request(skill, message):
+        return True
+
     utterance = skill._extract_utterance_text(message).lower()
 
     from skill._reneryo_handlers import (
         handle_reneryo_query,
         has_signed_widget_context,
+        try_handle_scoped_query,
     )
 
     if handle_reneryo_query(skill, message, allow_semantic=False):
@@ -43,6 +54,11 @@ def handle_metric_query_fallback(skill: "AVAROSSkill", message: Message) -> bool
         utterance
     ):
         return try_handle_structured_query(skill, message, include_simple_kpi=True)
+
+    if has_signed_widget_context(message) and (
+        is_comparison_request(utterance) or entity_scope(utterance)[0]
+    ):
+        return try_handle_scoped_query(skill, message)
 
     # The signed Future Gen widget is a Reneryo surface. Give its constrained
     # local resolver first refusal before generic manufacturing structured
@@ -89,13 +105,13 @@ def handle_metric_query_fallback(skill: "AVAROSSkill", message: Message) -> bool
             asset_id=asset_id,
             period=period,
         )
-        response = skill.response_builder.format_kpi_result(result)
+        response = skill.response_builder.format_kpi_result(result, **request_time_format(skill, message))
         speak_with_evidence(skill, response, result)
         remember_kpi_result(skill, message, result)
         return True
 
-    handled = skill._safe_dispatch("handle_metric_query_fallback", _execute)
-    return bool(handled)
+    skill._safe_dispatch("handle_metric_query_fallback", _execute)
+    return True
 
 
 def _fallback_anomaly(
@@ -119,8 +135,8 @@ def _fallback_anomaly(
         skill.speak(response)
         return True
 
-    handled = skill._safe_dispatch("fallback_anomaly", _execute)
-    return bool(handled)
+    skill._safe_dispatch("fallback_anomaly", _execute)
+    return True
 
 
 def _fallback_drift(
@@ -138,8 +154,8 @@ def _fallback_drift(
         speak_with_evidence(skill, response, result)
         return True
 
-    handled = skill._safe_dispatch("fallback_drift", _execute)
-    return bool(handled)
+    skill._safe_dispatch("fallback_drift", _execute)
+    return True
 
 
 def _fallback_forecast(
@@ -162,17 +178,21 @@ def _fallback_forecast(
         speak_with_evidence(skill, response, result)
         return True
 
-    handled = skill._safe_dispatch("fallback_forecast", _execute)
-    return bool(handled)
+    skill._safe_dispatch("fallback_forecast", _execute)
+    return True
 
 
 def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
     """Recover KPI queries from global intent-failure events."""
+    sync_language = getattr(skill, "_sync_response_language", None)
+    if callable(sync_language):
+        sync_language(message)
     utterance = skill._extract_utterance_text(message).lower()
 
     from skill._reneryo_handlers import (
         handle_reneryo_query,
         has_signed_widget_context,
+        try_handle_scoped_query,
     )
 
     if handle_reneryo_query(skill, message, allow_semantic=False):
@@ -182,6 +202,12 @@ def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
         utterance
     ):
         if try_handle_structured_query(skill, message, include_simple_kpi=True):
+            return
+
+    if has_signed_widget_context(message) and (
+        is_comparison_request(utterance) or entity_scope(utterance)[0]
+    ):
+        if try_handle_scoped_query(skill, message):
             return
 
     if has_signed_widget_context(message) and handle_reneryo_query(skill, message):
@@ -212,17 +238,26 @@ def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
     metric = skill._resolve_metric_from_utterance(utterance)
     if metric is None:
         if is_browser_message(message):
-            headline = (
-                "I couldn't map that to a configured manufacturing question. "
-                "Name a metric and asset, or ask what I can do."
-            )
+            from skill.services.language import is_turkish, normalize_language_tag
+
+            language = normalize_language_tag(getattr(skill, "_response_language", "en-US"))
+            if is_turkish(language):
+                headline = (
+                    "Bu isteği yapılandırılmış bir üretim sorusuyla eşleştiremedim. "
+                    "Bir metrik ve ekipman adı belirtin veya neler yapabildiğimi sorun."
+                )
+                suggestions = ["Neler yapabilirsin?", "Hat 1 OEE değerini göster", "Fabrika özetini göster"]
+            else:
+                headline = (
+                    "I couldn't map that to a configured manufacturing question. "
+                    "Name a metric and asset, or ask what I can do."
+                )
+                suggestions = ["What can you do?", "Show OEE for Line 1", "Give me a factory summary"]
+            metadata = clarification_metadata(headline, suggestions)
+            metadata["language"] = language
             skill.speak(
                 headline,
-                meta={"avaros_response": clarification_metadata(headline, [
-                    "What can you do?",
-                    "Show OEE for Line 1",
-                    "Give me a factory summary",
-                ])},
+                meta={"avaros_response": metadata},
             )
         return
 
@@ -239,7 +274,7 @@ def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
             asset_id=asset_id,
             period=period,
         )
-        response = skill.response_builder.format_kpi_result(result)
+        response = skill.response_builder.format_kpi_result(result, **request_time_format(skill, message))
         speak_with_evidence(skill, response, result)
         remember_kpi_result(skill, message, result)
 
@@ -288,14 +323,28 @@ def _fallback_whatif(
     """Execute what-if scenarios missed by strict intent parsing."""
 
     def _execute() -> bool:
-        scenario = _build_whatif_scenario(skill, message, utterance)
+        try:
+            scenario = _build_whatif_scenario(skill, message, utterance)
+        except ValidationError as exc:
+            if exc.code != "SCENARIO_QUANTITY_UNRESOLVED":
+                raise
+            speak_information(
+                skill,
+                ("Senaryo için tek bir sayısal hedef veya değişim oranı belirtin; "
+                 "örneğin 'OEE yüzde 90 olursa' ya da 'OEE yüzde 10 artarsa'."
+                 if is_turkish(getattr(skill, "_response_language", "en-US")) else
+                 "Specify one numeric target or percentage change for the scenario; "
+                 "for example, 'OEE reaches 90 percent' or 'OEE increases by 10 percent'."),
+                response_type="clarification",
+            )
+            return True
         result = skill.dispatcher.simulate_whatif(scenario)
         response = skill.response_builder.format_whatif_result(result)
         speak_with_evidence(skill, response, result)
         return True
 
-    handled = skill._safe_dispatch("fallback_whatif", _execute)
-    return bool(handled)
+    skill._safe_dispatch("fallback_whatif", _execute)
+    return True
 
 
 def _build_whatif_scenario(
@@ -310,6 +359,11 @@ def _build_whatif_scenario(
         "machine speed",
         "line speed",
         "humidity",
+        "sıcaklık",
+        "sicaklik",
+        "basınç",
+        "basinc",
+        "nem oran",
     )
     if any(term in utterance for term in unsupported_process_terms):
         raise ValidationError(
@@ -344,6 +398,40 @@ def _build_whatif_scenario(
             target_metric=metric,
         )
 
+    # A mentioned quantity is never permission to substitute the default +5%.
+    # Equipment numbers alone are not scenario quantities.
+    quantity_text = _whatif_quantity_text(utterance)
+    without_asset = quantity_text.replace("-", " ")
+    names = [asset_id]
+    get_assets = getattr(skill, "_get_asset_registry", None)
+    assets = get_assets() if callable(get_assets) else []
+    if isinstance(assets, (list, tuple)):
+        for asset in assets:
+            if asset.asset_id == asset_id:
+                names.extend([asset.display_name, *asset.aliases])
+    for name in sorted(names, key=len, reverse=True):
+        normalized_name = _whatif_quantity_text(name).replace("-", " ")
+        without_asset = re.sub(rf"(?<!\w){re.escape(normalized_name)}(?!\w)", " ", without_asset)
+    # Line/Hat numeric aliases identify equipment, not a scenario quantity.
+    without_asset = re.sub(r"\b(?:line|hat)\s+\d+\b", " ", without_asset)
+    explicit_quantity = bool(re.search(
+        r"%|\b(?:by|percent|yüzde|yuzde|reach\w*|become\w*|hedef\w*)|(?<!\w)\d",
+        remove_period_reference(without_asset),
+    ))
+    if explicit_quantity and (
+        _whatif_change_amount(quantity_text) is None
+        or re.search(r"\b(?:reach\w*|become\w*|hedef\w*|olursa|olsa|olduğunda|oldugunda)\b", quantity_text)
+        or not re.search(
+            r"\b(?:by|shift|increase\w*|rise\w*|rising|higher|reduce\w*|drop\w*|"
+            r"decrease\w*|lower|cut|save|savings|improv\w*|worse|worsen\w*|degrad\w*|"
+            r"art\w*|azal\w*|yüksel\w*|yuksel\w*|düş\w*|dus\w*|iyileş\w*|iyiles\w*)\b",
+            quantity_text,
+        )
+    ):
+        raise ValidationError(
+            message="Scenario quantity could not be resolved unambiguously",
+            code="SCENARIO_QUANTITY_UNRESOLVED", field="scenario quantity", value=utterance,
+        )
     change_percent = _resolve_whatif_change_percent(skill, utterance, metric)
     _validate_whatif_change(metric, change_percent, utterance)
     parameter = ScenarioParameter(
@@ -419,17 +507,54 @@ def _validate_whatif_change(
         )
 
 
+_WHATIF_NUMBER = r"[-+]?\d+(?:\.\d+)?(?!\d|[.,]\d)"
+
+
+def _whatif_quantity_text(utterance: str) -> str:
+    """Keep Turkish letters, decimal precision and signs in scenario quantities."""
+    text = normalize_quantity_expressions(utterance)
+    text = re.sub(r"(?<=\d),(?=\d)", ".", text)
+    text = re.sub(r"[^\w.%+,\s-]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _whatif_percentages(text: str) -> list[float]:
+    pattern = (rf"(?:\bpercent\b|\byüzde\b|\byuzde\b|%)\s*({_WHATIF_NUMBER})(?!\w)"
+               rf"|(?<![\w.,+-])({_WHATIF_NUMBER})\s*(?:%|percent\b)")
+    return [float(m.group(1) or m.group(2)) for m in re.finditer(pattern, text)]
+
+
 def _resolve_whatif_target_value(utterance: str) -> float | None:
-    """Resolve absolute target-value phrasing, e.g. 'OEE reaches 90 percent'."""
-    normalized = re.sub(r"[^a-z0-9.%\s-]", " ", utterance.lower())
-    normalized = re.sub(r"\s+", " ", normalized).strip()
-    match = re.search(
-        (
-            r"\b(?:to|reach|reaches|reaching|become|becomes|at)\s+"
-            r"([-+]?\d+(?:\.\d+)?)\s*(?:%|percent)?\b"
-        ),
-        normalized,
-    )
+    """Resolve one absolute EN/TR target; leave ambiguity for clarification."""
+    text = _whatif_quantity_text(utterance)
+    percentages = _whatif_percentages(text)
+    if len(percentages) > 1 or re.search(r"\b(?:or|and|veya|ve|ya da)\b|\d\s*-\s*\d", text):
+        return None
+    patterns = [
+        rf"\b(?:to|reach|reaches|reaching|become|becomes|at)\s+({_WHATIF_NUMBER})\b(?:\s*(?:%|percent))?",
+        rf"(?:\byüzde\b|\byuzde\b|%)\s*({_WHATIF_NUMBER})(?:\s*[ae])?\s+"
+        r"(?:olursa|olsa|olduğunda|oldugunda|ulaşırsa|ulasirsa)\b",
+        rf"(?<![\w.,+-])({_WHATIF_NUMBER})\s*%\s*(?:olursa|olsa|olduğunda|oldugunda)\b",
+        rf"(?:\byüzde\b|\byuzde\b|%)\s*({_WHATIF_NUMBER})\s*[ae]\s+"
+        r"(?:çıkarsa|cikarsa|yükselirse|yukselirse|düşerse|duserse|inerse|ulaşırsa|ulasirsa)\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            value = float(match.group(1))
+            return value if not percentages or percentages == [value] else None
+    return None
+
+
+def _whatif_change_amount(text: str) -> float | None:
+    percentages = _whatif_percentages(text)
+    if len(percentages) > 1 or re.search(r"\b(?:or|and|veya|ve|ya da)\b|\d\s*-\s*\d", text):
+        return None
+    if re.search(rf"(?:%|yüzde|yuzde)\s*{_WHATIF_NUMBER}\s*[ae]\b", text):
+        return None
+    if percentages:
+        return percentages[0]
+    match = re.search(rf"\bby\s+({_WHATIF_NUMBER})\b", text)
     return float(match.group(1)) if match else None
 
 
@@ -439,19 +564,15 @@ def _resolve_whatif_change_percent(
     metric: CanonicalMetric,
 ) -> float:
     """Resolve scenario change direction and percentage from text."""
-    normalized = re.sub(r"[^a-z0-9.%\s-]", " ", utterance.lower())
-    normalized = re.sub(r"\s+", " ", normalized).strip()
-    amount_match = (
-        re.search(r"\bby\s+([-+]?\d+(?:\.\d+)?)\s*(?:%|percent)?\b", normalized)
-        or re.search(r"([-+]?\d+(?:\.\d+)?)\s*(?:%|percent)\b", normalized)
-    )
-    amount = float(amount_match.group(1)) if amount_match else 5.0
+    normalized = _whatif_quantity_text(utterance)
+    resolved_amount = _whatif_change_amount(normalized)
+    amount = resolved_amount if resolved_amount is not None else 5.0
 
     if "shift" in normalized and "peak" in normalized:
         return -abs(amount)
-    if re.search(r"\b(increase|increases|increased|rise|rises|rising|higher)\b", normalized):
+    if re.search(r"\b(increase|increases|increased|rise|rises|rising|higher|art\w*|yüksel\w*|yuksel\w*)\b", normalized):
         return abs(amount)
-    if re.search(r"\b(reduce|reduces|reduced|drop|drops|decrease|decreases|lower|cut|save|savings)\b", normalized):
+    if re.search(r"\b(reduce|reduces|reduced|drop|drops|decrease|decreases|lower|cut|save|savings|azal\w*|düş\w*|dus\w*)\b", normalized):
         return -abs(amount)
     if re.search(r"\b(improve|improves|improved|improvement)\b", normalized):
         return abs(amount) if _higher_is_better(metric) else -abs(amount)

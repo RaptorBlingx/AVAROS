@@ -11,6 +11,7 @@ from skill.domain.exceptions import ValidationError
 from skill.domain.models import TimePeriod
 from skill.domain.reneryo_models import MdspFinding, MdspFindingList, ReneryoTrend
 from skill.services.language import normalize_phrase
+from skill.services.reneryo_periods import history_resolution
 
 
 class FutureGenService:
@@ -26,9 +27,12 @@ class FutureGenService:
     async def metrics(self):
         return await self.reneryo.list_metrics()
 
-    async def trend(self, utterance: str, period: TimePeriod) -> ReneryoTrend:
-        metrics = await self.metrics()
-        metric = match_metric(utterance, metrics)
+    async def trend(self, utterance: str, period: TimePeriod, *, metric=None, allow_history_fallback: bool = True) -> ReneryoTrend:
+        if metric is None:
+            references = metric_references(utterance, await self.metrics())
+            if len(references) > 1:
+                raise ValidationError(message="Ambiguous trend subject", code="METRIC_AMBIGUOUS")
+            metric = references[0] if references else None
         if metric is None:
             raise ValidationError(
                 message="No Future Gen metric matched the request",
@@ -37,11 +41,21 @@ class FutureGenService:
             )
         days = max(1, (period.end - period.start).days)
         aggregation = "HOURLY" if days <= 2 else "DAILY" if days <= 120 else "MONTHLY"
+        # Explicit multi-month counter comparisons request Reneryo's monthly
+        # aggregates, not the endpoints of daily readings across both months.
+        from skill.services.period_resolution import _NAMED_MONTH_RANGE, extract_period_phrase
+
+        if metric.metric_type == "COUNTER" and _NAMED_MONTH_RANGE.fullmatch(
+            extract_period_phrase(utterance)
+        ):
+            aggregation = "MONTHLY"
+        if extract_period_phrase(utterance) not in {"", "latest", "en güncel"}:
+            aggregation = history_resolution(period, aggregation)
         points = await self.reneryo.metric_values(
             metric.metric_id, period.start, period.end, aggregation
         )
         requested_period_label = ""
-        if not points:
+        if not points and allow_history_fallback and not extract_period_phrase(utterance):
             historical, _ = await self.reneryo.recent_metric_values(metric)
             if historical:
                 requested_period_label = period.display_name
@@ -53,15 +67,20 @@ class FutureGenService:
                     f"available monthly history {points[0].timestamp:%Y-%m} – {points[-1].timestamp:%Y-%m}",
                 )
         change = None
-        if len(points) > 1 and points[0].value != 0:
-            change = ((points[-1].value - points[0].value) / abs(points[0].value)) * 100
+        delta = points[-1].value - points[0].value if len(points) > 1 else None
+        temperature = metric.unit_group == "TEMPERATURE"
+        # Celsius is Reneryo's base temperature unit. Its zero is arbitrary:
+        # narrate an endpoint difference, never a relative percentage.
+        if delta is not None and not temperature and points[0].value != 0:
+            change = (delta / abs(points[0].value)) * 100
         direction = "unavailable"
-        if change is not None and change > 1:
-            direction = "increasing"
-        elif change is not None and change < -1:
-            direction = "decreasing"
-        elif change is not None:
-            direction = "stable"
+        directional_change = delta if temperature else change
+        threshold = 0 if temperature else 1
+        if directional_change is not None:
+            direction = (
+                "increasing" if directional_change > threshold else
+                "decreasing" if directional_change < -threshold else "stable"
+            )
         return ReneryoTrend(
             metric=metric,
             period_label=period.display_name,
@@ -69,6 +88,7 @@ class FutureGenService:
             points=tuple(points),
             direction=direction,
             change_percent=change,
+            change_absolute=delta,
             requested_period_label=requested_period_label,
             period_start=period.start,
             period_end=period.end,
@@ -107,8 +127,8 @@ class FutureGenService:
         return await self.mdsp.evaluate(organization_id)
 
 
-def default_period(days: int = 30) -> TimePeriod:
-    end = datetime.now(timezone.utc)
+def default_period(days: int = 30, *, now: datetime | None = None) -> TimePeriod:
+    end = now or datetime.now(timezone.utc)
     return TimePeriod(
         start=end - timedelta(days=days), end=end, display_name=f"last {days} days"
     )
@@ -127,8 +147,18 @@ def next_month(value: datetime) -> datetime:
     )
 
 
-def match_metric(utterance: str, metrics):
-    """Ground a natural metric reference in Reneryo-owned inventory data."""
+_METRIC_ALIASES = (
+    ("electric", "elektrik", "elektriğ", "elektrig", "energy", "enerji"),
+    ("production", "produce", "output", "uretim", "üretim", "üretti", "uretti"),
+    ("temperature", "sicaklik", "sıcaklık", "sicaklig", "sıcaklığ"),
+    ("humidity", "humid", "nem"),
+    ("heating degree", "isitma", "ısıtma"),
+    ("cooling degree", "sogutma", "soğutma"),
+    ("rain", "yagmur", "yağmur"),
+)
+
+
+def _metric_reference_text(utterance: str) -> str:
     normalized = normalize_phrase(utterance)
     # A correction names the unwanted metric first. Match only the replacement.
     correction = re.match(
@@ -140,20 +170,48 @@ def match_metric(utterance: str, metrics):
         turkish_correction = re.match(r"^.+?\b(?:değil|degil)\b\s+(.+)$", normalized)
         if turkish_correction:
             normalized = turkish_correction.group(1)
-    aliases = (
-        ("electric", "elektrik", "elektriğ", "elektrig", "energy", "enerji"),
-        ("production", "produce", "output", "uretim", "üretim", "üretti", "uretti"),
-        ("temperature", "sicaklik", "sıcaklık"),
-        ("humidity", "nem"),
-        ("heating degree", "isitma", "ısıtma"),
-        ("cooling degree", "sogutma", "soğutma"),
-        ("rain", "yagmur", "yağmur"),
-    )
+    return normalized
+
+
+def metric_references(utterance: str, metrics):
+    """Return inventory-backed references without choosing an ambiguous subject.
+
+    Exact names narrow aliases within their family. Unlike the legacy single
+    match helper, all explicit families must be available; callers must clarify multiple matches.
+    """
+    text = _metric_reference_text(utterance)
+    exact = [m for m in metrics if m.name and re.search(
+        rf"(?<!\w){re.escape(normalize_phrase(m.name))}(?!\w)", text
+    )]
+    found = {m.metric_id: m for m in exact}
+    for terms in _METRIC_ALIASES:
+        if not any(_contains_alias(text, normalize_phrase(t)) for t in terms):
+            continue
+        family = [m for m in metrics if any(
+            _contains_alias(normalize_phrase(m.name), normalize_phrase(t)) for t in terms
+        )]
+        if not family:
+            return []
+        selected = [m for m in family if m in exact] or family
+        found.update((m.metric_id, m) for m in selected)
+    return list(found.values())
+
+
+def has_metric_alias(utterance: str) -> bool:
+    """Whether a request names a supported family, even if inventory lacks it."""
+    text = _metric_reference_text(utterance)
+    return any(_contains_alias(text, normalize_phrase(term))
+               for family in _METRIC_ALIASES for term in family)
+
+
+def match_metric(utterance: str, metrics):
+    """Ground a natural metric reference in Reneryo-owned inventory data."""
+    normalized = _metric_reference_text(utterance)
     for metric in metrics:
         name = normalize_phrase(metric.name)
         if name and (name in normalized or normalized in name):
             return metric
-    for terms in aliases:
+    for terms in _METRIC_ALIASES:
         normalized_terms = tuple(normalize_phrase(term) for term in terms)
         if any(_contains_alias(normalized, term) for term in normalized_terms):
             return next(
@@ -172,4 +230,5 @@ def match_metric(utterance: str, metrics):
 
 def _contains_alias(text: str, alias: str) -> bool:
     """Match an alias at a word start, avoiding fragments such as nem/döneme."""
-    return re.search(rf"(?<!\w){re.escape(alias)}", text) is not None
+    ending = r"(?!\w)" if alias == "humid" else ""
+    return re.search(rf"(?<!\w){re.escape(alias)}{ending}", text) is not None

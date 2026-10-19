@@ -24,13 +24,19 @@ Usage:
 
 from __future__ import annotations
 
+from datetime import datetime
+
+from skill.services.quantities import quantity_number
+
 from typing import TYPE_CHECKING, Callable
 
-from skill.services.language import is_turkish, metric_display_name
+from skill.services.language import is_turkish, metric_display_name, period_display_name, format_localized_number, format_observation_time
+
+from skill.domain.models import CanonicalMetric
 
 if TYPE_CHECKING:
     from skill.domain.anomaly_models import DriftReport, ForecastReport
-    from skill.domain.models import Anomaly, CanonicalMetric
+    from skill.domain.models import Anomaly
     from skill.domain.results import (
         KPIResult,
         ComparisonResult,
@@ -79,7 +85,7 @@ class ResponseBuilder:
     # KPI Results
     # =========================================================================
     
-    def format_kpi_result(self, result: KPIResult) -> str:
+    def format_kpi_result(self, result: KPIResult, *, timezone_name: str | None = None, include_timezone: bool = False) -> str:
         """
         Format a KPI result into natural speech.
         
@@ -96,17 +102,18 @@ class ResponseBuilder:
         metric_name = result.metric.display_name
         asset_name = self._format_asset_name(result.asset_id)
         value = self._format_value(result.value, result.unit)
-        period = result.period.display_name if self.verbosity != "brief" else ""
+        period = period_display_name(result.period.display_name, 'en-US') if self.verbosity != "brief" else ""
         
         if self.verbosity == "brief":
             return f"{value}"
         aggregation = f"{result.aggregation} " if result.aggregation else ""
         if period == "latest available":
-            period_clause = self._format_observation_clause(result.source_observed_at)
+            period_clause = self._format_observation_clause(result.source_observed_at, timezone_name, include_timezone)
         else:
             period_clause = f" over {period}" if period else ""
             if result.sample_count > 0:
-                period_clause += f", based on {result.sample_count} observations"
+                sample_word = "observation" if result.sample_count == 1 else "observations"
+                period_clause += f", based on {result.sample_count} {sample_word}"
         response = (
             f"The {aggregation}{metric_name} for {asset_name} is {value}"
             f"{period_clause}."
@@ -147,19 +154,26 @@ class ResponseBuilder:
             f"{self._format_comparison_value(item.value, result.unit)}"
             for item in sorted(result.items, key=lambda item: item.rank)
         )
-        period = result.period.display_name or "the requested period"
+        period = period_display_name(result.period.display_name, 'en-US') or "the requested period"
         aggregation = f" {result.aggregation}" if result.aggregation else ""
         
         # Determine if lower or higher is better
         lower_is_better = self._is_lower_better(result.metric)
         
-        if self.verbosity == "brief":
-            return f"{values}. {winner} wins by {difference}."
         quality_warning = f" Warning: {result.warnings[0]}" if result.warnings else ""
+        if result.metric is CanonicalMetric.ENERGY_TOTAL:
+            # A lower total alone does not establish normalized efficiency.
+            outcome = (
+                "The total energy values are equal" if result.difference == 0
+                else f"{winner} has a lower total energy value by {difference}"
+            )
+            return f"For {period},{aggregation} {metric_name}: {values}. {outcome}.{quality_warning}"
+        if self.verbosity == "brief":
+            return f"{values}. {winner} has a {'lower' if lower_is_better else 'higher'} value by {difference}."
         outcome = (
-            f"{winner} is more efficient by {difference}"
+            f"{winner} has a lower value by {difference}"
             if lower_is_better
-            else f"{winner} wins by {difference}"
+            else f"{winner} has a higher value by {difference}"
         )
         return (
             f"For {period},{aggregation} {metric_name}: {values}. "
@@ -187,7 +201,7 @@ class ResponseBuilder:
         metric_name = result.metric.display_name
         direction = result.direction
         change = abs(result.change_percent)
-        period = result.period.display_name
+        period = period_display_name(result.period.display_name, 'en-US')
         
         # Direction verbs
         if direction == "up":
@@ -553,17 +567,10 @@ class ResponseBuilder:
     def _format_number(value: float) -> str:
         """Format a number with adaptive precision for readability.
 
-        Uses 1 decimal for normal values (≥0.1) and up to 4 significant
-        figures for very small values so they don't collapse to '0.0'.
+        Shares quantity precision with Reneryo narration and keeps small
+        nonzero values in decimal form for speech.
         """
-        abs_value = abs(value)
-        if abs_value == 0:
-            return "0"
-        if abs_value >= 0.1:
-            return f"{value:.1f}"
-        if abs_value >= 0.001:
-            return f"{value:.4f}"
-        return f"{value:.2e}"
+        return quantity_number(value, grouped=False)
 
     def _format_comparison_value(self, value: float, unit: str) -> str:
         """Use compact but unambiguous units in spoken comparison rows."""
@@ -703,11 +710,11 @@ class ResponseBuilder:
         return "No performance objective is configured, so I am not rating this result."
 
     @staticmethod
-    def _format_observation_clause(observed_at: datetime | None) -> str:
+    def _format_observation_clause(observed_at: datetime | None, timezone_name: str | None = None, include_timezone: bool = False) -> str:
         """Format latest source time without exposing implementation details."""
         if observed_at is None:
             return " from the latest available observation"
-        return f" as of {observed_at.isoformat()}"
+        return f" as of {format_observation_time(observed_at, 'en-US', timezone_name, include_timezone=include_timezone)}"
 
     def format_asset_list(self, asset_names: list[str], max_items: int = 10) -> str:
         """Format concise voice response listing configured assets."""
@@ -740,18 +747,19 @@ class ResponseBuilder:
 class TurkishResponseBuilder(ResponseBuilder):
     """Build operator-facing responses in Turkish while preserving result data."""
 
-    def format_kpi_result(self, result: KPIResult) -> str:
+    def format_kpi_result(self, result: KPIResult, *, timezone_name: str | None = None, include_timezone: bool = False) -> str:
         value = self._format_value(result.value, result.unit)
         if self.verbosity == "brief":
             return value
         metric = metric_display_name(result.metric, "tr-TR")
         asset = self._format_asset_name(result.asset_id)
         if result.period.display_name == "latest available":
-            period = " en güncel ölçümde"
-        elif result.period.display_name in {"bugün", "dün", "en güncel", "şimdi", "şu anda"}:
-            period = f" {result.period.display_name}"
+            period = (f" {format_observation_time(result.source_observed_at, 'tr-TR', timezone_name, include_timezone=include_timezone)} tarihli en güncel ölçümde"
+                      if result.source_observed_at else " en güncel ölçümde")
+        elif period_display_name(result.period.display_name, 'tr-TR') in {"bugün", "dün", "en güncel", "şimdi", "şu anda"}:
+            period = f" {period_display_name(result.period.display_name, 'tr-TR')}"
         else:
-            period = f" {result.period.display_name} döneminde" if result.period.display_name else ""
+            period = f" {period_display_name(result.period.display_name, 'tr-TR')} döneminde" if period_display_name(result.period.display_name, 'tr-TR') else ""
         observations = (
             f", {result.sample_count} gözleme dayanıyor" if result.sample_count > 0 else ""
         )
@@ -773,12 +781,21 @@ class TurkishResponseBuilder(ResponseBuilder):
             f"{self._format_comparison_value(item.value, result.unit)}"
             for item in sorted(result.items, key=lambda item: item.rank)
         )
+        if result.metric is CanonicalMetric.ENERGY_TOTAL:
+            outcome = (
+                "Toplam enerji değerleri eşit" if result.difference == 0
+                else f"{winner} toplam enerji değeri, {difference} daha düşük"
+            )
+            return (
+                f"{period_display_name(result.period.display_name, 'tr-TR')} için {metric}: {values}. "
+                f"{outcome}."
+            )
         outcome = (
-            f"{winner}, {difference} farkla daha verimli"
+            f"{winner} değeri {difference} daha düşük"
             if self._is_lower_better(result.metric)
-            else f"{winner}, {difference} farkla önde"
+            else f"{winner} değeri {difference} daha yüksek"
         )
-        return f"{result.period.display_name} için {metric}: {values}. {outcome}."
+        return f"{period_display_name(result.period.display_name, 'tr-TR')} için {metric}: {values}. {outcome}."
 
     def format_trend_result(self, result: TrendResult) -> str:
         metric = metric_display_name(result.metric, "tr-TR")
@@ -787,10 +804,10 @@ class TurkishResponseBuilder(ResponseBuilder):
             result.direction, result.direction
         )
         if self.verbosity == "brief":
-            return f"{direction}, yüzde {change:.1f}"
+            return f"{direction}, yüzde {self._format_number(change)}"
         if result.direction == "stable":
-            return f"{metric}, {result.period.display_name} boyunca sabit."
-        return f"{metric}, {result.period.display_name} boyunca yüzde {change:.1f} {direction}."
+            return f"{metric}, {period_display_name(result.period.display_name, 'tr-TR')} boyunca sabit."
+        return f"{metric}, {period_display_name(result.period.display_name, 'tr-TR')} boyunca yüzde {self._format_number(change)} {direction}."
 
     def format_anomaly_result(self, result: AnomalyResult) -> str:
         metric = metric_display_name(result.metric, "tr-TR")
@@ -826,7 +843,7 @@ class TurkishResponseBuilder(ResponseBuilder):
         }.get(result.drift_direction, result.drift_direction)
         return (
             f"{metric} {direction}; {result.periods_analyzed} veri noktasında "
-            f"günlük değişim {abs(result.drift_rate):.3f}."
+            f"günlük değişim {format_localized_number(abs(result.drift_rate), 'tr-TR', '.3f')}."
         )
 
     def format_forecast_result(self, result: ForecastReport) -> str:
@@ -846,16 +863,44 @@ class TurkishResponseBuilder(ResponseBuilder):
         metric = metric_display_name(result.target_metric, "tr-TR")
         baseline = self._format_value(result.baseline, result.unit)
         projected = self._format_value(result.projected, result.unit)
+        if baseline == projected and abs(result.delta) > 0:
+            baseline = self._format_value(result.baseline, result.unit, decimals=2)
+            projected = self._format_value(result.projected, result.unit, decimals=2)
         direction = "iyileşme" if result.is_improvement else "değişim"
+        assumption = self._format_whatif_assumptions(result)
+        confidence = " Senaryo değişimi büyük olduğu için güven düzeyi düşük." if result.confidence < 0.6 else ""
         return (
             f"Karar destek senaryosu: {metric}, {baseline} değerinden {projected} "
-            f"değerine gelir; yaklaşık yüzde {abs(result.delta_percent):.1f} {direction}."
+            f"değerine gelebilir; yaklaşık yüzde {self._format_number(abs(result.delta_percent))} {direction}."
+            f" {assumption}{confidence}"
         )
 
+    def _format_whatif_assumptions(self, result: WhatIfResult) -> str:
+        assumption = ""
+        if "target_value" in result.factors:
+            assumption = f" Varsayım: hedef değer {self._format_value(result.factors['target_value'], result.unit)}."
+        elif "assumed_kpi_change_percent" in result.factors:
+            change = result.factors["assumed_kpi_change_percent"]
+            label = "artış" if change > 0 else "azalış" if change < 0 else "değişim"
+            assumption = f" Varsayım: seçilen göstergede yüzde {self._format_number(abs(change))} {label}."
+        elif result.factors:
+            assumption = " Varsayımlar: " + ", ".join(
+                f"{name}: yüzde {self._format_number(value)} değişim"
+                for name, value in result.factors.items()
+            ) + "."
+        return assumption.strip()
+
+    @staticmethod
+    def _format_number(value: float) -> str:
+        return ResponseBuilder._format_number(value).replace(".", ",")
+
+    def _format_comparison_value(self, value: float, unit: str) -> str:
+        return self._format_value(value, unit)
+
     def _format_value(self, value: float, unit: str, decimals: int | None = None) -> str:
-        formatted = f"{value:.{decimals}f}" if decimals is not None else self._format_number(value)
+        formatted = (f"{value:.{decimals}f}" if decimals is not None else self._format_number(value)).replace(".", ",")
         units = {
-            "%": "yüzde", "kWh/unit": "kilovat saat/birim", "kWh": "kilovat saat",
+            "%": "yüzde", "kWh/unit": "birim başına kilovatsaat", "kWh": "kilovatsaat",
             "kW": "kilovat", "W": "vat", "sec": "saniye", "seconds": "saniye",
             "min": "dakika", "minutes": "dakika", "days": "gün",
         }

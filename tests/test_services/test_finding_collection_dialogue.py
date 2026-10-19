@@ -90,7 +90,7 @@ class _Service:
     async def finding(self, _organization_id: str, identifier: str) -> MdspFinding:
         return next(row for row in self.rows if row.finding_id == identifier)
 
-    async def trend(self, _utterance, period) -> ReneryoTrend:
+    async def trend(self, _utterance, period, *, metric=None, allow_history_fallback=True) -> ReneryoTrend:
         return ReneryoTrend(
             metric=ReneryoMetric(
                 "production",
@@ -123,6 +123,11 @@ class _Dispatcher:
 
 class _Skill:
     def __init__(self) -> None:
+        from types import SimpleNamespace
+        self.settings_service = SimpleNamespace(get_profile=lambda _: SimpleNamespace(
+            extra_settings={"organization_timezones": {"futuregen": "UTC"}},
+        ))
+        self._resolve_active_profile = lambda: "reneryo"
         self._loaded_profile = "reneryo"
         self._response_language = "en-US"
         self._dialogue_state_store = DialogueStateStore()
@@ -408,7 +413,7 @@ def test_signed_widget_month_range_reaches_trend_with_both_observations(
     skill._parse_period = TimePeriod.from_natural_language
     periods = []
 
-    async def trend(_utterance, period):
+    async def trend(_utterance, period, *, metric=None, allow_history_fallback=True):
         periods.append(period)
         return ReneryoTrend(
             metric=ReneryoMetric("electricity", "Electricity", "COUNTER", "ENERGY"),
@@ -430,8 +435,8 @@ def test_signed_widget_month_range_reaches_trend_with_both_observations(
     assert _response_type(skill) == "trend"
     assert periods[0].start == datetime(2026, 5, 1, tzinfo=timezone.utc)
     assert periods[0].end == datetime(2026, 7, 1, tzinfo=timezone.utc)
-    assert expected_label in skill.spoken[-1][0]
-    assert "24.3" in skill.spoken[-1][0]
+    assert expected_label in skill.spoken[-1][1]["meta"]["avaros_response"]["headline"]
+    assert ("yirmi dört virgül üç" if language == "tr-TR" else "24.3") in skill.spoken[-1][0]
 
 
 def test_correct_turkish_ordinal_and_mistranscribed_period_keep_finding():
@@ -508,7 +513,11 @@ def test_finding_followup_without_selection_clarifies_instead_of_switching_topic
 
 
 def test_turkish_missing_trend_is_explicit_after_a_finding_topic_change():
+    from unittest.mock import AsyncMock
     skill = _Skill()
+    skill._futuregen_service.metrics = AsyncMock(return_value=[
+        ReneryoMetric("production", "Production", "COUNTER", "PIECE"),
+    ])
 
     assert handle_reneryo_query(skill, _message("List active findings"))
     assert handle_reneryo_query(skill, _message("Explain the first one"))
@@ -516,7 +525,7 @@ def test_turkish_missing_trend_is_explicit_after_a_finding_topic_change():
 
     assert _response_type(skill) == "trend"
     assert "gözlem bulunamadı" in skill.spoken[-1][0]
-    assert "2026-07-31" in skill.spoken[-1][0]
+    assert "otuz bir Temmuz iki bin yirmi altı gece yarısı evrensel eşgüdümlü zaman" in skill.spoken[-1][0]
     assert "%0.0" not in skill.spoken[-1][0]
     assert "sabit" not in skill.spoken[-1][0]
 
@@ -532,7 +541,7 @@ def test_turkish_missing_trend_is_explicit_after_a_finding_topic_change():
 def test_english_sparse_trend_explains_why_percent_is_unavailable(values, expected):
     skill = _Skill()
 
-    async def sparse_trend(_utterance, period):
+    async def sparse_trend(_utterance, period, *, metric=None, allow_history_fallback=True):
         return ReneryoTrend(
             metric=ReneryoMetric("electricity", "Electricity", "COUNTER", "ENERGY"),
             period_label=period.display_name,
@@ -572,7 +581,7 @@ def test_turkish_evaluation_collection_selection_and_followup():
     assert skill._futuregen_service.evaluations == 1
     assert "değerlendirmeyi tamamladı" in skill.spoken[-1][0]
     assert "Bulgu one" not in skill.spoken[-1][0]
-    assert "Önem düzeyi dağılımı: 0 yüksek, 1 orta ve 1 düşük." in skill.spoken[-1][0]
+    assert "Önem düzeyi dağılımı: sıfır yüksek, bir orta ve bir düşük." in skill.spoken[-1][0]
     assert "Orta öncelikli bulgular şu alanlarla ilgilidir: metrik." in skill.spoken[-1][0]
     assert "bunları listele" in skill.spoken[-1][0]
 
@@ -580,10 +589,10 @@ def test_turkish_evaluation_collection_selection_and_followup():
     assert "Bulgu one" in skill.spoken[-1][0]
 
     assert handle_reneryo_query(skill, _message("Sadece orta olanları göster.", "tr-TR"))
-    assert "1 etkin orta bulgu" in skill.spoken[-1][0]
+    assert "bir etkin orta bulgu" in skill.spoken[-1][0]
 
     assert handle_reneryo_query(skill, _message("İlkin açıkla.", "tr-TR"))
-    assert "yaklaşık 566 saat gerisinde" in skill.spoken[-1][0]
+    assert "yaklaşık beş yüz altmış altı saat gerisinde" in skill.spoken[-1][0]
 
     assert handle_reneryo_query(skill, _message("Bu bulgu neden oluştu?", "tr-TR"))
-    assert "48 saat ile gözlenen veri sıklığının üç katından" in skill.spoken[-1][0]
+    assert "kırk sekiz saat ile gözlenen veri sıklığının üç katından" in skill.spoken[-1][0]

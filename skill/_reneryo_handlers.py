@@ -12,12 +12,19 @@ from typing import TYPE_CHECKING
 
 from skill.clients.mdsp import MdspClient
 from skill.clients.reneryo import ReneryoClient
-from skill.domain.exceptions import AdapterError, ValidationError
+from skill.domain.exceptions import AdapterError, AVAROSError, ValidationError
 from skill.services.conversation_state import DialogueState, message_session_id
+from skill._helpers import request_time_format
+from skill.services.language import format_observation_time
+from skill.services.response_localization import source_metric_label
 from skill.services.dia_response import speak_information
 from skill.services.factory_questions import (
     answer_factory_question,
     classify_factory_question,
+    cost_limitation_headline,
+    is_cost_request,
+    is_historical_change_question,
+    is_freshness_question,
 )
 from skill.services.finding_collection import (
     FindingFilters,
@@ -26,12 +33,16 @@ from skill.services.finding_collection import (
     filters_for,
     is_collection_request,
     is_evaluation_request,
+    is_review_question,
+    is_finding_evidence_question,
     selection_index,
     selection_requested,
 )
 from skill.services.finding_explanation import finding_headline
 from skill.services.finding_next_review import next_review_headline
-from skill.services.futuregen import FutureGenService, default_period, match_metric
+from skill.services.futuregen import (
+    FutureGenService, default_period, has_metric_alias, match_metric, metric_references,
+)
 from skill.services.futuregen_responses import (
     meter_inventory_headline,
     metric_detail_headline,
@@ -39,8 +50,13 @@ from skill.services.futuregen_responses import (
     regression_detail_headline,
     regression_inventory_headline,
 )
-from skill.services.language import is_turkish, normalize_phrase
-from skill.services.period_resolution import extract_period_phrase
+from skill.services.language import is_turkish, normalize_phrase, period_display_name, format_localized_number
+from skill.services.period_resolution import (
+    extract_period_phrase, named_month_reference, remove_period_reference,
+    unsupported_period_reference, unsupported_time_precision,
+)
+from skill.services.request_correction import affirmative_request
+from skill.services.query_scope import entity_scope, is_comparison_request, is_negated_comparison
 from skill.services.semantic_resolver import SemanticAction, SemanticResolution
 
 if TYPE_CHECKING:
@@ -85,7 +101,271 @@ def handle_reneryo_query(
     state = replace(state, language=language)
     _update_message_language(message, language)
 
+    from skill._system_handlers import try_handle_read_only_request
+
+    if try_handle_read_only_request(skill, message):
+        return True
+
+    original_utterance = utterance
+    utterance = affirmative_request(utterance)
+    if utterance is None:
+        speak_information(
+            skill,
+            ("Hariç tuttuğunuz istek yerine hangi işlemi istediğinizi belirtin."
+             if is_turkish(language)
+             else "Please specify the operation you want instead of the excluded request."),
+            language=language, response_type="clarification",
+        )
+        return True
+    corrected = utterance != original_utterance
+    text = normalize_phrase(utterance)
+
+    if unsupported_time_precision(utterance):
+        speak_information(
+            skill,
+            (
+                "Saat düzeyindeki sorgular desteklenmiyor. Bir gün, ay veya tarih aralığı belirtin; "
+                "istenen saat yerine en güncel ölçümü kullanmadım."
+                if is_turkish(language)
+                else "Time-of-day queries are not supported. Specify a day, month, or date range; "
+                "I have not substituted the latest measurement for the requested time."
+            ),
+            language=language,
+            response_type="clarification",
+        )
+        _remember(skill, message, state, pending_clarification="time precision")
+        return True
+
+    # Bare named-month follow-ups are resolved using the factory dialogue's
+    # retained year. All other unsupported explicit periods must stop routing.
+    retained_month = (
+        named_month_reference(utterance) and not re.search(r"\b\d{4}\b", text)
+        and state.operation in {"factory_history", "trend"} and state.period
+    )
+    if unsupported_period_reference(utterance) and not retained_month:
+        _period_clarification(skill, language)
+        return True
+
+    if extract_period_phrase(utterance) and getattr(skill, "settings_service", None) is not None:
+        try:
+            from skill._helpers import parse_period
+            parse_period(skill, extract_period_phrase(utterance), message)
+        except (ValueError, ValidationError):
+            _period_clarification(skill, language)
+            return True
+
+    if is_cost_request(utterance):
+        speak_information(skill, cost_limitation_headline(language),
+                          language=language, response_type="unavailable")
+        return True
+
+    # "Previous month" after a dated answer may mean the calendar month or
+    # the month before the displayed window (including a disclosed fallback).
+    # Ask before any source read and leave the grounded period unchanged.
+    if state.period and state.operation and re.fullmatch(
+        r"(?:(?:and|what about|how about|peki|ya) )?(?:the )?"
+        r"(?:previous month|önceki ay|onceki ay)(?: nasıldı| nasildi)?", text
+    ):
+        speak_information(
+            skill,
+            ("Önceki ay derken geçen takvim ayını mı, gösterdiğim dönemden önceki ayı mı kastediyorsunuz? Ay ve yılı belirtin."
+             if is_turkish(language) else
+             "Do you mean the previous calendar month or the month before the period I showed? Please specify the month and year."),
+            language=language, response_type="clarification",
+        )
+        return True
+
+    if _is_meter_metric_question(text):
+        _meter_metric_response(skill, message, state, text, language)
+        return True
+
+    from skill.services.dia_query import is_comparison_pronoun, is_period_follow_up
+
+    asset_follow_up = bool(
+        state.metrics and state.asset_ids
+        and re.match(r"^(?:and|what about|how about|peki|ya)\b", text)
+        and entity_scope("show " + text)[0]
+    )
+
+    if (is_period_follow_up(utterance) and state.metrics and state.asset_ids
+            and state.operation in {"kpi", "compare", "rank", "average", "summary"}):
+        # The signed Reneryo semantic fallback must not steal a typed asset
+        # follow-up. Re-enter the existing structured route only once.
+        return try_handle_scoped_query(skill, message) if allow_semantic else False
+
+    comparison = is_comparison_request(utterance)
+    # "look at next" is a review verb, not an asset named "next". Remove
+    # only that bounded phrase from the scope check; retain all entity cues.
+    scope_utterance = (
+        re.sub(r"\blook at next\b", "review next", utterance, flags=re.IGNORECASE)
+        if is_review_question(utterance) else utterance
+    )
+    if asset_follow_up:
+        scope_utterance = "show " + scope_utterance
+    scoped, unresolved = entity_scope(scope_utterance)
+    if comparison and not scoped and not (
+        is_comparison_pronoun(text)
+        and state.metrics
+        and (len(state.asset_ids) >= 2 or len(state.answer_evidence) >= 2)
+    ):
+        # Incomplete comparison shorthand must not select default assets.
+        if is_comparison_pronoun(text):
+            speak_information(
+                skill,
+                ("Karşılaştırmak istediğiniz metriği ve en az iki yapılandırılmış ekipmanı belirtin."
+                 if is_turkish(language) else
+                 "Please name the metric and at least two configured assets you want to compare."),
+                language=language, response_type="clarification",
+            )
+            _remember(skill, message, DialogueState(
+                organization_id=state.organization_id, language=language,
+                operation="clarification", pending_clarification="equipment scope",
+            ))
+            return True
+        unresolved = True
+    if scoped:
+        get_assets = getattr(skill, "_get_asset_registry", None)
+        try:
+            assets = get_assets() if callable(get_assets) else []
+        except (AdapterError, ValidationError):
+            assets = []
+        scoped, unresolved = entity_scope(scope_utterance, assets)
+        if not comparison:
+            # A full inventory metric name may itself contain an equipment
+            # name. Only that exact grounded name is safe to remove from the
+            # scope check; a generic alias such as "energy" is insufficient.
+            try:
+                metrics = skill.dispatcher._run_async(_service(skill).metrics())
+            except (AdapterError, ValidationError):
+                metrics = []
+            scope_text = scope_utterance
+            for metric in sorted(metrics, key=lambda row: len(row.name), reverse=True):
+                name = metric.name
+                if name:
+                    scope_text = re.sub(
+                        rf"(?<![\w-]){re.escape(name)}(?![\w-])", "measurement", scope_text,
+                        flags=re.IGNORECASE,
+                    )
+            scoped, unresolved = entity_scope(scope_text, assets)
+    if comparison or scoped:
+        # A factory metric alias is not evidence for an explicitly requested
+        # asset. Let the structured/registered asset path handle resolved
+        # requests; semantic resolution must never turn them into metric detail.
+        if not unresolved and not is_negated_comparison(utterance):
+            if not allow_semantic:
+                return False
+            return try_handle_scoped_query(skill, message)
+        _scope_clarification(skill, language)
+        _remember(skill, message, DialogueState(
+            organization_id=state.organization_id, language=language,
+            operation="clarification", pending_clarification="equipment scope",
+        ))
+        return True
+
+    grounded_read_metric = None
+    timestamp_request = is_freshness_question(text)
     factory_request = classify_factory_question(utterance, state)
+    inventory_actions = {
+        SemanticAction.METERS_LIST, SemanticAction.METRICS_LIST,
+        SemanticAction.REGRESSIONS_LIST, SemanticAction.REGRESSION_DETAIL,
+    }
+    operation = _deterministic_action(text, state)
+    if ((operation is None or operation in {SemanticAction.METRIC_DETAIL, SemanticAction.METRICS_LIST} or operation in _FINDING_ACTIONS)
+            and not _has(text, "finding", "bulgu", "alert", "uyarı", "uyari", "regression", "regresyon", "model")
+            and not _meter_reference(text) and not _looks_like_trend(text)
+            and not _metric_collection_request(text)
+            and (_metric_value_request(text, specific=True) or _metric_attribute_request(text) or timestamp_request)
+            and (factory_request is None or factory_request.kind in {"reading", "freshness"})):
+        rows = skill._safe_dispatch(
+            "resolve_metric_read", lambda: skill.dispatcher._run_async(_service(skill).metrics())
+        )
+        if rows is None:
+            _remember(skill, message, DialogueState(organization_id=state.organization_id, language=language),
+                      operation="metric_clarification", pending_clarification="metric unavailable")
+            return True
+        references = metric_references(utterance, rows)
+        shorthand = _metric_detail_shorthand(text)
+        if not references and shorthand and state.operation in {"metric_detail", "trend", "factory_history"}:
+            references = metric_references(state.metric_name, rows)
+        if len(references) == 1:
+            # Keep the existing counter/factory read path when its subject agrees.
+            factory_subjects = metric_references(factory_request.metric_hint, rows) if factory_request else []
+            if not factory_subjects or factory_subjects != references:
+                factory_request = None
+                grounded_read_metric = references[0]
+                semantic_resolution = _metric_read_resolution(grounded_read_metric, utterance, language)
+                operation = semantic_resolution.action
+        elif references or not shorthand or has_metric_alias(utterance) or (timestamp_request and not state.active_finding_id):
+            _metric_clarification(skill, references, language)
+            _remember(skill, message, DialogueState(organization_id=state.organization_id, language=language),
+                      operation="metric_clarification", pending_clarification="metric")
+            return True
+    detail_request = (
+        (_metric_attribute_request(text) or (
+            _singular_metric_request(text) and not extract_period_phrase(utterance)
+            and not _quantity_request(text)
+        )) and not _meter_reference(text)
+        and operation in {None, SemanticAction.METRICS_LIST, SemanticAction.METRIC_DETAIL}
+    )
+    if detail_request:
+        # An attribute of a metric is a detail request, not a collection.
+        operation = SemanticAction.METRIC_DETAIL
+        factory_request = None
+    elif (operation in {None, SemanticAction.METRICS_LIST}
+          and _metric_collection_request(text) and not _meter_reference(text)
+          and not _quantity_request(text) and not extract_period_phrase(utterance)):
+        # The same catalogue contract owns inventory-shaped factory history
+        # proposals as well as amounts, without stealing dated quantity reads.
+        operation = SemanticAction.METRICS_LIST
+        factory_request = None
+    if factory_request is not None and factory_request.kind == "amount":
+        # Existing inventory/definition verbs and entity nouns disambiguate the
+        # requested view; energy vocabulary alone does not own the operation.
+        inventory_cue = bool(re.search(
+            r"\b(?:devices?|quantities|measurements?|instruments?|kind|type|unit|"
+            r"cihaz\w*|ölçüm\w*|olcum\w*|tür\w*|tur\w*|birim\w*)\b", text
+        )) and bool(re.search(
+            r"\b(?:which|what|list|available|configured|hangi|hangileri|liste\w*)\b", text
+        )) and not bool(re.search(r"\b(?:how much|how many|ne kadar|kaç|kac)\b", text))
+        # Selecting which meters measured consumption is an inventory request,
+        # distinct from asking how much a meter consumed.
+        meter_inventory = bool(re.search(r"\b(?:meters?|sayaç\w*|sayac\w*)\b", text)) and bool(
+            re.search(r"\b(?:which|hangi|list|liste\w*)\b", text)
+        )
+        inventory_cue = inventory_cue or meter_inventory
+        if inventory_cue and not allow_semantic and operation not in inventory_actions:
+            # The initial deterministic pass must leave uncertain operation
+            # ownership to the existing semantic pass, rather than read a total.
+            return False
+        if inventory_cue and semantic_resolution is None and allow_semantic:
+            resolver = getattr(skill, "_semantic_resolver", None)
+            if resolver is not None:
+                proposal = resolver.resolve(utterance, state=state, language=language)
+                definition = bool(re.search(
+                    r"\b(?:kind|type|unit|group|tür\w*|tur\w*|birim\w*)\b", text
+                ))
+                if proposal.accepted and (
+                    proposal.action in inventory_actions
+                    or (definition and proposal.action is SemanticAction.METRIC_DETAIL)
+                ):
+                    semantic_resolution = proposal
+        if inventory_cue and (operation in inventory_actions or semantic_resolution is not None):
+            factory_request = None
+    if corrected and state.metric_name:
+        explicit_amount = _has(text, "consum", "tüket", "tuket", "amount", "miktar",
+                               "how much", "ne kadar", "produced", "ürett", "urett")
+        if (state.operation not in {"factory_history", "trend"}
+                and factory_request is not None and factory_request.kind == "amount"
+                and not explicit_amount and not extract_period_phrase(utterance)):
+            # A detail/finding handoff correction remains a metric detail.
+            factory_request = None
+        elif factory_request is not None and factory_request.kind == "amount":
+            factory_request = replace(
+                factory_request, use_period=bool(state.period),
+                kind="trend" if state.operation == "trend" and not explicit_amount else "amount",
+            )
+    if state.operation == "trend" and state.metric_name and is_period_follow_up(utterance):
+        factory_request = None
     factory_trend = factory_request is not None and factory_request.kind == "trend"
     if factory_trend:
         utterance = f"{factory_request.utterance} {factory_request.metric_hint} trend"
@@ -94,13 +374,14 @@ def handle_reneryo_query(
 
         def _factory_execute():
             try:
-                period = _query_period(skill, factory_request.utterance, state.period)
-            except ValueError:
+                period = _query_period(skill, factory_request.utterance, state.period, message=message)
+            except (ValueError, ValidationError):
                 _period_clarification(skill, language)
                 return True
             answer = skill.dispatcher._run_async(
                 answer_factory_question(
-                    _service(skill), factory_request, period, language
+                    _service(skill), factory_request, period, language,
+                    **request_time_format(skill, message),
                 )
             )
             speak_information(
@@ -151,11 +432,15 @@ def handle_reneryo_query(
         _finding_selection_clarification(skill, language)
         _remember(skill, message, state, operation="clarification")
         return True
+    if is_finding_evidence_question(text) and not state.active_finding_id:
+        _finding_selection_clarification(skill, language)
+        return True
     if (
         state.finding_ids
         and not state.active_finding_id
         and _finding_selection_scope(text)
-        and _has(text, "evidence", "kanıt", "kanit", "period", "dönem", "donem")
+        and (is_finding_evidence_question(text) or is_review_question(text)
+             or _has(text, "evidence", "kanıt", "kanit", "period", "dönem", "donem"))
         and not is_collection_request(text, state)
     ):
         _finding_selection_clarification(skill, language)
@@ -164,10 +449,25 @@ def handle_reneryo_query(
 
     action = (
         SemanticAction.TREND_SHOW
-        if factory_trend
-        else _deterministic_action(text, state)
+        if factory_trend or (state.operation == "trend" and state.metric_name
+                             and is_period_follow_up(utterance))
+        else operation
     )
+    if action is None and corrected and state.metric_name:
+        action = (
+            SemanticAction.TREND_SHOW if state.operation == "trend"
+            else SemanticAction.METRIC_DETAIL
+        )
     resolution: SemanticResolution | None = semantic_resolution
+    if (action is None and not _metric_collection_request(text)
+            and (_metric_value_request(text, specific=True)
+                 or (_metric_value_request(text) and extract_period_phrase(utterance)))):
+        # A concrete read subject/field outranks an unconstrained action proposal.
+        # Explicit operations and factory amount requests have already taken ownership.
+        metric = _ground_metric_reference(skill, utterance)
+        if metric is not None:
+            resolution = _metric_read_resolution(metric, utterance, language)
+            action = resolution.action
     if action is None:
         if not allow_semantic:
             return False
@@ -178,6 +478,7 @@ def handle_reneryo_query(
                 state=state,
                 language=language,
             )
+        if resolution is not None and resolution.accepted:
             action = resolution.action
         if action is None:
             grounded_metric = _ground_metric_reference(skill, utterance)
@@ -206,16 +507,32 @@ def handle_reneryo_query(
             _remember(skill, message, state, operation="clarification")
             return True
 
+    if (action in {SemanticAction.METERS_LIST, SemanticAction.METRICS_LIST}
+            and _metric_value_request(text)
+            and not _meter_reference(text) and not _metric_collection_request(text)):
+        # An inventory proposal cannot replace an explicit metric value.
+        # Keep generic catalogue paraphrases when no metric subject is named.
+        metric = _ground_metric_reference(skill, utterance)
+        if metric is None and (
+            action is SemanticAction.METERS_LIST or has_metric_alias(utterance)
+            or _metric_value_request(text, specific=True) or extract_period_phrase(utterance)
+        ):
+            _metric_clarification(skill, [], language)
+            return True
+        if metric is not None:
+            resolution = _metric_read_resolution(metric, utterance, language)
+            action = resolution.action
+
     if action is SemanticAction.FINDINGS_EVALUATE and not is_evaluation_request(text):
         _semantic_clarification(skill, language)
         _remember(skill, message, state, operation="clarification")
         return True
-    if action is SemanticAction.METRICS_LIST and not _has(
-        text, "metric", "metrik", "indicator", "gösterge", "gosterge", "kpi"
-    ):
-        _semantic_clarification(skill, language)
-        _remember(skill, message, state, operation="clarification")
-        return True
+    if action is SemanticAction.METRICS_LIST and re.match(r"^(?:please )?list\b", text):
+        # An explicit list subject still needs to name a supported collection.
+        # This is distinct from requiring literal 'metric' in every paraphrase.
+        if not re.search(r"\b(?:metrics?|indicators?|kpis?|measurements?|quantities|signals?)\b", text):
+            _semantic_clarification(skill, language)
+            return True
 
     def _execute() -> bool:
         service = _service(skill)
@@ -271,37 +588,55 @@ def handle_reneryo_query(
                 message,
                 state,
                 operation="regression_detail" if selected is not None else "regressions",
-                entity_id=selected.regression_id if selected is not None else state.entity_id,
+                entity_id=selected.regression_id if selected is not None else "",
             )
             return True
         if action is SemanticAction.TREND_SHOW:
             semantic_period = resolution.slots.get("period", "") if resolution else ""
             try:
-                period = _query_period(skill, utterance, state.period, semantic_period)
-            except ValueError:
+                period = _query_period(skill, utterance, state.period, semantic_period, message=message)
+            except (ValueError, ValidationError):
                 _period_clarification(skill, language)
                 return True
-            metric_query = utterance
-            context_metric = (
-                resolution.slots.get("context_metric", "") if resolution else ""
-            ) or state.metric_name
+            # Inherit only subject-free shorthand, before executing. A failed
+            # explicit subject is never permission to query the previous one.
+            metric_query = (
+                state.metric_name if state.metric_name and _is_trend_follow_up(utterance)
+                else utterance
+            )
             try:
-                trend = skill.dispatcher._run_async(service.trend(metric_query, period))
-            except (AdapterError, ValidationError):
-                if not context_metric:
-                    raise
-                trend = skill.dispatcher._run_async(service.trend(context_metric, period))
-            direction = {
-                "increasing": "artıyor",
-                "decreasing": "azalıyor",
-                "stable": "sabit",
-            }.get(trend.direction, trend.direction)
+                references = metric_references(metric_query, skill.dispatcher._run_async(service.metrics()))
+                if not references:
+                    raise ValidationError(message="Metric not found", code="METRIC_NOT_FOUND")
+                if len(references) > 1:
+                    _metric_clarification(skill, references, language)
+                    _remember(skill, message, DialogueState(organization_id=state.organization_id, language=language), operation="clarification",
+                              metric_name="", metrics=(), asset_ids=(), answer_evidence=(),
+                              pending_clarification="metric")
+                    return True
+                trend = skill.dispatcher._run_async(service.trend(
+                    utterance, period, metric=references[0],
+                    allow_history_fallback=not bool(state.period or extract_period_phrase(utterance)),
+                ))
+            except (AdapterError, ValidationError) as exc:
+                _remember(skill, message, state, operation="trend", metric_name="",
+                          pending_clarification="metric unavailable")
+                if isinstance(exc, ValidationError) and exc.code == "METRIC_NOT_FOUND":
+                    speak_information(
+                        skill,
+                        ("İstenen ölçüm mevcut Reneryo envanterinde bulunamadı."
+                         if is_turkish(language)
+                         else "The requested metric is not present in the current Reneryo inventory."),
+                        language=language, response_type="unavailable",
+                    )
+                    return True
+                raise
             period_label = _localized_period_label(trend.period_label, language)
             if not trend.points:
                 observed_at = trend.metric.last_value_at
-                last_seen = observed_at.date().isoformat() if observed_at else None
+                last_seen = format_observation_time(observed_at, language, **request_time_format(skill, message)) if observed_at else None
                 if is_turkish(language):
-                    headline = f"{trend.metric.name} için {period_label} döneminde gözlem bulunamadı; eğilim hesaplanamıyor."
+                    headline = f"{source_metric_label(trend.metric.name, language)} için {period_label} döneminde gözlem bulunamadı; eğilim hesaplanamıyor."
                     if last_seen:
                         headline += f" Son kayıtlı gözlem {last_seen} tarihinde."
                 else:
@@ -310,10 +645,14 @@ def handle_reneryo_query(
                         headline += (
                             f" The latest recorded observation is from {last_seen}."
                         )
+            elif trend.metric.unit_group == "TEMPERATURE" and len(trend.points) > 1:
+                from skill.services.futuregen_responses import temperature_trend_headline
+
+                headline = temperature_trend_headline(trend, language)
             elif trend.change_percent is None:
-                first_seen = trend.points[0].timestamp.date().isoformat()
+                first_seen = format_observation_time(trend.points[0].timestamp, language, **request_time_format(skill, message))
                 if is_turkish(language):
-                    headline = f"{trend.metric.name} için {period_label} döneminde " + (
+                    headline = f"{source_metric_label(trend.metric.name, language)} için {period_label} döneminde " + (
                         f"yalnızca bir gözlem var ({first_seen}); eğilim hesaplanamıyor."
                         if len(trend.points) == 1
                         else "ilk gözlem sıfır olduğu için yüzde değişim hesaplanamıyor."
@@ -325,7 +664,9 @@ def handle_reneryo_query(
                         else "the first observed value is zero, so a percentage change cannot be calculated."
                     )
             elif is_turkish(language):
-                headline = f"{trend.metric.name}, {period_label} döneminde %{abs(trend.change_percent):.1f} oranında {direction}."
+                headline = (f"{period_label[:1].upper() + period_label[1:]} döneminde {source_metric_label(trend.metric.name, language)}, "
+                            f"ilk ölçüme göre %{format_localized_number(abs(trend.change_percent), language, '.1f')} "
+                            + ("arttı." if trend.change_percent > 0 else "azaldı." if trend.change_percent < 0 else "değişmedi."))
             else:
                 headline = f"{trend.metric.name} is {trend.direction} by {abs(trend.change_percent):.1f}% over {period_label}."
             if trend.requested_period_label:
@@ -356,6 +697,7 @@ def handle_reneryo_query(
                 language=language,
                 response_type="trend",
                 evidence_rows=evidence,
+                source_metric={"id": trend.metric.metric_id, "name": trend.metric.name, "unit_group": trend.metric.unit_group},
             )
             _remember(
                 skill,
@@ -372,29 +714,26 @@ def handle_reneryo_query(
             return True
         if action is SemanticAction.METERS_LIST:
             semantic_period = resolution.slots.get("period", "") if resolution else ""
-            period = _query_period(skill, utterance, state.period, semantic_period)
+            period = _query_period(skill, utterance, state.period, semantic_period, message=message)
+            references = metric_references(utterance, skill.dispatcher._run_async(service.metrics()))
+            if len(references) > 1:
+                _metric_clarification(skill, references, language)
+                return True
             rows = skill.dispatcher._run_async(service.meters(period))
-            if _has(
-                text,
-                "production",
-                "üretim",
-                "uretim",
-                "electric",
-                "elektrik",
-                "elektriğ",
-            ):
-                selected = match_metric(
-                    utterance, skill.dispatcher._run_async(service.metrics())
-                )
-                if selected is not None:
-                    rows = [row for row in rows if row.metric_id == selected.metric_id]
-            headline = meter_inventory_headline(rows, period, language)
+            if references:
+                rows = [row for row in rows if row.metric_id == references[0].metric_id]
+            from skill.services.reneryo_periods import meter_window_exact
+            exact_window = meter_window_exact(period.start, period.end)
+            headline = meter_inventory_headline(rows, period, language, exact_window=exact_window)
             evidence = [
                 {
                     "id": r.meter_id,
                     "name": r.name,
                     "resource": r.energy_resource,
                     "consumption": r.consumption,
+                    "unit_group": r.unit_group,
+                    "metric_id": r.metric_id,
+                    "period_exact": exact_window,
                 }
                 for r in rows
             ]
@@ -404,13 +743,25 @@ def handle_reneryo_query(
                 language=language,
                 response_type="meters",
                 evidence_rows=evidence,
+                warnings=[] if exact_window else [
+                    "Reneryo bucket boundaries do not establish exact consumption for this window."
+                ],
             )
-            _remember(skill, message, state, operation="meters", period=period)
+            _remember(
+                skill, message, state, operation="meters", period=period,
+                answer_evidence=tuple({"meter_id": r.meter_id, "name": r.name} for r in rows),
+                metrics=(), asset_ids=(), metric_name="", entity_id="",
+                active_finding_id="", finding_ids=(), selected_finding_from_collection=False,
+            )
             return True
         if action not in {SemanticAction.METRICS_LIST, SemanticAction.METRIC_DETAIL}:
             _semantic_clarification(skill, language)
             return True
-        rows = skill.dispatcher._run_async(service.metrics())
+        rows = (
+            [grounded_read_metric]
+            if action is SemanticAction.METRIC_DETAIL and grounded_read_metric is not None
+            else skill.dispatcher._run_async(service.metrics())
+        )
         selected_metric = None
         if action is SemanticAction.METRIC_DETAIL:
             expected = (
@@ -418,19 +769,50 @@ def handle_reneryo_query(
                 if resolution is not None
                 else ""
             ) or state.metric_name
-            selected_metric = match_metric(
-                utterance if _is_metric_correction(text) else expected or text,
-                rows,
-            )
+            references = metric_references(utterance, rows)
+            if len(references) > 1:
+                _metric_clarification(skill, references, language)
+                return True
+            selected_metric = references[0] if references else None
+            # Explicit subjects outrank semantic/context slots. For an attribute
+            # or value request, inherit only subject-free dialogue shorthand.
+            if selected_metric is None and (
+                not (detail_request or _metric_value_request(text))
+                or _metric_detail_shorthand(text)
+            ):
+                selected_metric = match_metric(expected or text, rows)
         if action is SemanticAction.METRIC_DETAIL and selected_metric is None:
             _metric_clarification(skill, rows, language)
             _remember(skill, message, state, operation="metric_clarification")
             return True
+        if action is SemanticAction.METRICS_LIST:
+            references = metric_references(utterance, rows)
+            if _has_inventory_modifier(utterance, rows) or (has_metric_alias(utterance) and not references):
+                # An unresolved explicit filter must not widen to all metrics
+                # or silently discard an unrecognized part of the subject.
+                _metric_clarification(skill, rows, language)
+                return True
+            if references:
+                # A collection may contain several members of a metric family.
+                rows = references
+        timestamp_only = selected_metric is not None and timestamp_request
+        if timestamp_only and extract_period_phrase(utterance) not in {"", "latest", "en güncel"}:
+            speak_information(skill,
+                ("Metrik envanteri yalnızca en son gözlem zamanını sağlıyor; istenen dönemi bu kayıtla değiştirmedim."
+                 if is_turkish(language) else
+                 "The metric inventory provides only the latest observation timestamp; I have not substituted it for the requested period."),
+                language=language, response_type="unavailable")
+            _remember(skill, message, DialogueState(organization_id=state.organization_id, language=language),
+                      operation="metric_clarification", pending_clarification="timestamp period")
+            return True
         response_rows = [selected_metric] if selected_metric is not None else rows
         headline = (
-            metric_detail_headline(selected_metric, language)
+            metric_detail_headline(selected_metric, language,
+                                   value_only=not detail_request and _metric_value_request(text),
+                                   timestamp_only=timestamp_only,
+                                   **request_time_format(skill, message))
             if selected_metric is not None
-            else metric_inventory_headline(rows, language)
+            else metric_inventory_headline(rows, language, **request_time_format(skill, message))
         )
         evidence = [
             {
@@ -455,13 +837,80 @@ def handle_reneryo_query(
             state,
             operation="metric_detail" if selected_metric is not None else "metrics",
             metric_name=(
-                selected_metric.name if selected_metric is not None else state.metric_name
+                selected_metric.name if selected_metric is not None else ""
             ),
+            period=None,
         )
         return True
 
-    handled = skill._safe_dispatch("handle_reneryo_query", _execute)
-    return bool(handled)
+    # The selected operation owns this turn even when safe dispatch reports
+    # a service failure. Falling through would retry and speak again.
+    skill._safe_dispatch("handle_reneryo_query", _execute)
+    return True
+
+
+def _is_meter_metric_question(text: str) -> bool:
+    return bool(re.fullmatch(
+        r"which metric is (?:the (?:first|second|third) (?:one|meter)|it|this meter) linked to|"
+        r"(?:ilki|ikincisi|üçüncüsü|ucuncusu|bu sayaç|bu sayac|o) hangi metri(?:ğe|ge) ba(?:ğlı|gli)",
+        text,
+    ))
+
+
+def _meter_metric_response(skill, message, state, text, language) -> None:
+    """Resolve only IDs from the last scoped meter result, then recheck its link."""
+    def clarify():
+        speak_information(
+            skill,
+            (("Hangi sayacı kastediyorsunuz? Son listedeki sırasını belirtin."
+              if candidates else
+              "Hangi sayacı kastediyorsunuz? Önce sayaçları listeleyip listedeki sırasını belirtin.")
+             if is_turkish(language) else
+             ("Which meter do you mean? Specify its position in the last list."
+              if candidates else
+              "Which meter do you mean? List the meters first, then specify its position in that list.")),
+            language=language, response_type="clarification",
+        )
+
+    candidates = state.answer_evidence if state.operation == "meters" else ()
+    index = next((i for i, pattern in enumerate((
+        r"\b(?:first|ilki)\b", r"\b(?:second|ikincisi)\b", r"\b(?:third|üçüncüsü|ucuncusu)\b"
+    )) if re.search(pattern, text)), None)
+    if index is None and len(candidates) == 1:
+        index = 0
+    if index is None or index >= len(candidates) or not state.period:
+        clarify()
+        return
+    meter_id = candidates[index].get("meter_id", "")
+
+    def execute():
+        service = _service(skill)
+        meters = skill.dispatcher._run_async(service.meters(state.period))
+        meter = next((row for row in meters if row.meter_id == meter_id), None)
+        metric = None
+        if meter is not None and meter.metric_id:
+            rows = skill.dispatcher._run_async(service.metrics())
+            metric = next((row for row in rows if row.metric_id == meter.metric_id), None)
+        if metric is None:
+            speak_information(
+                skill,
+                ("Bu sayacın bağlı olduğu metriği mevcut Reneryo verisinden doğrulayamıyorum. Sayacı ve metrik bağlantısını kontrol edin."
+                 if is_turkish(language) else
+                 "I cannot verify this meter's linked metric from the current Reneryo data. Please check the meter and its metric link."),
+                language=language, response_type="clarification",
+            )
+            return
+        speak_information(
+            skill, metric_detail_headline(metric, language, **request_time_format(skill, message)), language=language,
+            response_type="metrics", evidence_rows=[{
+                "id": metric.metric_id, "name": metric.name, "type": metric.metric_type,
+                "last_value": metric.last_value, "observed_at": _iso(metric.last_value_at),
+            }],
+        )
+        _remember(skill, message, state, operation="metric_detail", metric_name=metric.name,
+                  answer_evidence=(), entity_id="", active_finding_id="", finding_ids=())
+
+    skill._safe_dispatch("handle_meter_metric_reference", execute)
 
 
 _ARBITRATABLE_LEGACY_INTENTS = frozenset(
@@ -483,16 +932,26 @@ def try_arbitrate_legacy_intent(
     """
     if getattr(skill, "_loaded_profile", "") != "reneryo":
         return False
+    context = getattr(message, "context", {}) or {}
+    signed = context.get("reneryo_context")
+    if not isinstance(signed, dict) or not signed.get("organization_id"):
+        return False
+    utterance = skill._extract_utterance_text(message)
+    if extract_period_phrase(utterance) or unsupported_period_reference(utterance):
+        if handle_reneryo_query(skill, message, allow_semantic=False):
+            return True
+    if unsupported_time_precision(utterance):
+        # Recognizer slots and exact legacy matches cannot drop clock precision.
+        return handle_reneryo_query(skill, message, allow_semantic=False)
+    if is_comparison_request(utterance) or entity_scope(utterance)[0]:
+        # Validate even exact/slot-based legacy matches before they can use
+        # defaults for an unresolved asset or fall back to factory data.
+        return try_handle_scoped_query(skill, message)
     if not (
         intent_name in _ARBITRATABLE_LEGACY_INTENTS
         or intent_name.startswith("kpi.")
     ):
         return False
-    context = getattr(message, "context", {}) or {}
-    signed = context.get("reneryo_context")
-    if not isinstance(signed, dict) or not signed.get("organization_id"):
-        return False
-
     utterance = skill._extract_utterance_text(message)
     text = normalize_phrase(utterance)
     if not text or _matches_registered_utterance(intent_name, text):
@@ -507,7 +966,8 @@ def try_arbitrate_legacy_intent(
         classify_factory_question(utterance, state) is not None
         or _deterministic_action(text, state) is not None
     ):
-        return handle_reneryo_query(skill, message, allow_semantic=False)
+        if handle_reneryo_query(skill, message, allow_semantic=False):
+            return True
 
     resolver = getattr(skill, "_semantic_resolver", None)
     if resolver is None:
@@ -533,6 +993,36 @@ def try_arbitrate_legacy_intent(
         message,
         semantic_resolution=resolution,
     )
+
+
+def try_handle_scoped_query(skill, message) -> bool:
+    """Resolve a scoped request without single-metric semantic substitution."""
+    from skill.services.dia_dialogue import try_handle_structured_query
+
+    if handle_reneryo_query(skill, message, allow_semantic=False):
+        return True
+    try:
+        if try_handle_structured_query(skill, message, include_simple_kpi=True):
+            return True
+        # Structured parsing deliberately hands scenarios back to the legacy
+        # simulator. Scope has already been validated above; keep that handoff.
+        if skill._is_whatif_query(skill._extract_utterance_text(message)):
+            skill.handle_whatif_scenario(message)
+            return True
+    except AVAROSError:
+        # Missing bindings/unsupported adapter operations remain unavailable;
+        # do not retry with a factory metric or inherited subject.
+        pass
+    state = _context_state(skill, message)
+    language = _conversation_language(
+        skill._extract_utterance_text(message), state, message, skill._response_language
+    )
+    _scope_clarification(skill, language)
+    _remember(skill, message, DialogueState(
+        organization_id=state.organization_id, language=language,
+        operation="clarification", pending_clarification="equipment scope",
+    ))
+    return True
 
 
 def _legacy_intent_confidence(message) -> float:
@@ -600,7 +1090,8 @@ def _finding_response(skill, message, service, state, text, language, action) ->
                 SemanticAction.FINDING_OWNER,
                 SemanticAction.FINDING_CAN_ACT,
             }
-            else finding_headline(finding, text, language, action=action.value)
+            else finding_headline(finding, text, language, action=action.value,
+                                   **request_time_format(skill, message))
         )
         evidence = [
             {
@@ -663,6 +1154,7 @@ def _finding_response(skill, message, service, state, text, language, action) ->
         language=language,
         response_type="findings",
         evidence_rows=evidence,
+        spoken_headline=collection_headline(result, filters, language, spoken=True),
     )
     _remember(
         skill,
@@ -734,10 +1226,16 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
         return SemanticAction.FINDING_EXPLAIN
     if state.active_finding_id and _has(text, "when this finding was evaluated", "when was this finding evaluated"):
         return SemanticAction.FINDING_PERIOD
-    if state.active_finding_id and _has(text, "destekleyen gercek", "destekleyen gerçek", "destekleyen veri", "supporting facts"):
+    if state.active_finding_id and is_finding_evidence_question(text):
         return SemanticAction.FINDING_EVIDENCE
     if is_evaluation_request(text):
         return SemanticAction.FINDINGS_EVALUATE
+    if is_review_question(text):
+        return (
+            SemanticAction.FINDING_NEXT_REVIEW
+            if state.active_finding_id
+            else SemanticAction.FINDINGS_LIST
+        )
     if is_collection_request(text, state):
         return SemanticAction.FINDINGS_LIST
     if _is_finding_list(text):
@@ -774,6 +1272,13 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
         ):
             return SemanticAction.REGRESSION_DETAIL
         return SemanticAction.REGRESSIONS_LIST
+    if not _has(text, "finding", "bulgu", "alert", "uyarı", "uyari"):
+        explicit = _explicit_domain_action(text)
+        if explicit is not None:
+            if (explicit is SemanticAction.METRICS_LIST and state.metric_name
+                    and _metric_detail_shorthand(text)):
+                return SemanticAction.METRIC_DETAIL
+            return explicit
     if state.metric_name and _is_metric_correction(text):
         return (
             SemanticAction.TREND_SHOW
@@ -837,7 +1342,12 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
     if state.active_finding_id:
         if _has(text, "can you take action", "can you act", "take action on it", "işlem yapabilir misin", "eyleme geçebilir misin"):
             return SemanticAction.FINDING_CAN_ACT
-        if _has(text, "who should handle", "who is responsible", "who should review", "kim ilgilenmeli", "kim sorumlu", "kim incelemeli"):
+        if _has(text, "who should handle", "who is responsible", "who should review",
+                "who owns this finding", "who owns it", "who is in charge of it",
+                "who should look into this", "who should look at this finding",
+                "kim ilgilenmeli", "kim sorumlu", "kim incelemeli",
+                "sorumlusu kim", "kimin sorumluluğunda", "kimin sorumlulugunda",
+                "bunu kim incelemeli", "buna kim bakmalı", "buna kim bakmali"):
             return SemanticAction.FINDING_OWNER
         if _has(text, "why are you recommending", "why this step", "why recommend", "bu adımı neden", "neden öneriyorsun", "neden tavsiye"):
             return SemanticAction.FINDING_NEXT_REVIEW_WHY
@@ -928,6 +1438,11 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
             return SemanticAction.FINDING_EXPLAIN
         if not explicit_domain_switch and _has(text, "explain", "acikla", "açıkla"):
             return SemanticAction.FINDING_EXPLAIN
+    return _explicit_domain_action(text)
+
+
+def _explicit_domain_action(text: str) -> SemanticAction | None:
+    """Existing subject/operation cues, evaluated before contextual keywords."""
     if _has(
         text,
         "meter",
@@ -962,7 +1477,9 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
         return SemanticAction.REGRESSIONS_LIST
     if _looks_like_trend(text):
         return SemanticAction.TREND_SHOW
-    if _has(text, "metric", "metrics", "metrik"):
+    if _has(text, "metric", "metrics", "metrik") or (
+        _METRIC_NOUN.search(text) and _metric_collection_request(text)
+    ):
         return SemanticAction.METRICS_LIST
     if _has(text, "findings", "bulgular", "decision support", "karar destek"):
         return SemanticAction.FINDINGS_LIST
@@ -972,9 +1489,7 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
 def _semantic_clarification(skill, language: str) -> None:
     if is_turkish(language):
         headline = (
-            "Bu isteği güvenle eşleştiremedim. Bulguyu açıklamamı, kanıtı veya "
-            "dönemi göstermemi ya da metrik, sayaç, eğilim veya regresyonları "
-            "listelememi ister misiniz?"
+            "Hangi veriyi veya işlemi kastediyorsunuz? Ölçümün ya da bulgunun adını belirtir misiniz?"
         )
         suggestions = [
             "Bu bulgunun nedenini açıkla",
@@ -983,9 +1498,7 @@ def _semantic_clarification(skill, language: str) -> None:
         ]
     else:
         headline = (
-            "I could not map that request confidently. Would you like the finding "
-            "explained, its evidence or period shown, or metrics, meters, trends, "
-            "or regressions listed?"
+            "Which data or operation do you mean? Please name the measurement or finding."
         )
         suggestions = [
             "Explain this finding",
@@ -1067,7 +1580,7 @@ def _regression_period_hint(text: str) -> str:
 def _regression_clarification(skill, rows, language: str) -> None:
     periods = sorted({row.period.lower() for row in rows})
     if is_turkish(language):
-        headline = "Hangi regresyon modelini kastediyorsunuz? Dönemini veya sürücüsünü belirtin."
+        headline = "Hangi regresyon modelini kastediyorsunuz? Dönemini veya açıklayıcı değişkenini belirtin."
         suggestions = [f"{period} regresyonunu açıkla" for period in periods]
     else:
         headline = "Which regression model do you mean? Name its period or driver."
@@ -1088,6 +1601,10 @@ def _context_state(skill, message) -> DialogueState:
     signed = context.get("reneryo_context")
     if not isinstance(signed, dict):
         return current
+    organization = str(signed.get("organization_id", "") or "")
+    if organization and current.organization_id and organization != current.organization_id:
+        skill._dialogue_state_store.clear(session_id)
+        current = DialogueState()
     explicit_finding = _has(
         normalize_phrase(skill._extract_utterance_text(message)), "finding", "bulgu"
     )
@@ -1124,6 +1641,24 @@ def _context_state(skill, message) -> DialogueState:
 
 
 def _remember(skill, message, state, **changes) -> None:
+    def owner(operation):
+        if operation in {"finding", "findings", "evaluation"}:
+            return "finding"
+        if operation in {"metric_detail", "metrics", "trend", "factory_history", "factory_selection", "metric_clarification"}:
+            return "metric"
+        if operation in {"regressions", "regression_detail", "regression_clarification"}:
+            return "regression"
+        return operation
+
+    operation = changes.get("operation", state.operation)
+    previous_owner = owner(state.operation)
+    if state.operation in {"clarification", "metric_clarification"}:
+        if state.active_finding_id or state.finding_ids:
+            previous_owner = "finding"
+        elif state.metric_name:
+            previous_owner = "metric"
+    if operation != "clarification" and owner(operation) != previous_owner:
+        state = DialogueState(organization_id=state.organization_id, language=state.language)
     skill._dialogue_state_store.put(
         message_session_id(message), replace(state, **changes)
     )
@@ -1155,27 +1690,48 @@ def _is_finding_list(text: str) -> bool:
     )
 
 
-def _query_period(skill, utterance: str, current, semantic_period: str = ""):
+def _query_period(skill, utterance: str, current, semantic_period: str = "", *, message=None):
     """Extract a supported period phrase without sending the full query parser input."""
+    if unsupported_period_reference(utterance):
+        raise ValueError("Unsupported requested period")
     phrase = extract_period_phrase(utterance)
     if phrase:
+        if message is not None and getattr(skill, "settings_service", None) is not None:
+            from skill._helpers import parse_period
+            return parse_period(skill, phrase, message)
         parsed = skill._parse_period(phrase)
         if parsed:
             return parsed
     if semantic_period:
-        parsed = skill._parse_period(semantic_period)
-        if parsed:
-            return parsed
-    return current or default_period()
+        # A proposed slot cannot introduce a period absent from source text.
+        raise ValueError("Proposed period is not grounded in the original request")
+    from skill._helpers import request_clock
+    return current or default_period(now=request_clock(message))
+
+
+def _is_trend_follow_up(utterance: str) -> bool:
+    """Allow context only for a bounded command that names no new subject."""
+    from skill.services.dia_query import is_period_follow_up
+
+    if is_period_follow_up(utterance):
+        return True
+    text = remove_period_reference(utterance)
+    text = re.sub(r"\b(?:over|for|during|in|the|döneminde|için)\b", "", text)
+    text = " ".join(text.split())
+    return bool(re.fullmatch(
+        r"(?:show|display)?\s*(?:its|this metric s|this indicator s|the metric s)?\s*(?:trend|history)|"
+        r"(?:bu metriğin |bu metrik |bunun )?(?:eğilimini|egilimini|eğilim|egilim|geçmişini|gecmisini)"
+        r"(?: göster| goster)?", text,
+    ))
 
 
 def _period_clarification(skill, language):
     speak_information(
         skill,
         (
-            "İstenen dönem geçersiz veya gelecekte. Geçmiş bir tarih, ay ve yıl veya açık tarih aralığı belirtin; dönemi değiştirmedim."
+            "İstenen dönem desteklenmiyor, geçersiz, gelecekte veya kuruluşun saat dilimi doğrulanmamış. Geçmiş bir tarih, ay ve yıl veya açık tarih aralığı belirtin; dönemi değiştirmedim."
             if is_turkish(language)
-            else "The requested period is invalid or in the future. Specify a past date, month and year, or an explicit date range; I have not changed the period."
+            else "The requested period is unsupported, invalid, in the future, or the organization timezone is not verified. Specify a past date, month and year, or an explicit date range; I have not changed the period."
         ),
         language=language,
         response_type="clarification",
@@ -1193,34 +1749,146 @@ def has_signed_widget_context(message) -> bool:
     )
 
 
+def _scope_clarification(skill, language) -> None:
+    speak_information(
+        skill,
+        (
+            "İstenen ekipman kapsamını bu istek için doğrulayamıyorum. "
+            "Lütfen yapılandırılmış varlık ve metrik adlarını belirtin; "
+            "tesis toplamını ekipman verisi yerine kullanamam."
+            if is_turkish(language)
+            else "I cannot verify the requested equipment scope for this query. "
+            "Please name configured assets and metrics; "
+            "I cannot substitute whole-factory data for equipment data."
+        ),
+        language=language,
+        response_type="clarification",
+    )
+
+
+_METRIC_ATTRIBUTE = re.compile(
+    r"\b(?:types?|kind|units?|resource group|t[üu]r(?:[üu]\w*|de\w*|ler\w*)?|tip(?:i\w*|te\w*|ler\w*)?|birim\w*)\b"
+)
+_METRIC_VALUE = re.compile(
+    r"\b(?:values?|measurements?|readings?|latest|current|recent|"
+    r"değer\w*|deger\w*|ölçüm\w*|olcum\w*|güncel\w*|guncel\w*|son)\b"
+)
+
+
+def _meter_reference(text: str) -> bool:
+    return bool(re.search(
+        r"\b(?:meters?|devices?|instruments?|sayaç\w*|sayac\w*|cihaz\w*|"
+        r"donanım\w*|donanim\w*)\b", text
+    ))
+
+
+def _metric_collection_request(text: str) -> bool:
+    if re.search(r"\b(?:metrics|indicators|metrikler\w*|göstergeler\w*|gostergeler\w*)\b", text):
+        return True
+    return bool(_METRIC_NOUN.search(text)) and bool(re.search(
+        r"\b(?:list|liste\w*|available|configured|inventory|mevcut|envanter)\b", text
+    ))
+
+
+_METRIC_NOUN = re.compile(r"\b(?:metrics?|indicators?|metri[kğg]\w*|gösterge\w*|gosterge\w*)\b")
+
+
+def _singular_metric_request(text: str) -> bool:
+    return bool(_METRIC_NOUN.search(text)) and not _metric_collection_request(text)
+
+
+def _quantity_request(text: str) -> bool:
+    return bool(re.search(r"\b(?:how much|how many|ne kadar|kaç|kac)\b", text))
+
+
+def _has_inventory_modifier(utterance: str, metrics) -> bool:
+    """Recognize explicit collection modifiers without interpreting new domains.
+
+    Ground known names/families first. These bounded noun-phrase positions
+    reject unknown filters rather than silently returning the whole catalogue.
+    """
+    # Mask opaque names before splitting clauses, including names containing
+    # punctuation. A word in a preceding clause is not a collection modifier.
+    for metric in sorted(metrics, key=lambda row: len(row.name), reverse=True):
+        if metric.name:
+            utterance = re.sub(rf"(?<!\w){re.escape(metric.name)}(?!\w)",
+                               "configured", utterance, flags=re.IGNORECASE)
+    modifiers = []
+    for clause in re.split(r"[;.!?]", utterance):
+        text = normalize_phrase(clause)
+        for metric in metrics:
+            name = normalize_phrase(metric.name)
+            if name:
+                text = re.sub(rf"(?<!\w){re.escape(name)}(?!\w)", "configured", text)
+        modifiers += re.findall(r"\b(\w+)\s+(?:metrics|indicators|metrik\w*|gösterge\w*|gosterge\w*)\b", text)
+        modifiers += re.findall(r"\b(?:metrics?|indicators?)\s+(?:for|of|about)\s+(?:the\s+)?(\w+)\b", text)
+    generic = {
+        "the", "all", "which", "what", "available", "configured", "current", "our",
+        "these", "those", "reneryo", "futuregen", "factory", "site", "plant",
+        "hangi", "mevcut", "tüm", "tum", "bütün", "butun", "bu", "kayıtlı", "kayitli",
+        "tanımlı", "tanimli", "ölçülen", "olculen", "ilgili",
+        "list", "show", "listele", "göster", "goster",
+        "saved", "known", "registered", "named", "measured", "operational",
+        "consumption", "usage", "tüketim", "tuketim", "sarfiyat",
+    }
+    return any(word not in generic and not metric_references(word, metrics) for word in modifiers)
+
+
+def _metric_attribute_request(text: str) -> bool:
+    return (bool(_METRIC_ATTRIBUTE.search(text)) and not _metric_collection_request(text)
+            and not _quantity_request(text))
+
+
+def _metric_value_request(text: str, *, specific: bool = False) -> bool:
+    # A measurement noun alone can mean the catalogue; a value/reading or
+    # latest/current qualifier requests an observation, not an unnamed catalogue.
+    return any(not specific or not re.fullmatch(r"measurements?|ölçüm\w*|olcum\w*", match.group())
+               for match in _METRIC_VALUE.finditer(text))
+
+
+def _metric_read_resolution(metric, utterance: str, language: str) -> SemanticResolution:
+    period = extract_period_phrase(utterance)
+    action = (SemanticAction.TREND_SHOW if period and period not in {"latest", "en güncel"} and not is_freshness_question(utterance)
+              else SemanticAction.METRIC_DETAIL)
+    slots = {"metric_name": metric.name}
+    if period:
+        slots["period"] = period
+    return SemanticResolution(action, language, slots=slots, reason="grounded_metric_subject")
+
+
+def _metric_detail_shorthand(text: str) -> bool:
+    remainder = _METRIC_ATTRIBUTE.sub("", _METRIC_VALUE.sub("", text))
+    remainder = re.sub(
+        r"\b(?:what|which|is|are|was|the|a|an|its|it|this|that|metric|indicator|"
+        r"show|tell|me|please|and|of|about|ne|nedir|hangi|bu|bunun|onun|"
+        r"when|does|have|recorded|updated|refreshed|received|timestamp|observations?|time|date|last|in|utc|"
+        r"how|that|our|up|to|old|data|veri\w*|en|gözlem\w*|gozlem\w*|related|indicator|ilgili|gösterge|gosterge|zaman|zamanı|zamani|kaydedildi|güncellendi|guncellendi|kayıt|kayit|tarihi|olarak|dahil|"
+        r"metri\w*|göster\w*|goster\w*|söyle\w*|soyle\w*|peki|birim\w*)\b", "", remainder
+    )
+    return not remainder.strip()
+
+
 def _ground_metric_reference(skill, utterance: str):
     """Resolve named/aliased metrics only from the live Reneryo inventory."""
     text = normalize_phrase(utterance)
-    if _has(
-        text,
-        "meter",
-        "measuring device",
-        "measurement device",
-        "measuring instrument",
-        "sayac",
-        "sayaç",
-        "olcum cihaz",
-        "ölçüm cihaz",
-        "olcum donanim",
-        "ölçüm donanım",
-    ):
+    if _meter_reference(text):
         return None
     try:
         rows = skill.dispatcher._run_async(_service(skill).metrics())
     except (AdapterError, ValidationError):
         return None
-    return match_metric(utterance, rows)
+    references = metric_references(utterance, rows)
+    return references[0] if len(references) == 1 else None
 
 
 def _looks_like_trend(text: str) -> bool:
-    return _has(
+    return is_historical_change_question(text) or _has(
         text,
         "trend",
+        "history",
+        "historical",
+        "geçmiş",
+        "gecmis",
         "evolve",
         "move over",
         "changed",
@@ -1249,25 +1917,7 @@ def _finding_selection_scope(text: str) -> bool:
 
 
 def _localized_period_label(value: str, language: str) -> str:
-    normalized = normalize_phrase(value)
-    if is_turkish(language):
-        return {
-            "last month": "geçen ay",
-            "last 4 weeks": "son dört hafta",
-            "last 30 days": "son 30 gün",
-            "past 30 days": "son 30 gün",
-            "last week": "geçen hafta",
-        }.get(normalized, value)
-    return {
-        "gecen ay": "last month",
-        "geçen ay": "last month",
-        "son dort hafta": "last 4 weeks",
-        "son dört hafta": "last 4 weeks",
-        "son 30 gun": "last 30 days",
-        "son 30 gün": "last 30 days",
-        "gecen hafta": "last week",
-        "geçen hafta": "last week",
-    }.get(normalized, value)
+    return period_display_name(value, language)
 
 
 def _signed_language(message) -> str:
@@ -1300,6 +1950,7 @@ _TURKISH_LANGUAGE_WORDS = {
     "listele",
     "metriklerini",
     "regresyon",
+    "peki", "haziran", "dun", "bugun",
 }
 _ENGLISH_LANGUAGE_WORDS = {
     "this",
@@ -1316,11 +1967,18 @@ _ENGLISH_LANGUAGE_WORDS = {
     "list",
     "trend",
     "regression",
+    "and", "june", "yesterday", "today", "i", "need", "should", "review",
 }
 
 
 def _conversation_language(utterance, state, message, fallback: str) -> str:
-    """Prefer lexical detection, then the trusted current-turn locale and memory."""
+    """Honor the validated current-turn locale before lexical fallback."""
+    context = getattr(message, "context", {}) or {}
+    if context.get("reneryo_widget_session_validated") is True:
+        signed = context.get("reneryo_context", {})
+        if isinstance(signed, dict) and signed.get("language"):
+            from skill.services.language import normalize_language_tag
+            return normalize_language_tag(signed["language"])
     detected = _utterance_language(utterance)
     return (
         detected or _signed_language(message) or state.language or fallback or "en-US"
@@ -1332,12 +1990,12 @@ def _utterance_language(utterance: str) -> str:
     words = set(text.split())
     turkish_score = len(words & _TURKISH_LANGUAGE_WORDS)
     english_score = len(words & _ENGLISH_LANGUAGE_WORDS)
-    if any(character in text for character in "çğıöşü"):
-        turkish_score += 2
     if turkish_score > english_score:
         return "tr-TR"
     if english_score > turkish_score:
         return "en-US"
+    if any(character in text for character in "çğıöşü"):
+        return "tr-TR"
     return ""
 
 

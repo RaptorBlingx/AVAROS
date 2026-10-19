@@ -139,14 +139,19 @@ def test_many_natural_questions_reach_grounded_answer(question, kind):
         ),
     )
     response = skill.spoken[-1][1]["meta"]["avaros_response"]
-    assert response["evidence_rows"]
+    from skill.services.period_resolution import extract_period_phrase
+    explicit = extract_period_phrase(question)
+    if explicit and not response["evidence_rows"]:
+        assert response["response_type"] == "unavailable"
+    else:
+        assert response["evidence_rows"]
     assert "9000" not in response["headline"] or kind == "reading"
     assert "5000" not in response["headline"] or kind == "reading"
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("language", ["en-US", "tr-TR"])
-async def test_empty_recent_window_uses_years_old_consumption_and_dates(language):
+async def test_empty_explicit_window_does_not_substitute_years_old_consumption(language):
     source = Source()
     period = TimePeriod(date(2026, 10), date(2026, 11), "October 2026")
     answer = await answer_factory_question(
@@ -157,12 +162,12 @@ async def test_empty_recent_window_uses_years_old_consumption_and_dates(language
         period,
         language,
     )
-    assert answer.period.start == date(2020, 6)
-    assert "2020-06" in answer.headline
-    assert "October 2026" in answer.headline
-    assert answer.evidence[0]["consumption"] == 25
+    assert answer.period == period
+    assert not answer.evidence
+    assert "2020-06" not in answer.headline
     assert "9000" not in answer.headline
-    assert source.calls[-1] == ("meter", date(2020, 6), date(2020, 7))
+    assert source.calls == [("e", period.start, period.end, "DAILY")]
+
 
 
 @pytest.mark.asyncio
@@ -188,7 +193,7 @@ async def test_no_period_data_never_returns_counter_as_consumption():
     )
     assert "no period values" in answer.headline
     assert "9000" not in answer.headline
-    assert "2020-07" in answer.headline
+    assert "01 July 2020" in answer.headline
 
 
 @pytest.mark.asyncio
@@ -200,7 +205,7 @@ async def test_multi_month_production_shows_domain_buckets_without_invented_sum(
         "en-US",
     )
     assert len(answer.evidence) == 2
-    assert "no multi-month total" in answer.headline
+    assert "no combined total" in answer.headline
     assert "5000" not in answer.headline
 
 
@@ -223,7 +228,7 @@ def test_followup_retains_metric_and_historical_year():
     assert handle_reneryo_query(skill, _message("And June?"))
     assert skill._futuregen_service.reneryo.calls[-1][1] == date(2020, 6)
     assert handle_reneryo_query(skill, _message("When was the last reading recorded?"))
-    assert "2020-07" in skill.spoken[-1][0]
+    assert "01 July 2020" in skill.spoken[-1][0]
 
 
 @pytest.mark.parametrize(
@@ -307,12 +312,11 @@ def test_native_ovos_and_signed_widget_take_same_grounded_path():
         else:
             message.context.pop("reneryo_context")
         assert try_handle_structured_query(skill, message)
-        assert (
-            skill.spoken[-1][1]["meta"]["avaros_response"]["evidence_rows"][0][
-                "consumption"
-            ]
-            == 25
-        )
+        response = skill.spoken[-1][1]["meta"]["avaros_response"]
+        assert response["response_type"] == "unavailable"
+        assert not response["evidence_rows"]
+        assert not skill._futuregen_service.reneryo.calls
+
 
 
 @pytest.mark.parametrize(

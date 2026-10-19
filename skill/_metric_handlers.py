@@ -7,10 +7,11 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from skill.domain.exceptions import AdapterError, MetricNotSupportedError
+from skill.domain.exceptions import AdapterError, MetricNotSupportedError, ValidationError
 from skill.domain.models import CanonicalMetric, TimePeriod
 from skill.domain.results import AnomalyResult, ComparisonResult, KPIResult, TrendResult
 from skill.services.dia_dialogue import remember_kpi_result, try_handle_structured_query
+from skill._helpers import request_timezone
 from skill.services.dia_response import speak_with_evidence
 from skill.services.language import normalize_phrase
 
@@ -29,38 +30,6 @@ _AGGREGATE_TOTAL_PERIOD_MODE = "aggregate_total"
 _AGGREGATE_TOTAL_LABEL = "in total"
 _DEFAULT_AGGREGATE_START_ISO = "2021-02-01T00:00:00.000Z"
 _DEFAULT_WIDE_START_ISO = "2021-02-01T00:00:00.000Z"
-_SUPPORTED_PERIOD_PHRASES = (
-    "right now",
-    "past 30 days",
-    "last 30 days",
-    "last two weeks",
-    "last 2 weeks",
-    "this month",
-    "last month",
-    "past month",
-    "this week",
-    "last week",
-    "past week",
-    "yesterday",
-    "today",
-    "latest",
-    "current",
-    "son otuz gün",
-    "son 30 gün",
-    "son iki hafta",
-    "son 2 hafta",
-    "geçen hafta",
-    "son hafta",
-    "bu hafta",
-    "geçen ay",
-    "son ay",
-    "bu ay",
-    "şu anda",
-    "en güncel",
-    "bugün",
-    "dün",
-    "şimdi",
-)
 
 
 def _normalize_asset_lookup(value: str) -> str:
@@ -84,41 +53,15 @@ def _parse_utc_iso(value: str) -> datetime | None:
 
 
 def _extract_period_phrase_from_text(raw: str) -> str | None:
-    """Extract the first supported period phrase from arbitrary text."""
-    normalized = normalize_phrase(str(raw or ""))
-    if not normalized:
-        return None
-    for phrase in _SUPPORTED_PERIOD_PHRASES:
-        if re.search(rf"\b{re.escape(phrase)}\b", normalized):
-            return phrase
-    named_month = re.search(
-        r"\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}\b",
-        normalized,
-    )
-    if named_month:
-        return named_month.group(0)
-    turkish_month = re.search(
-        r"\b(ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık)\s+\d{4}\b",
-        normalized,
-    )
-    if turkish_month:
-        return turkish_month.group(0)
-    iso_range = re.search(
-        r"\b\d{4}-\d{2}-\d{2}\s+(?:to|through|until)\s+\d{4}-\d{2}-\d{2}\b",
-        normalized,
-    )
-    if iso_range:
-        return iso_range.group(0)
-    turkish_iso_range = re.search(
-        r"\b\d{4}-\d{2}-\d{2}\s+(?:ile|ila)\s+\d{4}-\d{2}-\d{2}(?:\s+arası)?\b",
-        normalized,
-    )
-    if turkish_iso_range:
-        return turkish_iso_range.group(0)
-    unsupported_rolling = re.search(r"\b(?:past|last)\s+\d+\s+days\b", normalized)
-    if unsupported_rolling:
-        return unsupported_rolling.group(0)
-    return None
+    """Use the shared source-text period contract for registered handlers too."""
+    from skill.services.period_resolution import extract_period_phrase, unsupported_period_reference
+
+    if unsupported_period_reference(raw):
+        raise ValidationError(
+            message="Unsupported explicit period", field="period", value=raw,
+            user_message="The requested period is unsupported. Please specify a supported date or duration.",
+        )
+    return extract_period_phrase(raw) or None
 
 
 def _extract_utterance_period_phrase(message) -> str | None:
@@ -156,10 +99,11 @@ def _resolve_requested_period_phrase(
     utterance_period_phrase: str | None,
 ) -> str | None:
     """Resolve the effective requested period phrase from slot and utterance."""
+    # Recognizer slots are proposals. Original explicit wording owns the window.
+    if utterance_period_phrase is not None:
+        return utterance_period_phrase
     slot_period_phrase = _extract_supported_period_phrase(explicit_period)
     if slot_period_phrase is None:
-        if utterance_period_phrase is not None:
-            return utterance_period_phrase
         if re.search(
             r"\b(?:today|yesterday|week|month|days?|from|through|until|bugün|dün|hafta|ay|gün|ile|ila|\d{4}-\d{2}-\d{2})\b",
             normalize_phrase(explicit_period),
@@ -365,28 +309,37 @@ def _resolve_kpi_period(
         utterance_period_phrase,
     )
 
-    aggregate_period = None
+    default_period = _wide_default_period()
     if metric is CanonicalMetric.ENERGY_TOTAL:
-        mapping = _resolve_asset_mapping(skill, asset_id=asset_id)
-        aggregate_period = _resolve_energy_total_aggregate_period(
-            skill,
-            asset_id=asset_id,
+        default_period = _resolve_energy_total_default_period(
+            skill, asset_id=asset_id, has_requested_period=requested_period_phrase is not None,
         )
-        if aggregate_period is not None and requested_period_phrase is not None:
-            _raise_energy_total_period_unavailable(skill, asset_id=asset_id)
-        if (
-            requested_period_phrase is not None
-            and isinstance(mapping, dict)
-            and _is_total_energy_only_asset_mapping(mapping)
-            and _uses_period_insensitive_energy_total_mapping(skill)
-        ):
-            _raise_energy_total_period_unavailable(skill, asset_id=asset_id)
-
     if requested_period_phrase is not None:
+        from skill._helpers import parse_period
+        if getattr(skill, "settings_service", None) is not None:
+            return parse_period(skill, requested_period_phrase, message)
         return skill._parse_period(requested_period_phrase)
-    if aggregate_period is not None:
-        return aggregate_period
-    return _wide_default_period()
+    return default_period
+
+
+def _resolve_energy_total_default_period(
+    skill: "AVAROSSkill", *, asset_id: str, has_requested_period: bool,
+) -> TimePeriod:
+    """Share mapping-aware period safeguards with structured KPI routing.
+
+    Structured requests already have a parsed (possibly inherited) period;
+    re-parsing their utterance would lose bilingual dates and follow-up scope.
+    """
+    mapping = _resolve_asset_mapping(skill, asset_id=asset_id)
+    aggregate_period = _resolve_energy_total_aggregate_period(skill, asset_id=asset_id)
+    if has_requested_period and (
+        aggregate_period is not None
+        or (isinstance(mapping, dict)
+            and _is_total_energy_only_asset_mapping(mapping)
+            and _uses_period_insensitive_energy_total_mapping(skill))
+    ):
+        _raise_energy_total_period_unavailable(skill, asset_id=asset_id)
+    return aggregate_period or _wide_default_period()
 
 
 def _is_metric_mapped_for_active_adapter(
@@ -507,7 +460,7 @@ def dispatch_kpi_for_metric(
             period=period,
         )
 
-        response = skill.response_builder.format_kpi_result(result)
+        response = skill.response_builder.format_kpi_result(result, timezone_name=request_timezone(skill, message))
         speak_with_evidence(skill, response, result)
         remember_kpi_result(skill, message, result)
 
@@ -521,6 +474,9 @@ def _resolve_handler_period(skill: "AVAROSSkill", message, default: str = "today
     utterance_period_phrase = _extract_utterance_period_phrase(message)
     phrase = _resolve_requested_period_phrase(explicit, utterance_period_phrase)
     if phrase is not None:
+        from skill._helpers import parse_period
+        if getattr(skill, "settings_service", None) is not None:
+            return parse_period(skill, phrase, message)
         return skill._parse_period(phrase)
     if _utterance_mentions_period(message):
         return skill._parse_period(default)
@@ -654,7 +610,7 @@ def handle_trend_energy(skill: "AVAROSSkill", message) -> None:
             asset_id=asset_id,
             period=skill._parse_period("today"),
         )
-        kpi_response = skill.response_builder.format_kpi_result(kpi_result)
+        kpi_response = skill.response_builder.format_kpi_result(kpi_result, timezone_name=request_timezone(skill, message))
         speak_with_evidence(
             skill,
             f"I couldn't find enough trend points for {period.display_name}. {kpi_response}",

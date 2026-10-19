@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from config import (
     PIPER_CONFIG_PATH,
     PIPER_LENGTH_SCALE,
+    PIPER_TR_LENGTH_SCALE,
     PIPER_MODEL_PATH,
     PIPER_NOISE_SCALE,
     PIPER_NOISE_W_SCALE,
@@ -39,6 +40,7 @@ from schemas.voice import (
 )
 from services.piper_pronunciation import render_piper_text
 from skill.services.settings import SettingsService
+from skill.services.language import speech_text
 
 
 router = APIRouter(prefix="/api/v1/voice", tags=["voice"])
@@ -256,11 +258,17 @@ def preload_server_tts() -> None:
             logger.warning("Piper TTS preload skipped for %s: %s", language, exc)
 
 
+def _piper_length_scale(payload: SpeechRequest) -> float:
+    """Apply language-specific duration tuning without changing pitch or pauses."""
+    base = PIPER_TR_LENGTH_SCALE if _is_turkish(payload.language) else PIPER_LENGTH_SCALE
+    return max(0.5, min(2.0, base / payload.rate))
+
+
 def _piper_synthesis_config(payload: SpeechRequest) -> Any:
     """Build Piper synthesis config from the public request payload."""
     from piper import SynthesisConfig
 
-    length_scale = max(0.5, min(2.0, PIPER_LENGTH_SCALE / payload.rate))
+    length_scale = _piper_length_scale(payload)
     synth_volume = max(0.0, min(_PIPER_MAX_SYNTH_VOLUME, payload.volume))
     return SynthesisConfig(
         length_scale=length_scale,
@@ -318,7 +326,7 @@ def _synthesize_wav_piper_cli(payload: SpeechRequest) -> bytes:
     path = Path(wav_path)
     model_path, configured_config_path = _piper_paths_for_language(payload.language)
     config_path = configured_config_path
-    length_scale = max(0.5, min(2.0, PIPER_LENGTH_SCALE / payload.rate))
+    length_scale = _piper_length_scale(payload)
     # Keep the generated waveform below Piper's clipping edge; the browser
     # still applies the user's playback volume to the resulting page media.
     synth_volume = max(0.0, min(_PIPER_MAX_SYNTH_VOLUME, payload.volume))
@@ -405,6 +413,9 @@ def _synthesize_wav(payload: SpeechRequest) -> bytes:
     if not SERVER_TTS_ENABLED:
         raise HTTPException(status_code=503, detail="Server TTS is disabled")
 
+    # The widget normally sends speech_text already. Other callers may send
+    # a headline; the idempotent shared renderer covers every server engine.
+    payload = payload.model_copy(update={"text": speech_text(payload.text, payload.language)})
     engine = SERVER_TTS_ENGINE or "auto"
     if _is_turkish(payload.language):
         if engine in {"auto", "piper"}:

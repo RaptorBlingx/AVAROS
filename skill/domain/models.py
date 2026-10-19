@@ -207,7 +207,7 @@ class TimePeriod:
     
     Attributes:
         start: Beginning of the period
-        end: End of the period (inclusive)
+        end: Exclusive end of the period
         display_name: Human-readable name (e.g., "today", "last week")
     """
     
@@ -221,56 +221,56 @@ class TimePeriod:
             raise ValueError(f"Start ({self.start}) must be before end ({self.end})")
     
     @classmethod
-    def today(cls) -> TimePeriod:
+    def today(cls, *, now: datetime | None = None, timezone_name: str = "UTC") -> TimePeriod:
         """Create a period for today."""
-        now = datetime.now(tz=timezone.utc)
+        now = (now or datetime.now(timezone.utc)).astimezone(cls._resolve_timezone(timezone_name))
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        return cls(start=start, end=now, display_name="today")
+        return cls(start=start.astimezone(timezone.utc), end=now.astimezone(timezone.utc), display_name="today")
 
     @classmethod
-    def yesterday(cls) -> TimePeriod:
+    def yesterday(cls, *, now: datetime | None = None, timezone_name: str = "UTC") -> TimePeriod:
         """Create a period for the previous calendar day."""
-        today_start = datetime.now(tz=timezone.utc).replace(
+        today_start = (now or datetime.now(timezone.utc)).astimezone(cls._resolve_timezone(timezone_name)).replace(
             hour=0, minute=0, second=0, microsecond=0,
         )
         start = today_start - timedelta(days=1)
-        return cls(start=start, end=today_start, display_name="yesterday")
+        return cls(start=start.astimezone(timezone.utc), end=today_start.astimezone(timezone.utc), display_name="yesterday")
     
     @classmethod
-    def this_week(cls) -> TimePeriod:
+    def this_week(cls, *, now: datetime | None = None, timezone_name: str = "UTC") -> TimePeriod:
         """Create a period for the current week (Monday to now)."""
-        now = datetime.now(tz=timezone.utc)
+        now = (now or datetime.now(timezone.utc)).astimezone(cls._resolve_timezone(timezone_name))
         start = now - timedelta(days=now.weekday())
         start = start.replace(hour=0, minute=0, second=0, microsecond=0)
-        return cls(start=start, end=now, display_name="this week")
+        return cls(start=start.astimezone(timezone.utc), end=now.astimezone(timezone.utc), display_name="this week")
 
     @classmethod
-    def this_month(cls) -> TimePeriod:
+    def this_month(cls, *, now: datetime | None = None, timezone_name: str = "UTC") -> TimePeriod:
         """Create a period for the current month."""
-        now = datetime.now(tz=timezone.utc)
+        now = (now or datetime.now(timezone.utc)).astimezone(cls._resolve_timezone(timezone_name))
         start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        return cls(start=start, end=now, display_name="this month")
+        return cls(start=start.astimezone(timezone.utc), end=now.astimezone(timezone.utc), display_name="this month")
     
     @classmethod
-    def last_week(cls) -> TimePeriod:
+    def last_week(cls, *, now: datetime | None = None, timezone_name: str = "UTC") -> TimePeriod:
         """Create a period for the previous week."""
-        now = datetime.now(tz=timezone.utc)
+        now = (now or datetime.now(timezone.utc)).astimezone(cls._resolve_timezone(timezone_name))
         end = now - timedelta(days=now.weekday())
         end = end.replace(hour=0, minute=0, second=0, microsecond=0)
         start = end - timedelta(days=7)
-        return cls(start=start, end=end, display_name="last week")
+        return cls(start=start.astimezone(timezone.utc), end=end.astimezone(timezone.utc), display_name="last week")
 
     @classmethod
-    def last_two_weeks(cls) -> TimePeriod:
+    def last_two_weeks(cls, *, now: datetime | None = None, timezone_name: str = "UTC") -> TimePeriod:
         """Create a period for the last 14 days."""
-        now = datetime.now(tz=timezone.utc)
+        now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         start = now - timedelta(days=14)
-        return cls(start=start, end=now, display_name="last 2 weeks")
+        return cls(start=start.astimezone(timezone.utc), end=now.astimezone(timezone.utc), display_name="last 2 weeks")
 
     @classmethod
-    def last_four_weeks(cls) -> TimePeriod:
+    def last_four_weeks(cls, *, now: datetime | None = None, timezone_name: str = "UTC") -> TimePeriod:
         """Create a rolling period for the last 28 days."""
-        now = datetime.now(tz=timezone.utc)
+        now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         return cls(
             start=now - timedelta(days=28),
             end=now,
@@ -301,21 +301,21 @@ class TimePeriod:
         """Create a rolling period ending now."""
         if days <= 0:
             raise ValueError("Rolling period must contain at least one day")
-        end = now or datetime.now(tz=timezone.utc)
+        end = now or datetime.now(timezone.utc)
         if end.tzinfo is None:
             end = end.replace(tzinfo=timezone.utc)
         return cls(
-            start=end - timedelta(days=days),
-            end=end,
+            start=end.astimezone(timezone.utc) - timedelta(days=days),
+            end=end.astimezone(timezone.utc),
             display_name=f"past {days} days",
         )
 
     @classmethod
-    def latest(cls) -> TimePeriod:
+    def latest(cls, *, now: datetime | None = None, timezone_name: str = "UTC") -> TimePeriod:
         """Create the bounded lookup window used for latest-observation queries."""
         return cls(
             start=datetime(2021, 2, 1, tzinfo=timezone.utc),
-            end=datetime.now(tz=timezone.utc),
+            end=(now or datetime.now(timezone.utc)).astimezone(timezone.utc),
             display_name="latest available",
         )
 
@@ -341,15 +341,18 @@ class TimePeriod:
         Returns:
             Corresponding TimePeriod
         """
+        now = now or datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            raise ValueError("The request clock must include a timezone")
         normalized = re.sub(r"\s+", " ", text.lower().strip())
         if not normalized:
             raise ValueError("Time period cannot be empty")
 
         numeric_days = re.fullmatch(
-            r"(?:last|past|son) (\d+) (?:days|gün|gun)", normalized
+            r"(?:last|past|son) (\d+) (days|gün|gun|weeks|hafta)", normalized
         )
         if numeric_days:
-            days = int(numeric_days.group(1))
+            days = int(numeric_days.group(1)) * (7 if numeric_days.group(2) in {"weeks", "hafta"} else 1)
             if not 1 <= days <= 3660:
                 raise ValueError("The day count must be between 1 and 3660")
             return cls._with_display_name(cls.rolling_days(days, now=now), normalized)
@@ -378,24 +381,24 @@ class TimePeriod:
             )
 
         mapping = {
-            "today": cls.today,
-            "yesterday": cls.yesterday,
-            "this week": cls.this_week,
-            "this month": cls.this_month,
-            "last week": cls.last_week,
-            "past week": cls.last_week,
-            "last 2 weeks": cls.last_two_weeks,
-            "last two weeks": cls.last_two_weeks,
-            "last 4 weeks": cls.last_four_weeks,
-            "last four weeks": cls.last_four_weeks,
-            "preceding four weeks": cls.last_four_weeks,
+            "today": lambda: cls.today(now=now, timezone_name=timezone_name),
+            "yesterday": lambda: cls.yesterday(now=now, timezone_name=timezone_name),
+            "this week": lambda: cls.this_week(now=now, timezone_name=timezone_name),
+            "this month": lambda: cls.this_month(now=now, timezone_name=timezone_name),
+            "last week": lambda: cls.last_week(now=now, timezone_name=timezone_name),
+            "past week": lambda: cls.last_week(now=now, timezone_name=timezone_name),
+            "last 2 weeks": lambda: cls.last_two_weeks(now=now, timezone_name=timezone_name),
+            "last two weeks": lambda: cls.last_two_weeks(now=now, timezone_name=timezone_name),
+            "last 4 weeks": lambda: cls.last_four_weeks(now=now, timezone_name=timezone_name),
+            "last four weeks": lambda: cls.last_four_weeks(now=now, timezone_name=timezone_name),
+            "preceding four weeks": lambda: cls.last_four_weeks(now=now, timezone_name=timezone_name),
             "previous calendar month": lambda: cls.last_month(
                 now=now, timezone_name=timezone_name
             ),
             "previous month": lambda: cls.last_month(
                 now=now, timezone_name=timezone_name
             ),
-            "previous week": cls.last_week,
+            "previous week": lambda: cls.last_week(now=now, timezone_name=timezone_name),
             "last month": lambda: cls.last_month(
                 now=now,
                 timezone_name=timezone_name,
@@ -403,28 +406,28 @@ class TimePeriod:
             "past month": lambda: cls.rolling_days(30, now=now),
             "past 30 days": lambda: cls.rolling_days(30, now=now),
             "last 30 days": lambda: cls.rolling_days(30, now=now),
-            "latest": cls.latest,
-            "current": cls.latest,
-            "right now": cls.latest,
-            "bugün": lambda: cls._with_display_name(cls.today(), "bugün"),
-            "dün": lambda: cls._with_display_name(cls.yesterday(), "dün"),
-            "bu hafta": lambda: cls._with_display_name(cls.this_week(), "bu hafta"),
-            "geçen hafta": lambda: cls._with_display_name(cls.last_week(), "geçen hafta"),
-            "son hafta": lambda: cls._with_display_name(cls.last_week(), "son hafta"),
-            "son 2 hafta": lambda: cls._with_display_name(cls.last_two_weeks(), "son 2 hafta"),
-            "son iki hafta": lambda: cls._with_display_name(cls.last_two_weeks(), "son iki hafta"),
-            "son 4 hafta": lambda: cls._with_display_name(cls.last_four_weeks(), "son dört hafta"),
-            "son dört hafta": lambda: cls._with_display_name(cls.last_four_weeks(), "son dört hafta"),
-            "bu ay": lambda: cls._with_display_name(cls.this_month(), "bu ay"),
+            "latest": lambda: cls.latest(now=now, timezone_name=timezone_name),
+            "current": lambda: cls.latest(now=now, timezone_name=timezone_name),
+            "right now": lambda: cls.latest(now=now, timezone_name=timezone_name),
+            "bugün": lambda: cls._with_display_name(cls.today(now=now, timezone_name=timezone_name), "bugün"),
+            "dün": lambda: cls._with_display_name(cls.yesterday(now=now, timezone_name=timezone_name), "dün"),
+            "bu hafta": lambda: cls._with_display_name(cls.this_week(now=now, timezone_name=timezone_name), "bu hafta"),
+            "geçen hafta": lambda: cls._with_display_name(cls.last_week(now=now, timezone_name=timezone_name), "geçen hafta"),
+            "son hafta": lambda: cls._with_display_name(cls.last_week(now=now, timezone_name=timezone_name), "son hafta"),
+            "son 2 hafta": lambda: cls._with_display_name(cls.last_two_weeks(now=now, timezone_name=timezone_name), "son 2 hafta"),
+            "son iki hafta": lambda: cls._with_display_name(cls.last_two_weeks(now=now, timezone_name=timezone_name), "son iki hafta"),
+            "son 4 hafta": lambda: cls._with_display_name(cls.last_four_weeks(now=now, timezone_name=timezone_name), "son dört hafta"),
+            "son dört hafta": lambda: cls._with_display_name(cls.last_four_weeks(now=now, timezone_name=timezone_name), "son dört hafta"),
+            "bu ay": lambda: cls._with_display_name(cls.this_month(now=now, timezone_name=timezone_name), "bu ay"),
             "geçen ay": lambda: cls._with_display_name(
                 cls.last_month(now=now, timezone_name=timezone_name), "geçen ay"
             ),
             "son ay": lambda: cls._with_display_name(cls.rolling_days(30, now=now), "son ay"),
             "son 30 gün": lambda: cls._with_display_name(cls.rolling_days(30, now=now), "son 30 gün"),
             "son otuz gün": lambda: cls._with_display_name(cls.rolling_days(30, now=now), "son otuz gün"),
-            "şimdi": lambda: cls._with_display_name(cls.latest(), "en güncel"),
-            "şu anda": lambda: cls._with_display_name(cls.latest(), "en güncel"),
-            "en güncel": lambda: cls._with_display_name(cls.latest(), "en güncel"),
+            "şimdi": lambda: cls._with_display_name(cls.latest(now=now, timezone_name=timezone_name), "en güncel"),
+            "şu anda": lambda: cls._with_display_name(cls.latest(now=now, timezone_name=timezone_name), "en güncel"),
+            "en güncel": lambda: cls._with_display_name(cls.latest(now=now, timezone_name=timezone_name), "en güncel"),
         }
 
         factory = mapping.get(normalized)
@@ -447,8 +450,9 @@ class TimePeriod:
 
         turkish_months = {
             "ocak": 1, "şubat": 2, "mart": 3, "nisan": 4,
-            "mayıs": 5, "haziran": 6, "temmuz": 7, "ağustos": 8,
-            "eylül": 9, "ekim": 10, "kasım": 11, "aralık": 12,
+            "mayıs": 5, "mayis": 5, "haziran": 6, "temmuz": 7, "ağustos": 8,
+            "eylül": 9, "eylul": 9, "ekim": 10, "kasım": 11, "kasim": 11,
+            "aralık": 12, "aralik": 12, "subat": 2, "agustos": 8,
         }
         turkish_month = re.fullmatch(
             r"(" + "|".join(turkish_months) + r")\s+(\d{4})",
@@ -541,7 +545,9 @@ class TimePeriod:
     def _resolve_timezone(timezone_name: str):
         """Resolve an IANA site timezone with a clear validation error."""
         try:
-            return ZoneInfo(timezone_name or "UTC")
+            if not timezone_name:
+                raise ValueError("Organization timezone is not verified")
+            return ZoneInfo(timezone_name)
         except ZoneInfoNotFoundError as exc:
             raise ValueError(f"Unknown site timezone: {timezone_name}") from exc
 

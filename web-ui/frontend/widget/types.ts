@@ -39,6 +39,7 @@ export type ChatMessage = {
   id: string;
   source: "user" | "avaros";
   text: string;
+  inventoryNames?: string[];
   timestamp: Date;
   inputKind?: "text" | "voice";
   language?: "en-US" | "tr-TR";
