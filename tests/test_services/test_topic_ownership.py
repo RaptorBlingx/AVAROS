@@ -238,3 +238,24 @@ def test_review_timing_question_does_not_become_a_metric_timestamp_request():
     assert r['response_type'] == 'finding'
     assert skill._futuregen_service.metrics.await_count == before
     assert skill._futuregen_service.evaluations == 0
+
+
+@pytest.mark.parametrize('question,expected', [
+    ('Tesis Toplam Üretim Miktarı değişkenli aylık regresyon modelini açıkla.', 'Tesis Toplam Üretim Miktarı-MONTHLY'),
+    ('Explain the monthly regression with driver Tesis Toplam Üretim Miktarı.', 'Tesis Toplam Üretim Miktarı-MONTHLY'),
+    ('Aylık regresyon modelini açıkla.', None),
+    ('Tesis Toplam Üretim Miktarı açıklayıcı değişkenli regresyonu açıkla.', None),
+])
+def test_regression_selection_combines_current_period_and_driver(question, expected):
+    from tests.test_services.test_futuregen_responses import _regression
+    skill = harness()
+    skill._futuregen_service.regressions = AsyncMock(return_value=[
+        _regression('Tesis Toplam Üretim Miktarı', 'DAILY', .5),
+        _regression('Tesis Toplam Üretim Miktarı', 'MONTHLY', .2),
+        _regression('Cooling degree days', 'MONTHLY', .3),
+    ])
+    query(skill, 'Günlük regresyon modelini açıkla.', 'tr-TR')
+    r = query(skill, question, 'tr-TR')
+    assert r['response_type'] == ('regression' if expected else 'clarification')
+    if expected:
+        assert r['evidence_rows'][0]['id'] == expected

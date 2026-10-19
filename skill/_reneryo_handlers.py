@@ -1260,6 +1260,8 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
             "driver",
             "surucu",
             "sürücü",
+            "açıklayıcı değişken",
+            "aciklayici degisken",
             "fit",
             "error",
             "quality",
@@ -1556,21 +1558,20 @@ def _select_regression(
 ):
     period = resolution.slots.get("regression_period", "") if resolution else ""
     period = period or _regression_period_hint(text)
-    if period:
-        matches = [row for row in rows if row.period.upper() == period]
-        if len(matches) == 1:
-            return matches[0]
+    candidates = [row for row in rows if not period or row.period.upper() == period]
+    normalized = normalize_phrase(text)
+    named = [row for row in rows if any(
+        normalize_phrase(name) in normalized for name in row.driver_names if name
+    )]
+    if named:
+        candidates = [row for row in candidates if row in named]
+    if period or named:
+        return candidates[0] if len(candidates) == 1 else None
     if state.operation == "regression_detail" and state.entity_id:
         contextual = [row for row in rows if row.regression_id == state.entity_id]
         if len(contextual) == 1:
             return contextual[0]
-    normalized = normalize_phrase(text)
-    matches = [
-        row
-        for row in rows
-        if any(normalize_phrase(name) in normalized for name in row.driver_names if name)
-    ]
-    return matches[0] if len(matches) == 1 else None
+    return None
 
 
 def _regression_period_hint(text: str) -> str:
