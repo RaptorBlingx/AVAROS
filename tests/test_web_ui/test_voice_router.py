@@ -339,6 +339,20 @@ class TestVoiceConfigAuth:
 class TestVoiceTTS:
     """Verify server-backed TTS endpoints."""
 
+    def test_piper_duration_tuning_is_turkish_only_and_retains_request_rate(self, monkeypatch):
+        monkeypatch.setitem(sys.modules, "piper", SimpleNamespace(SynthesisConfig=lambda **values: SimpleNamespace(**values)))
+        monkeypatch.setattr(voice_router, "PIPER_LENGTH_SCALE", 1.0)
+        monkeypatch.setattr(voice_router, "PIPER_TR_LENGTH_SCALE", .82)
+        for language, expected in (("tr-TR", .82), (" TR-tr ", .82), ("en-US", 1.0), ("de-DE", 1.0)):
+            payload = voice_router.SpeechRequest(text="Speech", language=language, rate=1.0)
+            config = voice_router._piper_synthesis_config(payload)
+            assert config.length_scale == expected
+            assert config.noise_scale == voice_router.PIPER_NOISE_SCALE
+            assert config.noise_w_scale == voice_router.PIPER_NOISE_W_SCALE
+            assert config.volume == voice_router._PIPER_MAX_SYNTH_VOLUME
+            assert voice_router._piper_length_scale(payload.model_copy(update={"rate": 1.1})) == expected / 1.1
+        assert voice_router._piper_length_scale(payload.model_copy(update={"rate": 2.0})) == .5
+
     def test_piper_renders_transient_text_without_mutating_request(self, monkeypatch):
         seen = []
         voice = SimpleNamespace(
@@ -364,6 +378,8 @@ class TestVoiceTTS:
         )
 
         def fake_run(command, **kwargs):
+            assert command[command.index("--length-scale") + 1] == f"{voice_router.PIPER_TR_LENGTH_SCALE:.3f}"
+            assert command[command.index("--sentence-silence") + 1] == "0.15"
             seen.append(kwargs["input"])
             Path(command[command.index("-f") + 1]).write_bytes(b"wav")
 
@@ -374,14 +390,14 @@ class TestVoiceTTS:
         assert seen == ["[[tˈɛmpɹɪtʃɚ]]\n"]
         assert payload.text == "Temperature"
 
-    def test_espeak_fallback_receives_original_text_after_piper_failure(self, monkeypatch):
-        original = "Temperature için gözlem var."
+    def test_espeak_fallback_receives_speech_text_after_piper_failure(self, monkeypatch):
+        original = "Temperature için son değer 15,7 °C."
         payload = voice_router.SpeechRequest(text=original, language="tr-TR")
         seen = []
         monkeypatch.setattr(voice_router, "SERVER_TTS_ENGINE", "auto")
 
         def fail_synthesis(text, **kwargs):
-            assert text == "[[tˈɛmpɹɪtʃɚ]] için gözlem var."
+            assert text == "[[tˈɛmpɹɪtʃɚ]] için son değer on beş virgül yedi derece."
             raise HTTPException(status_code=503, detail="unavailable")
 
         monkeypatch.setattr(
@@ -394,7 +410,7 @@ class TestVoiceTTS:
             lambda request: seen.append(request.text) or b"wav",
         )
         assert voice_router._synthesize_wav(payload) == b"wav"
-        assert seen == [original]
+        assert seen == ["Temperature için son değer on beş virgül yedi derece."]
         assert payload.text == original
 
     def test_piper_sentence_silence_preserves_pcm_frame_alignment(self) -> None:

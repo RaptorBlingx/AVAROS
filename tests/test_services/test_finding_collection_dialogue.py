@@ -435,8 +435,8 @@ def test_signed_widget_month_range_reaches_trend_with_both_observations(
     assert _response_type(skill) == "trend"
     assert periods[0].start == datetime(2026, 5, 1, tzinfo=timezone.utc)
     assert periods[0].end == datetime(2026, 7, 1, tzinfo=timezone.utc)
-    assert expected_label in skill.spoken[-1][0]
-    assert ("24,3" if language == "tr-TR" else "24.3") in skill.spoken[-1][0]
+    assert expected_label in skill.spoken[-1][1]["meta"]["avaros_response"]["headline"]
+    assert ("yirmi dört virgül üç" if language == "tr-TR" else "24.3") in skill.spoken[-1][0]
 
 
 def test_correct_turkish_ordinal_and_mistranscribed_period_keep_finding():
@@ -525,7 +525,7 @@ def test_turkish_missing_trend_is_explicit_after_a_finding_topic_change():
 
     assert _response_type(skill) == "trend"
     assert "gözlem bulunamadı" in skill.spoken[-1][0]
-    assert "31 Temmuz 2026 saat 00:00 UTC" in skill.spoken[-1][0]
+    assert "otuz bir Temmuz iki bin yirmi altı gece yarısı evrensel eşgüdümlü zaman" in skill.spoken[-1][0]
     assert "%0.0" not in skill.spoken[-1][0]
     assert "sabit" not in skill.spoken[-1][0]
 
@@ -581,7 +581,7 @@ def test_turkish_evaluation_collection_selection_and_followup():
     assert skill._futuregen_service.evaluations == 1
     assert "değerlendirmeyi tamamladı" in skill.spoken[-1][0]
     assert "Bulgu one" not in skill.spoken[-1][0]
-    assert "Önem düzeyi dağılımı: 0 yüksek, 1 orta ve 1 düşük." in skill.spoken[-1][0]
+    assert "Önem düzeyi dağılımı: sıfır yüksek, bir orta ve bir düşük." in skill.spoken[-1][0]
     assert "Orta öncelikli bulgular şu alanlarla ilgilidir: metrik." in skill.spoken[-1][0]
     assert "bunları listele" in skill.spoken[-1][0]
 
@@ -589,10 +589,10 @@ def test_turkish_evaluation_collection_selection_and_followup():
     assert "Bulgu one" in skill.spoken[-1][0]
 
     assert handle_reneryo_query(skill, _message("Sadece orta olanları göster.", "tr-TR"))
-    assert "1 etkin orta bulgu" in skill.spoken[-1][0]
+    assert "bir etkin orta bulgu" in skill.spoken[-1][0]
 
     assert handle_reneryo_query(skill, _message("İlkin açıkla.", "tr-TR"))
-    assert "yaklaşık 566 saat gerisinde" in skill.spoken[-1][0]
+    assert "yaklaşık beş yüz altmış altı saat gerisinde" in skill.spoken[-1][0]
 
     assert handle_reneryo_query(skill, _message("Bu bulgu neden oluştu?", "tr-TR"))
-    assert "48 saat ile gözlenen veri sıklığının üç katından" in skill.spoken[-1][0]
+    assert "kırk sekiz saat ile gözlenen veri sıklığının üç katından" in skill.spoken[-1][0]

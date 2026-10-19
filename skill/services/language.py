@@ -88,6 +88,9 @@ def period_display_name(value: str, language: str | None) -> str:
         reverse = {tr: en for en, tr in pairs.items()}
         if normalized in reverse:
             return reverse[normalized]
+    if is_turkish(language):
+        month_names = ("Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık")
+        value = re.sub(r"(?<![\w-])(\d{4})-(0[1-9]|1[0-2])(?![\d-])", lambda m: f"{month_names[int(m[2]) - 1]} {m[1]}", value)
     months = zip(
         "january february march april may june july august september october november december".split(),
         "ocak şubat mart nisan mayıs haziran temmuz ağustos eylül ekim kasım aralık".split(),
@@ -158,16 +161,10 @@ def format_observation_time(
 def speech_text(text: str, language: str) -> str:
     """Adapt quantity spelling for TTS without changing facts or limitations."""
     turkish = is_turkish(language)
-    # Only presentation timestamps are expanded; evidence never passes here.
     if turkish:
-        months = ("Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
-                  "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık")
-        text = re.sub(
-            r"\b(\d{2})\.(0[1-9]|1[0-2])\.(\d{4}) (\d{2}:\d{2})(?!\d)",
-            lambda m: f"{int(m[1])} {months[int(m[2]) - 1]} {m[3]} saat {m[4]}",
-            text,
-        )
+        from skill.services.turkish_speech import render_turkish_speech
 
+        return render_turkish_speech(text)
     def spoken_zone(match):
         zone, sign, hours, minutes = match.groups()
         name = ("İstanbul saati" if turkish else "Istanbul time") if zone == "Europe/Istanbul" else (

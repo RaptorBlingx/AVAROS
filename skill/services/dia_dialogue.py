@@ -19,7 +19,7 @@ from skill.services.dia_response import (
     speak_with_evidence,
 )
 from skill.services.futuregen_responses import reneryo_capabilities_headline
-from skill.services.language import is_turkish, metric_display_name, normalize_phrase, normalize_language_tag, period_display_name
+from skill.services.language import is_turkish, metric_display_name, normalize_phrase, normalize_language_tag, period_display_name, speech_text
 from skill.services.response_localization import localized_system_text, localized_error_message
 from skill.services.query_scope import entity_scope
 from skill.services.metric_knowledge import get_metric_knowledge
@@ -597,7 +597,10 @@ def _speak_meta(skill, headline, results, *, response_type, warnings=None) -> No
             })
     first = results[0] if results else None
     period = getattr(first, "period", None)
-    skill.speak(headline, meta={"avaros_response": {
+    language = normalize_language_tag(getattr(skill, "_response_language", "en-US"))
+    spoken = speech_text(headline, language)
+    skill.speak(spoken, meta={"avaros_response": {
+        "speech_text": spoken,
         "response_type": response_type,
         "language": normalize_language_tag(getattr(skill, "_response_language", "en-US")),
         "query_id": getattr(first, "recommendation_id", "") or str(uuid.uuid4()),
@@ -622,7 +625,8 @@ def _speak_clarification(skill, headline: str, suggestions: list[str]) -> None:
     headline = localized_system_text(headline, language)
     metadata = clarification_metadata(headline, suggestions)
     metadata["language"] = language
-    skill.speak(headline, meta={"avaros_response": metadata})
+    metadata["speech_text"] = speech_text(headline, language)
+    skill.speak(metadata["speech_text"], meta={"avaros_response": metadata})
 
 
 def _remember(store, session_id, query, *, pending="") -> None:

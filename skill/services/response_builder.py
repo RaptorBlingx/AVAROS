@@ -900,7 +900,7 @@ class TurkishResponseBuilder(ResponseBuilder):
     def _format_value(self, value: float, unit: str, decimals: int | None = None) -> str:
         formatted = (f"{value:.{decimals}f}" if decimals is not None else self._format_number(value)).replace(".", ",")
         units = {
-            "%": "yüzde", "kWh/unit": "kilovat saat/birim", "kWh": "kilovat saat",
+            "%": "yüzde", "kWh/unit": "birim başına kilovatsaat", "kWh": "kilovatsaat",
             "kW": "kilovat", "W": "vat", "sec": "saniye", "seconds": "saniye",
             "min": "dakika", "minutes": "dakika", "days": "gün",
         }

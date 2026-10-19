@@ -521,7 +521,9 @@ async def answer_factory_question(
     )
     if request.kind == "period":
         return FactoryAnswer(
-            f"{metric.name}: {period_display_name(period.display_name, language)}; {period.start.isoformat()} – {period.end.isoformat()}.",
+            f"{metric.name}: {period_display_name(period.display_name, language)}; "
+            f"{format_observation_time(period.start, language, timezone_name, include_timezone=include_timezone)} – "
+            f"{format_observation_time(period.end, language, timezone_name, include_timezone=include_timezone)}.",
             period=period,
             **common,
         )
@@ -684,7 +686,7 @@ async def answer_factory_question(
         return FactoryAnswer(
             prefix
             + (
-                ("En son mevcut dönem " if tr else "Latest available period ")
+                ("Verisi bulunan son dönem " if tr else "Latest available period ")
                 if not explicit_window
                 else ""
             )
@@ -712,7 +714,7 @@ async def answer_factory_question(
         for p in points
     ]
     preview = "; ".join(
-        f"{format_observation_time(p.timestamp, language, timezone_name, include_timezone=include_timezone) if aggregation != 'MONTHLY' else p.timestamp.strftime('%Y-%m')}: {format_reneryo_value(p.value, metric.unit_group, language)}"
+        f"{format_observation_time(p.timestamp, language, timezone_name, include_timezone=include_timezone) if aggregation != 'MONTHLY' else period_display_name(p.timestamp.strftime('%Y-%m'), language)}: {format_reneryo_value(p.value, metric.unit_group, language)}"
         for p in points[-3:]
     )
     cadence = {

@@ -1,5 +1,7 @@
 """Localized AVAROS-owned recovery text; source names and payloads stay raw."""
 
+import re
+
 from skill.services.language import is_turkish
 
 
@@ -55,3 +57,32 @@ def localized_error_message(error, language: str | None) -> str:
     if code.startswith(("GENERIC_REST_", "RENERYO_", "MDSP_")) or code == "ADAPTER_ERROR":
         return "Veri kaynağından kullanılabilir bir yanıt alınamadı. Lütfen bağlantıyı ve yapılandırmayı kontrol edin."
     return "İsteği işlerken bir hata oluştu. Lütfen tekrar deneyin."
+
+
+_TURKISH_SOURCE_METRICS = {
+    "Temperature - Open Weather": "hava sıcaklığı",
+    "Humidity - Open Weather": "hava nemi",
+    "Rain - Open Weather": "yağış miktarı",
+    "Heating degree days - Open Weather": "ısıtma derece gün değeri",
+    "Cooling degree days - Open Weather": "soğutma derece gün değeri",
+    "Temperature": "sıcaklık", "Humidity": "nem", "Rain": "yağış miktarı",
+    "Heating degree days": "ısıtma derece gün değeri",
+    "Cooling degree days": "soğutma derece gün değeri",
+}
+
+
+def source_metric_label(name: str, language: str) -> str:
+    """Localize known labels only; unknown names and source evidence stay raw."""
+    return _TURKISH_SOURCE_METRICS.get(name, name) if is_turkish(language) else name
+
+
+_SOURCE_METRIC_PATTERN = re.compile(
+    r"(?<!\w)(?:" + "|".join(re.escape(name) for name in sorted((name for name in _TURKISH_SOURCE_METRICS if " - Open Weather" in name), key=len, reverse=True)) + r")(?![\w-])"
+)
+
+
+def localize_metric_labels(text: str, language: str) -> str:
+    """Localize exact known metric references within an owned presentation."""
+    if not is_turkish(language):
+        return text
+    return _SOURCE_METRIC_PATTERN.sub(lambda m: _TURKISH_SOURCE_METRICS[m[0]], text)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from skill.services.response_localization import localize_metric_labels
+
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -489,7 +491,7 @@ def _edit_distance_at_most_one(left: str, right: str) -> bool:
 
 
 def collection_headline(
-    result: MdspFindingList, filters: FindingFilters, language: str
+    result: MdspFindingList, filters: FindingFilters, language: str, *, spoken: bool = False,
 ) -> str:
     """Narrate the actual filtered records, not only an aggregate count."""
     rows = list(result.findings)
@@ -500,13 +502,22 @@ def collection_headline(
             if is_turkish(language)
             else f"There are no {filter_text.lower()} findings."
         )
-    items = "; ".join(
-        f"{index}. {_localized_severity(row.severity, language)} — {row.title.for_language(language)}"
-        for index, row in enumerate(rows, start=1)
-    )
+    if spoken and is_turkish(language):
+        ordinals = ("Birinci", "İkinci", "Üçüncü")
+        items = ". ".join(
+            f"{ordinals[index]} bulgu, {_localized_severity(row.severity, language).lower()} önem düzeyinde: {localize_metric_labels(row.title.for_language(language), language)}"
+            for index, row in enumerate(rows[:3])
+        )
+    else:
+        items = "; ".join(
+            f"{index}. {_localized_severity(row.severity, language)} — {localize_metric_labels(row.title.for_language(language), language)}"
+            for index, row in enumerate(rows, start=1)
+        )
     if is_turkish(language):
         return (
             f"{len(rows)} {filter_text} bulgu var: {items}. "
+            + ("Diğer bulguları ekrandaki listede görebilirsiniz. " if spoken and len(rows) > 3 else "")
+            +
             "Birini açıklamam için örneğin “ilkini açıkla” diyebilirsiniz."
         )
     return (
