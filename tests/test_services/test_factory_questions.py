@@ -112,6 +112,8 @@ QUESTIONS = [
     ("Bugün üretimimiz ne kadar?", "amount"),
     ("Geçen ay üretimi göster", "amount"),
     ("Son elektrik değerini göster", "reading"),
+    ("Tesis Toplam Elektrik Tüketimi son ölçüm değeri nedir?", "reading"),
+    ("Tesis Toplam Üretim Miktarı son gözleminin değeri nedir?", "reading"),
     ("Birikimli üretim değerini göster", "reading"),
     ("Elektrik verisi ne zaman kaydedildi?", "freshness"),
     ("Üretim verisi ne kadar güncel?", "freshness"),

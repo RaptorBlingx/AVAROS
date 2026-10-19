@@ -1501,11 +1501,9 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
             avarosUrl={config.avarosUrl}
             onModeChange={(nextMode) => {
               if (config.disabledModes.includes(nextMode)) return;
+              stopListening();
+              setWakeWordArmed(false);
               setMode(nextMode);
-              if (nextMode === "text") {
-                stopListening();
-                setWakeWordArmed(false);
-              }
             }}
             onWakeVoiceLanguageChange={selectWakeVoiceLanguage}
           />
