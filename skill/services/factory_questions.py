@@ -313,7 +313,9 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
         "sayaç değer",
         "sayac deger",
         "birikimli",
-    ) or (_has(text, "değer", "deger") and not consumption and not production)
+    ) or bool(re.search(
+        r"\b(?:ölçüm\w*|olcum\w*|gözlem\w*|gozlem\w*)\s+(?:değer\w*|deger\w*)\b", text
+    )) or (_has(text, "değer", "deger") and not consumption and not production)
     if _has(text, "metric", "metrik", "metriğ", "metrig") or (
         _has(text, "meter", "sayaç", "sayac") and not reading and not consumption
     ):
