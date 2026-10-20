@@ -45,11 +45,14 @@ export type ChatMessage = {
   language?: "en-US" | "tr-TR";
 };
 
+export type SessionTokenProvider = (forceRefresh?: boolean) => Promise<string>;
+
 export type WidgetConfig = {
   host: string;
   clientName: string;
   accessKey: string;
   sessionToken?: string;
+  getSessionToken?: SessionTokenProvider;
   accessSecret?: string;
   encryptionKey?: string;
   position: WidgetPosition;
@@ -70,6 +73,7 @@ export type WidgetConfig = {
 };
 
 export type WidgetPublicApi = {
+  setSessionTokenProvider: (provider: SessionTokenProvider) => void;
   open: () => void;
   close: () => void;
   destroy: () => void;

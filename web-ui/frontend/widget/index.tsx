@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Widget } from "./Widget";
 import { readWidgetConfig, resolveScriptElement } from "./config";
 import styleText from "./styles.css?inline";
-import type { WidgetPublicApi } from "./types";
+import type { SessionTokenProvider, WidgetPublicApi } from "./types";
 
 declare global {
   interface Window {
@@ -21,6 +21,13 @@ function bootstrap(): void {
   if (existing) return;
 
   const { config, configError } = readWidgetConfig(script);
+  let sessionTokenProvider: SessionTokenProvider | undefined;
+  if (config.sessionToken) {
+    config.getSessionToken = (forceRefresh) => sessionTokenProvider
+      ? sessionTokenProvider(forceRefresh)
+      : Promise.resolve(config.sessionToken ?? "");
+  }
+
   const host = document.createElement("div");
   host.id = ROOT_ID;
   document.body.appendChild(host);
@@ -34,7 +41,7 @@ function bootstrap(): void {
   shadowRoot.appendChild(container);
   const root = createRoot(container);
 
-  const runtimeApi: Omit<WidgetPublicApi, "destroy"> = {
+  const runtimeApi: Omit<WidgetPublicApi, "destroy" | "setSessionTokenProvider"> = {
     open: () => undefined,
     close: () => undefined,
     send: () => undefined,
@@ -51,6 +58,9 @@ function bootstrap(): void {
   };
 
   window.AvarosWidget = {
+    setSessionTokenProvider: (provider) => {
+      sessionTokenProvider = provider;
+    },
     open: () => runtimeApi.open(),
     close: () => runtimeApi.close(),
     send: (text: string) => runtimeApi.send(text),

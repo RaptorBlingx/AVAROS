@@ -733,3 +733,34 @@ describe("BackendWakeWordService", () => {
     });
   });
 });
+
+describe("renewable wake authorization", () => {
+  it("gets current authorization on each connection and forces renewal after expiry", async () => {
+    const provider = vi.fn(async (force?: boolean) => force ? "renewed" : "initial");
+    service = new BackendWakeWordService({ wsUrl: "ws://test/wakeword/ws/detect", getSessionToken: provider });
+    const initialized = service.initialize();
+    await Promise.resolve();
+    const first = MockWebSocket.lastInstance()!;
+    first.simulateOpen(); await initialized;
+    expect(JSON.parse(first.sentMessages[0] as string).session).toBe("initial");
+    first.readyState = MockWebSocket.CLOSED;
+    first.onclose?.({ code: 1008, reason: "Expired widget session" });
+    await vi.advanceTimersByTimeAsync(1_000);
+    const second = MockWebSocket.lastInstance()!;
+    second.simulateOpen();
+    expect(provider).toHaveBeenLastCalledWith(true);
+    expect(JSON.parse(second.sentMessages[0] as string).session).toBe("renewed");
+    second.readyState = MockWebSocket.CLOSED;
+    second.onclose?.({ code: 1008, reason: "Widget session origin mismatch" });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(MockWebSocket.instances).toHaveLength(2);
+  });
+
+  it("does not open a socket if disposed while obtaining authorization", async () => {
+    let resolve!: (token: string) => void;
+    service = new BackendWakeWordService({ getSessionToken: () => new Promise(r => { resolve = r; }) });
+    const initialized = service.initialize();
+    service.dispose(); resolve("renewed"); await initialized;
+    expect(MockWebSocket.instances).toHaveLength(0);
+  });
+});

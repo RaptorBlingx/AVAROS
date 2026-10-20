@@ -115,3 +115,33 @@ npm run build:widget
 
 The widget build should produce `dist/avaros-widget.js` as a single IIFE
 bundle.
+
+## Signed widget session renewal
+
+The embedding host owns authenticated session issuance. The widget must not receive service credentials or mint its own sessions. Existing AVAROS signed-token expiry, signature, organization and origin validation remains unchanged.
+
+The Reneryo integration previously deferred token renewal while `isConnected()` was true. Its immutable five-minute token could expire while the established socket remained healthy, then be reused for a HiveMind reconnect or a newly activated wake-word socket.
+
+### Integration contract
+
+After the widget loader's `load` event, attach an asynchronous provider:
+
+```ts
+window.AvarosWidget.setSessionTokenProvider(async (forceRefresh = false) => {
+  // Return a current token issued through the authenticated host backend.
+  // Coalesce concurrent calls. Renew before expiry or when forceRefresh is true.
+  return hostSession.getToken(forceRefresh);
+});
+```
+
+Reneryo's companion change on `fix/avaros-session-renewal` implements this through its existing general/finding assistant-session endpoints, without changing their scope or authentication. It renews 60 seconds before expiration, retries failed renewal after 30 seconds, checks freshness on socket connection (including after background timer throttling), and disposes pending results when the embedding scope changes. Failed renewal does not hand an expired token to a socket.
+
+The callback is installed outside React state. Both HiveMind and wake-word clients resolve it immediately before opening each new socket. Authorization renewal does not destroy the widget, reconnect healthy sockets, replay the initial prompt, change the conversation session ID, or clear the transcript. Pending authorization is ignored after teardown.
+
+An explicit `1008 / Expired widget session` response triggers one forced-renewal attempt on each socket path. Rejection of the refreshed attempt stops automatic authorization recovery. Other policy/authentication rejections are not converted into success or retried as expiry. Existing network reconnect behavior remains available. Existing embeds without a session provider retain their credential/static-token behavior.
+
+### Release requirements
+
+This is a coordinated AVAROS widget and Reneryo frontend change. Release the widget API before the Reneryo frontend integration and ensure the new widget bundle is served rather than a stale cached bundle. Existing open tabs need one reload to load the new client code; subsequent renewals do not remount the widget. No backend schema, migration, token TTL, service-token exposure, or authorization relaxation is required. Existing tokens remain valid under their existing rules.
+
+No merge or deployment is authorized by the implementation task. Production acceptance after an approved coordinated release should repeat a session beyond five minutes, transport loss, wake activation, voice-mode switching, and a follow-up using retained context.
