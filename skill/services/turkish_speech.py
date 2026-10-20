@@ -66,8 +66,71 @@ def render_turkish_speech(text: str) -> str:
     as a clock. Reapplying this renderer leaves its output unchanged.
     """
     parts = re.split(r'(\[\[.*?\]\]|https?://\S+)', text)
-    return ''.join(_render_fragment(part) if index % 2 == 0 else part
+    return ''.join(_render_fragment(_narrate_fragment(part)) if index % 2 == 0 else part
                    for index, part in enumerate(parts))
+
+
+def weather_delay_name(title: str) -> str | None:
+    """Recognize only exact source-attributed weather delay titles."""
+    from skill.services.response_localization import source_metric_label
+
+    suffix = " - Open Weather kaynağında gecikme algılandı"
+    if not title.endswith(suffix):
+        return None
+    name = title[:-len(suffix)]
+    if name not in ("Heating degree days", "Cooling degree days", "Temperature", "Humidity", "Rain"):
+        return None
+    return source_metric_label(name + " - Open Weather", "tr-TR")
+
+
+def weather_delay_speech(names: list[str]) -> str:
+    """State a shared delay without implying equal lag or a common cause."""
+    if set(names) == {"ısıtma derece gün değeri", "soğutma derece gün değeri"} and len(names) == 2:
+        subject = "ısıtma ve soğutma derece gün"
+    else:
+        subjects = [name.removesuffix(" değeri") for name in names]
+        subject = ", ".join(subjects[:-1]) + " ve " + subjects[-1] if len(subjects) > 1 else subjects[0]
+    return f"OpenWeather'dan gelen {subject} verilerinde gecikme var"
+
+
+def _weather_measurements(text: str) -> str:
+    """Share attribution only for adjacent, explicitly attributed readings."""
+    from skill.services.response_localization import source_metric_label
+
+    reading = r"(?<![\w-])(Temperature|Humidity|Rain) - Open Weather: ((?:%\s*)?[+-]?\d+(?:\.\d{3})*(?:,\d+)?(?:\s*(?:°C|mm|%))?)\."
+
+    def narrate(match: re.Match) -> str:
+        rows = re.findall(reading, match[0])
+        clauses = [f"{source_metric_label(name + ' - Open Weather', 'tr-TR')} {value}" for name, value in rows]
+        body = ", ".join(clauses[:-1]) + " ve " + clauses[-1] if len(clauses) > 1 else clauses[0]
+        return "OpenWeather verilerine göre " + body + "." + (" " if match[0][-1:].isspace() else "")
+
+    return re.sub(r"(?:" + reading + r"(?:\s+|$))+", narrate, text)
+
+
+def _narrate_fragment(text: str) -> str:
+    """Smooth exact AVAROS presentation templates; keep unknown prose intact."""
+    # No global punctuation replacement: decimal points, identifiers, URLs,
+    # quoted source prose and technical qualifiers must retain their meaning.
+    text = _weather_measurements(text)
+    text = re.sub(
+        r"(?<![\w-])(?:Heating degree days|Cooling degree days|Temperature|Humidity|Rain) - Open Weather kaynağında gecikme algılandı(?!\w)",
+        lambda match: weather_delay_speech([weather_delay_name(match[0])]), text,
+    )
+    replacements = {
+        "kaynağında gecikme algılandı": "verilerinde gecikme var",
+        "Kayıt zamanı: ": "Son kayıt ",
+        "Reneryo dönem tüketimi; veri kapsamı eksik olabilir.": "Bu, Reneryo'daki dönem tüketimi. Veri kapsamı eksik olabilir.",
+        "Bu birikimli sayaç değeridir; dönem tüketimi veya üretimi değildir.": "Bu, birikimli sayaç değeri; dönem tüketimi ya da üretimi değil.",
+    }
+    for original, spoken in replacements.items():
+        text = text.replace(original, spoken)
+    text = re.sub(r"Bu (gelişmiş|doğrusal) regresyon modeli (günlük|haftalık|aylık) dönemlidir ve (birincil değil|birincil)\.",
+                  lambda m: f"{m[2].capitalize()} dönemli bu {m[1]} regresyon modeli " + ("birincil değil." if m[3] == "birincil değil" else "birincil olarak işaretli."), text)
+    text = re.sub(r"Açıklayıcı değişkenler: (.+?)\. Bağlı dilimler: (.+?)\. Eğitim dönemi ",
+                  r"Modelde \1 kullanılıyor. Bağlı dilimler \2. Eğitim dönemi ", text)
+    text = re.sub(r"Eğitim dönemi (\d{4}-\d{2}-\d{2}) – (\d{4}-\d{2}-\d{2}); ", r"Eğitim dönemi \1 ile \2. ", text)
+    return text
 
 
 def _render_fragment(text: str) -> str:

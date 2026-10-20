@@ -8,7 +8,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-from skill.domain.reneryo_models import MdspEvaluation, MdspFindingList
+from skill.domain.reneryo_models import MdspEvaluation, MdspFinding, MdspFindingList
 from skill.services.conversation_state import DialogueState
 from skill.services.language import is_turkish
 
@@ -503,11 +503,7 @@ def collection_headline(
             else f"There are no {filter_text.lower()} findings."
         )
     if spoken and is_turkish(language):
-        ordinals = ("Birinci", "İkinci", "Üçüncü")
-        items = ". ".join(
-            f"{ordinals[index]} bulgu, {_localized_severity(row.severity, language).lower()} önem düzeyinde: {localize_metric_labels(row.title.for_language(language), language)}"
-            for index, row in enumerate(rows[:3])
-        )
+        items = ". ".join(_turkish_spoken_findings(rows[:3]))
     else:
         items = "; ".join(
             f"{index}. {_localized_severity(row.severity, language)} — {localize_metric_labels(row.title.for_language(language), language)}"
@@ -515,7 +511,7 @@ def collection_headline(
         )
     if is_turkish(language):
         return (
-            f"{len(rows)} {filter_text} bulgu var: {items}. "
+            f"{len(rows)} {filter_text} bulgu var" + (". " if spoken else ": ") + f"{items}. "
             + ("Diğer bulguları ekrandaki listede görebilirsiniz. " if spoken and len(rows) > 3 else "")
             +
             "Birini açıklamam için örneğin “ilkini açıkla” diyebilirsiniz."
@@ -523,6 +519,52 @@ def collection_headline(
     return (
         f"There are {len(rows)} {filter_text.lower()} findings: {items}. "
         "You can say, for example, “Explain the first one.”"
+    )
+
+
+def _turkish_spoken_findings(rows: list[MdspFinding]) -> list[str]:
+    """Group adjacent compatible weather notices, retaining selectable ordinals."""
+    from skill.services.turkish_speech import weather_delay_name, weather_delay_speech
+
+    ordinals = ("Birinci", "İkinci", "Üçüncü")
+    items = []
+    shared_severity = len(rows) > 1 and len({row.severity for row in rows}) == 1
+    if shared_severity:
+        severity = _localized_severity(rows[0].severity, "tr-TR").lower()
+        subject = "İkisi de" if len(rows) == 2 else "İlk 3 bulgu"
+        items.append(f"{subject} {severity} önem düzeyinde")
+    index = 0
+    while index < len(rows):
+        row = rows[index]
+        names = [weather_delay_name(row.title.tr)]
+        end = index + 1
+        while names[0] and end < len(rows) and _same_delay_context(row, rows[end]):
+            name = weather_delay_name(rows[end].title.tr)
+            if not name or name in names:
+                break
+            names.append(name)
+            end += 1
+        positions = [value if offset == 0 else value.replace("İ", "i").lower()
+                     for offset, value in enumerate(ordinals[index:end])]
+        ordinal = ", ".join(positions[:-1]) + " ve " + positions[-1] if len(positions) > 1 else positions[0]
+        severity = _localized_severity(row.severity, "tr-TR").lower()
+        title = weather_delay_speech(names) if names[0] else localize_metric_labels(row.title.tr, "tr-TR")
+        # Keep original numbering even when two findings share one sentence.
+        if shared_severity:
+            label = ("Birincisi,", "İkincisi,", "Üçüncüsü,")[index] if end == index + 1 else f"{ordinal} bulguda,"
+        else:
+            label = f"{ordinal} bulgu {severity} önem düzeyinde."
+        items.append(f"{label} {title.rstrip('.')}")
+        index = end
+    return items
+
+
+def _same_delay_context(left: MdspFinding, right: MdspFinding) -> bool:
+    """Never collapse different rules, periods, statuses or policy qualifications."""
+    fields = ("severity", "status", "domain", "entity_type", "rule_id", "rule_version",
+              "evaluation_start", "evaluation_end", "source_watermark", "provisional", "retired_at")
+    return bool(left.rule_id) and all(
+        getattr(left, field) == getattr(right, field) for field in fields
     )
 
 

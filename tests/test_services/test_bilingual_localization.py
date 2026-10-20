@@ -207,3 +207,50 @@ def test_known_weather_labels_are_presentation_only():
     assert source_metric_label("Temperature - Boiler 2", "tr-TR") == "Temperature - Boiler 2"
     assert localize_metric_labels("Temperature - Boiler 2", "tr-TR") == "Temperature - Boiler 2"
     assert row == before
+
+
+@pytest.mark.parametrize('written,expected', [
+    ('Temperature - Open Weather: 16,5 °C. Humidity - Open Weather: %70. Rain - Open Weather: 2,5 mm.',
+     'OpenWeather verilerine göre hava sıcaklığı on altı virgül beş derece, hava nemi yüzde yetmiş ve yağış miktarı iki virgül beş milimetre.'),
+    ('Bu doğrusal regresyon modeli günlük dönemlidir ve birincil değil. Eğitim dönemi 2025-01-01 – 2025-02-01; R² 0,850, RMSE 10,005.',
+     'Günlük dönemli bu doğrusal regresyon modeli birincil değil. Eğitim dönemi bir Ocak iki bin yirmi beş ile bir Şubat iki bin yirmi beş. er kare sıfır virgül sekiz yüz elli, kök ortalama kare hatası on virgül sıfır sıfır beş.'),
+    ('Bu birikimli sayaç değeridir; dönem tüketimi veya üretimi değildir.',
+     'Bu, birikimli sayaç değeri; dönem tüketimi ya da üretimi değil.'),
+])
+def test_turkish_narration_preserves_facts_and_other_languages(written, expected):
+    from skill.services.language import speech_text
+
+    assert speech_text(written, 'tr-TR') == expected
+    assert speech_text(expected, 'tr-TR') == expected
+    for language in ('en-US', 'de-DE'):
+        # Other languages retain the established quantity renderer.
+        assert speech_text(written, language).startswith(written.split('. ')[0].split(':')[0])
+
+
+def test_turkish_weather_does_not_merge_across_qualifiers_or_unknown_sources():
+    from skill.services.language import speech_text
+
+    written = ('Temperature - Open Weather: 16,5 °C. Veri kapsamı eksik olabilir. '
+               'Humidity - Other Source: %70. https://example.com/Temperature [[raw123]]')
+    spoken = speech_text(written, 'tr-TR')
+    assert 'Veri kapsamı eksik olabilir.' in spoken
+    assert 'Humidity - Other Source: yüzde yetmiş.' in spoken
+    assert 'https://example.com/Temperature [[raw123]]' in spoken
+    assert spoken.count('OpenWeather') == 1
+
+
+def test_spoken_narration_leaves_written_response_and_evidence_intact():
+    from skill.services.dia_response import speak_information
+
+    skill = SimpleNamespace(speak=Mock(), _response_language='tr-TR')
+    headline = 'Son ölçümde hava nemi %70. Kayıt zamanı: 01.01.2025 12:30.'
+    evidence = [{'name': 'Humidity - Open Weather', 'value': .7, 'unit_group': 'RATE'}]
+    original = deepcopy(evidence)
+    speak_information(skill, headline, evidence_rows=evidence, warnings=['Veri kapsamı eksik olabilir.'])
+    spoken = skill.speak.call_args.args[0]
+    metadata = skill.speak.call_args.kwargs['meta']['avaros_response']
+    assert metadata['headline'] == headline
+    assert metadata['evidence_rows'] == evidence == original
+    assert metadata['warnings'] == ['Veri kapsamı eksik olabilir.']
+    assert 'Son kayıt bir Ocak iki bin yirmi beş saat on iki otuz.' in spoken
+    assert metadata['speech_text'] == spoken

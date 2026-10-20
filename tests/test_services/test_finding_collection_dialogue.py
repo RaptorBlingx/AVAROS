@@ -596,3 +596,47 @@ def test_turkish_evaluation_collection_selection_and_followup():
 
     assert handle_reneryo_query(skill, _message("Bu bulgu neden oluştu?", "tr-TR"))
     assert "kırk sekiz saat ile gözlenen veri sıklığının üç katından" in skill.spoken[-1][0]
+
+
+def _weather_delay_pair():
+    return tuple(replace(
+        _finding(str(index), 'LOW'),
+        title=LocalizedText(en=f'{name} delay', tr=f'{name} - Open Weather kaynağında gecikme algılandı'),
+        metric_name=f'{name} - Open Weather',
+    ) for index, name in enumerate(('Cooling degree days', 'Heating degree days')))
+
+
+def test_spoken_weather_groups_preserve_written_findings_and_selection():
+    from copy import deepcopy
+    from skill.services.finding_collection import collection_headline
+    from skill.services.language import speech_text
+    from skill.services.conversation_state import DialogueState
+
+    rows = _weather_delay_pair()
+    result = MdspFindingList(rows, 2, 0)
+    before = deepcopy(result)
+    written = collection_headline(result, FindingFilters(), 'tr-TR')
+    spoken = speech_text(collection_headline(result, FindingFilters(), 'tr-TR', spoken=True), 'tr-TR')
+    assert '1. Düşük — soğutma derece gün değeri kaynağında gecikme algılandı' in written
+    assert '2. Düşük — ısıtma derece gün değeri kaynağında gecikme algılandı' in written
+    assert "OpenWeather'dan gelen ısıtma ve soğutma derece gün verilerinde gecikme var" in spoken
+    assert 'Birinci ve ikinci bulguda' in spoken
+    assert spoken.count('önem düzeyinde') == 1
+    assert result == before
+    assert selection_index('ikinciyi açıkla', DialogueState(finding_ids=tuple(r.finding_id for r in rows))) == 1
+    assert collection_headline(result, FindingFilters(), 'en-US', spoken=True) == collection_headline(result, FindingFilters(), 'en-US')
+
+
+@pytest.mark.parametrize('change', [
+    {'severity': 'HIGH'}, {'status': 'RESOLVED'}, {'rule_version': 3},
+    {'evaluation_end': datetime(2026, 9, 18, tzinfo=timezone.utc)},
+    {'provisional': False}, {'domain': 'TRENDS'},
+])
+def test_spoken_weather_keeps_incompatible_findings_separate(change):
+    from skill.services.finding_collection import collection_headline
+
+    first, second = _weather_delay_pair()
+    result = MdspFindingList((first, replace(second, **change)), 2, 0)
+    spoken = collection_headline(result, FindingFilters(), 'tr-TR', spoken=True)
+    assert spoken.count("OpenWeather'dan gelen") == 2
+    assert 'Birinci ve ikinci' not in spoken
