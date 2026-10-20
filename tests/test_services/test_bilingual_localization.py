@@ -186,6 +186,10 @@ def test_turkish_speech_preserves_quantity_meaning_and_is_idempotent():
         "01.07.2026 00:00; saat 14:30; süre 00:00; Haziran 2026; MDSP ve OEE.":
             "bir Temmuz iki bin yirmi altı gece yarısı; saat on dört otuz; süre 00:00; Haziran iki bin yirmi altı; em de se pe ve o e e.",
     }
+    examples["RMSE 10,005; R² 0,523; MDSP, OEE, KPI, UTC."] = (
+        "kök ortalama kare hatası on virgül sıfır sıfır beş; er kare sıfır virgül beş yüz yirmi üç; "
+        "em de se pe, o e e, ka pe i, evrensel eşgüdümlü zaman."
+    )
     for written, expected in examples.items():
         assert speech_text(written, "tr-TR") == expected
         assert speech_text(expected, "tr-TR") == expected

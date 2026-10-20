@@ -1,44 +1,57 @@
-"""Explicit speech-only pronunciations for English names in Turkish Piper."""
+"""Curated speech-only names and terminology for Turkish Piper."""
 
 from __future__ import annotations
 
 import re
 
-# Piper 1.4.2 raw phoneme syntax. These English phonemes are supported by
-# tr_TR-dfki-medium. Keep canonical names and displayed responses unchanged.
-# Exact, case-sensitive entries avoid treating metadata enums as names.
-# Full-name and shorter-form pronunciations passed Turkish listening review.
+# Piper 1.4.2 raw phonemes supported by tr_TR-dfki-medium. Future Gen's
+# pronunciation was accepted in listening review; Open Weather is retained.
+# Keep exact, case-sensitive spellings to avoid rewriting metadata enums.
 _PRONUNCIATIONS = {
-    "Cooling degree days - Open Weather": "kˈuːlɪŋ dᵻɡɹˈiː dˈeɪz ˈoʊpən wˈɛðɚ",
-    "Cooling degree days": "kˈuːlɪŋ dᵻɡɹˈiː dˈeɪz",
-    "Heating degree days - Open Weather": "hˈiːɾɪŋ dᵻɡɹˈiː dˈeɪz ˈoʊpən wˈɛðɚ",
-    "Heating degree days": "hˈiːɾɪŋ dᵻɡɹˈiː dˈeɪz",
-    "Humidity - Open Weather": "hjuːmˈɪdᵻɾi ˈoʊpən wˈɛðɚ",
+    # Keep short source-name forms in English, including attached Turkish suffixes.
+    "Temperature": "tˈɛmpɹɪtʃɚ",
     "Humidity": "hjuːmˈɪdᵻɾi",
-    "Rain - Open Weather": "ɹˈeɪn ˈoʊpən wˈɛðɚ",
     "Rain": "ɹˈeɪn",
+    "Heating degree days": "hˈiːɾɪŋ dᵻɡɹˈiː dˈeɪz",
+    "Cooling degree days": "kˈuːlɪŋ dᵻɡɹˈiː dˈeɪz",
+    "Future Gen": "fjˈuːtʃɚ dʒˈɛn",
     "Open Weather": "ˈoʊpən wˈɛðɚ",
     "OpenWeather": "ˈoʊpən wˈɛðɚ",
-    "Temperature - Open Weather": "tˈɛmpɹɪtʃɚ ˈoʊpən wˈɛðɚ",
-    "Temperature": "tˈɛmpɹɪtʃɚ",
+}
+# Match the established Turkish narration vocabulary, including when dynamic
+# finding/source labels reach Piper without response-level localization.
+# Retain source attribution in full labels; displayed names stay canonical.
+_TURKISH_METRIC_TERMS = {
+    "Temperature": "hava sıcaklığı",
+    "Humidity": "hava nemi",
+    "Rain": "yağış miktarı",
+    "Heating degree days": "ısıtma derece gün değeri",
+    "Cooling degree days": "soğutma derece gün değeri",
+}
+_SPEECH_REPLACEMENTS = {
+    **{name: f"[[{phonemes}]]" for name, phonemes in _PRONUNCIATIONS.items()},
+    **{
+        f"{name} - Open Weather": f"{spoken}, [[{_PRONUNCIATIONS['Open Weather']}]]"
+        for name, spoken in _TURKISH_METRIC_TERMS.items()
+    },
 }
 _NAME_PATTERN = re.compile(
     r"(?<!\w)(?:"
-    + "|".join(re.escape(name) for name in sorted(_PRONUNCIATIONS, key=len, reverse=True))
+    + "|".join(re.escape(name) for name in sorted(_SPEECH_REPLACEMENTS, key=len, reverse=True))
     + r")(?!\w)"
 )
-_RAW_PHONEME_PATTERN = re.compile(r"(\[\[.*?\]\])", re.DOTALL)
+_RAW_PHONEME_PATTERN = re.compile(r"(\[\[.*?\]\]|https?://\S+)", re.DOTALL)
 
 
 def render_piper_text(text: str, language: str) -> str:
-    """Render known names as phonemes, only for transient Turkish TTS input."""
+    """Render curated names/terms only in transient Turkish Piper input."""
     if not language.strip().lower().startswith("tr"):
         return text
 
-    # Preserve existing raw phoneme blocks and make rendering idempotent.
+    # Preserve raw phonemes and URLs, and make rendering idempotent.
     parts = _RAW_PHONEME_PATTERN.split(text)
     for index in range(0, len(parts), 2):
         parts[index] = _NAME_PATTERN.sub(
-            lambda match: f"[[{_PRONUNCIATIONS[match.group(0)]}]]", parts[index]
+            lambda match: _SPEECH_REPLACEMENTS[match.group(0)], parts[index]
         )
     return "".join(parts)

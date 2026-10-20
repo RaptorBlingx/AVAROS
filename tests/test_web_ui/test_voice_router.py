@@ -366,7 +366,7 @@ class TestVoiceTTS:
         payload = voice_router.SpeechRequest(text=original, language="tr-TR")
 
         assert voice_router._synthesize_wav_piper_in_process(payload) == b"wav"
-        assert seen == ["[[tˈɛmpɹɪtʃɚ ˈoʊpən wˈɛðɚ]] için son gözlem var."]
+        assert seen == ["hava sıcaklığı, [[ˈoʊpən wˈɛðɚ]] için son gözlem var."]
         assert payload.text == original
 
     def test_piper_cli_uses_same_transient_rendering(self, monkeypatch, tmp_path):

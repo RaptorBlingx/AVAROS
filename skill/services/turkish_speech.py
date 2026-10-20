@@ -107,8 +107,11 @@ def _render_fragment(text: str) -> str:
     number = r'[+-]?\d+(?:\.\d{3})*(?:,\d+)?'
     text = re.sub(rf'%\s*({number})', r'yüzde \1', text)
     text = re.sub(rf'({number})\s*%', r'yüzde \1', text)
+    # Individual Turkish readings: system initials MDSP, factory OEE/KPI,
+    # mathematical R-squared and the UTC time standard retain their readings.
+    # RMSE is clearer as the established Turkish statistical term.
     abbreviations = {'MDSP': 'em de se pe', 'OEE': 'o e e', 'KPI': 'ka pe i',
-                     'UTC': 'evrensel eşgüdümlü zaman', 'R²': 'er kare', 'RMSE': 'er em se e'}
+                     'UTC': 'evrensel eşgüdümlü zaman', 'R²': 'er kare', 'RMSE': 'kök ortalama kare hatası'}
     for label, spoken in abbreviations.items():
         text = re.sub(rf'(?<!\w){re.escape(label)}(?!\w)', spoken, text)
     # Preserve URLs, IDs, raw phonemes and colon-form durations verbatim.

@@ -5,10 +5,10 @@ from services.piper_pronunciation import render_piper_text
 
 
 @pytest.mark.parametrize("language", ["tr", "tr-TR", " TR-tr "])
-def test_longest_name_is_rendered_as_one_phoneme_block(language):
+def test_full_metric_uses_turkish_term_and_retains_english_source(language):
     text = "İlgili metrik Temperature - Open Weather; Temperature için gözlem var."
     assert render_piper_text(text, language) == (
-        "İlgili metrik [[tˈɛmpɹɪtʃɚ ˈoʊpən wˈɛðɚ]]; "
+        "İlgili metrik hava sıcaklığı, [[ˈoʊpən wˈɛðɚ]]; "
         "[[tˈɛmpɹɪtʃɚ]] için gözlem var."
     )
 
@@ -40,24 +40,24 @@ def test_punctuation_and_turkish_suffix_are_preserved():
 def test_existing_phoneme_blocks_are_preserved_and_rendering_is_idempotent():
     text = "[[Temperature]] Temperature - Open Weather."
     rendered = render_piper_text(text, "tr-TR")
-    assert rendered == "[[Temperature]] [[tˈɛmpɹɪtʃɚ ˈoʊpən wˈɛðɚ]]."
+    assert rendered == "[[Temperature]] hava sıcaklığı, [[ˈoʊpən wˈɛðɚ]]."
     assert render_piper_text(rendered, "tr-TR") == rendered
 
 
 @pytest.mark.parametrize(
-    ("name", "phonemes"),
+    ("name", "spoken", "phonemes"),
     [
-        ("Cooling degree days", "kˈuːlɪŋ dᵻɡɹˈiː dˈeɪz"),
-        ("Heating degree days", "hˈiːɾɪŋ dᵻɡɹˈiː dˈeɪz"),
-        ("Humidity", "hjuːmˈɪdᵻɾi"),
-        ("Rain", "ɹˈeɪn"),
+        ("Cooling degree days", "soğutma derece gün değeri", "kˈuːlɪŋ dᵻɡɹˈiː dˈeɪz"),
+        ("Heating degree days", "ısıtma derece gün değeri", "hˈiːɾɪŋ dᵻɡɹˈiː dˈeɪz"),
+        ("Humidity", "hava nemi", "hjuːmˈɪdᵻɾi"),
+        ("Rain", "yağış miktarı", "ɹˈeɪn"),
     ],
 )
-def test_reviewed_metric_names_prefer_full_name_then_shorter_form(name, phonemes):
+def test_full_names_use_turkish_terms_and_short_names_keep_english(name, spoken, phonemes):
     original = f"İlgili metrik {name} - Open Weather; {name} için dönem seçebilirsiniz."
     rendered = render_piper_text(original, "tr-TR")
     assert rendered == (
-        f"İlgili metrik [[{phonemes} ˈoʊpən wˈɛðɚ]]; "
+        f"İlgili metrik {spoken}, [[ˈoʊpən wˈɛðɚ]]; "
         f"[[{phonemes}]] için dönem seçebilirsiniz."
     )
     assert render_piper_text(rendered, "tr-TR") == rendered
@@ -78,3 +78,11 @@ def test_reviewed_names_keep_turkish_suffixes(name, phonemes):
     assert render_piper_text(f"{name}'in eğilimini sorabilirsiniz.", "tr-TR") == (
         f"[[{phonemes}]]'in eğilimini sorabilirsiniz."
     )
+
+
+def test_future_gen_suffixes_urls_and_idempotence():
+    text = "Future Gen'in verileri: https://example.test/OpenWeather/Temperature"
+    rendered = render_piper_text(text, "tr-TR")
+    assert rendered == "[[fjˈuːtʃɚ dʒˈɛn]]'in verileri: https://example.test/OpenWeather/Temperature"
+    assert render_piper_text(rendered, "tr-TR") == rendered
+    assert render_piper_text(text, "en-US") == text
