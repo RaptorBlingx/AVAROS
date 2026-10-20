@@ -310,3 +310,65 @@ describe("grounded display and speech", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("renewable signed sessions", () => {
+  class Socket {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static instances: Socket[] = [];
+    readyState = 0;
+    onopen: (() => void) | null = null;
+    onmessage = null;
+    onerror = null;
+    onclose: ((event: { code: number; reason: string }) => void) | null = null;
+    sent: string[] = [];
+    constructor(readonly url: string) { Socket.instances.push(this); }
+    send(value: string) { this.sent.push(value); }
+    open() { this.readyState = 1; this.onopen?.(); }
+    close(code = 1006, reason = "") { this.readyState = 3; this.onclose?.({ code, reason }); }
+  }
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); Socket.instances = []; });
+
+  it("refreshes an expired reconnect and retains the conversation session ID", async () => {
+    vi.stubGlobal("WebSocket", Socket);
+    const provider = vi.fn(async (force?: boolean) => force ? "fresh" : "old");
+    const manager = new ConnectionManager("ws://localhost/hivemind/", "", "", "", "", "en-US", "initial", provider);
+    manager.connect();
+    await Promise.resolve();
+    const first = Socket.instances[0];
+    first.open();
+    first.close(1008, "Expired widget session");
+    await Promise.resolve();
+    const second = Socket.instances[1];
+    second.open();
+    expect(second.url).toContain("session=fresh");
+    expect(provider).toHaveBeenLastCalledWith(true);
+    const id = (socket: Socket) => JSON.parse(socket.sent[0]).payload.session.session_id;
+    expect(id(second)).toBe(id(first));
+    second.close(1008, "Expired widget session");
+    expect(manager.getState()).toBe("error");
+    expect(Socket.instances).toHaveLength(2);
+    manager.destroy();
+  });
+
+  it("does not refresh origin or signature rejections", async () => {
+    vi.stubGlobal("WebSocket", Socket);
+    const provider = vi.fn(async () => "signed");
+    const manager = new ConnectionManager("ws://localhost/hivemind/", "", "", "", "", "en-US", "", provider);
+    manager.connect(); await Promise.resolve();
+    Socket.instances[0].open();
+    Socket.instances[0].close(1008, "Widget session origin mismatch");
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(manager.getState()).toBe("error");
+    manager.destroy();
+  });
+
+  it("does not open a socket after disposal during renewal", async () => {
+    vi.stubGlobal("WebSocket", Socket);
+    let resolve!: (token: string) => void;
+    const manager = new ConnectionManager("ws://localhost/hivemind/", "", "", "", "", "en-US", "", () => new Promise(r => { resolve = r; }));
+    manager.connect(); manager.destroy(); resolve("fresh");
+    await Promise.resolve();
+    expect(Socket.instances).toHaveLength(0);
+  });
+});

@@ -34,7 +34,7 @@ import type {
 type WidgetProps = {
   config: WidgetConfig;
   configError: string | null;
-  onReady: (api: Omit<WidgetPublicApi, "destroy">) => void;
+  onReady: (api: Omit<WidgetPublicApi, "destroy" | "setSessionTokenProvider">) => void;
 };
 
 type BrowserSpeechRecognitionCtor = {
@@ -1044,6 +1044,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
     const bww = new BackendWakeWordService({
       wsUrl: config.wakeWordUrl,
       sessionToken: config.sessionToken,
+      getSessionToken: config.getSessionToken,
       captureUtterance: true,
     });
     backendWakeWordRef.current = bww;
@@ -1171,7 +1172,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       bww.dispose();
       backendWakeWordRef.current = null;
     };
-  }, [config.sessionToken, config.wakeWordUrl, ensureConnected, mode]);
+  }, [config.sessionToken, config.getSessionToken, config.wakeWordUrl, ensureConnected, mode]);
 
   useEffect(() => {
     if (mode !== "wake-word") {
@@ -1232,6 +1233,7 @@ export function Widget({ config, configError, onReady }: WidgetProps) {
       config.encryptionKey,
       config.language,
       config.sessionToken,
+      config.getSessionToken,
     );
     managerRef.current = manager;
     if (config.autoOpen) {

@@ -192,7 +192,9 @@ export class ConnectionManager {
   private readonly accessSecret: string;
   private readonly encryptionKey: string;
   private language: string;
-  private readonly sessionToken: string;
+  private sessionToken: string;
+  private authorizationPending = false;
+  private connectionGeneration = 0;
   private readonly sessionId = makeSessionId();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
@@ -213,6 +215,7 @@ export class ConnectionManager {
     encryptionKey = "",
     language = "en-US",
     sessionToken = "",
+    private readonly getSessionToken?: (forceRefresh?: boolean) => Promise<string>,
   ) {
     this.host = host;
     this.clientName = clientName;
@@ -260,7 +263,35 @@ export class ConnectionManager {
     return this.state;
   }
 
-  connect(): void {
+  connect(forceRefresh = false): void {
+    if (this.disposed || this.authorizationPending) return;
+    if (this.ws && (
+      this.ws.readyState === WebSocket.OPEN ||
+      this.ws.readyState === WebSocket.CONNECTING
+    )) return;
+    if (!this.getSessionToken) {
+      this.openConnection(forceRefresh);
+      return;
+    }
+    this.cancelReconnect();
+    this.setState("connecting");
+    this.authorizationPending = true;
+    const generation = ++this.connectionGeneration;
+    void this.getSessionToken(forceRefresh).then((token) => {
+      if (generation !== this.connectionGeneration || this.disposed) return;
+      if (!token.trim()) throw new Error("Widget session is unavailable");
+      this.authorizationPending = false;
+      this.sessionToken = token.trim();
+      this.openConnection(forceRefresh);
+    }).catch(() => {
+      if (generation !== this.connectionGeneration || this.disposed) return;
+      this.authorizationPending = false;
+      this.setState("error");
+      this.scheduleReconnect();
+    });
+  }
+
+  private openConnection(refreshedAuthorization: boolean): void {
     if (this.disposed) return;
     if (isAesKeyLength(this.encryptionKey.trim()) && !hasWebCrypto()) {
       this.ws = null;
@@ -337,6 +368,11 @@ export class ConnectionManager {
         }
 
         if (event.code === 1008 || event.code === 4001 || event.code === 4003) {
+          if (event.code === 1008 && event.reason === "Expired widget session" &&
+              this.getSessionToken && !refreshedAuthorization) {
+            this.connect(true);
+            return;
+          }
           this.setState("error");
           return;
         }
@@ -350,6 +386,8 @@ export class ConnectionManager {
   }
 
   disconnect(): void {
+    this.connectionGeneration += 1;
+    this.authorizationPending = false;
     this.cancelReconnect();
     if (this.ws) {
       this.ws.onopen = null;

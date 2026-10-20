@@ -56,6 +56,7 @@ export interface BackendWakeWordConfig {
   sensitivity: number;
   /** Optional short-lived signed session for embedded browser audio. */
   sessionToken?: string;
+  getSessionToken?: (forceRefresh?: boolean) => Promise<string>;
   /** Enable server-side post-wake VAD and transcription for the widget. */
   captureUtterance?: boolean;
 }
@@ -203,6 +204,8 @@ export class BackendWakeWordService {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = BACKOFF_INITIAL_MS;
   private shouldReconnect = false;
+  private connectionGeneration = 0;
+  private refreshSession = false;
   private connectPromise: Promise<void> | null = null;
 
   // Audio pipeline
@@ -344,6 +347,7 @@ export class BackendWakeWordService {
    */
   dispose(): void {
     this.shouldReconnect = false;
+    this.connectionGeneration += 1;
     this.clearReconnectTimer();
     this.stopAudioCapture({ keepAudioContext: false });
     this.closeWebSocket();
@@ -456,7 +460,24 @@ export class BackendWakeWordService {
    *
    * Resolves when the connection opens; rejects on error/close before open.
    */
-  private connect(): Promise<void> {
+  private async connect(): Promise<void> {
+    const generation = this.connectionGeneration;
+    const refreshedAuthorization = this.refreshSession;
+    this.refreshSession = false;
+    let sessionToken = this.config.sessionToken;
+    try {
+      if (this.config.getSessionToken) {
+        sessionToken = await this.config.getSessionToken(refreshedAuthorization);
+        if (!sessionToken.trim()) throw new Error("Widget session is unavailable");
+      }
+    } catch (error) {
+      if (generation === this.connectionGeneration && this.shouldReconnect) {
+        this.setState("error");
+        this.scheduleReconnect();
+      }
+      throw error;
+    }
+    if (generation !== this.connectionGeneration || !this.shouldReconnect) return;
     return new Promise<void>((resolve, reject) => {
       this.setState("connecting");
 
@@ -471,11 +492,11 @@ export class BackendWakeWordService {
 
       this.ws.onopen = () => {
         this.reconnectDelay = BACKOFF_INITIAL_MS;
-        if (this.config.sessionToken) {
+        if (sessionToken) {
           this.ws?.send(
             JSON.stringify({
               command: "authenticate_widget",
-              session: this.config.sessionToken,
+              session: sessionToken,
             }),
           );
         }
@@ -504,7 +525,7 @@ export class BackendWakeWordService {
         // onerror fires before onclose — rejection handled in onclose
       };
 
-      this.ws.onclose = () => {
+      this.ws.onclose = (event) => {
         const wasConnecting = this._state === "connecting";
         this.setState("error");
         this.connectPromise = null;
@@ -513,6 +534,11 @@ export class BackendWakeWordService {
           reject(new Error("WebSocket connection failed"));
         }
 
+        if (event.code === 1008) {
+          if (event.reason !== "Expired widget session" ||
+              !this.config.getSessionToken || refreshedAuthorization) return;
+          this.refreshSession = true;
+        }
         this.scheduleReconnect();
       };
     });
