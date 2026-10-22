@@ -98,6 +98,13 @@ def is_historical_change_question(text: str) -> bool:
     ))
 
 
+def historical_reading_unavailable(period: TimePeriod, language: str) -> str:
+    """A dated cumulative reading or freshness snapshot is not exposed."""
+    if is_turkish(language):
+        return (f"{period_display_name(period.display_name, language)}: Bu erişim arayüzü tarihsel birikimli sayaç değerlerini veya tarihsel güncellik kayıtlarını sunmuyor; yalnızca son değer ve dönem toplamları mevcut. İstenen okumayı son değerle değiştirmedim.")
+    return (f"{period_display_name(period.display_name, language)}: This access interface does not expose historical cumulative readings or historical freshness snapshots; it provides the latest reading and period aggregates. I have not substituted the latest reading for the requested one.")
+
+
 def classify_factory_question(utterance, state) -> FactoryRequest | None:
     text = normalize_phrase(utterance)
     # Findings, policy, regressions and weather keep their established dialogue.
@@ -531,11 +538,7 @@ async def answer_factory_question(
         )
     if request.kind in {"reading", "freshness"} and explicit_window:
         return FactoryAnswer(
-            (
-                f"{period_display_name(period.display_name, language)}: Bu erişim arayüzü tarihsel birikimli sayaç değerlerini veya tarihsel güncellik kayıtlarını sunmuyor; yalnızca son değer ve dönem toplamları mevcut. İstenen okumayı son değerle değiştirmedim."
-                if tr
-                else f"{period_display_name(period.display_name, language)}: This access interface does not expose historical cumulative readings or historical freshness snapshots; it provides the latest reading and period aggregates. I have not substituted the latest reading for the requested one."
-            ),
+            historical_reading_unavailable(period, language),
             "unavailable",
             period=period,
             **common,

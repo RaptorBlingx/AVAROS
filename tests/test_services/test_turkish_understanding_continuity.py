@@ -144,3 +144,124 @@ def test_turkish_value_questions_receive_the_value_not_the_metric_description(qu
     response = turn(harness(), question)
     assert response['headline'].startswith('Son ölçümde')
     assert 'anlık ölçüm' not in response['headline']
+
+
+# --- Independent review regressions: a resumed request keeps its structure. ---
+
+def factory_harness():
+    from tests.test_services.test_factory_predeployment import harness as predeployment
+    return predeployment()
+
+
+def test_value_clarification_keeps_the_cumulative_reading_not_period_consumption():
+    # "Tüketimi" in the metric name must not turn a value request into consumption.
+    skill = factory_harness()
+    turn(skill, 'Değeri kaç?')
+    resumed = turn(skill, 'Elektrik metriği.')
+    assert resumed['response_type'] == 'metrics'
+    assert '9.000 kWh' in resumed['headline'] and 'birikimli sayaç' in resumed['headline']
+    assert 'Synthetic meter' not in resumed['headline'] and '25 kWh' not in resumed['headline']
+
+
+@pytest.mark.parametrize('first,answer,direct,language', [
+    ('Değeri kaç?', 'Nem.', 'Nemin değeri kaç?', 'tr-TR'),
+    ('Değeri kaç?', 'Hava sıcaklığı.', 'Hava sıcaklığının değeri kaç?', 'tr-TR'),
+    ('Son ölçüm ne zaman kaydedildi?', 'Yağışın.', 'Yağışın son ölçümü ne zaman kaydedildi?', 'tr-TR'),
+    ('Eylül 2026 son ölçümü ne zaman?', 'Nem.', 'Eylül 2026 nem son ölçümü ne zaman?', 'tr-TR'),
+    ('Eylül 2026 değeri nedir?', 'Nem.', 'Eylül 2026 nem değeri nedir?', 'tr-TR'),
+    ('Eylül 2026 eğilimini göster.', 'Sıcaklık.', 'Eylül 2026 sıcaklık eğilimini göster.', 'tr-TR'),
+    ('What is the value?', 'Humidity.', 'What is the humidity value?', 'en-US'),
+    ('When was the last reading recorded?', 'Rain.', 'When was the last rain reading recorded?', 'en-US'),
+])
+def test_resumed_answer_matches_the_same_question_asked_directly(first, answer, direct, language):
+    resumed_skill, direct_skill = harness(), harness()
+    turn(resumed_skill, first, language)
+    resumed = turn(resumed_skill, answer, language)
+    expected = turn(direct_skill, direct, language)
+    assert (resumed['response_type'], resumed['headline']) == (expected['response_type'], expected['headline'])
+    assert (resumed_skill._futuregen_service.trend.await_args is None) == (
+        direct_skill._futuregen_service.trend.await_args is None)
+    if expected['response_type'] == 'trend':
+        resumed_call = resumed_skill._futuregen_service.trend.await_args
+        direct_call = direct_skill._futuregen_service.trend.await_args
+        assert (resumed_call.args[1], resumed_call.kwargs) == (direct_call.args[1], direct_call.kwargs)
+
+
+def test_historical_timestamp_constraint_survives_the_clarification():
+    skill = harness()
+    turn(skill, 'Eylül 2026 son ölçümü ne zaman?')
+    resumed = turn(skill, 'Nem.')
+    # Inventory has only the latest timestamp: never substitute it for September.
+    assert resumed['response_type'] == 'unavailable'
+    assert '15.10.2026' not in resumed['headline']
+
+
+@pytest.mark.parametrize('reply,next_reply,language', [
+    ('Sıcaklık değil.', 'Nem.', 'tr-TR'),
+    ('Sıcaklık olmasın.', 'Nem.', 'tr-TR'),
+    ('Not temperature.', 'Humidity.', 'en-US'),
+])
+def test_negated_subject_reply_is_not_executed_and_still_awaits_the_subject(reply, next_reply, language):
+    skill = harness()
+    turn(skill, 'Eylül 2026 eğilimini göster.' if language == 'tr-TR' else 'Show the trend for September 2026.', language)
+    response = turn(skill, reply, language)
+    assert response['response_type'] == 'clarification'
+    assert skill._futuregen_service.trend.await_args is None
+    resumed = turn(skill, next_reply, language)
+    call = skill._futuregen_service.trend.await_args
+    assert resumed['response_type'] == 'trend' and call.kwargs['metric'].metric_id == 'h'
+    assert (call.args[1].start.year, call.args[1].start.month) == (2026, 9)
+
+
+@pytest.mark.parametrize('reply,language', [('Sıcaklık değil, nem.', 'tr-TR'), ('Not temperature, humidity.', 'en-US')])
+def test_negated_reply_with_a_replacement_uses_only_the_replacement(reply, language):
+    skill = harness()
+    turn(skill, 'Eylül 2026 eğilimini göster.' if language == 'tr-TR' else 'Show the trend for September 2026.', language)
+    resumed = turn(skill, reply, language)
+    call = skill._futuregen_service.trend.await_args
+    assert resumed['response_type'] == 'trend' and call.kwargs['metric'].metric_id == 'h'
+    assert (call.args[1].start.year, call.args[1].start.month) == (2026, 9)
+
+
+@pytest.mark.parametrize('reply', ['Sıcaklık ve titreşim.', 'Sıcaklık ve nem.', 'Sıcaklık, nem.'])
+def test_multi_subject_reply_asks_for_one_metric_and_keeps_the_request(reply):
+    skill = harness()
+    turn(skill, 'Eylül 2026 eğilimini göster.')
+    response = turn(skill, reply)
+    assert response['response_type'] == 'clarification'
+    assert skill._futuregen_service.trend.await_args is None
+    resumed = turn(skill, 'Sıcaklık.')
+    call = skill._futuregen_service.trend.await_args
+    assert resumed['response_type'] == 'trend' and call.kwargs['metric'].metric_id == 't'
+    assert (call.args[1].start.year, call.args[1].start.month) == (2026, 9)
+
+
+def test_subject_switch_keeps_the_trend_through_structured_dispatch():
+    skill = harness()
+    turn(skill, 'Eylül 2026 nem eğilimini göster.')
+    before = skill._futuregen_service.trend.await_args
+    turn(skill, 'Peki elektrik?')
+    call = skill._futuregen_service.trend.await_args
+    # The new subject is executed directly; no factory consumption route is entered.
+    assert call.kwargs['metric'].metric_id == 'e' and call.args[1] == before.args[1]
+
+
+@pytest.mark.parametrize('first,answer,direct', [
+    ('Eylül 2026 değeri nedir?', 'Elektrik.', 'Eylül 2026 elektrik değeri nedir?'),
+    ('Değeri kaç?', 'Elektrik metriği.', 'Elektrik metriğinin değeri kaç?'),
+])
+def test_resumed_cumulative_counter_reads_match_the_direct_route(first, answer, direct):
+    resumed_skill, direct_skill = factory_harness(), factory_harness()
+    turn(resumed_skill, first)
+    resumed = turn(resumed_skill, answer)
+    expected = turn(direct_skill, direct)
+    assert (resumed['response_type'], resumed['headline']) == (expected['response_type'], expected['headline'])
+
+
+def test_period_named_in_the_clarification_answer_is_kept():
+    skill = harness()
+    turn(skill, 'Son ölçüm ne zaman kaydedildi?')
+    resumed = turn(skill, 'Geçen ay nemin.')
+    # Only the latest timestamp exists: a dated timestamp abstains.
+    assert resumed['response_type'] == 'unavailable'
+    assert '15.10.2026' not in resumed['headline']

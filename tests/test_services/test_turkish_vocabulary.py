@@ -55,3 +55,19 @@ def test_inflected_and_capitalized_turkish_subjects_ground(text, expected):
 
 def test_unknown_subject_is_not_grounded():
     assert metric_references('Titreşim', METRICS) == []
+
+
+@pytest.mark.parametrize('text,expected', [
+    ('RAIN metriğinin son değeri nedir?', 'RAIN'),
+    ('RAIN METRİĞİNİN SON DEĞERİ NEDİR?', 'RAIN'),
+    ('GRID IMPORT metriğinin son değeri nedir?', 'GRID IMPORT'),
+    ('What is the GRID IMPORT value?', 'GRID IMPORT'),
+])
+def test_exact_upper_case_english_metric_names_still_ground(text, expected):
+    metrics = [ReneryoMetric('r', 'RAIN', 'GAUGE', 'PRECIPITATION'),
+               ReneryoMetric('g', 'GRID IMPORT', 'COUNTER', 'ENERGY')]
+    assert [m.name for m in metric_references(text, metrics)] == [expected]
+
+
+def test_mixed_case_request_keeps_upper_case_english_words():
+    assert normalize_phrase('RAIN metriğinin son değeri') == 'rain metriğinin son değeri'

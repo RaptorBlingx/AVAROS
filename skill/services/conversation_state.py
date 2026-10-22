@@ -24,6 +24,9 @@ class DialogueState:
     # Operation awaiting the subject a metric clarification asked for
     # ("value", "timestamp", "detail" or "trend"); never the utterance itself.
     pending_operation: str = ""
+    # The request's explicit period phrase as extracted ("eylül 2026"), so a
+    # resumed request keeps its temporal constraint.
+    pending_period: str = ""
     organization_id: str = ""
     active_finding_id: str = ""
     entity_id: str = ""

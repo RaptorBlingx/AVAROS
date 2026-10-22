@@ -181,16 +181,16 @@ def metric_references(utterance: str, metrics):
     Exact names narrow aliases within their family. Unlike the legacy single
     match helper, all explicit families must be available; callers must clarify multiple matches.
     """
-    text = _metric_reference_text(utterance)
+    text = _key(_metric_reference_text(utterance))
     exact = [m for m in metrics if m.name and (re.search(
-        rf"(?<!\w){re.escape(normalize_phrase(m.name))}(?!\w)", text
+        rf"(?<!\w){re.escape(_key(m.name))}(?!\w)", text
     ) or _localized_name_reference(text, m))]
     found = {m.metric_id: m for m in exact}
     for terms in _METRIC_ALIASES:
-        if not any(_contains_alias(text, normalize_phrase(t)) for t in terms):
+        if not any(_contains_alias(text, _key(t)) for t in terms):
             continue
         family = [m for m in metrics if any(
-            _contains_alias(normalize_phrase(m.name), normalize_phrase(t)) for t in terms
+            _contains_alias(_key(m.name), _key(t)) for t in terms
         )]
         if not family:
             return []
@@ -201,30 +201,30 @@ def metric_references(utterance: str, metrics):
 
 def has_metric_alias(utterance: str) -> bool:
     """Whether a request names a supported family, even if inventory lacks it."""
-    text = _metric_reference_text(utterance)
-    return any(_contains_alias(text, normalize_phrase(term))
+    text = _key(_metric_reference_text(utterance))
+    return any(_contains_alias(text, _key(term))
                for family in _METRIC_ALIASES for term in family)
 
 
 def match_metric(utterance: str, metrics):
     """Ground a natural metric reference in Reneryo-owned inventory data."""
-    normalized = _metric_reference_text(utterance)
+    normalized = _key(_metric_reference_text(utterance))
     for metric in metrics:
-        name = normalize_phrase(metric.name)
+        name = _key(metric.name)
         if name and (name in normalized or normalized in name):
             return metric
     for metric in metrics:
         if _localized_name_reference(normalized, metric):
             return metric
     for terms in _METRIC_ALIASES:
-        normalized_terms = tuple(normalize_phrase(term) for term in terms)
+        normalized_terms = tuple(_key(term) for term in terms)
         if any(_contains_alias(normalized, term) for term in normalized_terms):
             return next(
                 (
                     metric
                     for metric in metrics
                     if any(
-                        _contains_alias(normalize_phrase(metric.name), term)
+                        _contains_alias(_key(metric.name), term)
                         for term in normalized_terms
                     )
                 ),
@@ -260,4 +260,23 @@ def _localized_name_reference(text: str, metric) -> bool:
     label = source_metric_label(metric.name, "tr-TR")
     if not label or label == metric.name:
         return False
-    return _contains_alias(text, normalize_phrase(label))
+    return _contains_alias(text, _key(label))
+
+
+def _key(value: str) -> str:
+    """Comparison form: ı and i are equal, so casing never splits a name."""
+    return normalize_phrase(value).replace("ı", "i")
+
+
+def metric_reference_remainder(utterance: str, metric) -> str:
+    """The words of a reply left after removing its reference to *metric*."""
+    text = _key(utterance)
+    name = _key(metric.name)
+    phrases = {name, _key(source_metric_label(metric.name, "tr-TR"))}
+    for terms in _METRIC_ALIASES:
+        keys = {_key(term) for term in terms}
+        if any(_contains_alias(name, key) for key in keys):
+            phrases |= keys
+    for phrase in sorted(phrases, key=len, reverse=True):
+        text = re.sub(rf"(?<!\w){_alias_pattern(phrase)}\w*", " ", text)
+    return " ".join(text.split())

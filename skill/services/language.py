@@ -32,17 +32,18 @@ def fold_case(value: str) -> str:
     Locale-neutral casefold maps every ``I`` to ``i``, so a sentence-initial
     "Isıtma" or an upper-case "AÇIKLA" loses its Turkish ı. Without a reliable
     language tag, a word is treated as Turkish only when it carries a
-    Turkish-specific letter, or when it is upper-case inside a request that
-    does; English words such as "Is" keep their dotted i.
+    Turkish-specific letter, or when the whole request is upper-case Turkish
+    ("HANGİ DÖNEMİ KAPSIYOR"). An upper-case word inside ordinary text is a
+    name or acronym ("RAIN", "GRID IMPORT", "OEE") and keeps its dotted i.
     """
     text = unicodedata.normalize("NFKC", str(value))
-    turkish_request = not _TURKISH_LETTERS.isdisjoint(text)
+    shouted_turkish = (not _TURKISH_LETTERS.isdisjoint(text)
+                       and not any(character.islower() for character in text))
 
     def word(match: re.Match[str]) -> str:
         token = match.group(0)
         if "I" in token and (
-            not _TURKISH_LETTERS.isdisjoint(token)
-            or (turkish_request and len(token) > 1 and token.isupper())
+            not _TURKISH_LETTERS.isdisjoint(token) or shouted_turkish
         ):
             token = token.replace("I", "ı")
         return token.replace("İ", "i")
