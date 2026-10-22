@@ -21,6 +21,9 @@ class DialogueState:
     operation: str = ""
     answer_evidence: tuple[dict[str, Any], ...] = ()
     pending_clarification: str = ""
+    # Operation awaiting the subject a metric clarification asked for
+    # ("value", "timestamp", "detail" or "trend"); never the utterance itself.
+    pending_operation: str = ""
     organization_id: str = ""
     active_finding_id: str = ""
     entity_id: str = ""

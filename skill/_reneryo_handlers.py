@@ -50,7 +50,7 @@ from skill.services.futuregen_responses import (
     regression_detail_headline,
     regression_inventory_headline,
 )
-from skill.services.language import is_turkish, normalize_phrase, period_display_name, format_localized_number
+from skill.services.language import is_turkish, normalize_phrase, period_display_name, format_localized_number, sentence_start
 from skill.services.period_resolution import (
     extract_period_phrase, named_month_reference, remove_period_reference,
     unsupported_period_reference, unsupported_time_precision,
@@ -105,6 +105,36 @@ def handle_reneryo_query(
 
     if try_handle_read_only_request(skill, message):
         return True
+
+    # A clarification is answered by the next turn only. Clear it in the
+    # store before routing, so no later route can resume a stale question.
+    pending = state.pending_operation if state.pending_clarification == "metric" else ""
+    if state.pending_clarification or state.pending_operation:
+        store, session_id = skill._dialogue_state_store, message_session_id(message)
+        stored = store.get(session_id)
+        if stored is not None:
+            store.put(session_id, replace(stored, pending_clarification="", pending_operation=""))
+        state = replace(state, pending_clarification="", pending_operation="")
+    if pending:
+        subject_only, subject = _subject_reply(skill, utterance)
+        if subject_only and subject is None:
+            _ask_for_metric(skill, message, state, _safe_metrics(skill), language,
+                            pending, period=state.period, unknown=True)
+            return True
+        if subject is not None:
+            # Resume the request that asked for this subject, through the
+            # established route for its operation (period stays in state).
+            utterance = _canonical_metric_request(pending, subject.name, language)
+            text = normalize_phrase(utterance)
+            if pending != "trend":
+                state = replace(state, period=None)
+    elif (state.operation == "trend" and state.metric_name
+          and _DISCOURSE.match(text) and not _period_only_follow_up(utterance)):
+        # "Peki sıcaklık?" after a trend asks the same view of another subject.
+        subject_only, subject = _subject_reply(skill, utterance)
+        if subject is not None and subject.name != state.metric_name:
+            utterance = _canonical_metric_request("trend", subject.name, language)
+            text = normalize_phrase(utterance)
 
     original_utterance = utterance
     utterance = affirmative_request(utterance)
@@ -299,10 +329,13 @@ def handle_reneryo_query(
                 grounded_read_metric = references[0]
                 semantic_resolution = _metric_read_resolution(grounded_read_metric, utterance, language)
                 operation = semantic_resolution.action
-        elif references or not shorthand or has_metric_alias(utterance) or (timestamp_request and not state.active_finding_id):
-            _metric_clarification(skill, references, language)
-            _remember(skill, message, DialogueState(organization_id=state.organization_id, language=language),
-                      operation="metric_clarification", pending_clarification="metric")
+        elif (references or not shorthand or has_metric_alias(utterance)
+              or (timestamp_request and not state.active_finding_id)
+              or not (state.metric_name or state.active_finding_id)):
+            # Nothing in the dialogue supplies the subject: ask for it and keep
+            # the requested read waiting for the answer.
+            _ask_for_metric(skill, message, state, references or rows, language,
+                            _read_operation(text, timestamp_request))
             return True
     detail_request = (
         (_metric_attribute_request(text) or (
@@ -368,7 +401,7 @@ def handle_reneryo_query(
                 factory_request, use_period=bool(state.period),
                 kind="trend" if state.operation == "trend" and not explicit_amount else "amount",
             )
-    if state.operation == "trend" and state.metric_name and is_period_follow_up(utterance):
+    if state.operation == "trend" and state.metric_name and _period_only_follow_up(utterance):
         factory_request = None
     factory_trend = factory_request is not None and factory_request.kind == "trend"
     if factory_trend:
@@ -454,7 +487,7 @@ def handle_reneryo_query(
     action = (
         SemanticAction.TREND_SHOW
         if factory_trend or (state.operation == "trend" and state.metric_name
-                             and is_period_follow_up(utterance))
+                             and _period_only_follow_up(utterance))
         else operation
     )
     if action is None and corrected and state.metric_name:
@@ -609,14 +642,17 @@ def handle_reneryo_query(
                 else utterance
             )
             try:
-                references = metric_references(metric_query, skill.dispatcher._run_async(service.metrics()))
+                inventory = skill.dispatcher._run_async(service.metrics())
+                references = metric_references(metric_query, inventory)
+                if not references and metric_query == utterance and _names_no_subject(utterance):
+                    # "Eylül 2026 eğilimini göster" names no metric: ask for
+                    # one rather than reporting the inventory as missing it.
+                    _ask_for_metric(skill, message, state, inventory, language, "trend", period=period)
+                    return True
                 if not references:
                     raise ValidationError(message="Metric not found", code="METRIC_NOT_FOUND")
                 if len(references) > 1:
-                    _metric_clarification(skill, references, language)
-                    _remember(skill, message, DialogueState(organization_id=state.organization_id, language=language), operation="clarification",
-                              metric_name="", metrics=(), asset_ids=(), answer_evidence=(),
-                              pending_clarification="metric")
+                    _ask_for_metric(skill, message, state, references, language, "trend", period=period)
                     return True
                 trend = skill.dispatcher._run_async(service.trend(
                     utterance, period, metric=references[0],
@@ -640,7 +676,7 @@ def handle_reneryo_query(
                 observed_at = trend.metric.last_value_at
                 last_seen = format_observation_time(observed_at, language, **request_time_format(skill, message)) if observed_at else None
                 if is_turkish(language):
-                    headline = f"{source_metric_label(trend.metric.name, language)} için {period_label} döneminde gözlem bulunamadı; eğilim hesaplanamıyor."
+                    headline = f"{sentence_start(source_metric_label(trend.metric.name, language), language)} için {period_label} döneminde gözlem bulunamadı; eğilim hesaplanamıyor."
                     if last_seen:
                         headline += f" Son kayıtlı gözlem {last_seen} tarihinde."
                 else:
@@ -656,7 +692,7 @@ def handle_reneryo_query(
             elif trend.change_percent is None:
                 first_seen = format_observation_time(trend.points[0].timestamp, language, **request_time_format(skill, message))
                 if is_turkish(language):
-                    headline = f"{source_metric_label(trend.metric.name, language)} için {period_label} döneminde " + (
+                    headline = f"{sentence_start(source_metric_label(trend.metric.name, language), language)} için {period_label} döneminde " + (
                         f"yalnızca bir gözlem var ({first_seen}); eğilim hesaplanamıyor."
                         if len(trend.points) == 1
                         else "ilk gözlem sıfır olduğu için yüzde değişim hesaplanamıyor."
@@ -775,7 +811,8 @@ def handle_reneryo_query(
             ) or state.metric_name
             references = metric_references(utterance, rows)
             if len(references) > 1:
-                _metric_clarification(skill, references, language)
+                _ask_for_metric(skill, message, state, references, language,
+                                _read_operation(text, timestamp_request))
                 return True
             selected_metric = references[0] if references else None
             # Explicit subjects outrank semantic/context slots. For an attribute
@@ -786,8 +823,8 @@ def handle_reneryo_query(
             ):
                 selected_metric = match_metric(expected or text, rows)
         if action is SemanticAction.METRIC_DETAIL and selected_metric is None:
-            _metric_clarification(skill, rows, language)
-            _remember(skill, message, state, operation="metric_clarification")
+            _ask_for_metric(skill, message, state, rows, language,
+                            _read_operation(text, timestamp_request))
             return True
         if action is SemanticAction.METRICS_LIST:
             references = metric_references(utterance, rows)
@@ -1357,7 +1394,10 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
             return SemanticAction.FINDING_OWNER
         if _has(text, "why are you recommending", "why this step", "why recommend", "bu adımı neden", "neden öneriyorsun", "neden tavsiye"):
             return SemanticAction.FINDING_NEXT_REVIEW_WHY
-        if _has(text, "what should we do", "recommended next step", "next step", "what do you recommend", "ne yapmalıyız", "sonraki adım", "ne öneriyorsun", "ne tavsiye"):
+        if _has(text, "what should we do", "what should i do", "recommended next step", "next step", "what do you recommend",
+                "sonraki adım", "ne öneriyorsun", "ne tavsiye") or re.search(
+                # First and plural persons: yapmalıyım/yapmalıyız, yapmam(ız) gerek, yapalım.
+                r"\bne yapmal[ıi]y[ıi][mz]\b|\bne yapmam(?:[ıi]z)? gerek\w*|\bne yapal[ıi]m\b", text):
             return SemanticAction.FINDING_NEXT_REVIEW
         if state.metric_name and _looks_like_trend(text):
             return SemanticAction.TREND_SHOW
@@ -1536,13 +1576,17 @@ def _finding_selection_clarification(skill, language: str) -> None:
     )
 
 
-def _metric_clarification(skill, rows, language: str) -> None:
+def _metric_clarification(skill, rows, language: str, *, unknown: bool = False) -> None:
     names = [row.name for row in rows[:3]]
     if is_turkish(language):
         headline = "Hangi Reneryo metriğini kastediyorsunuz? Metrik adını belirtin."
+        if unknown:
+            headline = "Bu adla yapılandırılmış bir metrik bulamadım. " + headline
         suggestions = [f"{name} metriğini açıkla" for name in names]
     else:
         headline = "Which Reneryo metric do you mean? Please name the metric."
+        if unknown:
+            headline = "I could not find a configured metric with that name. " + headline
         suggestions = [f"Explain the {name} metric" for name in names]
     speak_information(
         skill,
@@ -1669,6 +1713,13 @@ def _remember(skill, message, state, **changes) -> None:
     )
 
 
+def _safe_metrics(skill) -> list:
+    try:
+        return skill.dispatcher._run_async(_service(skill).metrics())
+    except (AdapterError, ValidationError):
+        return []
+
+
 def _service(skill) -> FutureGenService:
     service = getattr(skill, "_futuregen_service", None)
     if service is not None:
@@ -1716,9 +1767,7 @@ def _query_period(skill, utterance: str, current, semantic_period: str = "", *, 
 
 def _is_trend_follow_up(utterance: str) -> bool:
     """Allow context only for a bounded command that names no new subject."""
-    from skill.services.dia_query import is_period_follow_up
-
-    if is_period_follow_up(utterance):
+    if _period_only_follow_up(utterance):
         return True
     text = remove_period_reference(utterance)
     text = re.sub(r"\b(?:over|for|during|in|the|döneminde|için)\b", "", text)
@@ -1776,7 +1825,9 @@ _METRIC_ATTRIBUTE = re.compile(
 )
 _METRIC_VALUE = re.compile(
     r"\b(?:values?|measurements?|readings?|latest|current|recent|"
-    r"değer\w*|deger\w*|ölçüm\w*|olcum\w*|güncel\w*|guncel\w*|son)\b"
+    r"değer\w*|deger\w*|ölçüm\w*|olcum\w*|güncel\w*|guncel\w*|son|"
+    # Ordinary Turkish value questions; bare "kaç"/"ne kadar" stay with amounts.
+    r"kaç derece|kac derece|yüzde kaç|yuzde kac)\b"
 )
 
 
@@ -1868,9 +1919,110 @@ def _metric_detail_shorthand(text: str) -> bool:
         r"show|tell|me|please|and|of|about|ne|nedir|kaç|kac|hangi|bu|bunun|onun|"
         r"when|does|have|recorded|updated|refreshed|received|timestamp|observations?|time|date|last|in|utc|"
         r"how|that|our|up|to|old|data|veri\w*|en|gözlem\w*|gozlem\w*|related|indicator|ilgili|gösterge|gosterge|zaman|zamanı|zamani|kaydedildi|güncellendi|guncellendi|kayıt|kayit|tarihi|olarak|dahil|"
+        r"alındı|alindi|ölçüldü|olculdu|taken|measured|"
         r"metri\w*|göster\w*|goster\w*|söyle\w*|soyle\w*|peki|birim\w*)\b", "", remainder
     )
     return not remainder.strip()
+
+
+_TREND_WORDS = re.compile(
+    r"\b(?:trend\w*|history|eğilim\w*|egilim\w*|geçmiş\w*|gecmis\w*|for|during|over|"
+    r"için|icin|döneminde|donemi\w*|dönemi\w*|nasıl\w*|nasil\w*|seyr\w*|"
+    r"değiş\w*|degis\w*|how|did|it|change\w*|go|went)\b"
+)
+_DISCOURSE = re.compile(r"^(?:and|what about|how about|peki|ya)\b\s*")
+# Thanks, acknowledgement or cancelling: the pending question is dropped.
+_CLOSING_REPLY = re.compile(
+    r"(?:thanks?(?: you)?|thank you|ok(?:ay)?|no|yes|never mind|cancel|forget it|"
+    r"teşekkür\w*|tesekkur\w*|sağ ?ol\w*|sag ?ol\w*|tamam|peki|evet|hayır|hayir|"
+    r"vazgeç\w*|vazgec\w*|iptal|boş ?ver|bos ?ver|önemli değil|onemli degil)"
+)
+_SUBJECT_FILLER = re.compile(
+    r"\b(?:the|of|please|lütfen|lutfen|one|metric|metriği|metrigi|metrik|olan|for|için|icin)\b"
+)
+
+
+def _names_no_subject(utterance: str) -> bool:
+    """Whether a read/trend request names no metric, only an operation or period."""
+    text = _TREND_WORDS.sub(" ", normalize_phrase(remove_period_reference(utterance)))
+    return _metric_detail_shorthand(" ".join(text.split()))
+
+
+def _period_only_follow_up(utterance: str) -> bool:
+    """A period alone, optionally with "peki"/"for"/"için", changes only the period.
+
+    This is also the answer to "please specify the month and year", so it
+    must continue the current topic instead of starting a new request.
+    """
+    from skill.services.dia_query import is_period_follow_up
+
+    if is_period_follow_up(utterance):
+        return True
+    if not extract_period_phrase(utterance) or unsupported_period_reference(utterance):
+        return False
+    rest = _DISCOURSE.sub("", remove_period_reference(utterance))
+    return not re.sub(r"\b(?:for|in|during|için|icin|döneminde|olarak)\b", " ", rest).strip()
+
+
+def _subject_reply(skill, utterance: str):
+    """Classify a reply that only names a metric: (is_subject_only, metric).
+
+    A bare subject such as "Nem.", "Yağışın." or "Humidity." answers a metric
+    clarification or switches the subject of a follow-up. Anything carrying
+    its own operation, period, finding or inventory cue is a new request.
+    """
+    text = _DISCOURSE.sub("", normalize_phrase(utterance))
+    text = " ".join(_SUBJECT_FILLER.sub(" ", text).split())
+    if (not text or len(text.split()) > 4 or extract_period_phrase(utterance)
+            or _CLOSING_REPLY.fullmatch(text)
+            or _metric_value_request(text) or _metric_attribute_request(text)
+            or _looks_like_trend(text) or is_freshness_question(text)
+            or _metric_collection_request(text) or _meter_reference(text)
+            or _has(text, "finding", "bulgu", "alert", "uyarı", "uyari", "regression",
+                    "regresyon", "model", "list", "liste", "göster", "goster", "show",
+                    "evaluate", "değerlendir", "degerlendir", "help", "yardım", "yardim")
+            or _deterministic_action(text, DialogueState()) is not None):
+        return False, None
+    try:
+        rows = skill.dispatcher._run_async(_service(skill).metrics())
+    except (AdapterError, ValidationError):
+        return False, None
+    references = metric_references(text, rows)
+    return True, references[0] if len(references) == 1 else None
+
+
+def _canonical_metric_request(operation: str, metric_name: str, language: str) -> str:
+    """Rebuild a resumed request in the established wording for its operation."""
+    if is_turkish(language):
+        templates = {
+            "value": "{} son değeri nedir",
+            "timestamp": "{} son ölçümü ne zaman kaydedildi",
+            "detail": "{} metriğini açıkla",
+            "trend": "{} eğilimini göster",
+        }
+    else:
+        templates = {
+            "value": "What is the latest {} value",
+            "timestamp": "When was the latest {} observation recorded",
+            "detail": "Explain the {} metric",
+            "trend": "Show the {} trend",
+        }
+    return templates[operation].format(metric_name)
+
+
+def _read_operation(text: str, timestamp_request: bool) -> str:
+    if timestamp_request:
+        return "timestamp"
+    return "value" if _metric_value_request(text) and not _metric_attribute_request(text) else "detail"
+
+
+def _ask_for_metric(skill, message, state, rows, language, operation, *, period=None, unknown=False) -> None:
+    """Ask which metric is meant and keep the request waiting for that answer."""
+    _metric_clarification(skill, rows, language, unknown=unknown)
+    _remember(skill, message, DialogueState(
+        organization_id=state.organization_id, language=language,
+    ), operation="metric_clarification", pending_clarification="metric",
+        pending_operation=operation, period=period)
 
 
 def _ground_metric_reference(skill, utterance: str):
