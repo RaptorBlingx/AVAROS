@@ -28,7 +28,13 @@ class FutureGenService:
     async def metrics(self):
         return await self.reneryo.list_metrics()
 
-    async def trend(self, utterance: str, period: TimePeriod, *, metric=None, allow_history_fallback: bool = True) -> ReneryoTrend:
+    async def trend(self, utterance: str, period: TimePeriod, *, metric=None, allow_history_fallback: bool = True,
+                    period_phrase: str | None = None) -> ReneryoTrend:
+        """Read a trend; *period_phrase* is the phrase that selected *period*.
+
+        Callers reusing an already-resolved window pass its phrase so the
+        same resolution rules apply as when it was first requested.
+        """
         if metric is None:
             references = metric_references(utterance, await self.metrics())
             if len(references) > 1:
@@ -46,17 +52,16 @@ class FutureGenService:
         # aggregates, not the endpoints of daily readings across both months.
         from skill.services.period_resolution import _NAMED_MONTH_RANGE, extract_period_phrase
 
-        if metric.metric_type == "COUNTER" and _NAMED_MONTH_RANGE.fullmatch(
-            extract_period_phrase(utterance)
-        ):
+        phrase = extract_period_phrase(utterance) if period_phrase is None else period_phrase
+        if metric.metric_type == "COUNTER" and _NAMED_MONTH_RANGE.fullmatch(phrase):
             aggregation = "MONTHLY"
-        if extract_period_phrase(utterance) not in {"", "latest", "en güncel"}:
+        if phrase not in {"", "latest", "en güncel"}:
             aggregation = history_resolution(period, aggregation)
         points = await self.reneryo.metric_values(
             metric.metric_id, period.start, period.end, aggregation
         )
         requested_period_label = ""
-        if not points and allow_history_fallback and not extract_period_phrase(utterance):
+        if not points and allow_history_fallback and not phrase:
             historical, _ = await self.reneryo.recent_metric_values(metric)
             if historical:
                 requested_period_label = period.display_name

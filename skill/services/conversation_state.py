@@ -18,6 +18,9 @@ class DialogueState:
     metrics: tuple[CanonicalMetric, ...] = ()
     asset_ids: tuple[str, ...] = ()
     period: TimePeriod | None = None
+    # The phrase that selected `period` ("eylül 2026"); it also selects the
+    # Reneryo resolution, so a reused window keeps its aggregation.
+    period_phrase: str = ""
     operation: str = ""
     answer_evidence: tuple[dict[str, Any], ...] = ()
     pending_clarification: str = ""
@@ -27,6 +30,9 @@ class DialogueState:
     # The request's explicit period phrase as extracted ("eylül 2026"), so a
     # resumed request keeps its temporal constraint.
     pending_period: str = ""
+    # The window that phrase resolved to when the question was asked, so a
+    # relative period ("dün") is not resolved again after midnight.
+    pending_window: TimePeriod | None = None
     organization_id: str = ""
     active_finding_id: str = ""
     entity_id: str = ""

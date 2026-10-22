@@ -90,7 +90,7 @@ class _Service:
     async def finding(self, _organization_id: str, identifier: str) -> MdspFinding:
         return next(row for row in self.rows if row.finding_id == identifier)
 
-    async def trend(self, _utterance, period, *, metric=None, allow_history_fallback=True) -> ReneryoTrend:
+    async def trend(self, _utterance, period, *, metric=None, allow_history_fallback=True, period_phrase=None) -> ReneryoTrend:
         return ReneryoTrend(
             metric=ReneryoMetric(
                 "production",
@@ -413,7 +413,7 @@ def test_signed_widget_month_range_reaches_trend_with_both_observations(
     skill._parse_period = TimePeriod.from_natural_language
     periods = []
 
-    async def trend(_utterance, period, *, metric=None, allow_history_fallback=True):
+    async def trend(_utterance, period, *, metric=None, allow_history_fallback=True, period_phrase=None):
         periods.append(period)
         return ReneryoTrend(
             metric=ReneryoMetric("electricity", "Electricity", "COUNTER", "ENERGY"),
@@ -541,7 +541,7 @@ def test_turkish_missing_trend_is_explicit_after_a_finding_topic_change():
 def test_english_sparse_trend_explains_why_percent_is_unavailable(values, expected):
     skill = _Skill()
 
-    async def sparse_trend(_utterance, period, *, metric=None, allow_history_fallback=True):
+    async def sparse_trend(_utterance, period, *, metric=None, allow_history_fallback=True, period_phrase=None):
         return ReneryoTrend(
             metric=ReneryoMetric("electricity", "Electricity", "COUNTER", "ENERGY"),
             period_label=period.display_name,

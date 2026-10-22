@@ -16,7 +16,7 @@ def harness():
     service = skill._futuregen_service
     service.metrics = AsyncMock(return_value=METRICS)
 
-    async def trend(_utterance, period, *, metric=None, allow_history_fallback=True):
+    async def trend(_utterance, period, *, metric=None, allow_history_fallback=True, period_phrase=None):
         points = tuple(
             ReneryoTrendPoint(datetime(2026, 9, day, tzinfo=timezone.utc), value, 24)
             for day, value in ((1, 10.0), (30, 12.0))

@@ -110,10 +110,12 @@ def handle_reneryo_query(
     # A clarification is answered by the next turn only. Clear it in the
     # store before routing, so no later route can resume a stale question.
     pending = state.pending_operation if state.pending_clarification == "metric" else ""
-    pending_period = state.pending_period
-    if state.pending_clarification or state.pending_operation or state.pending_period:
+    pending_period, pending_window = state.pending_period, state.pending_window
+    if (state.pending_clarification or state.pending_operation or state.pending_period
+            or state.pending_window is not None):
         store, session_id = skill._dialogue_state_store, message_session_id(message)
-        cleared = {"pending_clarification": "", "pending_operation": "", "pending_period": ""}
+        cleared = {"pending_clarification": "", "pending_operation": "", "pending_period": "",
+                   "pending_window": None}
         stored = store.get(session_id)
         if stored is not None:
             store.put(session_id, replace(stored, **cleared))
@@ -128,7 +130,7 @@ def handle_reneryo_query(
                              if replacement and replacement != utterance else ("excluded", None))
         if kind in {"unknown", "several", "excluded"}:
             _ask_for_metric(skill, message, state, _safe_metrics(skill), language, pending,
-                            period_phrase=pending_period, reason=kind)
+                            period_phrase=pending_period, window=pending_window, reason=kind)
             return True
         if kind == "subject":
             # Execute the clarified operation for this metric directly; the
@@ -136,15 +138,17 @@ def handle_reneryo_query(
             # named in the answer ("Geçen ay nemin.") is the newer constraint.
             reply_period = extract_period_phrase(utterance)
             reply_period = "" if reply_period in {"latest", "en güncel"} else reply_period
+            # Without a new period the window resolved when asking is kept.
             return _resume_metric_request(skill, message, state, subject, pending,
-                                          reply_period or pending_period, language)
+                                          reply_period or pending_period, language,
+                                          period=None if reply_period else pending_window)
     elif (state.operation == "trend" and state.metric_name
           and _DISCOURSE.match(text) and not _period_only_follow_up(utterance)):
         # "Peki sıcaklık?" after a trend asks the same view of another subject.
         kind, subject = _subject_reply(skill, utterance)
         if kind == "subject" and subject.name != state.metric_name:
-            return _resume_metric_request(skill, message, state, subject, "trend", "", language,
-                                          period=state.period)
+            return _resume_metric_request(skill, message, state, subject, "trend",
+                                          state.period_phrase, language, period=state.period)
 
     original_utterance = utterance
     utterance = affirmative_request(utterance)
@@ -345,7 +349,8 @@ def handle_reneryo_query(
             # Nothing in the dialogue supplies the subject: ask for it and keep
             # the requested read waiting for the answer.
             _ask_for_metric(skill, message, state, references or rows, language,
-                            *_pending_read(text, utterance, timestamp_request))
+                            *_pending_read(text, utterance, timestamp_request),
+                            window=_requested_window(skill, utterance, message))
             return True
     detail_request = (
         (_metric_attribute_request(text) or (
@@ -645,6 +650,10 @@ def handle_reneryo_query(
             except (ValueError, ValidationError):
                 _period_clarification(skill, language)
                 return True
+            # A window inherited from context keeps the phrase that selected it.
+            selection = extract_period_phrase(utterance) or (
+                state.period_phrase if state.period is not None and period is state.period else ""
+            )
             # Inherit only subject-free shorthand, before executing. A failed
             # explicit subject is never permission to query the previous one.
             metric_query = (
@@ -658,17 +667,18 @@ def handle_reneryo_query(
                     # "Eylül 2026 eğilimini göster" names no metric: ask for
                     # one rather than reporting the inventory as missing it.
                     _ask_for_metric(skill, message, state, inventory, language, "trend",
-                                    period_phrase=extract_period_phrase(utterance))
+                                    period_phrase=selection, window=period if selection else None)
                     return True
                 if not references:
                     raise ValidationError(message="Metric not found", code="METRIC_NOT_FOUND")
                 if len(references) > 1:
                     _ask_for_metric(skill, message, state, references, language, "trend",
-                                    period_phrase=extract_period_phrase(utterance))
+                                    period_phrase=selection, window=period if selection else None)
                     return True
                 trend = skill.dispatcher._run_async(service.trend(
                     utterance, period, metric=references[0],
                     allow_history_fallback=not bool(state.period or extract_period_phrase(utterance)),
+                    period_phrase=selection,
                 ))
             except (AdapterError, ValidationError) as exc:
                 _remember(skill, message, state, operation="trend", metric_name="",
@@ -683,7 +693,7 @@ def handle_reneryo_query(
                     )
                     return True
                 raise
-            return _speak_trend(skill, message, state, trend, period, language)
+            return _speak_trend(skill, message, state, trend, period, language, selection)
         if action is SemanticAction.METERS_LIST:
             semantic_period = resolution.slots.get("period", "") if resolution else ""
             period = _query_period(skill, utterance, state.period, semantic_period, message=message)
@@ -744,7 +754,8 @@ def handle_reneryo_query(
             references = metric_references(utterance, rows)
             if len(references) > 1:
                 _ask_for_metric(skill, message, state, references, language,
-                                *_pending_read(text, utterance, timestamp_request))
+                                *_pending_read(text, utterance, timestamp_request),
+                                window=_requested_window(skill, utterance, message))
                 return True
             selected_metric = references[0] if references else None
             # Explicit subjects outrank semantic/context slots. For an attribute
@@ -756,7 +767,8 @@ def handle_reneryo_query(
                 selected_metric = match_metric(expected or text, rows)
         if action is SemanticAction.METRIC_DETAIL and selected_metric is None:
             _ask_for_metric(skill, message, state, rows, language,
-                            *_pending_read(text, utterance, timestamp_request))
+                            *_pending_read(text, utterance, timestamp_request),
+                            window=_requested_window(skill, utterance, message))
             return True
         if action is SemanticAction.METRICS_LIST:
             references = metric_references(utterance, rows)
@@ -1608,6 +1620,8 @@ def _remember(skill, message, state, **changes) -> None:
             return "regression"
         return operation
 
+    if "period" in changes and "period_phrase" not in changes:
+        changes["period_phrase"] = ""
     operation = changes.get("operation", state.operation)
     previous_owner = owner(state.operation)
     if state.operation in {"clarification", "metric_clarification"}:
@@ -1653,7 +1667,7 @@ def _timestamp_period_unavailable(skill, message, state, language) -> None:
               operation="metric_clarification", pending_clarification="timestamp period")
 
 
-def _speak_trend(skill, message, state, trend, period, language) -> bool:
+def _speak_trend(skill, message, state, trend, period, language, period_phrase: str = "") -> bool:
     """Narrate a Reneryo trend and keep its subject and actual period in context."""
     period_label = _localized_period_label(trend.period_label, language)
     if not trend.points:
@@ -1729,6 +1743,8 @@ def _speak_trend(skill, message, state, trend, period, language) -> bool:
         state,
         operation="trend",
         period=actual_period,
+        # A history fallback replaced the requested window; no phrase selected it.
+        period_phrase="" if trend.requested_period_label else period_phrase,
         metric_name=trend.metric.name,
         active_finding_id="",
         finding_ids=(),
@@ -2044,13 +2060,25 @@ def _pending_read(text: str, utterance: str, timestamp_request: bool) -> tuple[s
     return operation, phrase
 
 
-def _ask_for_metric(skill, message, state, rows, language, operation, period_phrase="", *, reason="") -> None:
+def _ask_for_metric(skill, message, state, rows, language, operation, period_phrase="", *,
+                    window=None, reason="") -> None:
     """Ask which metric is meant and keep the structured request waiting."""
     _metric_clarification(skill, rows, language, reason=reason)
     _remember(skill, message, DialogueState(
         organization_id=state.organization_id, language=language,
     ), operation="metric_clarification", pending_clarification="metric",
-        pending_operation=operation, pending_period=period_phrase)
+        pending_operation=operation, pending_period=period_phrase,
+        pending_window=window if period_phrase else None)
+
+
+def _requested_window(skill, utterance: str, message):
+    """The window an explicit period resolves to now, or None."""
+    if extract_period_phrase(utterance) in {"", "latest", "en güncel"}:
+        return None
+    try:
+        return _query_period(skill, utterance, None, message=message)
+    except (ValueError, ValidationError):
+        return None
 
 
 def _resume_metric_request(skill, message, state, metric, operation, period_phrase, language, *, period=None) -> bool:
@@ -2085,8 +2113,9 @@ def _resume_metric_request(skill, message, state, metric, operation, period_phra
             trend = skill.dispatcher._run_async(_service(skill).trend(
                 period_phrase, requested, metric=metric,
                 allow_history_fallback=not (period_phrase or period is not None),
+                period_phrase=period_phrase,
             ))
-            return _speak_trend(skill, message, state, trend, requested, language)
+            return _speak_trend(skill, message, state, trend, requested, language, period_phrase)
         return _speak_metric_read(skill, message, state, metric, language,
                                   value_only=operation == "value",
                                   timestamp_only=operation == "timestamp")
