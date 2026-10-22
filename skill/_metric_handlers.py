@@ -13,7 +13,7 @@ from skill.domain.results import AnomalyResult, ComparisonResult, KPIResult, Tre
 from skill.services.dia_dialogue import remember_kpi_result, try_handle_structured_query
 from skill._helpers import request_timezone
 from skill.services.dia_response import speak_with_evidence
-from skill.services.language import normalize_phrase
+from skill.services.language import fold_case, normalize_phrase
 
 if TYPE_CHECKING:
     from skill import AVAROSSkill
@@ -504,7 +504,7 @@ def handle_compare_energy(skill: "AVAROSSkill", message) -> None:
 
 def handle_compare_metric(skill: "AVAROSSkill", message) -> None:
     """Handle generic compare requests for any canonical metric."""
-    utterance = skill._extract_utterance_text(message).strip().lower()
+    utterance = fold_case(skill._extract_utterance_text(message).strip())
     if re.fullmatch(r"compare them[.!?]*", utterance):
         if try_handle_structured_query(skill, message):
             return

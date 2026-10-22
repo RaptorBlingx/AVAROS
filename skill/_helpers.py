@@ -12,7 +12,7 @@ from skill._asset_resolution import (
 )
 from skill.domain.exceptions import ValidationError
 from skill.domain.models import Asset, CanonicalMetric, TimePeriod
-from skill.services.language import normalize_phrase
+from skill.services.language import fold_case, normalize_phrase
 from skill.services.language import normalize_language_tag
 from skill._intent_resolver import resolve_intent_name as _resolve_intent_name
 from skill._metric_resolver import resolve_metric_from_utterance as _resolve_metric_from_utterance
@@ -228,7 +228,7 @@ def resolve_temperature_amount(
     if slot_amount is not None:
         return slot_amount
 
-    utterance = self._extract_utterance_text(message).lower()
+    utterance = fold_case(self._extract_utterance_text(message))
     phrase_match = re.search(
         (
             r"\b(?:by|to)\s+"

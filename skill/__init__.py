@@ -78,7 +78,7 @@ from skill.services.alert_monitor import AlertMonitor
 from skill.services.settings import KNOWN_INTENTS
 from skill.services.prevention_runtime import resolve_prevention_config
 from skill.services.response_builder import ResponseBuilder, create_response_builder
-from skill.services.language import normalize_language_tag, normalize_phrase
+from skill.services.language import fold_case, normalize_language_tag, normalize_phrase
 from skill.services.response_localization import localized_error_message, localized_system_text
 from skill.services.conversation_state import DialogueStateStore
 from skill.services.dia_dialogue import try_handle_structured_query
@@ -380,7 +380,7 @@ class AVAROSSkill(FallbackSkill):
         queries that Padatious mis-routed to a KPI intent.
         """
         self._sync_response_language(message)
-        utterance = self._extract_utterance_text(message).lower()
+        utterance = fold_case(self._extract_utterance_text(message))
 
         if self._is_anomaly_query(utterance):
             self.handle_anomaly_check(message)

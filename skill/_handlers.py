@@ -16,7 +16,7 @@ from skill.domain.models import CanonicalMetric, ScenarioParameter, WhatIfScenar
 from skill.domain.results import KPIResult
 from skill._helpers import request_time_format
 from skill.services.dia_response import clarification_metadata, speak_with_evidence, speak_information
-from skill.services.language import is_turkish
+from skill.services.language import fold_case, is_turkish
 from skill.services.period_resolution import remove_period_reference
 from skill.services.quantities import normalize_quantity_expressions
 from skill.services.query_scope import entity_scope, is_comparison_request
@@ -39,7 +39,7 @@ def handle_metric_query_fallback(skill: "AVAROSSkill", message: Message) -> bool
     if try_handle_read_only_request(skill, message):
         return True
 
-    utterance = skill._extract_utterance_text(message).lower()
+    utterance = fold_case(skill._extract_utterance_text(message))
 
     from skill._reneryo_handlers import (
         handle_reneryo_query,
@@ -187,7 +187,7 @@ def handle_intent_failure(skill: "AVAROSSkill", message: Message) -> None:
     sync_language = getattr(skill, "_sync_response_language", None)
     if callable(sync_language):
         sync_language(message)
-    utterance = skill._extract_utterance_text(message).lower()
+    utterance = fold_case(skill._extract_utterance_text(message))
 
     from skill._reneryo_handlers import (
         handle_reneryo_query,
@@ -293,9 +293,9 @@ def can_answer(skill: "AVAROSSkill", message: Message) -> bool:
     data = getattr(message, "data", {}) or {}
     utterances = data.get("utterances")
     if isinstance(utterances, list) and utterances:
-        text = str(utterances[0]).lower()
+        text = fold_case(str(utterances[0]))
     else:
-        text = skill._extract_utterance_text(message).lower()
+        text = fold_case(skill._extract_utterance_text(message))
 
     if not text.strip():
         return False
@@ -311,7 +311,7 @@ def can_answer(skill: "AVAROSSkill", message: Message) -> bool:
 
 def handle_whatif_scenario(skill: "AVAROSSkill", message: Message) -> None:
     """Handle bounded what-if decision-support scenarios."""
-    utterance = skill._extract_utterance_text(message).lower()
+    utterance = fold_case(skill._extract_utterance_text(message))
     _fallback_whatif(skill, message, utterance)
 
 

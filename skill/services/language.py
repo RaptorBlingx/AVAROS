@@ -23,10 +23,44 @@ def is_turkish(language: str | None) -> bool:
     return normalize_language_tag(language) == "tr-TR"
 
 
+_TURKISH_LETTERS = frozenset("çğıöşüÇĞİÖŞÜ")
+
+
+def fold_case(value: str) -> str:
+    """Lowercase request text, keeping Turkish dotless I where it is evident.
+
+    Locale-neutral casefold maps every ``I`` to ``i``, so a sentence-initial
+    "Isıtma" or an upper-case "AÇIKLA" loses its Turkish ı. Without a reliable
+    language tag, a word is treated as Turkish only when it carries a
+    Turkish-specific letter, or when it is upper-case inside a request that
+    does; English words such as "Is" keep their dotted i.
+    """
+    text = unicodedata.normalize("NFKC", str(value))
+    turkish_request = not _TURKISH_LETTERS.isdisjoint(text)
+
+    def word(match: re.Match[str]) -> str:
+        token = match.group(0)
+        if "I" in token and (
+            not _TURKISH_LETTERS.isdisjoint(token)
+            or (turkish_request and len(token) > 1 and token.isupper())
+        ):
+            token = token.replace("I", "ı")
+        return token.replace("İ", "i")
+
+    return re.sub(r"\w+", word, text).casefold().replace("i\u0307", "i")
+
+
+def sentence_start(text: str, language: str | None) -> str:
+    """Capitalize a localized label that opens a sentence (Turkish i → İ)."""
+    first = text[:1]
+    first = "İ" if first == "i" and is_turkish(language) else first.upper()
+    return first + text[1:]
+
+
 def normalize_phrase(value: str) -> str:
     """Normalize Unicode speech text without discarding Turkish characters."""
-    normalized = unicodedata.normalize("NFKC", str(value)).casefold()
-    normalized = normalized.replace("i\u0307", "i").replace("₂", "2").replace("₀", "0")
+    normalized = fold_case(value)
+    normalized = normalized.replace("₂", "2").replace("₀", "0")
     normalized = re.sub(r"[^\w\s-]", " ", normalized, flags=re.UNICODE)
     return re.sub(r"\s+", " ", normalized.replace("_", " ")).strip()
 

@@ -11,6 +11,7 @@ from skill.domain.exceptions import ValidationError
 from skill.domain.models import TimePeriod
 from skill.domain.reneryo_models import MdspFinding, MdspFindingList, ReneryoTrend
 from skill.services.language import normalize_phrase
+from skill.services.response_localization import source_metric_label
 from skill.services.reneryo_periods import history_resolution
 
 
@@ -148,13 +149,14 @@ def next_month(value: datetime) -> datetime:
 
 
 _METRIC_ALIASES = (
-    ("electric", "elektrik", "elektriğ", "elektrig", "energy", "enerji"),
+    ("electric", "elektrik", "energy", "enerji"),
     ("production", "produce", "output", "uretim", "üretim", "üretti", "uretti"),
-    ("temperature", "sicaklik", "sıcaklık", "sicaklig", "sıcaklığ"),
+    ("temperature", "sicaklik", "sıcaklık"),
     ("humidity", "humid", "nem"),
     ("heating degree", "isitma", "ısıtma"),
     ("cooling degree", "sogutma", "soğutma"),
-    ("rain", "yagmur", "yağmur"),
+    # "yağış miktarı" is AVAROS's own Turkish label for rain.
+    ("rain", "yagmur", "yağmur", "yağış", "yagis", "precipitation"),
 )
 
 
@@ -180,9 +182,9 @@ def metric_references(utterance: str, metrics):
     match helper, all explicit families must be available; callers must clarify multiple matches.
     """
     text = _metric_reference_text(utterance)
-    exact = [m for m in metrics if m.name and re.search(
+    exact = [m for m in metrics if m.name and (re.search(
         rf"(?<!\w){re.escape(normalize_phrase(m.name))}(?!\w)", text
-    )]
+    ) or _localized_name_reference(text, m))]
     found = {m.metric_id: m for m in exact}
     for terms in _METRIC_ALIASES:
         if not any(_contains_alias(text, normalize_phrase(t)) for t in terms):
@@ -211,6 +213,9 @@ def match_metric(utterance: str, metrics):
         name = normalize_phrase(metric.name)
         if name and (name in normalized or normalized in name):
             return metric
+    for metric in metrics:
+        if _localized_name_reference(normalized, metric):
+            return metric
     for terms in _METRIC_ALIASES:
         normalized_terms = tuple(normalize_phrase(term) for term in terms)
         if any(_contains_alias(normalized, term) for term in normalized_terms):
@@ -228,7 +233,31 @@ def match_metric(utterance: str, metrics):
     return None
 
 
+# Turkish softens a final voiceless stop before a vowel suffix:
+# sıcaklık → sıcaklığı, elektrik → elektriği.
+_SOFTENED = {"k": "kğg", "ç": "çc", "p": "pb", "t": "td"}
+
+
+def _alias_pattern(alias: str) -> str:
+    stem, last = alias[:-1], alias[-1:]
+    if " " in alias or last not in _SOFTENED:
+        return re.escape(alias)
+    return re.escape(stem) + f"[{_SOFTENED[last]}]"
+
+
 def _contains_alias(text: str, alias: str) -> bool:
     """Match an alias at a word start, avoiding fragments such as nem/döneme."""
     ending = r"(?!\w)" if alias == "humid" else ""
-    return re.search(rf"(?<!\w){re.escape(alias)}{ending}", text) is not None
+    return re.search(rf"(?<!\w){_alias_pattern(alias)}{ending}", text) is not None
+
+
+def _localized_name_reference(text: str, metric) -> bool:
+    """Whether a request repeats the Turkish label AVAROS shows for *metric*.
+
+    Users answer with the words they heard, so every displayed label must be
+    understood as well as the source name. Inflected endings are allowed.
+    """
+    label = source_metric_label(metric.name, "tr-TR")
+    if not label or label == metric.name:
+        return False
+    return _contains_alias(text, normalize_phrase(label))

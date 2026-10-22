@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from decimal import Decimal
 
+from skill.services.language import fold_case
+
 _EN = dict(
     zip(
         [
@@ -93,7 +95,7 @@ _TR.update(
 
 def parse_number_words(text: str) -> str | None:
     """Parse nonnegative cardinal words with optional decimal digits and sign."""
-    text = text.casefold().strip().replace("i\u0307", "i")
+    text = fold_case(text).strip()
     if re.fullmatch(r"[-+]?\d+(?:[.,]\d+)?", text):
         return text.replace(",", ".")
     words = text.replace("-", " ").split()
@@ -175,7 +177,7 @@ def parse_number_words(text: str) -> str | None:
 
 def normalize_quantity_expressions(text: str) -> str:
     """Normalize durations and scenario amounts, never standalone name tokens."""
-    text = text.casefold().replace("i\u0307", "i")
+    text = fold_case(text)
     # Greedy quantity capture intentionally rejects partially understood phrases.
     quantity = r"([\w.,+\-]+(?:[ -]+[\w.,+\-]+){0,8}?)"
 
