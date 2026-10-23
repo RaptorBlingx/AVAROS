@@ -156,7 +156,8 @@ def next_month(value: datetime) -> datetime:
 _METRIC_ALIASES = (
     ("electric", "elektrik", "energy", "enerji"),
     ("production", "produce", "output", "uretim", "üretim", "üretti", "uretti"),
-    ("temperature", "sicaklik", "sıcaklık"),
+    # "Hava kaç derece?" / "How warm is it?" ask for the air temperature.
+    ("temperature", "sicaklik", "sıcaklık", "kaç derece", "kac derece", "how hot", "how warm", "how cold"),
     ("humidity", "humid", "nem"),
     ("heating degree", "isitma", "ısıtma"),
     ("cooling degree", "sogutma", "soğutma"),

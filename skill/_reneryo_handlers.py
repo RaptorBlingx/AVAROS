@@ -1970,7 +1970,9 @@ _METRIC_VALUE = re.compile(
     r"\b(?:values?|measurements?|readings?|latest|current|recent|"
     r"değer\w*|deger\w*|ölçüm\w*|olcum\w*|güncel\w*|guncel\w*|son|"
     # Ordinary Turkish value questions; bare "kaç"/"ne kadar" stay with amounts.
-    r"kaç derece|kac derece|yüzde kaç|yuzde kac)\b"
+    r"kaç derece|kac derece|yüzde kaç|yuzde kac|"
+    # "now" asks for the current reading as "latest"/"current" do.
+    r"right now|at the moment|şu an\w*|su an\w*|şimdi|simdi)\b"
 )
 
 

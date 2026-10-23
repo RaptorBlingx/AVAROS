@@ -409,3 +409,16 @@ def test_thanks_closes_a_pending_metric_question():
     turn(skill, 'Değeri kaç?')
     assert turn(skill, 'Teşekkür ederim.')['headline'].startswith('Rica ederim')
     assert not state(skill).pending_clarification
+
+
+@pytest.mark.parametrize('question,language,expected', [
+    ('Hava kaç derece?', 'tr-TR', 'Son ölçümde hava sıcaklığı 17,5 °C'),
+    ('Hava şu an kaç derece?', 'tr-TR', 'Son ölçümde hava sıcaklığı 17,5 °C'),
+    ("What's the temperature right now?", 'en-US', 'Temperature - Open Weather: 17.5 °C'),
+    ('How warm is it right now?', 'en-US', 'Temperature - Open Weather: 17.5 °C'),
+])
+def test_everyday_current_temperature_questions_get_the_reading(question, language, expected):
+    skill = harness()
+    answer = turn(skill, question, language)
+    assert answer['response_type'] == 'metrics'
+    assert answer['headline'].startswith(expected), answer['headline']
