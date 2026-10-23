@@ -370,3 +370,23 @@ def test_period_comparison_is_declined_as_such_not_as_missing_equipment(turns, l
     assert ('Dönemleri birbiriyle karşılaştırmayı desteklemiyorum' in answer['headline']
             or "can't compare periods" in answer['headline'])
     assert 'ekipman kapsamını' not in answer['headline'] and 'equipment scope' not in answer['headline']
+
+
+@pytest.mark.parametrize('first,switch,language,expected', [
+    ('Hava sıcaklığı şu an kaç derece?', 'Peki nem?', 'tr-TR', 'Son ölçümde hava nemi %60'),
+    ('What is the latest humidity reading?', 'And the temperature?', 'en-US', 'Temperature - Open Weather: 17.5 °C'),
+    ('Nemin son ölçümü ne zaman kaydedildi?', 'Peki sıcaklık?', 'tr-TR', 'Hava sıcaklığı için son ölçüm'),
+])
+def test_subject_switch_after_a_read_keeps_its_view(first, switch, language, expected):
+    skill = harness()
+    turn(skill, first, language)
+    answer = turn(skill, switch, language)
+    # Not the metric's type/unit-group description.
+    assert answer['headline'].startswith(expected), answer['headline']
+    assert 'türünde bir ölçüm' not in answer['headline'] and 'unit group' not in answer['headline']
+
+
+def test_subject_switch_after_a_description_stays_a_description():
+    skill = harness()
+    turn(skill, 'Hava nemi metriğinin birimi nedir?')
+    assert 'türünde bir ölçüm' in turn(skill, 'Peki sıcaklık?')['headline']

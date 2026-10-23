@@ -37,6 +37,9 @@ class DialogueState:
     active_finding_id: str = ""
     entity_id: str = ""
     metric_name: str = ""
+    # The view of the last metric read ("value", "timestamp" or "detail"), so
+    # a bare subject switch ("Peki nem?") answers in the same view.
+    read_view: str = ""
     finding_status: str = ""
     finding_severity: str = ""
     finding_domain: str = ""

@@ -149,6 +149,14 @@ def handle_reneryo_query(
         if kind == "subject" and subject.name != state.metric_name:
             return _resume_metric_request(skill, message, state, subject, "trend",
                                           state.period_phrase, language, period=state.period)
+    elif (state.operation == "metric_detail" and state.metric_name
+          and state.read_view in {"value", "timestamp"}
+          and _DISCOURSE.match(text) and not _period_only_follow_up(utterance)):
+        # "Peki nem?" after a value asks for that value of the new subject,
+        # not the metric's type description.
+        kind, subject = _subject_reply(skill, utterance)
+        if kind == "subject" and subject.name != state.metric_name:
+            return _resume_metric_request(skill, message, state, subject, state.read_view, "", language)
 
     original_utterance = utterance
     utterance = affirmative_request(utterance)
@@ -1659,6 +1667,8 @@ def _remember(skill, message, state, **changes) -> None:
 
     if "period" in changes and "period_phrase" not in changes:
         changes["period_phrase"] = ""
+    if "operation" in changes and "read_view" not in changes:
+        changes["read_view"] = ""
     operation = changes.get("operation", state.operation)
     previous_owner = owner(state.operation)
     if state.operation in {"clarification", "metric_clarification"}:
@@ -1690,7 +1700,8 @@ def _speak_metric_read(skill, message, state, metric, language, *, value_only: b
                                       **request_time_format(skill, message))
     speak_information(skill, headline, language=language, response_type="metrics",
                       evidence_rows=[_metric_evidence(metric)])
-    _remember(skill, message, state, operation="metric_detail", metric_name=metric.name, period=None)
+    _remember(skill, message, state, operation="metric_detail", metric_name=metric.name, period=None,
+              read_view="timestamp" if timestamp_only else "value" if value_only else "detail")
     return True
 
 
