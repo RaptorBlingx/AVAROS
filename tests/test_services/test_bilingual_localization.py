@@ -254,3 +254,16 @@ def test_spoken_narration_leaves_written_response_and_evidence_intact():
     assert metadata['warnings'] == ['Veri kapsamı eksik olabilir.']
     assert 'Son kayıt bir Ocak iki bin yirmi beş saat on iki otuz.' in spoken
     assert metadata['speech_text'] == spoken
+
+
+@pytest.mark.parametrize('language,written,spoken', [
+    ('tr-TR', '1,2 mm/m²', 'bir virgül iki milimetre'),
+    ('en-US', '1.2 mm/m²', '1.2 millimetres'),
+])
+def test_precipitation_uses_the_reneryo_base_unit(language, written, spoken):
+    from skill.services.futuregen_responses import format_reneryo_value
+    from skill.services.language import speech_text
+
+    value = format_reneryo_value(1.2, 'PRECIPITATION', language)
+    assert value == written  # Reneryo PRECIPITATION_MILIMETER_PER_METRE_SQUARE, not the group name
+    assert spoken in speech_text(f'Son ölçümde yağış miktarı {value}.' if language == 'tr-TR' else f'Rain: {value}.', language)

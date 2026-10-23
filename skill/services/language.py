@@ -224,6 +224,7 @@ def speech_text(text: str, language: str) -> str:
         "°C": "derece Celsius" if turkish else "degrees Celsius",
         "m³": "metreküp" if turkish else "cubic metres",
         "kg": "kilogram" if turkish else "kilograms",
+        "mm/m²": "milimetre" if turkish else "millimetres",
     }
     for symbol, spoken in units.items():
         text = re.sub(rf"(?<=\d)\s*{re.escape(symbol)}(?![\w/])", " " + spoken, text)

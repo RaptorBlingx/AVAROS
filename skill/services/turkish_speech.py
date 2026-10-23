@@ -103,7 +103,7 @@ def _weather_measurements(text: str) -> str:
     """Share attribution only for adjacent, explicitly attributed readings."""
     from skill.services.response_localization import source_metric_label
 
-    reading = r"(?<![\w-])(Temperature|Humidity|Rain) - Open Weather: ((?:%\s*)?[+-]?\d+(?:\.\d{3})*(?:,\d+)?(?:\s*(?:°C|mm|%))?)\."
+    reading = r"(?<![\w-])(Temperature|Humidity|Rain) - Open Weather: ((?:%\s*)?[+-]?\d+(?:\.\d{3})*(?:,\d+)?(?:\s*(?:°C|mm/m²|mm|%))?)\."
 
     def narrate(match: re.Match) -> str:
         rows = re.findall(reading, match[0])
@@ -168,7 +168,7 @@ def _render_fragment(text: str) -> str:
         'kWh/unit': 'birim başına kilovatsaat', 'kWh': 'kilovatsaat',
         'MWh': 'megavatsaat', 'kW': 'kilovat', 'MW': 'megavat',
         '°C': 'derece', 'm³': 'metreküp', 'm3': 'metreküp',
-        'kg': 'kilogram', 'Hz': 'hertz', 'mm': 'milimetre',
+        'kg': 'kilogram', 'Hz': 'hertz', 'mm/m²': 'milimetre', 'mm': 'milimetre',
     }
     for unit, spoken in units.items():
         # Written case endings belong to the unit, not the decimal number.

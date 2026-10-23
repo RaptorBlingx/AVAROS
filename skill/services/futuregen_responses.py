@@ -345,7 +345,8 @@ def format_reneryo_value(value: float, unit_group: str, language: str) -> str:
     number = quantity_number(displayed, language)
     if unit_group == "RATE":
         return f"%{number}" if is_turkish(language) else f"{number}%"
-    units = {"ENERGY": "kWh", "TEMPERATURE": "°C", "VOLUME": "m³", "WEIGHT": "kg",
+    # PRECIPITATION's base unit is PRECIPITATION_MILIMETER_PER_METRE_SQUARE ("mm/m²").
+    units = {"ENERGY": "kWh", "TEMPERATURE": "°C", "VOLUME": "m³", "WEIGHT": "kg", "PRECIPITATION": "mm/m²",
              "PIECE": "adet" if is_turkish(language) else "unit" if value == 1 else "units"}
     return f"{number} {units.get(unit_group, source_enum_label(unit_group, language))}".strip()
 
