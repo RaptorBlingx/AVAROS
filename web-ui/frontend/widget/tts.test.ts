@@ -50,6 +50,24 @@ describe("widget TTS helpers", () => {
     expect(chunks.every((chunk) => chunk.length <= WIDGET_TTS_CHUNK_MAX_CHARS)).toBe(true);
   });
 
+  it("pauses at clause boundaries and keeps spoken dates and clock times whole", () => {
+    // Long Turkish replies captured from live speech, previously split mid-phrase.
+    const window = "Bu bulgu on sekiz Ekim iki bin yirmi üç saat yirmi üç on bir ile on yedi Ekim iki bin yirmi altı saat " +
+      "yirmi üç on bir arasındaki veri kullanılarak değerlendirildi.";
+    const findings = "dokuz etkin bulgu var: Birinci bulgu, orta önem düzeyinde: Tesis Toplam Elektrik Tüketimi kaynağında gecikme algılandı.";
+    for (const text of [window, findings]) {
+      const chunks = splitWidgetTtsText(text);
+      expect(chunks.join(" ")).toBe(text);
+      expect(chunks.every((chunk) => chunk.length <= WIDGET_TTS_CHUNK_MAX_CHARS)).toBe(true);
+    }
+    const windowChunks = splitWidgetTtsText(window);
+    for (const moment of ["on sekiz Ekim iki bin yirmi üç saat yirmi üç on bir", "on yedi Ekim iki bin yirmi altı saat yirmi üç on bir"]) {
+      expect(windowChunks.some((chunk) => chunk.includes(moment))).toBe(true);
+    }
+    expect(splitWidgetTtsText(findings).some((chunk) => chunk.includes("kaynağında gecikme algılandı"))).toBe(true);
+    expect(splitWidgetTtsText(findings)[0].endsWith(":") || splitWidgetTtsText(findings)[0].endsWith(",")).toBe(true);
+  });
+
   it("resolves the widget TTS endpoint from the configured AVAROS URL", () => {
     expect(resolveServerTtsUrl("https://avaros.reneryo.com/base")).toBe(
       "https://avaros.reneryo.com/voice/tts",

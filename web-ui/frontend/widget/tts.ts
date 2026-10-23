@@ -44,13 +44,40 @@ export function splitWidgetTtsText(
 }
 
 function splitLongSentence(sentence: string, maxChars: number): string[] {
+  // Prefer clause boundaries (", ", ": ", dashes) so a pause falls where a
+  // reader would pause; only an over-long clause is split between words.
   const chunks: string[] = [];
   let current = "";
-  // Keep a spoken number and its unit in the same playback clip.
+  for (const clause of sentence.split(/(?<=[,:–—])\s+/u)) {
+    const next = current ? `${current} ${clause}` : clause;
+    if (next.length <= maxChars) {
+      current = next;
+      continue;
+    }
+    if (current) chunks.push(current);
+    current = "";
+    if (clause.length <= maxChars) {
+      current = clause;
+    } else {
+      chunks.push(...splitLongClause(clause, maxChars));
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function splitLongClause(sentence: string, maxChars: number): string[] {
+  const chunks: string[] = [];
+  let current = "";
+  // Keep a spoken number and its unit in the same playback clip, and a
+  // spoken date or clock time ("on yedi Ekim iki bin yirmi altı saat yirmi
+  // üç on bir") in one clip as well.
   const numberWord = "(?:sıfır|bir|iki|üç|dört|beş|altı|yedi|sekiz|dokuz|on|yirmi|otuz|kırk|elli|altmış|yetmiş|seksen|doksan|yüz|bin|milyon|milyar|trilyon|virgül|eksi|artı|yüzde)";
-  const unit = "(?:derece(?:den|ye|lik)?|kilovatsaat|megavatsaat|kilovat|megavat|metreküp|kilogram|saat|dakika|saniye|gün)";
+  const month = "(?:[Oo]cak|[Şş]ubat|[Mm]art|[Nn]isan|[Mm]ayıs|[Hh]aziran|[Tt]emmuz|[Aa]ğustos|[Ee]ylül|[Ee]kim|[Kk]asım|[Aa]ralık)";
+  const unit = "(?:derece(?:den|ye|lik)?|kilovatsaat|megavatsaat|kilovat|megavat|metreküp|kilogram|milimetre|saat|dakika|saniye|gün|gece yarısı)";
+  const quantity = `${numberWord}(?: (?:${numberWord}|${month}|saat))*(?: ${unit})?`;
   const atoms = sentence.match(new RegExp(
-    `(?<![\\p{L}\\p{N}_-])${numberWord}(?: ${numberWord})*(?: ${unit})?(?![\\p{L}\\p{N}_-])[.,;:!?]?|\\S+`, "gu",
+    `(?<![\\p{L}\\p{N}_-])(?:saat )?${quantity}(?![\\p{L}\\p{N}_-])[.,;:!?]?|\\S+`, "gu",
   )) ?? [];
   const boundedAtoms = atoms.flatMap((atom) => atom.length > maxChars ? atom.split(/\s+/) : [atom]);
   for (const word of boundedAtoms) {
