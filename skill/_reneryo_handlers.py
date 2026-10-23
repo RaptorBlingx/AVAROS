@@ -416,7 +416,7 @@ def handle_reneryo_query(
                 factory_request, use_period=bool(state.period),
                 kind="trend" if state.operation == "trend" and not explicit_amount else "amount",
             )
-    if state.operation == "trend" and state.metric_name and _period_only_follow_up(utterance):
+    if _period_follow_up_trend(state, utterance):
         factory_request = None
     factory_trend = factory_request is not None and factory_request.kind == "trend"
     if factory_trend:
@@ -501,8 +501,7 @@ def handle_reneryo_query(
 
     action = (
         SemanticAction.TREND_SHOW
-        if factory_trend or (state.operation == "trend" and state.metric_name
-                             and _period_only_follow_up(utterance))
+        if factory_trend or _period_follow_up_trend(state, utterance)
         else operation
     )
     if action is None and corrected and state.metric_name:
@@ -574,6 +573,16 @@ def handle_reneryo_query(
         if metric is not None:
             resolution = _metric_read_resolution(metric, utterance, language)
             action = resolution.action
+
+    if (action is SemanticAction.METRIC_DETAIL and not detail_request and not timestamp_request
+            and extract_period_phrase(utterance) not in {"", "latest", "en güncel"}):
+        # "Dün hava sıcaklığı kaçtı?": a dated value is that period's trend, as
+        # _metric_read_resolution routes it; the latest observation would
+        # silently answer a different period. Attributes and timestamps keep
+        # their own handling (a dated timestamp abstains below).
+        action = SemanticAction.TREND_SHOW
+        if resolution is not None:
+            resolution = replace(resolution, action=action)
 
     if action is SemanticAction.FINDINGS_EVALUATE and not is_evaluation_request(text):
         _semantic_clarification(skill, language)
@@ -1995,6 +2004,22 @@ def _names_no_subject(utterance: str) -> bool:
     return _metric_detail_shorthand(" ".join(text.split()))
 
 
+def _period_follow_up_trend(state, utterance: str) -> bool:
+    """A period alone continues the current metric as that period's trend.
+
+    After a trend it replaces the window. After a latest-value read a past
+    period ("Peki dün?", "And yesterday?") asks for the same metric then, and
+    a dated value is that period's trend, as _metric_read_resolution routes
+    it; it is never answered with the latest observation.
+    """
+    if not (state.metric_name and _period_only_follow_up(utterance)):
+        return False
+    if state.operation == "trend":
+        return True
+    return (state.operation == "metric_detail"
+            and extract_period_phrase(utterance) not in {"", "latest", "en güncel"})
+
+
 def _period_only_follow_up(utterance: str) -> bool:
     """A period alone, optionally with "peki"/"for"/"için", changes only the period.
 
@@ -2008,7 +2033,9 @@ def _period_only_follow_up(utterance: str) -> bool:
     if not extract_period_phrase(utterance) or unsupported_period_reference(utterance):
         return False
     rest = _DISCOURSE.sub("", remove_period_reference(utterance))
-    return not re.sub(r"\b(?:for|in|during|için|icin|döneminde|olarak)\b", " ", rest).strip()
+    # "Dün nasıldı?" / "How was it yesterday?" ask about the same subject.
+    return not re.sub(r"\b(?:for|in|during|için|icin|döneminde|olarak|"
+                      r"nasıldı|nasildi|nasıl|nasil|how|was|it)\b", " ", rest).strip()
 
 
 def _subject_reply(skill, utterance: str, *, allow_period: bool = False):

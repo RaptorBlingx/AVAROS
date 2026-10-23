@@ -265,3 +265,43 @@ def test_period_named_in_the_clarification_answer_is_kept():
     # Only the latest timestamp exists: a dated timestamp abstains.
     assert resumed['response_type'] == 'unavailable'
     assert '15.10.2026' not in resumed['headline']
+
+
+@pytest.mark.parametrize('question,language,metric_id', [
+    ('Dün hava sıcaklığı kaçtı?', 'tr-TR', 't'),
+    ('What was the temperature yesterday?', 'en-US', 't'),
+    ('Geçen hafta nem kaçtı?', 'tr-TR', 'h'),
+])
+def test_dated_value_question_never_answers_with_the_latest_observation(question, language, metric_id):
+    skill = harness()
+    answer = turn(skill, question, language)
+    # The latest reading belongs to another period; the dated value is that period's trend.
+    assert answer['response_type'] == 'trend', answer['headline']
+    call = skill._futuregen_service.trend.await_args
+    assert call.kwargs['metric'].metric_id == metric_id
+    assert call.args[1].end <= datetime.now(timezone.utc)
+
+
+@pytest.mark.parametrize('first,follow_up,language', [
+    ('Hava sıcaklığı şu an kaç derece?', 'Dün nasıldı?', 'tr-TR'),
+    ('Yağış ne kadar?', 'Peki dün?', 'tr-TR'),
+    ("What's the temperature right now?", 'And yesterday?', 'en-US'),
+    ('What is the latest humidity reading?', 'How was it yesterday?', 'en-US'),
+])
+def test_period_follow_up_after_a_latest_value_reads_the_same_metric_then(first, follow_up, language):
+    skill = harness()
+    latest = turn(skill, first, language)
+    assert latest['response_type'] == 'metrics'
+    metric = state(skill).metric_name
+    answer = turn(skill, follow_up, language)
+    assert answer['response_type'] == 'trend', answer['headline']
+    assert skill._futuregen_service.trend.await_args.kwargs['metric'].name == metric
+
+
+def test_latest_follow_up_and_new_subject_keep_their_meaning_after_a_value():
+    skill = harness()
+    turn(skill, 'Hava sıcaklığı şu an kaç derece?')
+    # A new subject is a new latest read, not a trend of the previous metric.
+    answer = turn(skill, 'Peki nem?')
+    assert answer['response_type'] == 'metrics'
+    assert skill._futuregen_service.trend.await_count == 0
