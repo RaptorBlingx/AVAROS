@@ -53,7 +53,7 @@ from skill.services.futuregen_responses import (
 )
 from skill.services.language import is_turkish, normalize_phrase, period_display_name, format_localized_number, sentence_start
 from skill.services.period_resolution import (
-    extract_period_phrase, named_month_reference, remove_period_reference,
+    _MONTH_NAMES, extract_period_phrase, named_month_reference, remove_period_reference,
     unsupported_period_reference, unsupported_time_precision,
 )
 from skill.services.request_correction import affirmative_request
@@ -186,6 +186,11 @@ def handle_reneryo_query(
         named_month_reference(utterance) and not re.search(r"\b(?:19|20)\d{2}", text)
         and state.operation in {"factory_history", "trend"} and state.period
     )
+    if _period_comparison(utterance, text):
+        # "Mayıs 2026 ile karşılaştır" compares periods, not equipment; the
+        # comparison contract covers configured assets only.
+        _period_comparison_unsupported(skill, language)
+        return True
     if unsupported_period_reference(utterance) and not retained_month:
         _period_clarification(skill, language, utterance)
         return True
@@ -1850,6 +1855,33 @@ def _is_trend_follow_up(utterance: str) -> bool:
         r"(?:bu metriğin |bu metrik |bunun )?(?:eğilimini|egilimini|eğilim|egilim|geçmişini|gecmisini)"
         r"(?: göster| goster)?", text,
     ))
+
+
+def _period_comparison(utterance: str, text: str) -> bool:
+    """A comparison whose only operands are periods, with no equipment named."""
+    from skill.services.dia_query import is_comparison_pronoun
+
+    if not is_comparison_request(utterance) or is_comparison_pronoun(text):
+        return False
+    if not (extract_period_phrase(utterance) or named_month_reference(utterance)):
+        return False
+    # Without the periods and their connectives, nothing is left to compare
+    # unless equipment is named.
+    remainder = re.sub(rf"\b(?:{_MONTH_NAMES})\w*|\b(?:19|20)\d{{2}}\w*|\b(?:ile|ve|and|with|to|versus|vs)\b",
+                       " ", remove_period_reference(utterance))
+    return not entity_scope(remainder)[0]
+
+
+def _period_comparison_unsupported(skill, language):
+    speak_information(
+        skill,
+        ("Dönemleri birbiriyle karşılaştırmayı desteklemiyorum; karşılaştırma yalnızca yapılandırılmış "
+         "ekipmanlar arasında yapılabiliyor. Her dönemi ayrı ayrı sorabilirsiniz."
+         if is_turkish(language) else
+         "I can't compare periods with each other; comparisons cover configured assets only. "
+         "You can ask about each period separately."),
+        language=language, response_type="clarification",
+    )
 
 
 _MONTH_COUNT_SPAN = re.compile(r"\b(?:last|past|son)\s+\S+\s+(?:months?|ay\w*)\b")

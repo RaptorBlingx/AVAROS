@@ -355,3 +355,18 @@ def test_rejected_period_names_its_reason_and_an_accepted_form(text, language, e
     assert answer['response_type'] == 'clarification'
     assert expected in answer['headline']
     assert skill._futuregen_service.trend.await_count == 0
+
+
+@pytest.mark.parametrize('turns,language', [
+    (('Eylül 2026 sıcaklık eğilimini göster.', 'Ağustos 2026 ile karşılaştır.'), 'tr-TR'),
+    (('Haziran 2026 ile Mayıs 2026 elektrik tüketimini karşılaştır.',), 'tr-TR'),
+    (('Compare electricity consumption in May 2026 and June 2026.',), 'en-US'),
+])
+def test_period_comparison_is_declined_as_such_not_as_missing_equipment(turns, language):
+    skill = harness()
+    for text in turns:
+        answer = turn(skill, text, language)
+    assert answer['response_type'] == 'clarification'
+    assert ('Dönemleri birbiriyle karşılaştırmayı desteklemiyorum' in answer['headline']
+            or "can't compare periods" in answer['headline'])
+    assert 'ekipman kapsamını' not in answer['headline'] and 'equipment scope' not in answer['headline']
