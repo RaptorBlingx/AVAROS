@@ -479,3 +479,37 @@ def test_calendar_year_uses_configured_timezone_without_adding_next_january(phra
     )
     assert period.start == date(2019, 12, 31) + timedelta(hours=21)
     assert period.end == date(2020, 12, 31) + timedelta(hours=21)
+
+
+@pytest.mark.parametrize('month,language,expected', [
+    # Entirely after the last record: no data, not a boundary limitation.
+    ('eylül 2026', 'tr-TR', 'Bu dönem için veri yok'),
+    ('september 2026', 'en-US', 'There is no data for this period'),
+    # Data exists, but Reneryo totals on UTC boundaries a local month does not match.
+    ('haziran 2026', 'tr-TR', 'UTC zaman sınırlarıyla'),
+    ('june 2026', 'en-US', 'UTC boundaries'),
+])
+def test_local_month_consumption_names_the_actual_limitation(month, language, expected):
+    import asyncio
+    from datetime import timezone
+    from types import SimpleNamespace
+    from skill.domain.models import TimePeriod
+    from skill.domain.reneryo_models import ReneryoMetric
+    from skill.services.factory_questions import FactoryRequest, answer_factory_question
+
+    metric = ReneryoMetric('e', 'Tesis Toplam Elektrik Tüketimi', 'COUNTER', 'ENERGY', 1436097.5,
+                           datetime(2026, 6, 30, 21, tzinfo=timezone.utc))
+
+    async def metrics():
+        return [metric]
+
+    async def unexpected(*_args, **_kwargs):
+        raise AssertionError('no Reneryo values are needed to abstain')
+
+    service = SimpleNamespace(metrics=metrics, reneryo=SimpleNamespace(metric_values=unexpected))
+    period = TimePeriod.from_natural_language(month, timezone_name='Europe/Istanbul',
+                                              now=datetime(2026, 10, 23, 7, tzinfo=timezone.utc))
+    request = FactoryRequest('amount', 'electricity', f'{month} elektrik tüketimi', use_period=True)
+    answer = asyncio.run(answer_factory_question(service, request, period, language, timezone_name='Europe/Istanbul'))
+    assert answer.response_type == 'unavailable'
+    assert expected in answer.headline, answer.headline

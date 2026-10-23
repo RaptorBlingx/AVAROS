@@ -594,9 +594,20 @@ async def answer_factory_question(
     if explicit_window:
         aggregation = history_resolution(period, aggregation)
     if request.kind == "amount" and metric.unit_group == "ENERGY" and explicit_window and not meter_window_exact(period.start, period.end):
+        if metric.last_value_at is not None and period.start >= metric.last_value_at:
+            # Nothing was recorded in the window at all; the boundary
+            # question does not arise. Say so with the latest record.
+            last = format_observation_time(metric.last_value_at, language, timezone_name, include_timezone=include_timezone)
+            return FactoryAnswer(
+                (f"Bu dönem için veri yok; {metric.name} için son kayıt {last}." if tr else
+                 f"There is no data for this period; the latest {metric.name} record is from {last}."),
+                "unavailable", metric_name=metric.name, period=period,
+            )
         return FactoryAnswer(
-            ("Reneryo sayaç toplamlarının veri aralıkları istenen yerel dönemle örtüşmüyor; bu dönem için kesin tüketim veremiyorum." if tr else
-             "Reneryo meter aggregate boundaries do not match the requested window; exact consumption for this period is unavailable."),
+            ("Reneryo sayaç toplamlarını UTC zaman sınırlarıyla hesaplıyor; istenen yerel dönem bu sınırlarla örtüşmediği için "
+             "bu dönem için kesin tüketim veremiyorum." if tr else
+             "Reneryo totals meter readings on UTC boundaries, and the requested local period does not align with them, "
+             "so exact consumption for this period is unavailable."),
             "unavailable", metric_name=metric.name, period=period,
         )
     points = (

@@ -151,8 +151,8 @@ def meter_inventory_headline(
     if slices:
         headline += (" Kapsadığı bölüm: " if turkish else " It covers ") + _natural_join(slices, turkish) + "."
     if not exact_window:
-        return headline + (" Reneryo veri aralıkları bu dönemle örtüşmediği için kesin dönem tüketimi veremiyorum." if turkish else
-                           " Exact period consumption is unavailable because Reneryo aggregate boundaries do not match this window.")
+        return headline + (" Reneryo sayaç toplamlarını UTC zaman sınırlarıyla hesapladığı ve bu dönem bu sınırlarla örtüşmediği için kesin dönem tüketimi veremiyorum." if turkish else
+                           " Exact period consumption is unavailable because Reneryo totals meters on UTC boundaries that do not align with this window.")
     # Reneryo supplies individual meter values, not a cross-meter aggregate.
     # Even compatible meters can overlap; adding them here would invent a total.
     values = []
