@@ -390,3 +390,22 @@ def test_subject_switch_after_a_description_stays_a_description():
     skill = harness()
     turn(skill, 'Hava nemi metriğinin birimi nedir?')
     assert 'türünde bir ölçüm' in turn(skill, 'Peki sıcaklık?')['headline']
+
+
+@pytest.mark.parametrize('thanks,language', [
+    ('Teşekkürler.', 'tr-TR'), ('Teşekkür ederim.', 'tr-TR'), ('Tamam, sağ ol', 'tr-TR'), ('Thank you!', 'en-US'),
+])
+def test_thanks_is_acknowledged_and_keeps_the_conversation(thanks, language):
+    skill = harness()
+    turn(skill, 'Hava sıcaklığı şu an kaç derece?' if language == 'tr-TR' else 'What is the temperature right now?', language)
+    answer = turn(skill, thanks, language)
+    assert answer['response_type'] == 'information'
+    assert answer['headline'].startswith(('Rica ederim', "You're welcome"))
+    assert state(skill).metric_name == 'Temperature - Open Weather'
+
+
+def test_thanks_closes_a_pending_metric_question():
+    skill = harness()
+    turn(skill, 'Değeri kaç?')
+    assert turn(skill, 'Teşekkür ederim.')['headline'].startswith('Rica ederim')
+    assert not state(skill).pending_clarification

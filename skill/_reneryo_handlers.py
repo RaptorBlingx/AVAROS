@@ -171,6 +171,15 @@ def handle_reneryo_query(
         return True
     corrected = utterance != original_utterance
     text = normalize_phrase(utterance)
+    if _THANKS.fullmatch(text):
+        # A bare thanks is not a data request; keep the conversation as it is.
+        speak_information(
+            skill,
+            ("Rica ederim. Başka bir veri sormak isterseniz buradayım."
+             if is_turkish(language) else "You're welcome. Ask me about any other data when you need it."),
+            language=language, response_type="information",
+        )
+        return True
 
     if unsupported_time_precision(utterance):
         speak_information(
@@ -2065,6 +2074,12 @@ _TREND_WORDS = re.compile(
     r"değiş\w*|degis\w*|how|did|it|change\w*|go|went)\b"
 )
 _DISCOURSE = re.compile(r"^(?:and|what about|how about|peki|ya)\b\s*")
+_THANKS = re.compile(
+    r"(?:(?:ok(?:ay)?|great|perfect|tamam|harika|süper|super) )?"
+    r"(?:thanks?(?: you)?(?: (?:very much|a lot|so much))?|thank you|cheers|"
+    r"(?:çok )?teşekkür(?:ler| ederim| ederiz)|(?:cok )?tesekkur(?:ler| ederim| ederiz)|"
+    r"sağ ?ol(?:un|asın)?|sag ?ol(?:un|asin)?|eyvallah)"
+)
 # Thanks, acknowledgement or cancelling: the pending question is dropped.
 _CLOSING_REPLY = re.compile(
     r"(?:thanks?(?: you)?|thank you|ok(?:ay)?|no|yes|never mind|cancel|forget it|"
@@ -2136,7 +2151,7 @@ def _subject_reply(skill, utterance: str, *, allow_period: bool = False):
     text = _DISCOURSE.sub("", normalize_phrase(text))
     text = " ".join(_SUBJECT_FILLER.sub(" ", text).split())
     if (not text or len(text.split()) > 6 or (dated and not allow_period)
-            or _CLOSING_REPLY.fullmatch(text)
+            or _CLOSING_REPLY.fullmatch(text) or _THANKS.fullmatch(text)
             or _metric_value_request(text) or _metric_attribute_request(text)
             or _looks_like_trend(text) or is_freshness_question(text)
             or _metric_collection_request(text) or _meter_reference(text)
