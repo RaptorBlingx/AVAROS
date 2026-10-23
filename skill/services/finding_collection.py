@@ -289,7 +289,12 @@ def is_collection_request(text: str, state: DialogueState) -> bool:
     collection_context = state.operation in {"findings", "evaluation"} or (
         state.selected_finding_from_collection and bool(state.finding_ids)
     )
-    collection_followup = collection_context and _has(
+    # "List the regression models" names another collection; only an
+    # unnamed or finding-named list continues the findings collection.
+    other_collection = not finding_reference and bool(re.search(
+        r"\b(?:models?|metrics?|meters?|measurements?|modeller\w*|modelleri|metrik\w*|sayac\w*|olcum\w*)\b", text
+    ))
+    collection_followup = collection_context and not other_collection and _has(
         text,
         "list them",
         "show them",

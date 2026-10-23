@@ -1056,7 +1056,8 @@ def _finding_response(skill, message, service, state, text, language, action) ->
             service.finding(organization_id, finding_id)
         )
         headline = (
-            next_review_headline(finding, action.value, language)
+            next_review_headline(finding, action.value, language,
+                                 asks_timing=_asks_review_timing(text))
             if action in {
                 SemanticAction.FINDING_NEXT_REVIEW,
                 SemanticAction.FINDING_NEXT_REVIEW_WHY,
@@ -1193,6 +1194,18 @@ def _evaluation_response(skill, message, service, state, language) -> bool:
     return True
 
 
+_REVIEW_TIMING = re.compile(
+    r"\bwhen\s+(?:should|do|must|shall)\s+(?:i|we)\s+(?:need\s+to\s+)?"
+    r"(?:check|review|inspect|look\s+(?:at|into)|revisit|recheck|re-check)\b|"
+    r"\bne zaman\b.*\b(?:kontrol\s+etmeliy(?:im|iz)|incelemeliy(?:im|iz)|bakmal[ıi]y(?:[ıi]m|[ıi]z)|"
+    r"g[öo]zden\s+ge[çc]irmeliy(?:im|iz))\b"
+)
+
+
+def _asks_review_timing(text: str) -> bool:
+    return bool(_REVIEW_TIMING.search(text))
+
+
 def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | None:
     """Map established lexical forms without invoking the semantic model."""
     if _finding_selection_scope(text) and selection_index(text, state) is not None:
@@ -1326,6 +1339,10 @@ def _deterministic_action(text: str, state: DialogueState) -> SemanticAction | N
             return SemanticAction.FINDING_OWNER
         if _has(text, "why are you recommending", "why this step", "why recommend", "bu adımı neden", "neden öneriyorsun", "neden tavsiye"):
             return SemanticAction.FINDING_NEXT_REVIEW_WHY
+        if _asks_review_timing(text):
+            # "When should I check it again?" asks for the next review, not
+            # for the evaluated window that a bare "when" otherwise selects.
+            return SemanticAction.FINDING_NEXT_REVIEW
         if _has(text, "what should we do", "what should i do", "recommended next step", "next step", "what do you recommend",
                 "sonraki adım", "ne öneriyorsun", "ne tavsiye") or re.search(
                 # First and plural persons: yapmalıyım/yapmalıyız, yapmam(ız) gerek, yapalım.

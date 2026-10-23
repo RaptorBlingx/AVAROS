@@ -642,3 +642,39 @@ def test_spoken_weather_keeps_incompatible_findings_separate(change):
     spoken = collection_headline(result, FindingFilters(), 'tr-TR', spoken=True)
     assert spoken.count("kaynağında gecikme var") == 2
     assert 'Birinci ve ikinci' not in spoken
+
+
+@pytest.mark.parametrize('prompts,language,disclosure,instruction', [
+    (('List the active findings.', 'Explain the first one.', 'When should I check it again?'),
+     'en-US', 'MDSP does not set a date or interval', 'Review the recorded observations'),
+    (('Aktif bulguları listele.', 'İlkini açıkla.', 'Ne zaman tekrar kontrol etmeliyim?'),
+     'tr-TR', 'MDSP bu inceleme için bir tarih veya sıklık belirtmiyor', 'kayıtlı gözlemlerini inceleyin'),
+])
+def test_review_timing_question_gets_the_review_without_an_invented_date(prompts, language, disclosure, instruction):
+    skill = _Skill()
+    review = MdspNextReview(
+        code="verify-source-records", version=1,
+        instruction=LocalizedText(en="Review the recorded observations for this resource.",
+                                  tr="Bu kaynağın kayıtlı gözlemlerini inceleyin."),
+        rationale=LocalizedText(en="The observed lag exceeds the provisional gate.",
+                                tr="Gözlenen gecikme geçici sınırı aşıyor."),
+        evidence_keys=("lagHours",), policy_status="PROVISIONAL", assessment_run_id="run-1", review_link=None,
+    )
+    skill._futuregen_service.rows = (replace(skill._futuregen_service.rows[0], next_review=review),
+                                     skill._futuregen_service.rows[1])
+    for prompt in prompts:
+        assert handle_reneryo_query(skill, _message(prompt, language))
+    # Not the evaluated window that a bare "when" selects; MDSP gives no schedule.
+    headline = skill.spoken[-1][1]['meta']['avaros_response']['headline']
+    assert disclosure in headline and instruction in headline
+
+
+@pytest.mark.parametrize('request_text', ['List the regression models.', 'List the metrics.'])
+def test_named_other_collection_is_not_a_findings_follow_up(request_text):
+    from skill._reneryo_handlers import _deterministic_action
+    from skill.services.conversation_state import DialogueState
+    from skill.services.language import normalize_phrase
+
+    state = DialogueState(operation="findings", finding_ids=("a", "b"))
+    assert _deterministic_action(normalize_phrase(request_text), state) is not SemanticAction.FINDINGS_LIST
+    assert _deterministic_action(normalize_phrase('List only the medium ones.'), state) is SemanticAction.FINDINGS_LIST

@@ -4,7 +4,7 @@ from skill.domain.reneryo_models import MdspFinding
 from skill.services.language import is_turkish
 
 
-def next_review_headline(finding: MdspFinding, action: str, language: str) -> str:
+def next_review_headline(finding: MdspFinding, action: str, language: str, *, asks_timing: bool = False) -> str:
     turkish = is_turkish(language)
     if finding.retired_at:
         return (
@@ -61,4 +61,10 @@ def next_review_headline(finding: MdspFinding, action: str, language: str) -> st
     status = "Geçici inceleme önerisi" if turkish else "Provisional next review"
     if review.policy_status == "APPROVED":
         status = "Onaylı inceleme önerisi" if turkish else "Approved next review"
-    return f"{status}: {review.instruction.for_language(language)}"
+    # MDSP's assessment carries no due date or interval; never imply one.
+    timing = (
+        ("MDSP bu inceleme için bir tarih veya sıklık belirtmiyor. " if turkish
+         else "MDSP does not set a date or interval for this review. ")
+        if asks_timing else ""
+    )
+    return f"{timing}{status}: {review.instruction.for_language(language)}"
