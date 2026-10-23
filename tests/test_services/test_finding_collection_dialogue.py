@@ -619,7 +619,9 @@ def test_spoken_weather_groups_preserve_written_findings_and_selection():
     spoken = speech_text(collection_headline(result, FindingFilters(), 'tr-TR', spoken=True), 'tr-TR')
     assert '1. Düşük — soğutma derece gün değeri kaynağında gecikme algılandı' in written
     assert '2. Düşük — ısıtma derece gün değeri kaynağında gecikme algılandı' in written
-    assert "OpenWeather'dan gelen ısıtma ve soğutma derece gün verilerinde gecikme var" in spoken
+    assert "ısıtma ve soğutma derece gün kaynaklarında gecikme var" in spoken
+    # The lagging resource's provenance is not in the title; never attribute it to OpenWeather.
+    assert 'OpenWeather' not in spoken and 'verilerinde' not in spoken
     assert 'Birinci ve ikinci bulguda' in spoken
     assert spoken.count('önem düzeyinde') == 1
     assert result == before
@@ -638,5 +640,5 @@ def test_spoken_weather_keeps_incompatible_findings_separate(change):
     first, second = _weather_delay_pair()
     result = MdspFindingList((first, replace(second, **change)), 2, 0)
     spoken = collection_headline(result, FindingFilters(), 'tr-TR', spoken=True)
-    assert spoken.count("OpenWeather'dan gelen") == 2
+    assert spoken.count("kaynağında gecikme var") == 2
     assert 'Birinci ve ikinci' not in spoken

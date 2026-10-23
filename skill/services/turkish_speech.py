@@ -84,13 +84,19 @@ def weather_delay_name(title: str) -> str | None:
 
 
 def weather_delay_speech(names: list[str]) -> str:
-    """State a shared delay without implying equal lag or a common cause."""
+    """State a shared delay without implying equal lag or a common cause.
+
+    MDSP freshness findings concern one metric resource. "Open Weather" is
+    part of the metric's name, not the lagging resource's provenance: a
+    metric can have an imported resource that lags while its OpenWeather
+    integration is current. Speech therefore names only the metric.
+    """
     if set(names) == {"ısıtma derece gün değeri", "soğutma derece gün değeri"} and len(names) == 2:
         subject = "ısıtma ve soğutma derece gün"
     else:
         subjects = [name.removesuffix(" değeri") for name in names]
         subject = ", ".join(subjects[:-1]) + " ve " + subjects[-1] if len(subjects) > 1 else subjects[0]
-    return f"OpenWeather'dan gelen {subject} verilerinde gecikme var"
+    return f"{subject} {'kaynaklarında' if len(names) > 1 else 'kaynağında'} gecikme var"
 
 
 def _weather_measurements(text: str) -> str:
@@ -118,13 +124,16 @@ def _narrate_fragment(text: str) -> str:
         lambda match: weather_delay_speech([weather_delay_name(match[0])]), text,
     )
     replacements = {
-        "kaynağında gecikme algılandı": "verilerinde gecikme var",
+        # A finding names one lagging source, not the metric's data as a whole.
+        "kaynağında gecikme algılandı": "kaynağında gecikme var",
         "Kayıt zamanı: ": "Son kayıt ",
         "Reneryo dönem tüketimi; veri kapsamı eksik olabilir.": "Bu, Reneryo'daki dönem tüketimi. Veri kapsamı eksik olabilir.",
-        "Bu birikimli sayaç değeridir; dönem tüketimi veya üretimi değildir.": "Bu, birikimli sayaç değeri; dönem tüketimi ya da üretimi değil.",
     }
     for original, spoken in replacements.items():
         text = text.replace(original, spoken)
+    # Both counter-reading templates (metric and factory routes) share one reading.
+    text = re.sub(r"Bu birikimli sayaç değeridir[;,] dönem tüketimi veya üretimi değildir\.",
+                  "Bu, birikimli sayaç değeri; dönem tüketimi ya da üretimi değil.", text)
     text = re.sub(r"Bu (gelişmiş|doğrusal) regresyon modeli (günlük|haftalık|aylık) dönemlidir ve (birincil değil|birincil)\.",
                   lambda m: f"{m[2].capitalize()} dönemli bu {m[1]} regresyon modeli " + ("birincil değil." if m[3] == "birincil değil" else "birincil olarak işaretli."), text)
     text = re.sub(r"Açıklayıcı değişkenler: (.+?)\. Bağlı dilimler: (.+?)\. Eğitim dönemi ",
