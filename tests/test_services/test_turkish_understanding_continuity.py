@@ -305,3 +305,53 @@ def test_latest_follow_up_and_new_subject_keep_their_meaning_after_a_value():
     answer = turn(skill, 'Peki nem?')
     assert answer['response_type'] == 'metrics'
     assert skill._futuregen_service.trend.await_count == 0
+
+
+@pytest.mark.parametrize('text,phrase', [
+    # Typed or transcribed without the apostrophe, the year keeps its case ending.
+    ('Eylül 2026da kaç kWh elektrik harcadık?', 'eylül 2026'),
+    ("Haziran 2026'daki üretim", 'haziran 2026'),
+    ('Mayıstan Haziran 2026ya kadar elektrik', 'mayıs 2026 to haziran 2026'),
+])
+def test_turkish_case_endings_belong_to_the_calendar_expression(text, phrase):
+    from skill.services.period_resolution import extract_period_phrase, unsupported_period_reference
+    assert extract_period_phrase(text) == phrase
+    assert not unsupported_period_reference(text)
+
+
+def test_period_only_follow_up_with_a_case_ending_keeps_the_subject():
+    skill = harness()
+    turn(skill, 'Eylül 2026 sıcaklık eğilimini göster.')
+    answer = turn(skill, 'Peki Ağustos 2026da?')
+    assert answer['response_type'] == 'trend'
+    call = skill._futuregen_service.trend.await_args
+    assert call.kwargs['metric'].metric_id == 't' and call.args[1].start.month == 8
+
+
+@pytest.mark.parametrize('follow_up,language', [
+    ('Peki ağustos?', 'tr-TR'), ('Peki ağustosta?', 'tr-TR'), ('What about August?', 'en-US'),
+])
+def test_bare_month_after_a_trend_uses_its_retained_year(follow_up, language):
+    skill = harness()
+    turn(skill, 'Eylül 2026 sıcaklık eğilimini göster.' if language == 'tr-TR'
+         else 'Show the temperature trend for September 2026.', language)
+    answer = turn(skill, follow_up, language)
+    assert answer['response_type'] == 'trend', answer['headline']
+    period = skill._futuregen_service.trend.await_args.args[1]
+    assert (period.start.year, period.start.month) == (2026, 8)
+
+
+@pytest.mark.parametrize('text,language,expected', [
+    # A month without a year never becomes a default window.
+    ('Haziranda ne kadar elektrik tükettik?', 'tr-TR', 'Hangi yılın ayını'),
+    ('Eylülde sıcaklık nasıldı?', 'tr-TR', 'Hangi yılın ayını'),
+    # Month counts stay outside the parser contract; the answer says what works instead.
+    ('Son üç ayda elektrik tüketimi nasıl bir eğilim gösterdi?', 'tr-TR', 'son 90 gün'),
+    ('Show the humidity trend for the last three months.', 'en-US', 'last 90 days'),
+])
+def test_rejected_period_names_its_reason_and_an_accepted_form(text, language, expected):
+    skill = harness()
+    answer = turn(skill, text, language)
+    assert answer['response_type'] == 'clarification'
+    assert expected in answer['headline']
+    assert skill._futuregen_service.trend.await_count == 0

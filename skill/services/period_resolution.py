@@ -13,10 +13,22 @@ _MONTH_NAMES = (
     + r"|ocak|şubat|subat|mart|nisan|mayıs|mayis|haziran|temmuz|ağustos|agustos|eylül|eylul|ekim|kasım|kasim|aralık|aralik"
 )
 _NAMED_MONTH_RANGE = re.compile(
-    rf"\b({_MONTH_NAMES})(?:\s+(\d{{4}}))?\s*(?:to|through|and|ile|-|dan|den)\s*"
+    rf"\b({_MONTH_NAMES})(?:\s+(\d{{4}}))?\s*(?:to|through|and|ile|-|dan|den|tan|ten)\s*"
     rf"({_MONTH_NAMES})\s+(\d{{4}})(?:\s+(?:ya|ye|a|e))?\b"
 )
-_NAMED_MONTH = re.compile(rf"\b(?:{_MONTH_NAMES})\s+\d{{4}}\b")
+# Turkish case endings written onto a month ("Haziranda", "Eylül'de" once
+# apostrophes are normalized away) belong to the calendar expression.
+_TR_MONTH_SUFFIX = r"(?:da|de|ta|te|dan|den|tan|ten|daki|deki|taki|teki|ın|in|un|ün|nın|nin|a|e|ya|ye)?"
+_YEAR_CASE = r"(?:da|de|ta|te|dan|den|tan|ten|daki|deki|taki|teki|ya|ye|a|e|ün|un|in|ın|nın|nin|yı|yi|ı|i|ü|u)"
+# The year's case ending is part of the expression, so removing the period
+# leaves no stranded "da" behind ("Peki Eylül 2026'da?" is period-only).
+_NAMED_MONTH = re.compile(
+    rf"\b({_MONTH_NAMES}){_TR_MONTH_SUFFIX}(?:\s+ay\w*)?\s+(\d{{4}})(?:\s+{_YEAR_CASE})?\b"
+)
+# A year written with an attached case ending ("2026da", from typing or
+# speech-to-text without the apostrophe) is the same year.
+_YEAR_SUFFIX = re.compile(rf"\b((?:19|20)\d{{2}})({_YEAR_CASE})\b")
+_SPAN_UNIT = r"days|weeks|gün(?:ün|ü|e|de|den|deki|lük|ler)?|gun(?:un|u|e|de|den|deki|luk|ler)?|hafta\w*"
 
 # Case and possessive endings belong to the shared calendar expression,
 # including forms such as ayının / haftasının, rather than subject text.
@@ -57,9 +69,14 @@ _PERIOD_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
 )
 
 
+def _period_text(utterance: str) -> str:
+    text = normalize_phrase(normalize_quantity_expressions(utterance))
+    return _YEAR_SUFFIX.sub(r"\1 \2", text)
+
+
 def extract_period_phrase(utterance: str) -> str:
     """Return a parser-supported period without using semantic inference."""
-    text = normalize_phrase(normalize_quantity_expressions(utterance))
+    text = _period_text(utterance)
     iso_range = re.search(
         r"\b\d{4}-\d{2}-\d{2}\s+(?:to|through|until|ile|ila)\s+\d{4}-\d{2}-\d{2}\b",
         text,
@@ -108,14 +125,14 @@ def extract_period_phrase(utterance: str) -> str:
         return f"{int(year):04d}-{months[month]:02d}-{int(day):02d}"
     named_range = _NAMED_MONTH_RANGE.search(text)
     if named_range:
-        if not re.search(r"\b(?:dan|den)\b", named_range.group(0)):
+        if not re.search(r"(?:dan|den|tan|ten)\b", named_range.group(0)):
             return named_range.group(0)
         first, first_year, last, last_year = named_range.groups()
         return f"{first} {first_year or last_year} to {last} {last_year}"
     named_month = _NAMED_MONTH.search(text)
     if named_month:
-        return named_month.group(0)
-    days = re.search(r"\b(?:last|past|son) (\d+) (days|weeks|gün(?:ün|ü|e|de|den|deki|lük|ler)?|gun(?:un|u|e|de|den|deki|luk|ler)?|hafta\w*)\b", text)
+        return f"{named_month.group(1)} {named_month.group(2)}"
+    days = re.search(rf"\b(?:last|past|son) (\d+) ({_SPAN_UNIT})\b", text)
     if days and not (int(days.group(1)) in {2, 4} and days.group(2).startswith(("week", "hafta"))):
         return (
             f"last {days.group(1)} {'weeks' if days.group(2) == 'weeks' else 'days'}"
@@ -134,7 +151,7 @@ def extract_period_phrase(utterance: str) -> str:
 def named_month_reference(utterance: str) -> bool:
     return bool(
         re.search(
-            rf"\b(?:{_MONTH_NAMES})(?:\b|(?:ın|ında| ayında)\b)",
+            rf"\b(?:{_MONTH_NAMES})(?:{_TR_MONTH_SUFFIX}|ında| ayında)\b",
             normalize_phrase(utterance),
         )
     )
@@ -142,14 +159,17 @@ def named_month_reference(utterance: str) -> bool:
 
 def remove_period_reference(utterance: str) -> str:
     """Remove the matched source wording, even when its parser phrase differs."""
-    text = normalize_phrase(normalize_quantity_expressions(utterance))
+    text = _period_text(utterance)
     phrase = extract_period_phrase(utterance)
     if phrase:
         for pattern, canonical in _PERIOD_PATTERNS:
             if canonical == phrase:
                 text = pattern.sub("", text)
+        # Source wording first: a span or month with its case ending, then
+        # the canonical phrase itself.
+        text = re.sub(rf"\b(?:last|past|son) \d+ (?:{_SPAN_UNIT})\b", "", text)
+        text = _NAMED_MONTH.sub("", _NAMED_MONTH_RANGE.sub("", text))
         text = text.replace(phrase, "")
-        text = re.sub(r"\b(?:last|past|son) \d+ (?:days|weeks|gün(?:ün|ü|e|de|den|deki|lük|ler)?|gun(?:un|u|e|de|den|deki|luk|ler)?|hafta\w*)\b", "", text)
     return text
 
 
@@ -157,7 +177,7 @@ def unsupported_period_reference(utterance: str) -> bool:
     """An unrecognized explicit time reference must not become a default window."""
     if unsupported_time_precision(utterance):
         return True
-    text = normalize_phrase(normalize_quantity_expressions(utterance))
+    text = _period_text(utterance)
     phrase = extract_period_phrase(utterance)
     relative_spans = sorted({m.span() for pattern, _ in _PERIOD_PATTERNS
                              for m in pattern.finditer(text)})
@@ -183,7 +203,7 @@ def unsupported_period_reference(utterance: str) -> bool:
     if named_month_reference(text) and re.fullmatch(r"(?:19|20)\d{2}", phrase):
         return True
     if len(
-        re.findall(rf"\b(?:{_MONTH_NAMES})\b", text)
+        re.findall(rf"\b(?:{_MONTH_NAMES}){_TR_MONTH_SUFFIX}\b", text)
     ) > 1 and not _NAMED_MONTH_RANGE.search(text):
         return True
     # Multiple dates are supported only by a recognized range, never by its first date.

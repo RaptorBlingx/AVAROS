@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -183,19 +183,25 @@ def handle_reneryo_query(
     # Bare named-month follow-ups are resolved using the factory dialogue's
     # retained year. All other unsupported explicit periods must stop routing.
     retained_month = (
-        named_month_reference(utterance) and not re.search(r"\b\d{4}\b", text)
+        named_month_reference(utterance) and not re.search(r"\b(?:19|20)\d{2}", text)
         and state.operation in {"factory_history", "trend"} and state.period
     )
     if unsupported_period_reference(utterance) and not retained_month:
-        _period_clarification(skill, language)
+        _period_clarification(skill, language, utterance)
         return True
+    if (retained_month and state.operation == "trend"
+            and state.period.start.year == (state.period.end - timedelta(microseconds=1)).year):
+        # As the factory route does: the trend's single retained year
+        # completes "Peki ağustos?" / "What about August?".
+        utterance = f"{utterance} {state.period.start.year}"
+        text = normalize_phrase(utterance)
 
     if extract_period_phrase(utterance) and getattr(skill, "settings_service", None) is not None:
         try:
             from skill._helpers import parse_period
             parse_period(skill, extract_period_phrase(utterance), message)
         except (ValueError, ValidationError):
-            _period_clarification(skill, language)
+            _period_clarification(skill, language, utterance)
             return True
 
     if is_cost_request(utterance):
@@ -428,7 +434,7 @@ def handle_reneryo_query(
             try:
                 period = _query_period(skill, factory_request.utterance, state.period, message=message)
             except (ValueError, ValidationError):
-                _period_clarification(skill, language)
+                _period_clarification(skill, language, utterance)
                 return True
             answer = skill.dispatcher._run_async(
                 answer_factory_question(
@@ -657,7 +663,7 @@ def handle_reneryo_query(
             try:
                 period = _query_period(skill, utterance, state.period, semantic_period, message=message)
             except (ValueError, ValidationError):
-                _period_clarification(skill, language)
+                _period_clarification(skill, language, utterance)
                 return True
             # A window inherited from context keeps the phrase that selected it.
             selection = extract_period_phrase(utterance) or (
@@ -1829,17 +1835,35 @@ def _is_trend_follow_up(utterance: str) -> bool:
     ))
 
 
-def _period_clarification(skill, language):
-    speak_information(
-        skill,
-        (
+_MONTH_COUNT_SPAN = re.compile(r"\b(?:last|past|son)\s+\S+\s+(?:months?|ay\w*)\b")
+
+
+def _period_clarification(skill, language, utterance: str = ""):
+    """Ask for a usable period, naming the reason when the wording shows it."""
+    text = normalize_phrase(utterance)
+    tr = is_turkish(language)
+    if _MONTH_COUNT_SPAN.search(text):
+        # A month count has no agreed length; the parser contract rejects it.
+        message = (
+            "Ay sayısıyla verilen dönemleri kullanmıyorum, çünkü bir ayın kaç gün sayılacağı belirsiz. "
+            "Gün sayısı, örneğin son 90 gün, ya da ay aralığı, örneğin Temmuz ile Eylül 2026, belirtin; dönemi değiştirmedim."
+            if tr else
+            "I don't use month-count periods, because a month's length is ambiguous. Specify a number of days, "
+            "for example the last 90 days, or a month range, for example July to September 2026; I have not changed the period."
+        )
+    elif named_month_reference(utterance) and not re.search(r"\b(?:19|20)\d{2}", text):
+        message = (
+            "Hangi yılın ayını kastediyorsunuz? Ayı yılıyla birlikte belirtin; dönemi değiştirmedim."
+            if tr else
+            "Which year do you mean? Please name the month with its year; I have not changed the period."
+        )
+    else:
+        message = (
             "İstenen dönem desteklenmiyor, geçersiz, gelecekte veya kuruluşun saat dilimi doğrulanmamış. Geçmiş bir tarih, ay ve yıl veya açık tarih aralığı belirtin; dönemi değiştirmedim."
-            if is_turkish(language)
+            if tr
             else "The requested period is unsupported, invalid, in the future, or the organization timezone is not verified. Specify a past date, month and year, or an explicit date range; I have not changed the period."
-        ),
-        language=language,
-        response_type="clarification",
-    )
+        )
+    speak_information(skill, message, language=language, response_type="clarification")
 
 
 def has_signed_widget_context(message) -> bool:
@@ -2035,7 +2059,7 @@ def _period_only_follow_up(utterance: str) -> bool:
     rest = _DISCOURSE.sub("", remove_period_reference(utterance))
     # "Dün nasıldı?" / "How was it yesterday?" ask about the same subject.
     return not re.sub(r"\b(?:for|in|during|için|icin|döneminde|olarak|"
-                      r"nasıldı|nasildi|nasıl|nasil|how|was|it)\b", " ", rest).strip()
+                      r"nasıldı|nasildi|nasıl|nasil|how|was|it|kadar|arasında|arasinda)\b", " ", rest).strip()
 
 
 def _subject_reply(skill, utterance: str, *, allow_period: bool = False):
@@ -2120,7 +2144,7 @@ def _resume_metric_request(skill, message, state, metric, operation, period_phra
             try:
                 requested = _query_period(skill, period_phrase, None, message=message)
             except (ValueError, ValidationError):
-                _period_clarification(skill, language)
+                _period_clarification(skill, language, period_phrase)
                 return True
         if period_phrase and operation != "trend" and metric.metric_type == "COUNTER":
             # As the direct factory route answers a dated cumulative reading.

@@ -263,7 +263,7 @@ def classify_factory_question(utterance, state) -> FactoryRequest | None:
     ) or re.search(r"\bsu(?:yun|yu|ya)?\b", text):
         return FactoryRequest("scope_unavailable", hint, utterance)
     # A calendar month without a year is usable only with an unambiguous retained year.
-    if named_month_reference(text) and not re.search(r"\b\d{4}\b", text):
+    if named_month_reference(text) and not re.search(r"\b(?:19|20)\d{2}", text):
         if (
             not context
             or state.period is None
